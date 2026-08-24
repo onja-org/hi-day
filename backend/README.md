@@ -9,7 +9,10 @@ Built with **NestJS** and **TypeScript**. Tests run on the built-in **Jest** set
 ## Quick Start
 
 ```bash
-pnpm install
+cp .env.example .env               # adjust values if needed
+docker compose up -d postgres      # from the repo root — starts local Postgres
+pnpm install                       # also runs `prisma generate`
+pnpm exec prisma migrate dev       # applies migrations to your local database
 pnpm start:dev
 ```
 
@@ -27,10 +30,14 @@ API runs on [http://localhost:3001](http://localhost:3001).
 | `pnpm test` | Unit tests |
 | `pnpm test:e2e` | End-to-end tests |
 | `pnpm test:cov` | Test coverage |
+| `pnpm exec prisma migrate dev` | Create/apply a migration from schema changes |
+| `pnpm exec prisma studio` | Browse the local database |
 
 ## Project Structure
 
 ```
-src/   — App module, controllers, services, main.ts entry point
-test/  — e2e tests
+src/           — App module, controllers, services, main.ts entry point
+src/prisma/    — PrismaModule/PrismaService (database access)
+prisma/        — Prisma schema and migrations
+test/          — e2e tests
 ```

@@ -9,9 +9,16 @@ pnpm workspace monorepo with two packages: **`frontend`** (Next.js web console) 
 ## Quick Start
 
 ```bash
-pnpm install
-pnpm --filter frontend dev    # http://localhost:3000
-pnpm --filter backend start:dev  # http://localhost:3001
+pnpm install                          # installs deps for both packages, generates the Prisma client
+
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+
+docker compose up -d postgres         # starts a local Postgres for the backend
+pnpm --filter backend exec prisma migrate dev   # creates the database tables
+
+pnpm --filter frontend dev            # http://localhost:3000
+pnpm --filter backend start:dev       # http://localhost:3001
 ```
 
 See each package's own README for details: [frontend/README.md](frontend/README.md), [backend/README.md](backend/README.md).
