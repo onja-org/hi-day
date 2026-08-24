@@ -6,6 +6,8 @@ This PRD defines the first release of a commercial workforce time-tracking and p
 
 *Where product-level decisions are still open (exact target segment, pricing, and metric targets), they are marked as assumptions in Section 11 rather than treated as settled.*
 
+*This file is the canonical, living PRD — edit it directly. It was synced from the team's [Google Doc draft](https://docs.google.com/document/d/1l2zjTqDX7USvMf1qVAfRRm80OkXYCs0Kh4XlEf19qb8/edit?pli=1&tab=t.0) on 2026-08-24; that Doc is no longer kept in sync.*
+
 ## 1. Summary
 
 Companies with remote, hybrid, or distributed teams need to account for time, understand how work time is spent, and turn that into payroll and client invoices. Existing tools do this but are often heavy-handed on surveillance and weak on transparency. Our product delivers the same accountability features through a consent-first, managed-deployment model: full reliability on company-owned devices, honest best-effort behaviour on personal ones, and no covert tracking.
@@ -58,49 +60,64 @@ The opportunity is a transparent, fairly-priced product that keeps the accountab
 
 | In scope (v1) | Out of scope (v1) |
 | --- | --- |
-| Web console (admin, reporting, timesheets) | Mobile apps (iOS / Android) |
-| Desktop agent (Windows, macOS; Linux best-effort) | Location / GPS / geofencing |
-| Time tracking, idle detection | Keystroke logging (content) |
-| App & window tracking | Covert / hidden monitoring |
-| Website (URL) tracking via browser extension | Advanced integrations marketplace |
-| Screenshots (configurable frequency & retention) | On-premise / self-hosted deployment |
+| Account setup: registration, login, members, projects, roles | Mobile apps (iOS / Android) |
+| Web console (admin, reporting, timesheets) | Location / GPS / geofencing |
+| Desktop agent (Windows, macOS; Linux best-effort) | Keystroke logging (content) |
+| Time tracking, idle detection | Covert / hidden monitoring |
+| App & window tracking | Advanced integrations marketplace |
+| Website (URL) tracking via browser extension | On-premise / self-hosted deployment |
+| Screenshots (configurable frequency & retention) | |
 | Activity level (active vs. idle) | |
 | Reports, payroll, invoicing | |
 
 ## 7. Functional requirements
 
-### 7.1 Time tracking
+### 7.1 Account setup & onboarding (admin)
 
-- **FR-1** Users can start/stop a timer tied to a project and task, from the web console or the desktop agent, kept in sync.
-- **FR-2** Users can add or edit time manually; edits are auditable.
-- **FR-3** The agent detects idle time and can flag or subtract it based on org settings.
+- **FR-1** Company registration — an admin can register a new company account (organisation), enter company details, and become its owner.
+- **FR-2** Secure login & account recovery — users log in with email and password (or SSO where configured), with email verification and password reset; sessions are secure.
+- **FR-3** Invite & add members — admins and managers invite members by email; invitees accept, set a password and join the organisation, with pending and active states visible.
+- **FR-4** Roles & permissions — admins assign roles (admin, manager, member, finance) that gate what each user can see and do.
+- **FR-5** Teams — admins create teams and assign members so time and reports can be organised by team.
+- **FR-6** Projects — admins and managers create, edit and archive projects, and mark them billable with rates where relevant.
+- **FR-7** Tasks — projects contain tasks that time and activity are attributed to.
+- **FR-8** Agent deployment & device pairing — admins get install links and managed-deployment guidance; each installed agent pairs to the organisation and appears in the console.
+- **FR-9** Tracking configuration — before capture begins, admins choose what is collected (each feature on or off), set screenshot frequency and retention, and set the disclosure/consent text shown to staff.
+- **FR-10** Plan & seats — during or after registration an admin selects a plan or starts a trial and manages seats; the account is usable within plan limits.
+- **FR-11** Guided onboarding — a first-run checklist takes a new company from registration through inviting members, creating a project and installing the agent, to its first tracked time.
 
-### 7.2 Activity capture (desktop agent)
+### 7.2 Time tracking
 
-- **FR-4** The agent records the active application and window title at a regular interval.
-- **FR-5** The agent captures screenshots at an org-configurable frequency, with configurable retention; screenshots upload directly to object storage.
-- **FR-6** The agent computes an activity level (relative keyboard/mouse volume) — never the content of keystrokes.
-- **FR-7** A browser extension reports the active tab's URL to the agent; when a browser is active but no URL is available (private window, unsupported browser, extension missing), the agent records "browser active, URL unknown" rather than guessing.
-- **FR-8** The agent queues data locally when offline and syncs when the connection returns, with no data loss.
+- **FR-12** Users can start/stop a timer tied to a project and task, from the web console or the desktop agent, kept in sync.
+- **FR-13** Users can add or edit time manually; edits are auditable.
+- **FR-14** The agent detects idle time and can flag or subtract it based on org settings.
 
-### 7.3 Deployment & consent
+### 7.3 Activity capture (desktop agent)
 
-- **FR-9** The agent shows a visible indicator when tracking is active.
-- **FR-10** Consent is requested at install; the OS permission prompts (screen recording, accessibility) are surfaced clearly.
-- **FR-11** On managed devices, admins can force-install and lock the agent and extension so they cannot be disabled; on personal devices, features degrade to best-effort.
-- **FR-12** Admins control what is collected (per feature) and how long it is retained.
+- **FR-15** The agent records the active application and window title at a regular interval.
+- **FR-16** The agent captures screenshots at an org-configurable frequency, with configurable retention; screenshots upload directly to object storage.
+- **FR-17** The agent computes an activity level (relative keyboard/mouse volume) — never the content of keystrokes.
+- **FR-18** A browser extension reports the active tab's URL to the agent; when a browser is active but no URL is available (private window, unsupported browser, extension missing), the agent records "browser active, URL unknown" rather than guessing.
+- **FR-19** The agent queues data locally when offline and syncs when the connection returns, with no data loss.
 
-### 7.4 Reporting & administration
+### 7.4 Deployment & consent
 
-- **FR-13** Managers can view time, activity, apps, websites, and screenshots by user, team, and project over a date range.
-- **FR-14** Dashboards read from pre-computed rollups so they stay fast at scale.
-- **FR-15** The system is multi-tenant: organisation → team → user, with role-based permissions (admin, manager, member, finance).
-- **FR-16** Managers can review and approve timesheets.
+- **FR-20** The agent shows a visible indicator when tracking is active.
+- **FR-21** Consent is requested at install; the OS permission prompts (screen recording, accessibility) are surfaced clearly.
+- **FR-22** On managed devices, admins can force-install and lock the agent and extension so they cannot be disabled; on personal devices, features degrade to best-effort.
+- **FR-23** Admins control what is collected (per feature) and how long it is retained.
 
-### 7.5 Payroll & invoicing
+### 7.5 Reporting & administration
 
-- **FR-17** Approved hours convert to pay using per-user or per-project rates, handling rounding, timezones, and multiple currencies.
-- **FR-18** The system generates client invoices from billable hours and supports export.
+- **FR-24** Managers can view time, activity, apps, websites, and screenshots by user, team, and project over a date range.
+- **FR-25** Dashboards read from pre-computed rollups so they stay fast at scale.
+- **FR-26** The system is multi-tenant: organisation → team → user, with role-based permissions (admin, manager, member, finance).
+- **FR-27** Managers can review and approve timesheets.
+
+### 7.6 Payroll & invoicing
+
+- **FR-28** Approved hours convert to pay using per-user or per-project rates, handling rounding, timezones, and multiple currencies.
+- **FR-29** The system generates client invoices from billable hours and supports export.
 
 ## 8. Non-functional requirements
 
