@@ -1,6 +1,6 @@
 # Workforce Monitoring Platform
 
-A transparent, consent-first time-tracking and productivity-monitoring platform for distributed teams — a web console plus a desktop agent, backed by a single multi-tenant API.
+A transparent, consent-first time-tracking and productivity-monitoring platform for distributed teams — company registration, team and project management, time tracking via a web console and desktop agent, reporting, payroll and invoicing, backed by a single multi-tenant API.
 
 pnpm workspace monorepo with two packages: **`frontend`** (Next.js web console) and **`backend`** (NestJS API).
 
@@ -9,13 +9,14 @@ pnpm workspace monorepo with two packages: **`frontend`** (Next.js web console) 
 ## Quick Start
 
 ```bash
-pnpm install                          # installs deps for both packages, generates the Prisma client
+pnpm install                          # installs deps for both packages
 
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 
-docker compose up -d postgres         # starts a local Postgres for the backend
-pnpm --filter backend exec prisma migrate dev   # creates the database tables
+# install Postgres locally and update backend/.env's DATABASE_URL to match —
+# see backend/README.md's Quick Start for OS-specific install steps
+pnpm --filter backend migration:run   # creates the database tables
 
 pnpm --filter frontend dev            # http://localhost:3000
 pnpm --filter backend start:dev       # http://localhost:3001
