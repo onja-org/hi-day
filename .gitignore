@@ -11,6 +11,9 @@ build/
 .next/
 out/
 
+# turborepo
+.turbo/
+
 # editor
 .idea/
 .vscode/
