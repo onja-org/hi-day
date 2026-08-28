@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Invitation } from './invitation.entity';
 import { Membership } from './membership.entity';
+import { OrganisationRegion } from './organisation-region.enum';
 import { Project } from './project.entity';
 import { Team } from './team.entity';
 
@@ -18,6 +19,17 @@ export class Organisation {
 
   @Column()
   name: string;
+
+  @Column({ unique: true })
+  slug: string;
+
+  @Column({
+    type: 'enum',
+    enum: OrganisationRegion,
+    enumName: 'OrganisationRegion',
+    default: OrganisationRegion.US,
+  })
+  region: OrganisationRegion;
 
   @Column({ type: 'jsonb', default: {} })
   settings: Record<string, unknown>;

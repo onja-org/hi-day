@@ -19,6 +19,27 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   name: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  passwordHash: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  emailVerifiedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  emailVerificationToken: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  emailVerificationExpiresAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  pendingOrganisationName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  pendingOrganisationAddress: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  pendingOrganisationWebsite: string | null;
+
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
 

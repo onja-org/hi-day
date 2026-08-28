@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
+import { AuditLog } from './entities/audit-log.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
 import { Organisation } from './entities/organisation.entity';
@@ -11,6 +12,15 @@ import { User } from './entities/user.entity';
 export default new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
-  entities: [Organisation, User, Membership, Team, Project, Task, Invitation],
+  entities: [
+    Organisation,
+    User,
+    Membership,
+    Team,
+    Project,
+    Task,
+    Invitation,
+    AuditLog,
+  ],
   migrations: [__dirname + '/migrations/*.ts'],
 });
