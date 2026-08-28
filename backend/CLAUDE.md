@@ -20,11 +20,10 @@ backend/
 │       ├── data-source.ts       — DataSource used by the TypeORM CLI (migrations)
 │       ├── entities/            — one file per entity
 │       └── migrations/
-└── test/                 — e2e specs (*.e2e-spec.ts) + jest-e2e.json
 ```
 
 - **New feature modules go in their own top-level folder under `src/`, following the standard Nest pattern: `src/<feature>/<feature>.module.ts`, `.controller.ts`, `.service.ts`, and a `dto/` subfolder for request/response DTOs.** No real example of this exists yet — `app.*` is just the leftover scaffold — but this is the pattern to follow, not improvise around, once real features start landing.
-- **Unit tests are colocated `*.spec.ts` files next to the source they test.** E2e tests live in `test/*.e2e-spec.ts`, bootstrapping a real `INestApplication` and hitting it with `supertest`.
+- **Unit tests are colocated `*.spec.ts` files next to the source they test.** That's the only test convention for now — e2e tests (`test/*.e2e-spec.ts`, `supertest` against a real `INestApplication`) were removed for now; revisit if/when e2e coverage comes back.
 
 ## Multi-tenancy & data access
 
