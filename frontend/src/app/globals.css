@@ -9,6 +9,8 @@
   --color-secondary: #5d5490;
   --color-cream: #fff6d6;
   --color-white: #ffffff;
+  --color-error: #dc2626;
+  --color-success: #16a34a;
 
   --font-body: var(--font-roboto), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
@@ -22,11 +24,18 @@
   --color-secondary: var(--color-secondary);
   --color-cream: var(--color-cream);
   --color-white: var(--color-white);
-  --font-sans: var(--font-body);
+  --color-error: var(--color-error);
+  --color-success: var(--color-success);
+  --font-sans: var(--font-roboto);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-body);
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
 }
