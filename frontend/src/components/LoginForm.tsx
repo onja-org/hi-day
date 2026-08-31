@@ -21,7 +21,10 @@ export function LoginForm() {
   useEffect(() => {
     if (!mutation.data?.ok) return;
 
-    const timeout = setTimeout(() => router.push("/dashboard"), REDIRECT_DELAY_MS);
+    const timeout = setTimeout(
+      () => router.push("/dashboard"),
+      REDIRECT_DELAY_MS,
+    );
     return () => clearTimeout(timeout);
   }, [mutation.data, router]);
 
@@ -35,7 +38,10 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-4xl flex-col gap-6">
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-4xl md:px-20 lg:px-0 flex-col gap-6"
+    >
       {mutation.data?.ok && <SuccessMessage message={mutation.data.message} />}
       {mutation.data && !mutation.data.ok && (
         <ErrorMessage message={mutation.data.message} />
@@ -68,7 +74,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        className="flex items-center justify-center gap-2 cursor-pointer rounded-md px-4 py-2 text-white transition-colors duration-150 bg-primary/90"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Logging in…" : "Log in"}
@@ -78,7 +84,7 @@ export function LoginForm() {
         Don&apos;t have an account?{" "}
         <Link
           href="/signup"
-          className="cursor-pointer text-primary underline-offset-2 transition-colors duration-150 hover:text-primary-dark hover:underline"
+          className="cursor-pointer underline text-primary underline-offset-2 transition-colors duration-150 hover:text-primary-dark hover:underline"
         >
           Sign up
         </Link>

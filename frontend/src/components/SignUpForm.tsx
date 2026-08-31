@@ -7,6 +7,7 @@ import { parseSignUpFormData } from "@/lib/parseSignUpFormData";
 import { ErrorMessage } from "./ErrorMessage";
 import { SignUpSuccess } from "./SignUpSuccess";
 import { Spinner } from "./Spinner";
+import Link from "next/link";
 
 const INPUT_CLASSES =
   "rounded-md border border-primary-dark/20 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
@@ -27,7 +28,7 @@ export function SignUpForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex w-full max-w-4xl mx-auto flex-col gap-6"
+      className="flex w-full max-w-4xl mx-auto md:px-20 lg:px-0 flex-col gap-6"
     >
       {mutation.data && !mutation.data.ok && (
         <ErrorMessage message={mutation.data.message} />
@@ -114,11 +115,21 @@ export function SignUpForm() {
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Creating your account…" : "Create account"}
       </button>
+
+      <p className="text-slate-900">
+        Already have an account?{" "}
+        <Link
+          href="/login"
+          className="cursor-pointer underline text-primary underline-offset-2 transition-colors duration-150 hover:text-primary-dark hover:underline"
+        >
+          Sign in
+        </Link>
+      </p>
     </form>
   );
 }

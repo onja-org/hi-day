@@ -38,7 +38,7 @@ export function SignUpSuccess({ email }: SignUpSuccessProps) {
           type="button"
           onClick={() => mutation.mutate({ email })}
           disabled={mutation.isPending}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary px-4 py-2 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-md border border-primary px-4 py-2 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {mutation.isPending && <Spinner />}
           {mutation.isPending ? "Resending…" : "Resend verification email"}
