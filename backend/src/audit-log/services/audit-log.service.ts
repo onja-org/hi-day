@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
-import { AuditLog } from '../database/entities/audit-log.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 
 export interface RecordAuditLogInput {
   action: string;

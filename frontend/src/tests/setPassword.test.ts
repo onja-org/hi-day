@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { login } from "./login";
+import { setPassword } from "@/lib/setPassword";
 
-describe("login", () => {
+describe("setPassword", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -11,35 +11,40 @@ describe("login", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ message: "Logged in." }),
+        json: () =>
+          Promise.resolve({ message: "Password set. You are now signed in." }),
       }),
     );
 
-    const result = await login({
-      email: "jane@acme.test",
+    const result = await setPassword({
+      token: "valid-token",
       password: "correct-horse",
     });
 
-    expect(result).toEqual({ ok: true, message: "Logged in." });
+    expect(result).toEqual({
+      ok: true,
+      message: "Password set. You are now signed in.",
+    });
   });
 
-  it("returns the generic invalid-login message on failure without revealing why", async () => {
+  it("returns the backend's error message when the link is invalid", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        json: () => Promise.resolve({ message: "Invalid email or password." }),
+        json: () =>
+          Promise.resolve({ message: "This link is invalid or has expired." }),
       }),
     );
 
-    const result = await login({
-      email: "unknown@acme.test",
-      password: "whatever",
+    const result = await setPassword({
+      token: "expired-token",
+      password: "correct-horse",
     });
 
     expect(result).toEqual({
       ok: false,
-      message: "Invalid email or password.",
+      message: "This link is invalid or has expired.",
     });
   });
 
@@ -48,26 +53,29 @@ describe("login", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        json: () => Promise.resolve({ message: ["email must be an email"] }),
+        json: () =>
+          Promise.resolve({
+            message: ["password must be longer than 6 characters"],
+          }),
       }),
     );
 
-    const result = await login({
-      email: "not-an-email",
-      password: "correct-horse",
+    const result = await setPassword({
+      token: "valid-token",
+      password: "short",
     });
 
     expect(result).toEqual({
       ok: false,
-      message: "email must be an email",
+      message: "password must be longer than 6 characters",
     });
   });
 
   it("returns a generic error message when the request throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
-    const result = await login({
-      email: "jane@acme.test",
+    const result = await setPassword({
+      token: "valid-token",
       password: "correct-horse",
     });
 

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
-import { ACCESS_TOKEN_COOKIE } from './token.service';
+import { ACCESS_TOKEN_COOKIE } from './services/token.service';
 
 export interface AuthenticatedRequest extends Request {
   userId: string;

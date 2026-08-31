@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../database/entities/user.entity';
-import { EmailModule } from '../email/email.module';
-import { OrganisationsModule } from '../organisations/organisations.module';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
+import { User } from '../../database/entities/user.entity';
+import { EmailModule } from '../../email/modules/email.module';
+import { OrganisationsModule } from '../../organisations/modules/organisations.module';
+import { AuthController } from '../controllers/auth.controller';
+import { AuthService } from '../services/auth.service';
+import { PasswordService } from '../services/password.service';
+import { TokenService } from '../services/token.service';
 import { JwtAuthModule } from './jwt-auth.module';
-import { PasswordService } from './password.service';
-import { TokenService } from './token.service';
 
 @Module({
   imports: [

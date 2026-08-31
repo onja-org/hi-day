@@ -1,6 +1,6 @@
 import { EntityManager } from 'typeorm';
-import { AuditLog } from '../database/entities/audit-log.entity';
-import { AuditLogService } from './audit-log.service';
+import { AuditLog } from '../../../database/entities/audit-log.entity';
+import { AuditLogService } from '../audit-log.service';
 
 describe('AuditLogService', () => {
   function makeManager() {

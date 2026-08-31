@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logout } from "./logout";
+import { logout } from "@/lib/logout";
 
 describe("logout", () => {
   afterEach(() => {

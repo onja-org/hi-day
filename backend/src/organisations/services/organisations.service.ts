@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import { AuditLogService } from '../audit-log/audit-log.service';
-import { Membership } from '../database/entities/membership.entity';
-import { MembershipRole } from '../database/entities/membership-role.enum';
-import { Organisation } from '../database/entities/organisation.entity';
-import { OrganisationRegion } from '../database/entities/organisation-region.enum';
-import { Team } from '../database/entities/team.entity';
-import { UpdateOrganisationDto } from './dto/update-organisation.dto';
-import { generateSlug } from './slug.util';
+import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { Organisation } from '../../database/entities/organisation.entity';
+import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
+import { Team } from '../../database/entities/team.entity';
+import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
+import { generateSlug } from '../slug.util';
 
 const DEFAULT_TIMEZONE = 'UTC';
 const DEFAULT_CURRENCY = 'USD';

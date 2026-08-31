@@ -8,11 +8,11 @@ import {
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { AuthService } from './auth.service';
-import { CreateAccountDto } from './dto/create-account.dto';
-import { LoginDto } from './dto/login.dto';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
-import { SetPasswordDto } from './dto/set-password.dto';
+import { AuthService } from '../services/auth.service';
+import { CreateAccountDto } from '../dto/create-account.dto';
+import { LoginDto } from '../dto/login.dto';
+import { ResendVerificationDto } from '../dto/resend-verification.dto';
+import { SetPasswordDto } from '../dto/set-password.dto';
 
 const SIGNUP_THROTTLE_TTL_MS = 15 * 60 * 1000;
 const SIGNUP_THROTTLE_LIMIT = 5;

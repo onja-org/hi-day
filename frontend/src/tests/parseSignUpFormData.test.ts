@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSignUpFormData } from "./parseSignUpFormData";
+import { parseSignUpFormData } from "@/lib/parseSignUpFormData";
 
 function formData(entries: Record<string, string>) {
   const data = new FormData();

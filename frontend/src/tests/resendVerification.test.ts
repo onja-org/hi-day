@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resendVerification } from "./resendVerification";
+import { resendVerification } from "@/lib/resendVerification";
 
 describe("resendVerification", () => {
   afterEach(() => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cookies } from "next/headers";
-import { isAuthenticated } from "./isAuthenticated";
+import { isAuthenticated } from "@/lib/isAuthenticated";
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(),

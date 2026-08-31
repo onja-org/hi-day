@@ -1,18 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { updateOrganisation } from "./updateOrganisation";
+import { getCurrentOrganisation } from "@/lib/getCurrentOrganisation";
 
-const validInput = {
-  name: "Acme International",
-  address: "2 New St",
-  website: "https://acme.test",
-};
-
-describe("updateOrganisation", () => {
+describe("getCurrentOrganisation", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("returns ok with the updated organisation profile on success", async () => {
+  it("returns ok with the organisation profile on success", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -20,53 +14,50 @@ describe("updateOrganisation", () => {
         json: () =>
           Promise.resolve({
             id: "org-1",
-            name: "Acme International",
-            address: "2 New St",
+            name: "Acme Inc",
+            address: "1 Main St",
             website: "https://acme.test",
             role: "admin",
           }),
       }),
     );
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await getCurrentOrganisation();
 
     expect(result).toEqual({
       ok: true,
       organisation: {
         id: "org-1",
-        name: "Acme International",
-        address: "2 New St",
+        name: "Acme Inc",
+        address: "1 Main St",
         website: "https://acme.test",
         role: "admin",
       },
     });
   });
 
-  it("surfaces the backend's error message on failure", async () => {
+  it("returns the backend's error message when the request fails", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
         json: () =>
-          Promise.resolve({
-            message:
-              "Only an admin of this organisation can update its settings.",
-          }),
+          Promise.resolve({ message: "No organisation found for this user." }),
       }),
     );
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await getCurrentOrganisation();
 
     expect(result).toEqual({
       ok: false,
-      message: "Only an admin of this organisation can update its settings.",
+      message: "No organisation found for this user.",
     });
   });
 
   it("returns a generic error message when the request throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await getCurrentOrganisation();
 
     expect(result).toEqual({
       ok: false,

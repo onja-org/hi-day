@@ -5,12 +5,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
-import { User } from '../database/entities/user.entity';
-import { EmailService } from '../email/email.service';
-import { OrganisationsService } from '../organisations/organisations.service';
-import { AuthService } from './auth.service';
-import { PasswordService } from './password.service';
-import { TokenService } from './token.service';
+import { User } from '../../../database/entities/user.entity';
+import { EmailService } from '../../../email/services/email.service';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
+import { AuthService } from '../auth.service';
+import { PasswordService } from '../password.service';
+import { TokenService } from '../token.service';
 
 describe('AuthService', () => {
   function makeUsersRepo(overrides: Partial<Repository<User>> = {}) {

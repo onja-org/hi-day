@@ -1,5 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
-import { TokenService } from './token.service';
+import { TokenService } from '../token.service';
 
 describe('TokenService', () => {
   it('signs an access token carrying the user id as the subject', () => {

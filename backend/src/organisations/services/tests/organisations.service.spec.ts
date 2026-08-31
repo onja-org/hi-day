@@ -1,11 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
-import { AuditLogService } from '../audit-log/audit-log.service';
-import { Membership } from '../database/entities/membership.entity';
-import { MembershipRole } from '../database/entities/membership-role.enum';
-import { Organisation } from '../database/entities/organisation.entity';
-import { OrganisationRegion } from '../database/entities/organisation-region.enum';
-import { OrganisationsService } from './organisations.service';
+import { AuditLogService } from '../../../audit-log/services/audit-log.service';
+import { Membership } from '../../../database/entities/membership.entity';
+import { MembershipRole } from '../../../database/entities/membership-role.enum';
+import { Organisation } from '../../../database/entities/organisation.entity';
+import { OrganisationRegion } from '../../../database/entities/organisation-region.enum';
+import { OrganisationsService } from '../organisations.service';
 
 describe('OrganisationsService', () => {
   function makeManager() {

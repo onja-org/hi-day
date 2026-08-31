@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAccount } from "./createAccount";
+import { createAccount } from "@/lib/createAccount";
 import type { CreateAccountInput } from "@/types/account";
 
 const validInput: CreateAccountInput = {

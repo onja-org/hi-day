@@ -7,13 +7,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import type { Response } from 'express';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
-import { User } from '../database/entities/user.entity';
-import { EmailService } from '../email/email.service';
-import { OrganisationsService } from '../organisations/organisations.service';
-import { CreateAccountDto } from './dto/create-account.dto';
-import { LoginDto } from './dto/login.dto';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
-import { SetPasswordDto } from './dto/set-password.dto';
+import { User } from '../../database/entities/user.entity';
+import { EmailService } from '../../email/services/email.service';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { CreateAccountDto } from '../dto/create-account.dto';
+import { LoginDto } from '../dto/login.dto';
+import { ResendVerificationDto } from '../dto/resend-verification.dto';
+import { SetPasswordDto } from '../dto/set-password.dto';
 import { PasswordService } from './password.service';
 import { ACCESS_TOKEN_COOKIE, TokenService } from './token.service';
 
@@ -24,10 +24,6 @@ const RESEND_VERIFICATION_RESPONSE_MESSAGE =
   "If that email is awaiting verification, we've sent a new link.";
 const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
 const POSTGRES_UNIQUE_VIOLATION = '23505';
-// A precomputed, unusable hash — verified against when no real user/hash
-// exists, so a login attempt for an unknown email takes about as long as
-// one for a known email with a wrong password. Without this, response
-// timing alone could leak which emails are registered.
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$EdLgXk5ViQoSXTFItKblvQ$/dRGHQlCkWNFJX/M1z2MfiETG+HUWqdGGuZBfni0RRk';
 

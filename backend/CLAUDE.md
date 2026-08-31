@@ -8,22 +8,32 @@ Rules for working in this NestJS backend, a pnpm workspace package (`backend`) a
 
 ## Folder structure
 
-Current layout — an early-stage Nest scaffold plus one hand-added module:
-
 ```
 backend/
 ├── src/
-│   ├── app.controller.ts / app.controller.spec.ts / app.service.ts / app.module.ts
+│   ├── app.controller.ts / app.controller.spec.ts / app.service.ts / app.module.ts   — Nest scaffold, stays flat (see below)
 │   ├── main.ts
+│   ├── <feature>/                        — e.g. auth, organisations, audit-log, email
+│   │   ├── controllers/<feature>.controller.ts
+│   │   ├── services/
+│   │   │   ├── <name>.service.ts
+│   │   │   └── tests/<name>.service.spec.ts
+│   │   ├── modules/<feature>.module.ts   (plus any secondary modules, e.g. auth/modules/jwt-auth.module.ts)
+│   │   └── dto/
+│   │       ├── <name>.dto.ts
+│   │       └── tests/<name>.dto.spec.ts
 │   └── database/
 │       ├── database.module.ts   — TypeOrmModule.forRootAsync (the DB connection)
 │       ├── data-source.ts       — DataSource used by the TypeORM CLI (migrations)
-│       ├── entities/            — one file per entity
+│       ├── entities/            — one file per entity (+ tests/ once an entity spec exists)
 │       └── migrations/
 ```
 
-- **New feature modules go in their own top-level folder under `src/`, following the standard Nest pattern: `src/<feature>/<feature>.module.ts`, `.controller.ts`, `.service.ts`, and a `dto/` subfolder for request/response DTOs.** No real example of this exists yet — `app.*` is just the leftover scaffold — but this is the pattern to follow, not improvise around, once real features start landing.
-- **Unit tests are colocated `*.spec.ts` files next to the source they test.** That's the only test convention for now — e2e tests (`test/*.e2e-spec.ts`, `supertest` against a real `INestApplication`) were removed for now; revisit if/when e2e coverage comes back.
+- **Every feature module lives in its own top-level folder under `src/`, split by concern into subfolders: `controllers/`, `services/`, `modules/`, `dto/`.** Only create the subfolders a feature actually needs — `audit-log` and `email` have no `controllers/` (no HTTP surface) or `dto/` (no request bodies); `audit-log` has only `services/` and `modules/`. Never leave a `.controller.ts`/`.service.ts`/`.module.ts`/`.dto.ts` loose at the feature root — it belongs in its matching subfolder.
+- **Unit tests live in a `tests/` folder nested inside the subfolder they test** — `services/tests/`, `dto/tests/`, `src/database/entities/tests/` — not colocated next to the source file. Only create a `tests/` folder once there's an actual spec to put in it; don't scaffold an empty one preemptively.
+- **Controllers and modules are the one exception**: a `.controller.spec.ts`/`.module.spec.ts`, if one exists, stays directly next to its `.controller.ts`/`.module.ts` — not inside a nested `tests/` folder. (`app.controller.spec.ts` next to `app.controller.ts` is the existing example.)
+- `app.*` at the `src/` root is the leftover Nest scaffold (health check + hello-world), not a real feature — it stays flat, unsplit.
+- e2e tests (`test/*.e2e-spec.ts`, `supertest` against a real `INestApplication`) were removed for now; revisit if/when e2e coverage comes back.
 
 ## Multi-tenancy & data access
 
