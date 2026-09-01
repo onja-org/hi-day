@@ -1,6 +1,8 @@
 import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
-
-const PASSWORD_COMPLEXITY_PATTERN = /(?=.*[A-Za-z])(?=.*\d)/;
+import {
+  PASSWORD_COMPLEXITY_MESSAGE,
+  PASSWORD_COMPLEXITY_PATTERN,
+} from './password-complexity';
 
 export class SetPasswordDto {
   @IsString()
@@ -10,7 +12,7 @@ export class SetPasswordDto {
   @IsString()
   @MinLength(6)
   @Matches(PASSWORD_COMPLEXITY_PATTERN, {
-    message: 'password must contain at least one letter and one number',
+    message: PASSWORD_COMPLEXITY_MESSAGE,
   })
   password: string;
 }

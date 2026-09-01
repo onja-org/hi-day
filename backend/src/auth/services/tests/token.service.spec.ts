@@ -13,11 +13,11 @@ describe('TokenService', () => {
     expect(token).toBe('signed.jwt.token');
   });
 
-  it('generates unique, non-empty email verification tokens', () => {
+  it('generates unique, non-empty opaque tokens', () => {
     const service = new TokenService({} as JwtService);
 
-    const first = service.generateEmailVerificationToken();
-    const second = service.generateEmailVerificationToken();
+    const first = service.generateToken();
+    const second = service.generateToken();
 
     expect(first).not.toEqual(second);
     expect(first.length).toBeGreaterThan(20);

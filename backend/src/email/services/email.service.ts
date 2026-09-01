@@ -34,6 +34,23 @@ export class EmailService {
     }
   }
 
+  async sendPasswordResetEmail(to: string, token: string): Promise<void> {
+    const resetUrl = `${this.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: 'Reset your password',
+      html: `<p>We received a request to reset your password. This link expires soon and can only be used once:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send password-reset email to ${to}: ${error.message}`,
+      );
+    }
+  }
+
   async sendDuplicateRegistrationNotice(to: string): Promise<void> {
     const loginUrl = `${this.frontendUrl}/login`;
 

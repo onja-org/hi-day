@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import clsx from "clsx";
 import { X } from "@phosphor-icons/react";
 
 type ModalProps = {
@@ -31,9 +32,11 @@ export function Modal({ title, onClose, children }: ModalProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-primary-dark/50 p-4 transition-opacity duration-200 ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
+      className={clsx(
+        "fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-primary-dark/50 p-4 transition-opacity duration-200",
+        visible && "opacity-100",
+        !visible && "opacity-0",
+      )}
       onClick={onClose}
     >
       <div
@@ -41,9 +44,11 @@ export function Modal({ title, onClose, children }: ModalProps) {
         aria-modal="true"
         aria-labelledby="modal-title"
         onClick={(event) => event.stopPropagation()}
-        className={`flex w-full max-w-lg cursor-auto flex-col gap-6 rounded-lg bg-white p-6 transition-all duration-200 ${
-          visible ? "scale-100 opacity-100" : "scale-95 opacity-0"
-        }`}
+        className={clsx(
+          "flex w-full max-w-lg cursor-auto flex-col gap-6 rounded-lg bg-white p-6 transition-all duration-200",
+          visible && "scale-100 opacity-100",
+          !visible && "scale-95 opacity-0",
+        )}
       >
         <div className="flex items-center justify-between">
           <h2

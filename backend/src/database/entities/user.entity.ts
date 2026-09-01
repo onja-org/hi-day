@@ -32,6 +32,12 @@ export class User {
   emailVerificationExpiresAt: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
+  passwordResetToken: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  passwordResetExpiresAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
   pendingOrganisationName: string | null;
 
   @Column({ type: 'varchar', nullable: true })

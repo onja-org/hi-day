@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
 import { ErrorMessage } from "./ErrorMessage";
+import { PasswordInput } from "./PasswordInput";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
 
@@ -49,16 +50,14 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
 
       <label className="flex flex-col gap-1.5">
         Password
-        <input
+        <PasswordInput
           name="password"
-          type="password"
           autoComplete="new-password"
           required
           minLength={6}
           pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
           title="At least 6 characters, including a letter and a number"
           disabled={mutation.data?.ok}
-          className="rounded-md border border-primary-dark/20 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
         />
         <span className="text-sm text-slate-900">
           At least 6 characters, including a letter and a number.

@@ -9,9 +9,6 @@ import { SignUpSuccess } from "./SignUpSuccess";
 import { Spinner } from "./Spinner";
 import Link from "next/link";
 
-const INPUT_CLASSES =
-  "rounded-md border border-primary-dark/20 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
-
 export function SignUpForm() {
   const mutation = useMutation({ mutationFn: createAccount });
 
@@ -42,7 +39,7 @@ export function SignUpForm() {
             type="text"
             autoComplete="given-name"
             required
-            className={INPUT_CLASSES}
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
@@ -53,7 +50,7 @@ export function SignUpForm() {
             type="text"
             autoComplete="family-name"
             required
-            className={INPUT_CLASSES}
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
       </div>
@@ -65,7 +62,7 @@ export function SignUpForm() {
           type="email"
           autoComplete="email"
           required
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -76,7 +73,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="organization"
           required
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -87,7 +84,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="street-address"
           required
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -98,7 +95,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="url"
           placeholder="https://example.com"
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -107,7 +104,7 @@ export function SignUpForm() {
           name="agreeToTerms"
           type="checkbox"
           required
-          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-primary-dark/20 text-primary focus:ring-primary/30"
+          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-input-border text-primary focus:ring-primary/30"
         />
         I agree to the Terms of Service and Privacy Policy
       </label>
