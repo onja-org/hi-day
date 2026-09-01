@@ -54,7 +54,7 @@ Rules for working in this Next.js frontend, in addition to whatever `AGENTS.md` 
 - **Only write Vitest tests for pure functions, utilities, and custom hooks that contain logic.** These are cheap to test and give the most signal per line of test code.
 - **Never write render or snapshot tests for UI components.** Render/snapshot tests are brittle, tend to just re-assert markup, and rarely catch real regressions.
 - **Each utility file handles exactly one concern and is named after that concern (e.g. `formatDate.ts`, `validateEmail.ts`) — never group unrelated functions into a generic `utils.ts` or `helpers.ts`.** One-concern files are easy to find, test, and reason about; grab-bag files become unmaintainable dumping grounds.
-- **Every utility file must have a corresponding test file with the same name (`formatDate.test.ts`) living in the same folder.** Colocated, same-named tests make coverage gaps obvious at a glance.
+- **Every utility file must have a corresponding test file with the same name (`formatDate.test.ts`) in `src/tests/` — unless the file has no logic to test.** Test files live in the shared `src/tests/` folder, not next to the source they test; import the module under test via the `@/lib/...` alias rather than a relative path. A file that's just a constant or a bare re-export (e.g. `apiUrl.ts`) doesn't need one: there's no branch or edge case a test could catch, so it'd just restate the one line of source. The moment a "no logic" file grows a conditional or a second responsibility, it needs its test added in that same change, not deferred.
 
 ## Code hygiene
 
@@ -71,3 +71,9 @@ Do not deviate from this layout:
 - `src/hooks/` — custom React hooks
 - `src/types/` — shared TypeScript types
 - `src/lib/` — utilities and helpers, one concern per file
+- `src/tests/` — all Vitest test files, mirroring `src/lib/`'s filenames (see Testing above) — never colocated next to the source they test
+
+## Auth-gated pages
+
+- **Any page that should only render for a logged-in user goes under `src/app/(protected)/`** (e.g. `src/app/(protected)/dashboard/page.tsx`) — never add a per-page auth check by hand. The route group's `layout.tsx` calls `isAuthenticated()` (`src/lib/isAuthenticated.ts`) once and redirects to `/` if it fails; every page nested under it inherits that check automatically. A route group's parenthesized segment doesn't appear in the URL, so `(protected)/dashboard` still serves at `/dashboard`.
+- This exists because a page (`/dashboard`) once shipped with no auth check at all — it rendered unconditionally regardless of session state, so logging out in one tab didn't stop another tab showing the same page on reload. A shared layout makes that class of bug structurally impossible to reintroduce, since forgetting to check auth on a new page is no longer a thing you can do — the layout does it for you.

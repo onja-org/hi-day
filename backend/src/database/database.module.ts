@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLog } from './entities/audit-log.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
 import { Organisation } from './entities/organisation.entity';
@@ -24,6 +25,7 @@ import { User } from './entities/user.entity';
           Project,
           Task,
           Invitation,
+          AuditLog,
         ],
         synchronize: false,
       }),

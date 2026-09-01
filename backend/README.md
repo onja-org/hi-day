@@ -46,7 +46,6 @@ Already have Postgres running elsewhere (a different port, a cloud dev instance,
 | `pnpm build` | Compile to `dist/` |
 | `pnpm lint` | Lint |
 | `pnpm test` | Unit tests |
-| `pnpm test:e2e` | End-to-end tests |
 | `pnpm test:cov` | Test coverage |
 | `pnpm migration:run` | Apply pending migrations |
 | `pnpm migration:revert` | Revert the last-applied migration |
@@ -57,5 +56,4 @@ Already have Postgres running elsewhere (a different port, a cloud dev instance,
 ```
 src/                    — App module, controllers, services, main.ts entry point
 src/database/           — TypeORM DataSource, entities, and migrations
-test/                   — e2e tests
 ```

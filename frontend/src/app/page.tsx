@@ -1,10 +1,18 @@
-import { HealthStatus } from "@/components/HealthStatus";
+import { redirect } from "next/navigation";
+import { Header } from "@/components/Header";
+import { isAuthenticated } from "@/lib/isAuthenticated";
 
-export default function Home() {
+export default async function Home() {
+  if (await isAuthenticated()) {
+    redirect("/dashboard");
+  }
+
   return (
-    <main>
-      <h1>Hello</h1>
-      <HealthStatus />
-    </main>
+    <>
+      <Header />
+      <main>
+       <div className="container"> <h1>Main content</h1></div>
+      </main>
+    </>
   );
 }
