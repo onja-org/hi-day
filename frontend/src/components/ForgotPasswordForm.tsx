@@ -28,7 +28,10 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full sm:px-20 lg:px-0 flex-col gap-6">
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full sm:px-20 lg:px-0 flex-col gap-6"
+    >
       {mutation.data && !mutation.data.ok && (
         <ErrorMessage message={mutation.data.message} />
       )}

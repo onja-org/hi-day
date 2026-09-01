@@ -13,7 +13,8 @@ describe("forgotPassword", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            message: "If that email has an account, we've sent a password reset link.",
+            message:
+              "If that email has an account, we've sent a password reset link.",
           }),
       }),
     );
@@ -22,7 +23,8 @@ describe("forgotPassword", () => {
 
     expect(result).toEqual({
       ok: true,
-      message: "If that email has an account, we've sent a password reset link.",
+      message:
+        "If that email has an account, we've sent a password reset link.",
     });
   });
 
@@ -31,8 +33,7 @@ describe("forgotPassword", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        json: () =>
-          Promise.resolve({ message: ["email must be an email"] }),
+        json: () => Promise.resolve({ message: ["email must be an email"] }),
       }),
     );
 

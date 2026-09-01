@@ -6,17 +6,15 @@ describe("resetEmailSentNotice", () => {
   });
 
   it("is not set before markResetEmailSent has been called", async () => {
-    const { consumeResetEmailSent } = await import(
-      "@/lib/resetEmailSentNotice"
-    );
+    const { consumeResetEmailSent } =
+      await import("@/lib/resetEmailSentNotice");
 
     expect(consumeResetEmailSent()).toBe(false);
   });
 
   it("returns true exactly once after markResetEmailSent, then false again", async () => {
-    const { markResetEmailSent, consumeResetEmailSent } = await import(
-      "@/lib/resetEmailSentNotice"
-    );
+    const { markResetEmailSent, consumeResetEmailSent } =
+      await import("@/lib/resetEmailSentNotice");
 
     markResetEmailSent();
 
