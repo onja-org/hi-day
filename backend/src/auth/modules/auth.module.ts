@@ -9,6 +9,8 @@ import { EmailModule } from '../../email/modules/email.module';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { AuthController } from '../controllers/auth.controller';
 import { AuthService } from '../services/auth.service';
+import { CaptchaService } from '../services/captcha.service';
+import { LoginAttemptTracker } from '../services/login-attempt-tracker.service';
 import { PasswordService } from '../services/password.service';
 import { RefreshTokenService } from '../services/refresh-token.service';
 import { TokenService } from '../services/token.service';
@@ -40,7 +42,14 @@ function emailTracker(req: Request): string {
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, TokenService, RefreshTokenService],
+  providers: [
+    AuthService,
+    PasswordService,
+    TokenService,
+    RefreshTokenService,
+    LoginAttemptTracker,
+    CaptchaService,
+  ],
   exports: [PasswordService, TokenService],
 })
 export class AuthModule {}

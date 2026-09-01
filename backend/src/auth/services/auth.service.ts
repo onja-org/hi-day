@@ -22,6 +22,8 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import { CaptchaService } from './captcha.service';
+import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { PasswordService } from './password.service';
 import { RefreshTokenService } from './refresh-token.service';
 import {
@@ -59,6 +61,8 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly organisationsService: OrganisationsService,
     private readonly auditLogService: AuditLogService,
+    private readonly loginAttemptTracker: LoginAttemptTracker,
+    private readonly captchaService: CaptchaService,
   ) {}
 
   async signUp(dto: CreateAccountDto): Promise<{ message: string }> {
@@ -180,6 +184,18 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, response: Response): Promise<{ message: string }> {
+    if (this.loginAttemptTracker.requiresCaptcha(dto.email)) {
+      const captchaValid = await this.captchaService.verify(dto.captchaToken);
+
+      if (!captchaValid) {
+        recordAnalyticsEvent('login_failed', { email: dto.email });
+        throw new UnauthorizedException({
+          message: INVALID_LOGIN_MESSAGE,
+          captchaRequired: true,
+        });
+      }
+    }
+
     const user = await this.users.findOne({ where: { email: dto.email } });
 
     const passwordMatches = await this.passwordService.verify(
@@ -188,9 +204,15 @@ export class AuthService {
     );
 
     if (!user || !user.passwordHash || !passwordMatches) {
+      this.loginAttemptTracker.recordFailure(dto.email);
       recordAnalyticsEvent('login_failed', { email: dto.email });
-      throw new UnauthorizedException(INVALID_LOGIN_MESSAGE);
+      throw new UnauthorizedException({
+        message: INVALID_LOGIN_MESSAGE,
+        captchaRequired: this.loginAttemptTracker.requiresCaptcha(dto.email),
+      });
     }
+
+    this.loginAttemptTracker.reset(dto.email);
 
     const accessToken = this.tokenService.signAccessToken(user.id);
     const refreshToken = await this.refreshTokenService.issue(

@@ -10,6 +10,8 @@ import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
 import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { AuthService } from '../auth.service';
+import { CaptchaService } from '../captcha.service';
+import { LoginAttemptTracker } from '../login-attempt-tracker.service';
 import { PasswordService } from '../password.service';
 import { RefreshTokenService } from '../refresh-token.service';
 import { TokenService } from '../token.service';
@@ -106,6 +108,30 @@ describe('AuthService', () => {
     };
   }
 
+  function makeLoginAttemptTracker() {
+    const requiresCaptcha = jest.fn().mockReturnValue(false);
+    const recordFailure = jest.fn();
+    const reset = jest.fn();
+    return {
+      loginAttemptTracker: {
+        requiresCaptcha,
+        recordFailure,
+        reset,
+      } as unknown as LoginAttemptTracker,
+      requiresCaptcha,
+      recordFailure,
+      reset,
+    };
+  }
+
+  function makeCaptchaService() {
+    const verify = jest.fn().mockResolvedValue(true);
+    return {
+      captchaService: { verify } as unknown as CaptchaService,
+      verify,
+    };
+  }
+
   function makeOrganisationsService() {
     const createForUser = jest.fn().mockResolvedValue({ id: 'org-1' });
     return {
@@ -143,6 +169,8 @@ describe('AuthService', () => {
       emailService?: EmailService;
       organisationsService?: OrganisationsService;
       auditLogService?: AuditLogService;
+      loginAttemptTracker?: LoginAttemptTracker;
+      captchaService?: CaptchaService;
     } = {},
   ) {
     return new AuthService(
@@ -157,6 +185,9 @@ describe('AuthService', () => {
       overrides.organisationsService ??
         makeOrganisationsService().organisationsService,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.loginAttemptTracker ??
+        makeLoginAttemptTracker().loginAttemptTracker,
+      overrides.captchaService ?? makeCaptchaService().captchaService,
     );
   }
 
@@ -438,16 +469,18 @@ describe('AuthService', () => {
       expect(verify).toHaveBeenCalled();
     });
 
-    it('rejects a wrong password with the generic invalid-login message', async () => {
+    it('rejects a wrong password with the generic invalid-login message and records the failure', async () => {
       const user = {
         id: 'user-1',
         passwordHash: 'stored-hash',
       } as User;
       const findOne = jest.fn().mockResolvedValue(user);
       const verify = jest.fn().mockResolvedValue(false);
+      const { loginAttemptTracker, recordFailure } = makeLoginAttemptTracker();
       const service = makeService({
         usersRepo: makeUsersRepo({ findOne }),
         passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
       });
 
       await expect(
@@ -456,6 +489,104 @@ describe('AuthService', () => {
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(recordFailure).toHaveBeenCalledWith('jane@acme.test');
+    });
+
+    it('resets the failure count on a successful login', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
+      });
+
+      await service.login(
+        { email: 'jane@acme.test', password: 'correct-horse' },
+        makeResponse().response,
+      );
+
+      expect(reset).toHaveBeenCalledWith('jane@acme.test');
+    });
+
+    it('rejects with captchaRequired when a captcha is required but no token is provided', async () => {
+      const { loginAttemptTracker } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService, verify } = makeCaptchaService();
+      const service = makeService({ loginAttemptTracker, captchaService });
+
+      await expect(
+        service.login(
+          { email: 'jane@acme.test', password: 'whatever' },
+          makeResponse().response,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ captchaRequired: true }) as Record<
+          string,
+          unknown
+        >,
+      });
+      expect(verify).toHaveBeenCalledWith(undefined);
+    });
+
+    it('rejects with captchaRequired when the provided captcha token is invalid', async () => {
+      const { loginAttemptTracker } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService } = makeCaptchaService();
+      jest.spyOn(captchaService, 'verify').mockResolvedValue(false);
+      const service = makeService({ loginAttemptTracker, captchaService });
+
+      await expect(
+        service.login(
+          {
+            email: 'jane@acme.test',
+            password: 'whatever',
+            captchaToken: 'bad-token',
+          },
+          makeResponse().response,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ captchaRequired: true }) as Record<
+          string,
+          unknown
+        >,
+      });
+    });
+
+    it('logs the user in with a valid captcha token and the correct password', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService, verify: verifyCaptcha } = makeCaptchaService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
+        captchaService,
+      });
+
+      const result = await service.login(
+        {
+          email: 'jane@acme.test',
+          password: 'correct-horse',
+          captchaToken: 'good-token',
+        },
+        makeResponse().response,
+      );
+
+      expect(verifyCaptcha).toHaveBeenCalledWith('good-token');
+      expect(reset).toHaveBeenCalledWith('jane@acme.test');
+      expect(result.message).toContain('Logged in');
     });
 
     it('rejects a user who never finished setting a password', async () => {

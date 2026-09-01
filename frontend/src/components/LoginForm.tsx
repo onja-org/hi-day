@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import type { LoginInput } from "@/types/login";
 import { login } from "@/lib/login";
 import { consumeResetEmailSent } from "@/lib/resetEmailSentNotice";
 import { ErrorMessage } from "./ErrorMessage";
 import { PasswordInput } from "./PasswordInput";
+import { RobotCheckScreen } from "./RobotCheckScreen";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
 
@@ -17,8 +19,16 @@ const RESET_EMAIL_SENT_MESSAGE = "Email sent with password reset instructions.";
 
 export function LoginForm() {
   const router = useRouter();
-  const [resetEmailSent] = useState(() => consumeResetEmailSent());
+  const [resetEmailSent, setResetEmailSent] = useState(() =>
+    consumeResetEmailSent(),
+  );
+  const [lastEmail, setLastEmail] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const mutation = useMutation({ mutationFn: login });
+  const captchaRequired = Boolean(
+    mutation.data && !mutation.data.ok && mutation.data.captchaRequired,
+  );
 
   useEffect(() => {
     if (!mutation.data?.ok) return;
@@ -32,11 +42,44 @@ export function LoginForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setResetEmailSent(false);
     const formData = new FormData(event.currentTarget);
-    mutation.mutate({
-      email: String(formData.get("email") ?? ""),
+    const email = String(formData.get("email") ?? "");
+    setLastEmail(email);
+
+    const input: LoginInput = {
+      email,
       password: String(formData.get("password") ?? ""),
+      captchaToken: captchaToken ?? undefined,
+    };
+
+    if (captchaToken) setVerifying(true);
+    mutation.mutate(input, {
+      onSettled: () => {
+        setCaptchaToken(null);
+        setVerifying(false);
+      },
     });
+  }
+
+  if (verifying) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-primary-dark text-white">
+        <Spinner className="h-8 w-8" />
+        <p>Verifying…</p>
+      </div>
+    );
+  }
+
+  if (captchaRequired && !captchaToken) {
+    return (
+      <RobotCheckScreen
+        onVerified={(token) => {
+          mutation.reset();
+          setCaptchaToken(token);
+        }}
+      />
+    );
   }
 
   return (
@@ -59,6 +102,7 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           required
+          defaultValue={lastEmail}
           disabled={mutation.data?.ok}
           className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
         />

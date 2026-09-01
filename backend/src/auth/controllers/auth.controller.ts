@@ -7,7 +7,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import { CreateAccountDto } from '../dto/create-account.dto';
@@ -20,7 +20,10 @@ import { SetPasswordDto } from '../dto/set-password.dto';
 const SIGNUP_THROTTLE_TTL_MS = 15 * 60 * 1000;
 const SIGNUP_THROTTLE_LIMIT = 5;
 const LOGIN_THROTTLE_TTL_MS = 15 * 60 * 1000;
-const LOGIN_THROTTLE_LIMIT = 5;
+// A coarse per-IP flood guard only — the per-email lockout is now handled by
+// LoginAttemptTracker + a required captcha (see AuthService.login), which
+// must not be blocked by this limit once a legitimate retry is captcha-verified.
+const LOGIN_THROTTLE_LIMIT = 30;
 const LOGIN_EMAIL_THROTTLE_BLOCK_DURATION_MS = 45 * 60 * 1000;
 const RESEND_VERIFICATION_THROTTLE_TTL_MS = 15 * 60 * 1000;
 const RESEND_VERIFICATION_THROTTLE_LIMIT = 5;
@@ -36,6 +39,7 @@ export class AuthController {
   @Throttle({
     default: { limit: SIGNUP_THROTTLE_LIMIT, ttl: SIGNUP_THROTTLE_TTL_MS },
   })
+  @SkipThrottle({ email: true })
   @HttpCode(201)
   signUp(@Body() dto: CreateAccountDto): Promise<{ message: string }> {
     return this.authService.signUp(dto);
@@ -45,12 +49,8 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @Throttle({
     default: { limit: LOGIN_THROTTLE_LIMIT, ttl: LOGIN_THROTTLE_TTL_MS },
-    email: {
-      limit: LOGIN_THROTTLE_LIMIT,
-      ttl: LOGIN_THROTTLE_TTL_MS,
-      blockDuration: LOGIN_EMAIL_THROTTLE_BLOCK_DURATION_MS,
-    },
   })
+  @SkipThrottle({ email: true })
   @HttpCode(200)
   login(
     @Body() dto: LoginDto,
@@ -67,6 +67,7 @@ export class AuthController {
       ttl: RESEND_VERIFICATION_THROTTLE_TTL_MS,
     },
   })
+  @SkipThrottle({ email: true })
   @HttpCode(200)
   resendVerification(
     @Body() dto: ResendVerificationDto,
@@ -105,6 +106,7 @@ export class AuthController {
   @Throttle({
     default: { limit: SIGNUP_THROTTLE_LIMIT, ttl: SIGNUP_THROTTLE_TTL_MS },
   })
+  @SkipThrottle({ email: true })
   @HttpCode(200)
   resetPassword(
     @Body() dto: ResetPasswordDto,
@@ -118,6 +120,7 @@ export class AuthController {
   @Throttle({
     default: { limit: REFRESH_THROTTLE_LIMIT, ttl: REFRESH_THROTTLE_TTL_MS },
   })
+  @SkipThrottle({ email: true })
   @HttpCode(200)
   refresh(
     @Req() request: Request,

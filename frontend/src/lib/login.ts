@@ -19,6 +19,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   const data = (await response.json().catch(() => null)) as {
     message?: string[] | string;
+    captchaRequired?: boolean;
   } | null;
   const message = Array.isArray(data?.message)
     ? data.message[0]
@@ -28,5 +29,9 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { ok: true, message: message ?? "Logged in." };
   }
 
-  return { ok: false, message: message ?? GENERIC_INVALID_LOGIN_MESSAGE };
+  return {
+    ok: false,
+    message: message ?? GENERIC_INVALID_LOGIN_MESSAGE,
+    captchaRequired: data?.captchaRequired === true,
+  };
 }
