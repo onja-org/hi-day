@@ -4,6 +4,7 @@ import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
 import { Team } from '../../database/entities/team.entity';
@@ -21,7 +22,7 @@ export interface CreateOrganisationInput {
 }
 
 export interface OrganisationProfile {
-  id: string;
+  id: number;
   name: string;
   address: string | null;
   website: string | null;
@@ -35,6 +36,8 @@ export class OrganisationsService {
     private readonly organisations: Repository<Organisation>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
+    @InjectRepository(Team)
+    private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -84,7 +87,7 @@ export class OrganisationsService {
 
   async findCurrentForUser(userId: string): Promise<OrganisationProfile> {
     const membership = await this.memberships.findOne({
-      where: { userId },
+      where: { userId, status: MembershipStatus.ACTIVE },
       relations: { organisation: true },
     });
 
@@ -93,6 +96,22 @@ export class OrganisationsService {
     }
 
     return this.toProfile(membership.organisation, membership.role);
+  }
+
+  /**
+   * Authorization is enforced upstream by RoleGuard/@RequireRole on the
+   * route — reaching this method already implies the caller belongs to
+   * this Organisation.
+   */
+  async listTeams(
+    organisationId: string,
+  ): Promise<{ id: string; name: string }[]> {
+    const teams = await this.teams.find({
+      where: { organisationId },
+      order: { name: 'ASC' },
+    });
+
+    return teams.map((team) => ({ id: team.id, name: team.name }));
   }
 
   /**
@@ -132,7 +151,7 @@ export class OrganisationsService {
     };
 
     return {
-      id: organisation.id,
+      id: organisation.publicId,
       name: organisation.name,
       address: settings.address ?? null,
       website: settings.website ?? null,

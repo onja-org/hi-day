@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
@@ -32,9 +24,26 @@ export class OrganisationsController {
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN)
   update(
-    @Param('id') id: string,
     @Body() dto: UpdateOrganisationDto,
+    @Req() request: AuthenticatedRequest,
   ): Promise<OrganisationProfile> {
-    return this.organisationsService.updateProfile(id, dto);
+    return this.organisationsService.updateProfile(
+      request.organisationId!,
+      dto,
+    );
+  }
+
+  @Get(':id/teams')
+  @UseGuards(RoleGuard)
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+    MembershipRole.FINANCE,
+  )
+  listTeams(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ id: string; name: string }[]> {
+    return this.organisationsService.listTeams(request.organisationId!);
   }
 }
