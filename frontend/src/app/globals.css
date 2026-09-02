@@ -2,10 +2,10 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #003673;
+  --foreground: #0f172a;
 
-  --color-primary: #259cd9;
-  --color-primary-dark: #003673;
+  --color-primary: #4f46e5;
+  --color-primary-dark: #0f172a;
   --color-secondary: #5d5490;
   --color-cream: #fff6d6;
   --color-white: #ffffff;
@@ -13,6 +13,8 @@
   --color-success: #16a34a;
   --color-input-border: #d6dbe6;
   --color-icon: #2b343f;
+  --color-sidebar: #f3f4f6;
+  --color-sidebar-active: #e5e7eb;
 
   --font-body: var(--font-roboto), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
@@ -30,6 +32,8 @@
   --color-success: var(--color-success);
   --color-input-border: var(--color-input-border);
   --color-icon: var(--color-icon);
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-active: var(--color-sidebar-active);
   --font-sans: var(--font-roboto);
 }
 

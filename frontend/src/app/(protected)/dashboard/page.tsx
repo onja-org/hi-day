@@ -1,10 +1,12 @@
-import { SettingsMenu } from "@/components/SettingsMenu";
+import { redirect } from "next/navigation";
+import { getCurrentOrganisationId } from "@/lib/getCurrentOrganisationId";
 
-export default function DashboardPage() {
-  return (
-    <main className="container py-8">
-      <h1 className="text-2xl font-semibold text-primary-dark">Dashboard</h1>
-      <SettingsMenu />
-    </main>
-  );
+export default async function DashboardRedirectPage() {
+  const organisationId = await getCurrentOrganisationId();
+
+  if (!organisationId) {
+    redirect("/");
+  }
+
+  redirect(`/dashboard/${organisationId}/me`);
 }

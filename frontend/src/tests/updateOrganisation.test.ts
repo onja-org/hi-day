@@ -19,7 +19,7 @@ describe("updateOrganisation", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            id: "org-1",
+            id: 100000,
             name: "Acme International",
             address: "2 New St",
             website: "https://acme.test",
@@ -28,12 +28,12 @@ describe("updateOrganisation", () => {
       }),
     );
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await updateOrganisation(100000, validInput);
 
     expect(result).toEqual({
       ok: true,
       organisation: {
-        id: "org-1",
+        id: 100000,
         name: "Acme International",
         address: "2 New St",
         website: "https://acme.test",
@@ -55,7 +55,7 @@ describe("updateOrganisation", () => {
       }),
     );
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await updateOrganisation(100000, validInput);
 
     expect(result).toEqual({
       ok: false,
@@ -66,7 +66,7 @@ describe("updateOrganisation", () => {
   it("returns a generic error message when the request throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
-    const result = await updateOrganisation("org-1", validInput);
+    const result = await updateOrganisation(100000, validInput);
 
     expect(result).toEqual({
       ok: false,

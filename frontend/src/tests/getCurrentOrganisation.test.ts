@@ -13,7 +13,7 @@ describe("getCurrentOrganisation", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            id: "org-1",
+            id: 100000,
             name: "Acme Inc",
             address: "1 Main St",
             website: "https://acme.test",
@@ -27,7 +27,7 @@ describe("getCurrentOrganisation", () => {
     expect(result).toEqual({
       ok: true,
       organisation: {
-        id: "org-1",
+        id: 100000,
         name: "Acme Inc",
         address: "1 Main St",
         website: "https://acme.test",
