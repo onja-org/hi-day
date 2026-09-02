@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
+  Patch,
   Post,
   Req,
   Res,
@@ -9,13 +11,16 @@ import {
 } from '@nestjs/common';
 import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service';
+import type { AuthenticatedRequest } from '../jwt-auth.guard';
+import { JwtAuthGuard } from '../jwt-auth.guard';
+import { AuthService, UserProfile } from '../services/auth.service';
 import { CreateAccountDto } from '../dto/create-account.dto';
 import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import { UpdateProfileDto } from '../dto/update-profile.dto';
 
 const SIGNUP_THROTTLE_TTL_MS = 15 * 60 * 1000;
 const SIGNUP_THROTTLE_LIMIT = 5;
@@ -136,5 +141,20 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ message: string }> {
     return this.authService.logout(request, response);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  getProfile(@Req() request: AuthenticatedRequest): Promise<UserProfile> {
+    return this.authService.getProfile(request.userId);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  updateProfile(
+    @Body() dto: UpdateProfileDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<UserProfile> {
+    return this.authService.updateProfile(request.userId, dto);
   }
 }
