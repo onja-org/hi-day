@@ -8,6 +8,7 @@ import {
   Unique,
 } from 'typeorm';
 import { MembershipRole } from './membership-role.enum';
+import { MembershipStatus } from './membership-status.enum';
 import { Organisation } from './organisation.entity';
 import { Team } from './team.entity';
 import { User } from './user.entity';
@@ -20,6 +21,17 @@ export class Membership {
 
   @Column({ type: 'enum', enum: MembershipRole, enumName: 'MembershipRole' })
   role: MembershipRole;
+
+  @Column({
+    type: 'enum',
+    enum: MembershipStatus,
+    enumName: 'MembershipStatus',
+    default: MembershipStatus.ACTIVE,
+  })
+  status: MembershipStatus;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  deactivatedAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

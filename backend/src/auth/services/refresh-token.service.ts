@@ -1,7 +1,7 @@
-import { createHash } from 'crypto';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager, IsNull } from 'typeorm';
+import { hashToken } from '../../common/hash-token.util';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { TokenService } from './token.service';
 
@@ -33,7 +33,7 @@ export class RefreshTokenService {
     await manager.save(
       manager.create(RefreshToken, {
         userId,
-        tokenHash: this.hash(token),
+        tokenHash: hashToken(token),
         expiresAt: new Date(Date.now() + ttlDays * MS_PER_DAY),
         revokedAt: null,
       }),
@@ -47,7 +47,7 @@ export class RefreshTokenService {
     presentedToken: string,
   ): Promise<RotatedRefreshToken> {
     const existing = await manager.findOne(RefreshToken, {
-      where: { tokenHash: this.hash(presentedToken) },
+      where: { tokenHash: hashToken(presentedToken) },
     });
 
     if (!existing) {
@@ -83,12 +83,8 @@ export class RefreshTokenService {
   ): Promise<void> {
     await manager.update(
       RefreshToken,
-      { tokenHash: this.hash(presentedToken) },
+      { tokenHash: hashToken(presentedToken) },
       { revokedAt: new Date() },
     );
-  }
-
-  private hash(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
   }
 }
