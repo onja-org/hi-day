@@ -15,9 +15,6 @@ import { SuccessMessage } from "./SuccessMessage";
 
 const CLOSE_DELAY_MS = 900;
 
-const INPUT_CLASSES =
-  "rounded-md border border-primary-dark/20 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
-
 type OrganisationSettingsFormProps = {
   onSuccess?: () => void;
 };
@@ -100,7 +97,7 @@ export function OrganisationSettingsForm({
           type="text"
           defaultValue={organisation.name}
           required
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -111,7 +108,7 @@ export function OrganisationSettingsForm({
           type="text"
           defaultValue={organisation.address ?? ""}
           required
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -122,7 +119,7 @@ export function OrganisationSettingsForm({
           type="text"
           defaultValue={organisation.website ?? ""}
           placeholder="https://example.com"
-          className={INPUT_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 

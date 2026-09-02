@@ -3,13 +3,17 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
 import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { AuthService } from '../auth.service';
+import { CaptchaService } from '../captcha.service';
+import { LoginAttemptTracker } from '../login-attempt-tracker.service';
 import { PasswordService } from '../password.service';
+import { RefreshTokenService } from '../refresh-token.service';
 import { TokenService } from '../token.service';
 
 describe('AuthService', () => {
@@ -26,9 +30,13 @@ describe('AuthService', () => {
   function makeDataSource() {
     const manager = { update: jest.fn() } as unknown as EntityManager;
     const transaction = jest.fn(
-      (fn: (manager: EntityManager) => Promise<void>) => fn(manager),
+      (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
     );
-    return { dataSource: { transaction } as unknown, manager, transaction };
+    return {
+      dataSource: { transaction, manager } as unknown,
+      manager,
+      transaction,
+    };
   }
 
   function makeConfigService() {
@@ -45,10 +53,40 @@ describe('AuthService', () => {
 
   function makeTokenService(overrides: Partial<TokenService> = {}) {
     return {
-      generateEmailVerificationToken: jest.fn().mockReturnValue('the-token'),
+      generateToken: jest.fn().mockReturnValue('the-token'),
       signAccessToken: jest.fn().mockReturnValue('signed.jwt.token'),
       ...overrides,
     } as unknown as TokenService;
+  }
+
+  function makeRefreshTokenService() {
+    const issue = jest.fn().mockResolvedValue('the-refresh-token');
+    const rotate = jest.fn().mockResolvedValue({
+      userId: 'user-1',
+      token: 'rotated-refresh-token',
+    });
+    const revokeAll = jest.fn().mockResolvedValue(undefined);
+    const revokeByValue = jest.fn().mockResolvedValue(undefined);
+    return {
+      refreshTokenService: {
+        issue,
+        rotate,
+        revokeAll,
+        revokeByValue,
+      } as unknown as RefreshTokenService,
+      issue,
+      rotate,
+      revokeAll,
+      revokeByValue,
+    };
+  }
+
+  function makeAuditLogService() {
+    const record = jest.fn().mockResolvedValue(undefined);
+    return {
+      auditLogService: { record } as unknown as AuditLogService,
+      record,
+    };
   }
 
   function makeEmailService() {
@@ -56,14 +94,41 @@ describe('AuthService', () => {
     const sendDuplicateRegistrationNotice = jest
       .fn()
       .mockResolvedValue(undefined);
+    const sendPasswordResetEmail = jest.fn().mockResolvedValue(undefined);
     const emailService = {
       sendSetPasswordEmail,
       sendDuplicateRegistrationNotice,
+      sendPasswordResetEmail,
     } as unknown as EmailService;
     return {
       emailService,
       sendSetPasswordEmail,
       sendDuplicateRegistrationNotice,
+      sendPasswordResetEmail,
+    };
+  }
+
+  function makeLoginAttemptTracker() {
+    const requiresCaptcha = jest.fn().mockReturnValue(false);
+    const recordFailure = jest.fn();
+    const reset = jest.fn();
+    return {
+      loginAttemptTracker: {
+        requiresCaptcha,
+        recordFailure,
+        reset,
+      } as unknown as LoginAttemptTracker,
+      requiresCaptcha,
+      recordFailure,
+      reset,
+    };
+  }
+
+  function makeCaptchaService() {
+    const verify = jest.fn().mockResolvedValue(true);
+    return {
+      captchaService: { verify } as unknown as CaptchaService,
+      verify,
     };
   }
 
@@ -87,6 +152,45 @@ describe('AuthService', () => {
     };
   }
 
+  function makeRequest(cookieHeader?: string) {
+    return {
+      headers: { cookie: cookieHeader },
+    } as unknown as Request;
+  }
+
+  function makeService(
+    overrides: {
+      usersRepo?: Repository<User>;
+      dataSource?: unknown;
+      configService?: ConfigService;
+      passwordService?: Partial<PasswordService>;
+      tokenService?: TokenService;
+      refreshTokenService?: RefreshTokenService;
+      emailService?: EmailService;
+      organisationsService?: OrganisationsService;
+      auditLogService?: AuditLogService;
+      loginAttemptTracker?: LoginAttemptTracker;
+      captchaService?: CaptchaService;
+    } = {},
+  ) {
+    return new AuthService(
+      overrides.usersRepo ?? makeUsersRepo(),
+      (overrides.dataSource ?? makeDataSource().dataSource) as never,
+      overrides.configService ?? makeConfigService(),
+      (overrides.passwordService ?? makePasswordService()) as PasswordService,
+      overrides.tokenService ?? makeTokenService(),
+      overrides.refreshTokenService ??
+        makeRefreshTokenService().refreshTokenService,
+      overrides.emailService ?? makeEmailService().emailService,
+      overrides.organisationsService ??
+        makeOrganisationsService().organisationsService,
+      overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.loginAttemptTracker ??
+        makeLoginAttemptTracker().loginAttemptTracker,
+      overrides.captchaService ?? makeCaptchaService().captchaService,
+    );
+  }
+
   const signUpInput = {
     firstName: 'Jane',
     lastName: 'Doe',
@@ -105,16 +209,7 @@ describe('AuthService', () => {
         save,
       });
       const { emailService, sendSetPasswordEmail } = makeEmailService();
-      const { organisationsService } = makeOrganisationsService();
-      const service = new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        emailService,
-        organisationsService,
-      );
+      const service = makeService({ usersRepo, emailService });
 
       const result = await service.signUp(signUpInput);
 
@@ -143,15 +238,7 @@ describe('AuthService', () => {
       });
       const { emailService, sendDuplicateRegistrationNotice } =
         makeEmailService();
-      const service = new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        emailService,
-        makeOrganisationsService().organisationsService,
-      );
+      const service = makeService({ usersRepo, emailService });
 
       await service.signUp(signUpInput);
 
@@ -172,15 +259,7 @@ describe('AuthService', () => {
       });
       const { emailService, sendDuplicateRegistrationNotice } =
         makeEmailService();
-      const service = new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        emailService,
-        makeOrganisationsService().organisationsService,
-      );
+      const service = makeService({ usersRepo, emailService });
 
       const result = await service.signUp(signUpInput);
 
@@ -192,21 +271,6 @@ describe('AuthService', () => {
   });
 
   describe('resendVerificationEmail', () => {
-    function makeService(
-      usersRepo: Repository<User>,
-      emailService: EmailService,
-    ) {
-      return new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        emailService,
-        makeOrganisationsService().organisationsService,
-      );
-    }
-
     it('regenerates the token and resends the set-password email for an unverified user', async () => {
       const user = {
         id: 'user-1',
@@ -218,7 +282,7 @@ describe('AuthService', () => {
         update,
       });
       const { emailService, sendSetPasswordEmail } = makeEmailService();
-      const service = makeService(usersRepo, emailService);
+      const service = makeService({ usersRepo, emailService });
 
       const result = await service.resendVerificationEmail({
         email: 'jane@acme.test',
@@ -240,7 +304,7 @@ describe('AuthService', () => {
         findOne: jest.fn().mockResolvedValue(null),
       });
       const { emailService, sendSetPasswordEmail } = makeEmailService();
-      const service = makeService(usersRepo, emailService);
+      const service = makeService({ usersRepo, emailService });
 
       const result = await service.resendVerificationEmail({
         email: 'unknown@acme.test',
@@ -259,7 +323,7 @@ describe('AuthService', () => {
         findOne: jest.fn().mockResolvedValue(user),
       });
       const { emailService, sendSetPasswordEmail } = makeEmailService();
-      const service = makeService(usersRepo, emailService);
+      const service = makeService({ usersRepo, emailService });
 
       const result = await service.resendVerificationEmail({
         email: 'jane@acme.test',
@@ -271,22 +335,7 @@ describe('AuthService', () => {
   });
 
   describe('setPassword', () => {
-    function makeService(
-      usersRepo: Repository<User>,
-      organisationsService = makeOrganisationsService().organisationsService,
-    ) {
-      return new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        makeEmailService().emailService,
-        organisationsService,
-      );
-    }
-
-    it('hashes the password, marks the email verified, creates the pending organisation and logs the user in', async () => {
+    it('hashes the password, marks the email verified, creates the pending organisation, issues a refresh token and logs the user in', async () => {
       const user = {
         id: 'user-1',
         emailVerificationToken: 'valid-token',
@@ -299,15 +348,12 @@ describe('AuthService', () => {
       const usersRepo = makeUsersRepo({ findOne });
       const { organisationsService, createForUser } =
         makeOrganisationsService();
-      const service = new AuthService(
+      const { refreshTokenService, issue } = makeRefreshTokenService();
+      const service = makeService({
         usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        makeEmailService().emailService,
         organisationsService,
-      );
+        refreshTokenService,
+      });
       const { response, cookie } = makeResponse();
 
       const result = await service.setPassword(
@@ -320,9 +366,15 @@ describe('AuthService', () => {
         address: '1 Main St',
         website: 'https://acme.test',
       });
+      expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(cookie).toHaveBeenCalledWith(
         'access_token',
         'signed.jwt.token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'the-refresh-token',
         expect.objectContaining({ httpOnly: true }),
       );
       expect(result.message).toContain('signed in');
@@ -330,7 +382,7 @@ describe('AuthService', () => {
 
     it('rejects an unknown token', async () => {
       const findOne = jest.fn().mockResolvedValue(null);
-      const service = makeService(makeUsersRepo({ findOne }));
+      const service = makeService({ usersRepo: makeUsersRepo({ findOne }) });
 
       await expect(
         service.setPassword(
@@ -347,7 +399,7 @@ describe('AuthService', () => {
         emailVerificationExpiresAt: new Date(Date.now() - 60_000),
       } as User;
       const findOne = jest.fn().mockResolvedValue(user);
-      const service = makeService(makeUsersRepo({ findOne }));
+      const service = makeService({ usersRepo: makeUsersRepo({ findOne }) });
 
       await expect(
         service.setPassword(
@@ -359,32 +411,21 @@ describe('AuthService', () => {
   });
 
   describe('login', () => {
-    function makeService(
-      usersRepo: Repository<User>,
-      passwordService: PasswordService,
-    ) {
-      return new AuthService(
-        usersRepo,
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        passwordService,
-        makeTokenService(),
-        makeEmailService().emailService,
-        makeOrganisationsService().organisationsService,
-      );
-    }
-
-    it('verifies the password, sets the session cookie and returns a success message', async () => {
+    it('verifies the password, issues a session, records an audit log entry and returns a success message', async () => {
       const user = {
         id: 'user-1',
         passwordHash: 'stored-hash',
       } as User;
       const findOne = jest.fn().mockResolvedValue(user);
       const verify = jest.fn().mockResolvedValue(true);
-      const service = makeService(
-        makeUsersRepo({ findOne }),
-        makePasswordService({ verify }),
-      );
+      const { refreshTokenService, issue } = makeRefreshTokenService();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        refreshTokenService,
+        auditLogService,
+      });
       const { response, cookie } = makeResponse();
 
       const result = await service.login(
@@ -393,10 +434,20 @@ describe('AuthService', () => {
       );
 
       expect(verify).toHaveBeenCalledWith('stored-hash', 'correct-horse');
+      expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(cookie).toHaveBeenCalledWith(
         'access_token',
         'signed.jwt.token',
         expect.objectContaining({ httpOnly: true }),
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'the-refresh-token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'login', actorUserId: 'user-1' }),
       );
       expect(result.message).toContain('Logged in');
     });
@@ -404,10 +455,10 @@ describe('AuthService', () => {
     it('rejects an unknown email with the generic invalid-login message', async () => {
       const findOne = jest.fn().mockResolvedValue(null);
       const verify = jest.fn().mockResolvedValue(false);
-      const service = makeService(
-        makeUsersRepo({ findOne }),
-        makePasswordService({ verify }),
-      );
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+      });
 
       await expect(
         service.login(
@@ -418,17 +469,19 @@ describe('AuthService', () => {
       expect(verify).toHaveBeenCalled();
     });
 
-    it('rejects a wrong password with the generic invalid-login message', async () => {
+    it('rejects a wrong password with the generic invalid-login message and records the failure', async () => {
       const user = {
         id: 'user-1',
         passwordHash: 'stored-hash',
       } as User;
       const findOne = jest.fn().mockResolvedValue(user);
       const verify = jest.fn().mockResolvedValue(false);
-      const service = makeService(
-        makeUsersRepo({ findOne }),
-        makePasswordService({ verify }),
-      );
+      const { loginAttemptTracker, recordFailure } = makeLoginAttemptTracker();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
+      });
 
       await expect(
         service.login(
@@ -436,6 +489,104 @@ describe('AuthService', () => {
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(recordFailure).toHaveBeenCalledWith('jane@acme.test');
+    });
+
+    it('resets the failure count on a successful login', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
+      });
+
+      await service.login(
+        { email: 'jane@acme.test', password: 'correct-horse' },
+        makeResponse().response,
+      );
+
+      expect(reset).toHaveBeenCalledWith('jane@acme.test');
+    });
+
+    it('rejects with captchaRequired when a captcha is required but no token is provided', async () => {
+      const { loginAttemptTracker } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService, verify } = makeCaptchaService();
+      const service = makeService({ loginAttemptTracker, captchaService });
+
+      await expect(
+        service.login(
+          { email: 'jane@acme.test', password: 'whatever' },
+          makeResponse().response,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ captchaRequired: true }) as Record<
+          string,
+          unknown
+        >,
+      });
+      expect(verify).toHaveBeenCalledWith(undefined);
+    });
+
+    it('rejects with captchaRequired when the provided captcha token is invalid', async () => {
+      const { loginAttemptTracker } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService } = makeCaptchaService();
+      jest.spyOn(captchaService, 'verify').mockResolvedValue(false);
+      const service = makeService({ loginAttemptTracker, captchaService });
+
+      await expect(
+        service.login(
+          {
+            email: 'jane@acme.test',
+            password: 'whatever',
+            captchaToken: 'bad-token',
+          },
+          makeResponse().response,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ captchaRequired: true }) as Record<
+          string,
+          unknown
+        >,
+      });
+    });
+
+    it('logs the user in with a valid captcha token and the correct password', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      jest.spyOn(loginAttemptTracker, 'requiresCaptcha').mockReturnValue(true);
+      const { captchaService, verify: verifyCaptcha } = makeCaptchaService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        loginAttemptTracker,
+        captchaService,
+      });
+
+      const result = await service.login(
+        {
+          email: 'jane@acme.test',
+          password: 'correct-horse',
+          captchaToken: 'good-token',
+        },
+        makeResponse().response,
+      );
+
+      expect(verifyCaptcha).toHaveBeenCalledWith('good-token');
+      expect(reset).toHaveBeenCalledWith('jane@acme.test');
+      expect(result.message).toContain('Logged in');
     });
 
     it('rejects a user who never finished setting a password', async () => {
@@ -445,10 +596,10 @@ describe('AuthService', () => {
       } as User;
       const findOne = jest.fn().mockResolvedValue(user);
       const verify = jest.fn().mockResolvedValue(false);
-      const service = makeService(
-        makeUsersRepo({ findOne }),
-        makePasswordService({ verify }),
-      );
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+      });
 
       await expect(
         service.login(
@@ -459,26 +610,219 @@ describe('AuthService', () => {
     });
   });
 
-  describe('logout', () => {
-    it('clears the access-token cookie', () => {
-      const service = new AuthService(
-        makeUsersRepo(),
-        makeDataSource().dataSource as never,
-        makeConfigService(),
-        makePasswordService(),
-        makeTokenService(),
-        makeEmailService().emailService,
-        makeOrganisationsService().organisationsService,
+  describe('forgotPassword', () => {
+    it('sets a reset token and emails a reset link for a user with a password', async () => {
+      const user = { id: 'user-1', passwordHash: 'stored-hash' } as User;
+      const update = jest.fn();
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+        update,
+      });
+      const { emailService, sendPasswordResetEmail, sendSetPasswordEmail } =
+        makeEmailService();
+      const service = makeService({ usersRepo, emailService });
+
+      const result = await service.forgotPassword({ email: 'jane@acme.test' });
+
+      expect(update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ passwordResetToken: 'the-token' }),
       );
+      expect(sendPasswordResetEmail).toHaveBeenCalledWith(
+        'jane@acme.test',
+        'the-token',
+      );
+      expect(sendSetPasswordEmail).not.toHaveBeenCalled();
+      expect(result.message).toContain('sent a password reset link');
+    });
+
+    it('resends the set-password email instead, for a user who never finished signup', async () => {
+      const user = { id: 'user-1', passwordHash: null } as User;
+      const update = jest.fn();
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+        update,
+      });
+      const { emailService, sendPasswordResetEmail, sendSetPasswordEmail } =
+        makeEmailService();
+      const service = makeService({ usersRepo, emailService });
+
+      await service.forgotPassword({ email: 'jane@acme.test' });
+
+      expect(sendSetPasswordEmail).toHaveBeenCalledWith(
+        'jane@acme.test',
+        'the-token',
+      );
+      expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('does nothing but returns the same generic message for an unknown email', async () => {
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const { emailService, sendPasswordResetEmail, sendSetPasswordEmail } =
+        makeEmailService();
+      const service = makeService({ usersRepo, emailService });
+
+      const result = await service.forgotPassword({
+        email: 'unknown@acme.test',
+      });
+
+      expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(sendSetPasswordEmail).not.toHaveBeenCalled();
+      expect(result.message).toContain('sent a password reset link');
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('hashes the new password, revokes existing sessions, records an audit log entry and logs the user in', async () => {
+      const user = {
+        id: 'user-1',
+        passwordResetToken: 'valid-token',
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const { refreshTokenService, issue, revokeAll } =
+        makeRefreshTokenService();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        usersRepo,
+        refreshTokenService,
+        auditLogService,
+      });
+      const { response, cookie } = makeResponse();
+
+      const result = await service.resetPassword(
+        { token: 'valid-token', password: 'correct-horse' },
+        response,
+      );
+
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'password_reset',
+          actorUserId: 'user-1',
+        }),
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'access_token',
+        'signed.jwt.token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(result.message).toContain('signed in');
+    });
+
+    it('rejects an unknown token', async () => {
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ usersRepo });
+
+      await expect(
+        service.resetPassword(
+          { token: 'unknown-token', password: 'correct-horse' },
+          makeResponse().response,
+        ),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    });
+
+    it('rejects an expired token', async () => {
+      const user = {
+        id: 'user-1',
+        passwordResetToken: 'expired-token',
+        passwordResetExpiresAt: new Date(Date.now() - 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const service = makeService({ usersRepo });
+
+      await expect(
+        service.resetPassword(
+          { token: 'expired-token', password: 'correct-horse' },
+          makeResponse().response,
+        ),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    });
+  });
+
+  describe('refresh', () => {
+    it('rotates the presented refresh token and issues a new session', async () => {
+      const { refreshTokenService, rotate } = makeRefreshTokenService();
+      const service = makeService({ refreshTokenService });
+      const { response, cookie } = makeResponse();
+      const request = makeRequest('refresh_token=old-refresh-token');
+
+      const result = await service.refresh(request, response);
+
+      expect(rotate).toHaveBeenCalledWith(
+        expect.anything(),
+        'old-refresh-token',
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'access_token',
+        'signed.jwt.token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'rotated-refresh-token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(result.message).toContain('refreshed');
+    });
+
+    it('rejects when no refresh-token cookie is present', async () => {
+      const service = makeService();
+      const request = makeRequest(undefined);
+
+      await expect(
+        service.refresh(request, makeResponse().response),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('logout', () => {
+    it('revokes the refresh token and clears both session cookies', async () => {
+      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+      const service = makeService({ refreshTokenService });
       const { response, clearCookie } = makeResponse();
+      const request = makeRequest('refresh_token=some-refresh-token');
 
-      const result = service.logout(response);
+      const result = await service.logout(request, response);
 
+      expect(revokeByValue).toHaveBeenCalledWith(
+        expect.anything(),
+        'some-refresh-token',
+      );
       expect(clearCookie).toHaveBeenCalledWith(
         'access_token',
         expect.objectContaining({ path: '/' }),
       );
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
       expect(result.message).toContain('Logged out');
+    });
+
+    it('still clears cookies when there is no refresh-token cookie to revoke', async () => {
+      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+      const service = makeService({ refreshTokenService });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest(undefined);
+
+      await service.logout(request, response);
+
+      expect(revokeByValue).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
     });
   });
 });

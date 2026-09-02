@@ -55,4 +55,6 @@ backend/
 
 ## Auth
 
-- **Auth is not implemented yet, and the provider (WorkOS vs. Clerk) is still an open decision — see `docs/DEPLOYMENT_READINESS.md`.** Don't add authentication/authorization logic, guards, or a specific provider's dependencies without confirming the approach first.
+- **Auth is email/password only for now — signup, email verification, login, logout, password reset, and refresh tokens all live in `src/auth/`.** See `docs/adr/0002-self-rolled-auth-for-registration.md` through `docs/adr/0005-role-checks-reresolve-from-database-not-jwt.md` for why and how. Don't add a new auth/session mechanism without reading those first — the reasoning (especially around anti-enumeration and never trusting the JWT for anything mutable) applies to any new endpoint you add here too.
+- **SSO was scoped out deliberately (cost — WorkOS bills per SSO connection — vs. the value of a free "Sign in with Google" style button, which is a different, unresolved product question) — don't add it back without confirming the approach again first.**
+- **Role is always resolved fresh from the database, never trusted from a JWT claim.** See `docs/adr/0005-role-checks-reresolve-from-database-not-jwt.md`.

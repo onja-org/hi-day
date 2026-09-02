@@ -40,6 +40,7 @@ describe("login", () => {
     expect(result).toEqual({
       ok: false,
       message: "Invalid email or password.",
+      captchaRequired: false,
     });
   });
 
@@ -60,6 +61,32 @@ describe("login", () => {
     expect(result).toEqual({
       ok: false,
       message: "email must be an email",
+      captchaRequired: false,
+    });
+  });
+
+  it("surfaces captchaRequired when the backend flags it after repeated failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            message: "Invalid email or password.",
+            captchaRequired: true,
+          }),
+      }),
+    );
+
+    const result = await login({
+      email: "jane@acme.test",
+      password: "wrong-password",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Invalid email or password.",
+      captchaRequired: true,
     });
   });
 

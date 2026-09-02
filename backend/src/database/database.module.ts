@@ -6,6 +6,7 @@ import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
 import { Organisation } from './entities/organisation.entity';
 import { Project } from './entities/project.entity';
+import { RefreshToken } from './entities/refresh-token.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
 import { User } from './entities/user.entity';
@@ -26,6 +27,7 @@ import { User } from './entities/user.entity';
           Task,
           Invitation,
           AuditLog,
+          RefreshToken,
         ],
         synchronize: false,
       }),

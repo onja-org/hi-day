@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { readCookie } from '../common/cookies.util';
 import { ACCESS_TOKEN_COOKIE } from './services/token.service';
 
 export interface AuthenticatedRequest extends Request {
@@ -18,7 +19,7 @@ export class JwtAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const token = this.readCookie(request, ACCESS_TOKEN_COOKIE);
+    const token = readCookie(request, ACCESS_TOKEN_COOKIE);
 
     if (!token) {
       throw new UnauthorizedException('Not authenticated.');
@@ -31,19 +32,5 @@ export class JwtAuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Not authenticated.');
     }
-  }
-
-  private readCookie(request: Request, name: string): string | undefined {
-    const header = request.headers.cookie;
-    if (!header) {
-      return undefined;
-    }
-
-    const match = header
-      .split(';')
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${name}=`));
-
-    return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
   }
 }

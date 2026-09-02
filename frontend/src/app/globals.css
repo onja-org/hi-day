@@ -11,6 +11,8 @@
   --color-white: #ffffff;
   --color-error: #dc2626;
   --color-success: #16a34a;
+  --color-input-border: #d6dbe6;
+  --color-icon: #2b343f;
 
   --font-body: var(--font-roboto), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
@@ -26,6 +28,8 @@
   --color-white: var(--color-white);
   --color-error: var(--color-error);
   --color-success: var(--color-success);
+  --color-input-border: var(--color-input-border);
+  --color-icon: var(--color-icon);
   --font-sans: var(--font-roboto);
 }
 
