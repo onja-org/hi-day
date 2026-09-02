@@ -1,0 +1,71 @@
+import type { MembershipRole } from "./membership";
+
+export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+
+export type PendingInvitation = {
+  id: string;
+  email: string;
+  role: MembershipRole;
+  teamId: string | null;
+  status: InvitationStatus;
+  createdAt: string;
+  expiresAt: string | null;
+};
+
+export type GetPendingInvitationsResult =
+  | { ok: true; invitations: PendingInvitation[] }
+  | { ok: false; message: string };
+
+export type InviteEntryInput = {
+  email: string;
+  role: MembershipRole;
+  teamId?: string;
+};
+
+export type InviteOutcome = "sent" | "resent" | "already_member" | "invalid";
+
+export type InviteEntryResult = {
+  email: string;
+  outcome: InviteOutcome;
+  message?: string;
+};
+
+export type InviteMembersResult =
+  | { ok: true; results: InviteEntryResult[] }
+  | { ok: false; message: string };
+
+export type InvitationActionResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+export type InvitationPreview = {
+  status: InvitationStatus | "not_found";
+  email?: string;
+  organisationName?: string;
+  role?: MembershipRole;
+  teamName?: string | null;
+  accountAlreadyExists?: boolean;
+};
+
+export type GetInvitationPreviewResult =
+  | { ok: true; preview: InvitationPreview }
+  | { ok: false; message: string };
+
+export type AcceptInvitationInput = {
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
+export type AcceptInvitationResult =
+  | { ok: true; message: string }
+  | { ok: false; message: string; accountExists?: boolean };
+
+export type OrganisationTeam = {
+  id: string;
+  name: string;
+};
+
+export type GetOrganisationTeamsResult =
+  | { ok: true; teams: OrganisationTeam[] }
+  | { ok: false; message: string };
