@@ -60,7 +60,7 @@ export class AuthController {
   login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; deviceId?: string; deviceToken?: string }> {
     return this.authService.login(dto, response);
   }
 

@@ -12,6 +12,7 @@ import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { readCookie } from '../../common/cookies.util';
 import { setSessionCookies } from '../../common/session-cookies.util';
+import { DeviceSessionService } from '../../devices/services/device-session.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { User } from '../../database/entities/user.entity';
@@ -71,6 +72,7 @@ export class AuthService {
     private readonly auditLogService: AuditLogService,
     private readonly loginAttemptTracker: LoginAttemptTracker,
     private readonly captchaService: CaptchaService,
+    private readonly deviceSessionService: DeviceSessionService,
   ) {}
 
   async signUp(dto: CreateAccountDto): Promise<{ message: string }> {
@@ -191,7 +193,10 @@ export class AuthService {
     return { message: 'Password set. You are now signed in.' };
   }
 
-  async login(dto: LoginDto, response: Response): Promise<{ message: string }> {
+  async login(
+    dto: LoginDto,
+    response: Response,
+  ): Promise<{ message: string; deviceId?: string; deviceToken?: string }> {
     if (this.loginAttemptTracker.requiresCaptcha(dto.email)) {
       const captchaValid = await this.captchaService.verify(dto.captchaToken);
 
@@ -229,6 +234,33 @@ export class AuthService {
     if (!hasActiveMembership) {
       recordAnalyticsEvent('login_blocked_deactivated', { userId: user.id });
       throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    }
+
+    if (dto.deviceFingerprint) {
+      const activeMembership = await this.memberships.findOne({
+        where: { userId: user.id, status: MembershipStatus.ACTIVE },
+      });
+
+      const { deviceId, token: deviceToken } =
+        await this.dataSource.transaction((manager) =>
+          this.deviceSessionService.upsertOnLogin(manager, {
+            userId: user.id,
+            organisationId: activeMembership!.organisationId,
+            deviceFingerprint: dto.deviceFingerprint!,
+            platform: dto.platform!,
+            osVersion: dto.osVersion,
+            hostname: dto.hostname,
+            appVersion: dto.appVersion,
+          }),
+        );
+
+      await this.auditLogService.record(this.dataSource.manager, {
+        action: 'login',
+        actorUserId: user.id,
+      });
+      recordAnalyticsEvent('login_succeeded', { userId: user.id });
+
+      return { message: 'Logged in.', deviceId, deviceToken };
     }
 
     const accessToken = this.tokenService.signAccessToken(user.id);

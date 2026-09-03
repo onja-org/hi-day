@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
+import { DevicesService } from '../../../devices/services/devices.service';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
@@ -34,17 +35,27 @@ describe('MembershipsService', () => {
     };
   }
 
+  function makeDevicesService() {
+    const signOutAllForUser = jest.fn().mockResolvedValue(undefined);
+    return {
+      devicesService: { signOutAllForUser } as unknown as DevicesService,
+      signOutAllForUser,
+    };
+  }
+
   function makeService(
     overrides: {
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
+      devicesService?: DevicesService;
     } = {},
   ) {
     return new MembershipsService(
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.devicesService ?? makeDevicesService().devicesService,
     );
   }
 
@@ -144,10 +155,12 @@ describe('MembershipsService', () => {
       });
       const { dataSource, save } = makeDataSource();
       const { auditLogService, record } = makeAuditLogService();
+      const { devicesService, signOutAllForUser } = makeDevicesService();
       const service = makeService({
         membershipsRepo,
         dataSource,
         auditLogService,
+        devicesService,
       });
 
       const result = await service.update('org-1', 'membership-1', 'admin-1', {
@@ -166,6 +179,41 @@ describe('MembershipsService', () => {
           metadata: expect.objectContaining({ deactivated: true }) as unknown,
         }),
       );
+      expect(signOutAllForUser).toHaveBeenCalledWith(
+        expect.anything(),
+        'org-1',
+        'user-1',
+        'admin-1',
+      );
+    });
+
+    it('does not sign out devices when the membership is not being deactivated', async () => {
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamId: null,
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(membership),
+      });
+      const { dataSource } = makeDataSource();
+      const { devicesService, signOutAllForUser } = makeDevicesService();
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        devicesService,
+      });
+
+      await service.update('org-1', 'membership-1', 'admin-1', {
+        role: MembershipRole.MANAGER,
+      });
+
+      expect(signOutAllForUser).not.toHaveBeenCalled();
     });
   });
 });

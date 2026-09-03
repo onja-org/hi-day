@@ -3,6 +3,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
+import { DevicesModule } from '../../devices/modules/devices.module';
 import { Membership } from '../../database/entities/membership.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { User } from '../../database/entities/user.entity';
@@ -31,6 +32,7 @@ function emailTracker(req: Request): string {
     OrganisationsModule,
     AuditLogModule,
     JwtAuthModule,
+    DevicesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 5 },
       {

@@ -47,3 +47,18 @@ body {
   margin-inline: auto;
   padding-inline: 2rem;
 }
+
+@theme {
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-float-slow: float 8s ease-in-out 1s infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}

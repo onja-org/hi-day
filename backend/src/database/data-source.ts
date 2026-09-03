@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
+import { Device } from './entities/device.entity';
+import { DeviceSession } from './entities/device-session.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
 import { Organisation } from './entities/organisation.entity';
@@ -23,6 +25,8 @@ export default new DataSource({
     Invitation,
     AuditLog,
     RefreshToken,
+    Device,
+    DeviceSession,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });

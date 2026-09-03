@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
 import { DatabaseModule } from './database/database.module';
+import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { MembersModule } from './members/modules/members.module';
     DatabaseModule,
     AuthModule,
     MembersModule,
+    DevicesModule,
   ],
   controllers: [AppController],
   providers: [

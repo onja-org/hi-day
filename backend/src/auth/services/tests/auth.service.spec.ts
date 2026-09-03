@@ -7,6 +7,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
+import { DeviceSessionService } from '../../../devices/services/device-session.service';
+import { DevicePlatform } from '../../../database/entities/device-platform.enum';
 import { Membership } from '../../../database/entities/membership.entity';
 import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
@@ -34,6 +36,7 @@ describe('AuthService', () => {
   ) {
     return {
       exists: jest.fn().mockResolvedValue(true),
+      findOne: jest.fn().mockResolvedValue({ organisationId: 'org-1' }),
       ...overrides,
     } as unknown as Repository<Membership>;
   }
@@ -143,6 +146,18 @@ describe('AuthService', () => {
     };
   }
 
+  function makeDeviceSessionService() {
+    const upsertOnLogin = jest
+      .fn()
+      .mockResolvedValue({ deviceId: 'device-1', token: 'device-token' });
+    return {
+      deviceSessionService: {
+        upsertOnLogin,
+      } as unknown as DeviceSessionService,
+      upsertOnLogin,
+    };
+  }
+
   function makeOrganisationsService() {
     const createForUser = jest.fn().mockResolvedValue({ id: 'org-1' });
     return {
@@ -183,6 +198,7 @@ describe('AuthService', () => {
       auditLogService?: AuditLogService;
       loginAttemptTracker?: LoginAttemptTracker;
       captchaService?: CaptchaService;
+      deviceSessionService?: DeviceSessionService;
     } = {},
   ) {
     return new AuthService(
@@ -201,6 +217,8 @@ describe('AuthService', () => {
       overrides.loginAttemptTracker ??
         makeLoginAttemptTracker().loginAttemptTracker,
       overrides.captchaService ?? makeCaptchaService().captchaService,
+      overrides.deviceSessionService ??
+        makeDeviceSessionService().deviceSessionService,
     );
   }
 
@@ -463,6 +481,56 @@ describe('AuthService', () => {
         expect.objectContaining({ action: 'login', actorUserId: 'user-1' }),
       );
       expect(result.message).toContain('Logged in');
+    });
+
+    it('upserts a device and returns a device token instead of cookies when deviceFingerprint is present', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { deviceSessionService, upsertOnLogin } =
+        makeDeviceSessionService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        membershipsRepo: makeMembershipsRepo({
+          exists: jest.fn().mockResolvedValue(true),
+          findOne: jest.fn().mockResolvedValue({ organisationId: 'org-1' }),
+        }),
+        deviceSessionService,
+      });
+      const { response, cookie } = makeResponse();
+
+      const result = await service.login(
+        {
+          email: 'jane@acme.test',
+          password: 'correct-horse',
+          deviceFingerprint: 'fingerprint-1',
+          platform: DevicePlatform.MACOS,
+          hostname: 'janes-macbook',
+        },
+        response,
+      );
+
+      expect(upsertOnLogin).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: 'user-1',
+          organisationId: 'org-1',
+          deviceFingerprint: 'fingerprint-1',
+          platform: DevicePlatform.MACOS,
+          hostname: 'janes-macbook',
+        }),
+      );
+      expect(cookie).not.toHaveBeenCalled();
+      expect(result).toEqual(
+        expect.objectContaining({
+          deviceId: 'device-1',
+          deviceToken: 'device-token',
+        }),
+      );
     });
 
     it('rejects a user with no active membership anywhere, without issuing a session', async () => {

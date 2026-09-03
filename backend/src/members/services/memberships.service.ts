@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { DevicesService } from '../../devices/services/devices.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -25,6 +26,7 @@ export class MembershipsService {
     private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    private readonly devicesService: DevicesService,
   ) {}
 
   async listActiveForOrganisation(
@@ -90,6 +92,15 @@ export class MembershipsService {
           deactivated: dto.deactivate ?? false,
         },
       });
+
+      if (dto.deactivate) {
+        await this.devicesService.signOutAllForUser(
+          manager,
+          organisationId,
+          membership.userId,
+          actorUserId,
+        );
+      }
     });
 
     return {

@@ -1,0 +1,70 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { DevicePlatform } from './device-platform.enum';
+import { Organisation } from './organisation.entity';
+import { User } from './user.entity';
+
+@Entity({ name: 'devices' })
+export class Device {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Stable per-device identifier the app generates/reads on first run, so
+   * re-logging in on the same machine reuses this row instead of creating a
+   * duplicate. Not scoped by organisation or user — the same physical
+   * machine can be re-logged-into by a different person (or a person in a
+   * different org), which reassigns this row rather than forking it (see
+   * CONTEXT.md's Device entry).
+   */
+  @Column({ unique: true })
+  deviceFingerprint: string;
+
+  @Column({ type: 'enum', enum: DevicePlatform, enumName: 'DevicePlatform' })
+  platform: DevicePlatform;
+
+  @Column({ type: 'varchar', nullable: true })
+  osVersion: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  hostname: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  appVersion: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  lastSeenAt: Date | null;
+
+  @CreateDateColumn({ precision: 3 })
+  createdAt: Date;
+
+  @UpdateDateColumn({ precision: 3 })
+  updatedAt: Date;
+
+  @Column()
+  organisationId: string;
+
+  @ManyToOne(() => Organisation, {
+    onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  })
+  @JoinColumn({ name: 'organisationId' })
+  organisation: Organisation;
+
+  @Column()
+  userId: string;
+
+  @ManyToOne(() => User, {
+    onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  })
+  @JoinColumn({ name: 'userId' })
+  user: User;
+}
