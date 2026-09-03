@@ -37,6 +37,10 @@ _Avoid_: Group, Department
 A pending request for someone to join an Organisation (and optionally a Team) with a given Role, sent by email, before they have a User account or Membership. Becomes a Membership once accepted.
 _Avoid_: Invite (fine informally, but Invitation is canonical)
 
+**TimeEntry**:
+A manually-logged block of worked time — a start time, an end time, and an optional note — submitted by the User themselves. Not automated tracking (no idle detection, no screenshots, no desktop-agent capture); that would be a separate, future initiative. Same visibility rule as Activity: the author always; an admin for everyone; a manager for their own team (see Team-scoping above); peers never see each other's entries.
+_Avoid_: Timesheet (that's the UI/space where TimeEntries are logged and viewed, not the entity itself)
+
 **Employee count**:
 A self-reported headcount an admin can edit on the Organisation (e.g. "we grew from 12 to 40"). Informational only — not the same number as the count of Memberships in that Organisation, which is a computed, authoritative figure (used for billing/seats). The two will diverge in practice and both are needed.
 _Avoid_: treating employee count and Membership count as interchangeable

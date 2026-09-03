@@ -5,6 +5,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { ErrorMessage } from "./ErrorMessage";
 import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
+import { TimesheetFeed } from "./TimesheetFeed";
 
 export function DashboardSections() {
   const organisationQuery = useCurrentOrganisation();

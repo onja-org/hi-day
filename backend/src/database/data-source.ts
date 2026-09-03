@@ -33,6 +33,7 @@ export default new DataSource({
     DeviceSession,
     TimeEntry,
     Activity,
+    TimeEntry,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });

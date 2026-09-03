@@ -27,6 +27,7 @@ import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
     TimeEntriesModule,
     DeviceTrackingModule,
     ActivitiesModule,
+    TimeEntriesModule,
   ],
   controllers: [AppController],
   providers: [

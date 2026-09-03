@@ -8,6 +8,7 @@ import { AuthModule } from '../../auth/modules/auth.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { DevicesModule } from '../../devices/modules/devices.module';
+import { TimeEntriesModule } from '../../timesheets/modules/time-entries.module';
 import { Invitation } from '../../database/entities/invitation.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -34,6 +35,7 @@ function inviteCreateTracker(req: Request): string {
     AuthModule,
     DevicesModule,
     ActivitiesModule,
+    TimeEntriesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 10 },
       {

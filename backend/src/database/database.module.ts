@@ -38,6 +38,7 @@ import { User } from './entities/user.entity';
           DeviceSession,
           TimeEntry,
           Activity,
+          TimeEntry,
         ],
         synchronize: false,
       }),
