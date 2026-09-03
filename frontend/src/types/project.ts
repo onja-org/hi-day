@@ -27,6 +27,7 @@ export type Project = {
 };
 
 export type ProjectMember = {
+  id: string;
   membershipId: string;
   userId: string;
   email: string;

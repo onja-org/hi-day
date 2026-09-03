@@ -61,8 +61,12 @@ _Avoid_: confusing this with Membership (org-level) — a Project membership is 
 _Avoid_: MembershipRole (that's the org-wide role on Membership — same admin/member-shaped vocabulary, different, independently-set field, scoped to one Project instead of the whole Organisation).
 
 **Task**:
-A unit of work within a Project that time and activity are attributed to.
-_Avoid_: Ticket, Item
+A unit of work within a Project that time and activity are attributed to. Belongs to exactly one Project for its whole life — it cannot be moved to a different Project. Carries an optional description, hour estimate, due date, and assignee, plus a status (`open` or `closed`, deliberately binary — no board/workflow states). Closing is reversible (a closed Task can be reopened), same spirit as a Project's Archived state. An Archived Project's Tasks are frozen — no create/edit/close/reopen — until it's unarchived.
+_Avoid_: Ticket, Item; Subtask (no such concept exists — a Task is the finest-grained unit, it doesn't nest further)
+
+**Task assignee**:
+The single Project membership a Task is assigned to — not an org-wide Membership directly, and not a User directly. A Task can only be assigned to someone who already holds a Project membership on that same Project; unassigning (or removing that person from the Project) always leaves the Task simply unassigned, never in an invalid state.
+_Avoid_: assuming any org member can be assigned — only existing Project members are eligible.
 
 ### Capture
 

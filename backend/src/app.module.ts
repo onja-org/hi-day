@@ -8,6 +8,7 @@ import { DatabaseModule } from './database/database.module';
 import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
 import { ProjectsModule } from './projects/modules/projects.module';
+import { TasksModule } from './tasks/modules/tasks.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProjectsModule } from './projects/modules/projects.module';
     MembersModule,
     DevicesModule,
     ProjectsModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [

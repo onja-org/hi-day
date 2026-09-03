@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Project } from './project.entity';
+import { ProjectMembership } from './project-membership.entity';
 
 @Entity({ name: 'tasks' })
 export class Task {
@@ -16,6 +17,18 @@ export class Task {
 
   @Column()
   name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
+  @Column({ type: 'numeric', precision: 6, scale: 2, nullable: true })
+  estimate: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  dueDate: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  closedAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
@@ -32,4 +45,14 @@ export class Task {
   })
   @JoinColumn({ name: 'projectId' })
   project: Project;
+
+  @Column({ type: 'uuid', nullable: true })
+  assigneeProjectMembershipId: string | null;
+
+  @ManyToOne(() => ProjectMembership, {
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  })
+  @JoinColumn({ name: 'assigneeProjectMembershipId' })
+  assignee: ProjectMembership | null;
 }

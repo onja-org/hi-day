@@ -35,6 +35,7 @@ export interface ProjectSummary {
 }
 
 export interface ProjectMemberSummary {
+  id: string;
   membershipId: string;
   userId: string;
   email: string;
@@ -435,12 +436,13 @@ export class ProjectsService {
     project: Project,
     projectMembership: Pick<
       ProjectMembership,
-      'membershipId' | 'rate' | 'role'
+      'id' | 'membershipId' | 'rate' | 'role'
     > & {
       membership: Membership;
     },
   ): ProjectMemberSummary {
     return {
+      id: projectMembership.id,
       membershipId: projectMembership.membershipId,
       userId: projectMembership.membership.userId,
       email: projectMembership.membership.user.email,
