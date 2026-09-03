@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'"
+    />
+    <title>Workforce Monitor</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Workforce Monitor</h1>
+
+      <p id="loading-view">Loading…</p>
+
+      <section id="login-view" hidden>
+        <form id="login-form">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required autocomplete="username" />
+
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            autocomplete="current-password"
+          />
+
+          <button type="submit">Log in</button>
+          <p id="login-error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <section id="status-view" hidden>
+        <p>Logged in as <strong id="status-email"></strong>.</p>
+        <p class="hint">This device is registered. Time tracking isn't available yet.</p>
+        <button id="logout-button" type="button">Log out</button>
+      </section>
+    </main>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>

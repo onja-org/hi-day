@@ -1,8 +1,10 @@
 packages:
   - "frontend"
   - "backend"
+  - "desktop"
 allowBuilds:
   argon2: true
+  electron: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@next/env@16.3.2'

@@ -1,0 +1,31 @@
+{
+  "name": "desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workforce Monitor desktop agent (login + device registration shell — no time tracking yet)",
+  "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
+  "author": "Rinon <rinon.ten@onja.org>",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs",
+    "dev": "pnpm build && electron .",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist:linux": "pnpm build && electron-builder --linux",
+    "dist:win": "pnpm build && electron-builder --win",
+    "dist:mac": "pnpm build && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^20",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9",
+    "globals": "^17.0.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8",
+    "vitest": "^4.1.11"
+  },
+  "packageManager": "pnpm@11.1.3"
+}

@@ -1,0 +1,41 @@
+appId: org.onja.workforce-monitor
+productName: Workforce Monitor
+artifactName: workforce-monitor-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  identity: null
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Office
+  executableName: workforce-monitor
+
+deb:
+  packageName: workforce-monitor
+
+# No code signing yet — see README.md. Skip publishing/auto-update wiring
+# entirely for this pass.
+publish: null
