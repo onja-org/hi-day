@@ -41,8 +41,24 @@ _Avoid_: treating employee count and Membership count as interchangeable
 ### Work tracking
 
 **Project**:
-A unit of work within an Organisation that time is tracked against; may be marked billable with a rate. Contains Tasks.
-_Avoid_: Client — no Client concept exists yet; a Project is not a customer record.
+A unit of work within an Organisation that time is tracked against, scoped by name unique within its Organisation (case-sensitive). Carries a Client, description, and colour as metadata; may be marked billable with a default rate; and has an Archived state. Contains Tasks and, separately, Project memberships.
+_Avoid_: assuming rate implies billable, or vice versa — both are independent, optional fields.
+
+**Client**:
+A free-text label on a Project (e.g. "Acme Inc"), used for grouping and filtering — not its own record. Two Projects can carry the identical Client text with no relationship enforced between them; renaming a client means editing it on each Project individually. A dedicated Client entity (with its own identity, so a rename or typo doesn't fragment reporting) may replace this later, but doesn't exist yet.
+_Avoid_: treating Client as a foreign key or assuming client names are deduplicated anywhere.
+
+**Archived** (Project):
+A Project's terminal-but-reversible state (`archivedAt` set). An Archived Project accepts no changes at all — not its own fields, not its Project memberships — until it's unarchived; reports and time-tracking history logged before archiving remain intact and visible throughout.
+_Avoid_: implying Archived is a delete — nothing about an Archived Project's history is hidden or removed.
+
+**Project membership**:
+Grants an org Membership permission to log time against a specific Project, with an optional per-Membership rate that overrides the Project's default rate when set (falls back to the Project's rate otherwise; a Project with neither has no rate at all), and a Project membership role (`admin` or `member`) controlling what that person can do on *this* Project specifically. Assigning Teams to a Project instead of individual Memberships is planned but not yet built.
+_Avoid_: confusing this with Membership (org-level) — a Project membership is a separate, per-Project grant layered on top of an existing Membership.
+
+**Project membership role**:
+`admin` or `member`, independent of the org-wide MembershipRole. A Project membership with role `admin` can manage that one Project — edit it, archive/unarchive it, add/remove/re-role its members — even when the person's org role is plain `member`; this is what makes it useful as a delegation mechanism rather than just a label. A plain `member` can only be assigned to (and, once built, log time against) the Project. Org `admin`/`manager` can always manage every Project regardless of Project membership role — Project membership role only ever *adds* access, never restricts an org admin/manager. Org-wide project management (the Projects list, creating new Projects) still requires an org `admin`/`manager` role — Project membership role only grants access scoped to that one already-existing Project, not the org-wide Projects list or creation.
+_Avoid_: MembershipRole (that's the org-wide role on Membership — same admin/member-shaped vocabulary, different, independently-set field, scoped to one Project instead of the whole Organisation).
 
 **Task**:
 A unit of work within a Project that time and activity are attributed to.

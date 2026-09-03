@@ -1,7 +1,15 @@
 "use client";
 
 import type { Icon } from "@phosphor-icons/react";
-import { ChartLineUp, Clock, Desktop, Gauge, Users, UsersThree } from "@phosphor-icons/react";
+import {
+  Briefcase,
+  ChartLineUp,
+  Clock,
+  Desktop,
+  Gauge,
+  Users,
+  UsersThree,
+} from "@phosphor-icons/react";
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -47,6 +55,11 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
     },
     ...(canSeeMembers
       ? [
+          {
+            label: "Projects",
+            href: `/organisations/${organisationId}/projects`,
+            icon: Briefcase,
+          },
           {
             label: "Members",
             href: `/organisations/${organisationId}/members`,

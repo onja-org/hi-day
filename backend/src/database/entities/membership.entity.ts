@@ -4,12 +4,14 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
 import { MembershipRole } from './membership-role.enum';
 import { MembershipStatus } from './membership-status.enum';
 import { Organisation } from './organisation.entity';
+import { ProjectMembership } from './project-membership.entity';
 import { Team } from './team.entity';
 import { User } from './user.entity';
 
@@ -66,4 +68,10 @@ export class Membership {
   })
   @JoinColumn({ name: 'teamId' })
   team: Team | null;
+
+  @OneToMany(
+    () => ProjectMembership,
+    (projectMembership) => projectMembership.membership,
+  )
+  projectMemberships: ProjectMembership[];
 }

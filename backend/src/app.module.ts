@@ -7,6 +7,7 @@ import { AuthModule } from './auth/modules/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
+import { ProjectsModule } from './projects/modules/projects.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { MembersModule } from './members/modules/members.module';
     AuthModule,
     MembersModule,
     DevicesModule,
+    ProjectsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -16,6 +16,19 @@
   --color-sidebar: #f3f4f6;
   --color-sidebar-active: #e5e7eb;
 
+  /* Fixed swatch set for Project colour tags — not part of the brand
+     palette, deliberately separate so a project's colour stays a themeable
+     token rather than free-form user input (see CONTEXT.md's Project
+     entry). */
+  --color-project-blue: #3b82f6;
+  --color-project-green: #22c55e;
+  --color-project-amber: #f59e0b;
+  --color-project-red: #ef4444;
+  --color-project-purple: #a855f7;
+  --color-project-teal: #14b8a6;
+  --color-project-pink: #ec4899;
+  --color-project-gray: #6b7280;
+
   --font-body: var(--font-roboto), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
 }
@@ -34,6 +47,14 @@
   --color-icon: var(--color-icon);
   --color-sidebar: var(--color-sidebar);
   --color-sidebar-active: var(--color-sidebar-active);
+  --color-project-blue: var(--color-project-blue);
+  --color-project-green: var(--color-project-green);
+  --color-project-amber: var(--color-project-amber);
+  --color-project-red: var(--color-project-red);
+  --color-project-purple: var(--color-project-purple);
+  --color-project-teal: var(--color-project-teal);
+  --color-project-pink: var(--color-project-pink);
+  --color-project-gray: var(--color-project-gray);
   --font-sans: var(--font-roboto);
 }
 

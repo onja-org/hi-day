@@ -6,18 +6,36 @@ import {
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { Organisation } from './organisation.entity';
+import { ProjectColour } from './project-colour.enum';
+import { ProjectMembership } from './project-membership.entity';
 import { Task } from './task.entity';
 
 @Entity({ name: 'projects' })
+@Unique(['organisationId', 'name'])
 export class Project {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
   name: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  client: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: ProjectColour,
+    enumName: 'ProjectColour',
+    default: ProjectColour.BLUE,
+  })
+  colour: ProjectColour;
 
   @Column({ default: false })
   billable: boolean;
@@ -46,4 +64,10 @@ export class Project {
 
   @OneToMany(() => Task, (task) => task.project)
   tasks: Task[];
+
+  @OneToMany(
+    () => ProjectMembership,
+    (projectMembership) => projectMembership.project,
+  )
+  memberships: ProjectMembership[];
 }
