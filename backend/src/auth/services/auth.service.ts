@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
   UnprocessableEntityException,
@@ -9,10 +10,10 @@ import type { Request, Response } from 'express';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
-import {
-  buildSessionCookieOptions,
-  readCookie,
-} from '../../common/cookies.util';
+import { readCookie } from '../../common/cookies.util';
+import { setSessionCookies } from '../../common/session-cookies.util';
+import { Membership } from '../../database/entities/membership.entity';
+import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { User } from '../../database/entities/user.entity';
 import { EmailService } from '../../email/services/email.service';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
@@ -22,6 +23,7 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import { UpdateProfileDto } from '../dto/update-profile.dto';
 import { CaptchaService } from './captcha.service';
 import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { PasswordService } from './password.service';
@@ -34,25 +36,31 @@ import {
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
-const ACCESS_TOKEN_COOKIE_MAX_AGE_MS = 15 * 60 * 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const DEFAULT_REFRESH_TOKEN_TTL_DAYS = 30;
 const SIGNUP_RESPONSE_MESSAGE = 'Check your email to set your password.';
 const RESEND_VERIFICATION_RESPONSE_MESSAGE =
   "If that email is awaiting verification, we've sent a new link.";
 const FORGOT_PASSWORD_RESPONSE_MESSAGE =
   "If that email has an account, we've sent a password reset link.";
 const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
+const DEACTIVATED_MESSAGE =
+  'Your account has been deactivated. Contact an admin of your organisation if you believe this is a mistake.';
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
 const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$EdLgXk5ViQoSXTFItKblvQ$/dRGHQlCkWNFJX/M1z2MfiETG+HUWqdGGuZBfni0RRk';
 
+export interface UserProfile {
+  email: string;
+  name: string | null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(Membership)
+    private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly passwordService: PasswordService,
@@ -178,7 +186,7 @@ export class AuthService {
     });
 
     const accessToken = this.tokenService.signAccessToken(user.id);
-    this.setSessionCookies(response, accessToken, refreshToken);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Password set. You are now signed in.' };
   }
@@ -214,12 +222,21 @@ export class AuthService {
 
     this.loginAttemptTracker.reset(dto.email);
 
+    const hasActiveMembership = await this.memberships.exists({
+      where: { userId: user.id, status: MembershipStatus.ACTIVE },
+    });
+
+    if (!hasActiveMembership) {
+      recordAnalyticsEvent('login_blocked_deactivated', { userId: user.id });
+      throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    }
+
     const accessToken = this.tokenService.signAccessToken(user.id);
     const refreshToken = await this.refreshTokenService.issue(
       this.dataSource.manager,
       user.id,
     );
-    this.setSessionCookies(response, accessToken, refreshToken);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     await this.auditLogService.record(this.dataSource.manager, {
       action: 'login',
@@ -304,7 +321,7 @@ export class AuthService {
     });
 
     const accessToken = this.tokenService.signAccessToken(user.id);
-    this.setSessionCookies(response, accessToken, refreshToken);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
     recordAnalyticsEvent('password_reset_completed', { userId: user.id });
 
     return { message: 'Password reset. You are now signed in.' };
@@ -325,7 +342,7 @@ export class AuthService {
     );
 
     const accessToken = this.tokenService.signAccessToken(userId);
-    this.setSessionCookies(response, accessToken, refreshToken);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Session refreshed.' };
   }
@@ -349,37 +366,17 @@ export class AuthService {
     return { message: 'Logged out.' };
   }
 
-  private setSessionCookies(
-    response: Response,
-    accessToken: string,
-    refreshToken: string,
-  ): void {
-    response.cookie(
-      ACCESS_TOKEN_COOKIE,
-      accessToken,
-      buildSessionCookieOptions(
-        ACCESS_TOKEN_COOKIE_MAX_AGE_MS,
-        this.configService,
-      ),
-    );
-    response.cookie(
-      REFRESH_TOKEN_COOKIE,
-      refreshToken,
-      buildSessionCookieOptions(
-        this.refreshTokenCookieMaxAgeMs(),
-        this.configService,
-      ),
-    );
+  async getProfile(userId: string): Promise<UserProfile> {
+    const user = await this.users.findOneOrFail({ where: { id: userId } });
+    return { email: user.email, name: user.name };
   }
 
-  private refreshTokenCookieMaxAgeMs(): number {
-    const ttlDays = Number(
-      this.configService.get(
-        'REFRESH_TOKEN_TTL_DAYS',
-        DEFAULT_REFRESH_TOKEN_TTL_DAYS,
-      ),
-    );
-    return ttlDays * MS_PER_DAY;
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<UserProfile> {
+    await this.users.update(userId, { name: dto.name });
+    return this.getProfile(userId);
   }
 
   private isUniqueViolation(error: unknown): boolean {

@@ -1,7 +1,7 @@
 import type { MembershipRole } from "./membership";
 
 export type OrganisationProfile = {
-  id: string;
+  id: number;
   name: string;
   address: string | null;
   website: string | null;

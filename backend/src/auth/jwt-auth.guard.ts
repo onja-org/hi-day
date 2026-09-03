@@ -11,6 +11,12 @@ import { ACCESS_TOKEN_COOKIE } from './services/token.service';
 
 export interface AuthenticatedRequest extends Request {
   userId: string;
+  /**
+   * The internal Organisation UUID, resolved from the route's `:id`
+   * (a public-facing numeric id — see docs/adr/0007) by RoleGuard. Only set
+   * once RoleGuard has run.
+   */
+  organisationId?: string;
 }
 
 @Injectable()

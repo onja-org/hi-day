@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -10,23 +11,38 @@ import { Repository } from 'typeorm';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { Organisation } from '../../database/entities/organisation.entity';
 import { REQUIRE_ROLE_KEY } from '../decorators/require-role.decorator';
 
-/**
- * Enforces @RequireRole(...) on a route. Must run after JwtAuthGuard (needs
- * request.userId already set). Reads the target Organisation's id from the
- * route's `:id` param and re-resolves the caller's Membership + role from
- * the database — never trusts a role claim, since none exists on the JWT.
- */
 @Injectable()
 export class RoleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
+    @InjectRepository(Organisation)
+    private readonly organisations: Repository<Organisation>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const publicId = Number(request.params.id);
+
+    if (!Number.isInteger(publicId)) {
+      throw new NotFoundException('Organisation not found.');
+    }
+
+    const organisation = await this.organisations.findOne({
+      where: { publicId },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found.');
+    }
+
+    request.organisationId = organisation.id;
+
     const requiredRoles = this.reflector.getAllAndOverride<
       MembershipRole[] | undefined
     >(REQUIRE_ROLE_KEY, [context.getHandler(), context.getClass()]);
@@ -35,11 +51,12 @@ export class RoleGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const organisationId = String(request.params.id);
-
     const membership = await this.memberships.findOne({
-      where: { userId: request.userId, organisationId },
+      where: {
+        userId: request.userId,
+        organisationId: organisation.id,
+        status: MembershipStatus.ACTIVE,
+      },
     });
 
     if (!membership || !requiredRoles.includes(membership.role)) {

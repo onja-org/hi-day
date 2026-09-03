@@ -5,6 +5,7 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Organisation } from '../../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../../database/entities/organisation-region.enum';
+import { Team } from '../../../database/entities/team.entity';
 import { OrganisationsService } from '../organisations.service';
 
 describe('OrganisationsService', () => {
@@ -46,6 +47,13 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Membership>;
   }
 
+  function makeTeamsRepo(overrides: Partial<Repository<Team>> = {}) {
+    return {
+      find: jest.fn().mockResolvedValue([]),
+      ...overrides,
+    } as unknown as Repository<Team>;
+  }
+
   function makeAuditLogService() {
     const record = jest.fn().mockResolvedValue(undefined);
     return {
@@ -61,6 +69,7 @@ describe('OrganisationsService', () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo(),
+        makeTeamsRepo(),
         auditLogService,
       );
 
@@ -115,6 +124,7 @@ describe('OrganisationsService', () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo(),
+        makeTeamsRepo(),
         makeAuditLogService().auditLogService,
       );
 
@@ -140,6 +150,7 @@ describe('OrganisationsService', () => {
         role: MembershipRole.MANAGER,
         organisation: {
           id: 'org-1',
+          publicId: 100000,
           name: 'Acme Inc',
           settings: { address: '1 Main St', website: 'https://acme.test' },
         },
@@ -147,13 +158,14 @@ describe('OrganisationsService', () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
         makeAuditLogService().auditLogService,
       );
 
       const profile = await service.findCurrentForUser('user-1');
 
       expect(profile).toEqual({
-        id: 'org-1',
+        id: 100000,
         name: 'Acme Inc',
         address: '1 Main St',
         website: 'https://acme.test',
@@ -166,6 +178,7 @@ describe('OrganisationsService', () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
         makeAuditLogService().auditLogService,
       );
 
@@ -175,10 +188,37 @@ describe('OrganisationsService', () => {
     });
   });
 
+  describe('listTeams', () => {
+    it("returns the organisation's teams as id/name pairs, ordered by name", async () => {
+      const find = jest.fn().mockResolvedValue([
+        { id: 'team-2', name: 'Sales', organisationId: 'org-1' },
+        { id: 'team-1', name: 'General', organisationId: 'org-1' },
+      ]);
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo({ find }),
+        makeAuditLogService().auditLogService,
+      );
+
+      const teams = await service.listTeams('org-1');
+
+      expect(find).toHaveBeenCalledWith({
+        where: { organisationId: 'org-1' },
+        order: { name: 'ASC' },
+      });
+      expect(teams).toEqual([
+        { id: 'team-2', name: 'Sales' },
+        { id: 'team-1', name: 'General' },
+      ]);
+    });
+  });
+
   describe('updateProfile', () => {
     it('updates the name and settings fields (authorization is enforced by RoleGuard upstream)', async () => {
       const organisation = {
         id: 'org-1',
+        publicId: 100000,
         name: 'Acme Inc',
         settings: { timezone: 'UTC', currency: 'USD', address: 'old' },
       } as unknown as Organisation;
@@ -187,6 +227,7 @@ describe('OrganisationsService', () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo({ findOneOrFail, save }),
         makeMembershipsRepo(),
+        makeTeamsRepo(),
         makeAuditLogService().auditLogService,
       );
 
@@ -195,6 +236,7 @@ describe('OrganisationsService', () => {
         address: 'new address',
       });
 
+      expect(profile.id).toBe(100000);
       expect(profile.name).toBe('Acme International');
       expect(profile.address).toBe('new address');
       expect(profile.role).toBe(MembershipRole.ADMIN);

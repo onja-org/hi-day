@@ -52,6 +52,24 @@ describe('EmailService', () => {
     );
   });
 
+  it('sends an invitation email with a link containing the token and org name', async () => {
+    await service.sendInvitationEmail(
+      'invitee@acme.test',
+      'the-token',
+      'Acme Inc',
+    );
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'invitee@acme.test',
+        subject: expect.stringContaining('Acme Inc') as string,
+        html: expect.stringContaining(
+          'http://localhost:3000/accept-invitation?token=the-token',
+        ) as string,
+      }),
+    );
+  });
+
   it('sends a duplicate-registration notice with a link to sign in', async () => {
     await service.sendDuplicateRegistrationNotice('owner@acme.test');
 

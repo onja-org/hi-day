@@ -8,7 +8,7 @@ import type {
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function updateOrganisation(
-  id: string,
+  id: number,
   input: UpdateOrganisationInput,
 ): Promise<UpdateOrganisationResult> {
   let response: Response;

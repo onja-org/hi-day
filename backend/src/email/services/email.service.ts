@@ -51,6 +51,27 @@ export class EmailService {
     }
   }
 
+  async sendInvitationEmail(
+    to: string,
+    token: string,
+    organisationName: string,
+  ): Promise<void> {
+    const acceptUrl = `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `You've been invited to join ${organisationName}`,
+      html: `<p>You've been invited to join <strong>${organisationName}</strong>. This link expires soon and can only be used once:</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send invitation email to ${to}: ${error.message}`,
+      );
+    }
+  }
+
   async sendDuplicateRegistrationNotice(to: string): Promise<void> {
     const loginUrl = `${this.frontendUrl}/login`;
 

@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -6,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
+import { Membership } from '../../../database/entities/membership.entity';
 import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
 import { OrganisationsService } from '../../../organisations/services/organisations.service';
@@ -25,6 +27,15 @@ describe('AuthService', () => {
       save: jest.fn(),
       ...overrides,
     } as unknown as Repository<User>;
+  }
+
+  function makeMembershipsRepo(
+    overrides: Partial<Repository<Membership>> = {},
+  ) {
+    return {
+      exists: jest.fn().mockResolvedValue(true),
+      ...overrides,
+    } as unknown as Repository<Membership>;
   }
 
   function makeDataSource() {
@@ -161,6 +172,7 @@ describe('AuthService', () => {
   function makeService(
     overrides: {
       usersRepo?: Repository<User>;
+      membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       configService?: ConfigService;
       passwordService?: Partial<PasswordService>;
@@ -175,6 +187,7 @@ describe('AuthService', () => {
   ) {
     return new AuthService(
       overrides.usersRepo ?? makeUsersRepo(),
+      overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.configService ?? makeConfigService(),
       (overrides.passwordService ?? makePasswordService()) as PasswordService,
@@ -450,6 +463,34 @@ describe('AuthService', () => {
         expect.objectContaining({ action: 'login', actorUserId: 'user-1' }),
       );
       expect(result.message).toContain('Logged in');
+    });
+
+    it('rejects a user with no active membership anywhere, without issuing a session', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const findOne = jest.fn().mockResolvedValue(user);
+      const verify = jest.fn().mockResolvedValue(true);
+      const { refreshTokenService, issue } = makeRefreshTokenService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({ findOne }),
+        passwordService: makePasswordService({ verify }),
+        membershipsRepo: makeMembershipsRepo({
+          exists: jest.fn().mockResolvedValue(false),
+        }),
+        refreshTokenService,
+      });
+      const { response, cookie } = makeResponse();
+
+      await expect(
+        service.login(
+          { email: 'deactivated@acme.test', password: 'correct-horse' },
+          response,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(issue).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown email with the generic invalid-login message', async () => {
@@ -823,6 +864,40 @@ describe('AuthService', () => {
         'access_token',
         expect.objectContaining({ path: '/' }),
       );
+    });
+  });
+
+  describe('getProfile', () => {
+    it("returns the user's email and name", async () => {
+      const usersRepo = makeUsersRepo({
+        findOneOrFail: jest
+          .fn()
+          .mockResolvedValue({ email: 'jane@acme.test', name: 'Jane Doe' }),
+      });
+      const service = makeService({ usersRepo });
+
+      await expect(service.getProfile('user-1')).resolves.toEqual({
+        email: 'jane@acme.test',
+        name: 'Jane Doe',
+      });
+    });
+  });
+
+  describe('updateProfile', () => {
+    it("updates the user's name and returns the refreshed profile", async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const findOneOrFail = jest
+        .fn()
+        .mockResolvedValue({ email: 'jane@acme.test', name: 'Jane Smith' });
+      const usersRepo = makeUsersRepo({ update, findOneOrFail });
+      const service = makeService({ usersRepo });
+
+      const profile = await service.updateProfile('user-1', {
+        name: 'Jane Smith',
+      });
+
+      expect(update).toHaveBeenCalledWith('user-1', { name: 'Jane Smith' });
+      expect(profile).toEqual({ email: 'jane@acme.test', name: 'Jane Smith' });
     });
   });
 });

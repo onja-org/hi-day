@@ -10,6 +10,7 @@ import { InvitationStatus } from './invitation-status.enum';
 import { MembershipRole } from './membership-role.enum';
 import { Organisation } from './organisation.entity';
 import { Team } from './team.entity';
+import { User } from './user.entity';
 
 @Entity({ name: 'invitations' })
 export class Invitation {
@@ -31,10 +32,13 @@ export class Invitation {
   status: InvitationStatus;
 
   @Column({ unique: true })
-  token: string;
+  tokenHash: string;
 
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   expiresAt: Date | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  acceptedAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
@@ -59,4 +63,15 @@ export class Invitation {
   })
   @JoinColumn({ name: 'teamId' })
   team: Team | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  invitedByUserId: string | null;
+
+  @ManyToOne(() => User, {
+    nullable: true,
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE',
+  })
+  @JoinColumn({ name: 'invitedByUserId' })
+  invitedByUser: User | null;
 }

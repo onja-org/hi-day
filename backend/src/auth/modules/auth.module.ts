@@ -3,6 +3,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
+import { Membership } from '../../database/entities/membership.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
@@ -25,7 +26,7 @@ function emailTracker(req: Request): string {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, RefreshToken]),
+    TypeOrmModule.forFeature([User, RefreshToken, Membership]),
     EmailModule,
     OrganisationsModule,
     AuditLogModule,
@@ -50,6 +51,6 @@ function emailTracker(req: Request): string {
     LoginAttemptTracker,
     CaptchaService,
   ],
-  exports: [PasswordService, TokenService],
+  exports: [PasswordService, TokenService, RefreshTokenService],
 })
 export class AuthModule {}

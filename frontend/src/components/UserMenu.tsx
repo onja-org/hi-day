@@ -1,18 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Gear, SignOut, UserCircle } from "@phosphor-icons/react";
+import { SignOut, UserCircle } from "@phosphor-icons/react";
 import { logout } from "@/lib/logout";
-import { Modal } from "./Modal";
-import { OrganisationSettingsForm } from "./OrganisationSettingsForm";
-import { RequireRole } from "./RequireRole";
 import { Spinner } from "./Spinner";
 
-export function SettingsMenu() {
+export function UserMenu() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -37,19 +34,34 @@ export function SettingsMenu() {
   }
 
   return (
-    <div ref={menuRef} className="fixed bottom-4 left-4">
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setMenuOpen((open) => !open)}
+        aria-label="Account menu"
+        aria-expanded={menuOpen}
+        className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition-colors duration-150 hover:bg-primary/90"
+      >
+        <UserCircle size={24} aria-hidden="true" />
+      </button>
+
       {menuOpen && (
-        <div className="mb-2 flex flex-col gap-1 rounded-md border border-primary-dark/20 bg-white p-2 shadow-lg transition-all duration-150">
+        <div className="absolute top-full right-0 z-50 mt-2 flex w-48 flex-col gap-1 rounded-md border border-primary-dark/20 bg-white p-2 shadow-lg">
+          <Link
+            href="/account/edit"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setMenuOpen(false)}
+            className="rounded-md px-3 py-2 text-left text-slate-900 transition-colors duration-150 hover:bg-cream"
+          >
+            Account
+          </Link>
           <button
             type="button"
-            onClick={() => {
-              setProfileOpen(true);
-              setMenuOpen(false);
-            }}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-slate-900 transition-colors duration-150 hover:bg-cream"
+            disabled
+            className="cursor-not-allowed rounded-md px-3 py-2 text-left text-slate-900 opacity-50"
           >
-            <UserCircle size={18} aria-hidden="true" />
-            Update profile
+            Settings
           </button>
           <button
             type="button"
@@ -65,24 +77,6 @@ export function SettingsMenu() {
             Log out
           </button>
         </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setMenuOpen((open) => !open)}
-        aria-label="Settings"
-        aria-expanded={menuOpen}
-        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-primary-dark text-white shadow-lg transition-all duration-150 hover:scale-105 hover:bg-primary-dark/90 active:scale-95"
-      >
-        <Gear size={24} aria-hidden="true" />
-      </button>
-
-      {profileOpen && (
-        <Modal title="Update profile" onClose={() => setProfileOpen(false)}>
-          <RequireRole role="admin">
-            <OrganisationSettingsForm onSuccess={() => setProfileOpen(false)} />
-          </RequireRole>
-        </Modal>
       )}
     </div>
   );
