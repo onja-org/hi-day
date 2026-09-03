@@ -12,7 +12,6 @@ import { MembershipRole } from './membership-role.enum';
 import { MembershipStatus } from './membership-status.enum';
 import { Organisation } from './organisation.entity';
 import { ProjectMembership } from './project-membership.entity';
-import { Team } from './team.entity';
 import { TeamMembership } from './team-membership.entity';
 import { User } from './user.entity';
 
@@ -59,22 +58,12 @@ export class Membership {
   @JoinColumn({ name: 'organisationId' })
   organisation: Organisation;
 
-  @Column({ type: 'uuid', nullable: true })
-  teamId: string | null;
-
-  @ManyToOne(() => Team, (team) => team.memberships, {
-    nullable: true,
-    onDelete: 'SET NULL',
-    onUpdate: 'CASCADE',
-  })
-  @JoinColumn({ name: 'teamId' })
-  team: Team | null;
-
   @OneToMany(
     () => ProjectMembership,
     (projectMembership) => projectMembership.membership,
   )
   projectMemberships: ProjectMembership[];
+
   @OneToMany(
     () => TeamMembership,
     (teamMembership) => teamMembership.membership,
