@@ -6,6 +6,7 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
 import { addTeamMember } from "@/lib/addTeamMember";
 import type { TeamMember } from "@/types/team";
+import { AddTeamMemberCandidateRow } from "./AddTeamMemberCandidateRow";
 import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
@@ -28,8 +29,8 @@ export function AddTeamMemberModal({
   const [search, setSearch] = useState("");
 
   const addMutation = useMutation({
-    mutationFn: (membershipId: string) =>
-      addTeamMember(organisationId, teamId, { membershipId }),
+    mutationFn: (variables: { membershipId: string; isManager: boolean }) =>
+      addTeamMember(organisationId, teamId, variables),
     onSuccess: (result) => {
       if (result.ok) {
         queryClient.invalidateQueries({
@@ -81,27 +82,14 @@ export function AddTeamMemberModal({
         ) : (
           <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
             {candidates.map((member) => (
-              <li
+              <AddTeamMemberCandidateRow
                 key={member.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-input-border px-3 py-2 text-slate-900"
-              >
-                <span>
-                  {member.name ?? member.email}
-                  {member.name && (
-                    <span className="block text-xs text-slate-900/70">
-                      {member.email}
-                    </span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => addMutation.mutate(member.id)}
-                  disabled={addMutation.isPending}
-                  className="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-sm text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
-                >
-                  Add
-                </button>
-              </li>
+                member={member}
+                isPending={addMutation.isPending}
+                onAdd={(membershipId, isManager) =>
+                  addMutation.mutate({ membershipId, isManager })
+                }
+              />
             ))}
             {candidates.length === 0 && (
               <li className="text-slate-900">
