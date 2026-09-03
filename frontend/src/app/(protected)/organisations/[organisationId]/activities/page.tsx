@@ -1,8 +1,16 @@
-export default function ActivitiesPage() {
+import { ActivityFeed } from "@/components/ActivityFeed";
+
+type ActivitiesPageProps = {
+  params: Promise<{ organisationId: string }>;
+};
+
+export default async function ActivitiesPage({ params }: ActivitiesPageProps) {
+  const { organisationId } = await params;
+
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold text-primary-dark">Activity</h1>
-      <p className="text-slate-900">No recent activity.</p>
+      <ActivityFeed organisationId={organisationId} />
     </div>
   );
 }

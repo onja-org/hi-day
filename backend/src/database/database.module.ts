@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Activity } from './entities/activity.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
 import { DeviceSession } from './entities/device-session.entity';
@@ -36,6 +37,7 @@ import { User } from './entities/user.entity';
           Device,
           DeviceSession,
           TimeEntry,
+          Activity,
         ],
         synchronize: false,
       }),

@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { DevicesService } from '../../devices/services/devices.service';
+import { getManagerScopeTeamId } from '../../common/manager-scope.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -29,11 +35,45 @@ export class MembershipsService {
     private readonly devicesService: DevicesService,
   ) {}
 
+  /**
+   * Admins see every active member; managers are scoped to their own team
+   * (see docs/adr/0008 for why that's `Membership.teamId` today, not a real
+   * multi-team model).
+   */
   async listActiveForOrganisation(
     organisationId: string,
+    callerUserId: string,
   ): Promise<ActiveMemberSummary[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: callerUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    const where: FindOptionsWhere<Membership> = {
+      organisationId,
+      status: MembershipStatus.ACTIVE,
+    };
+
+    if (caller.role === MembershipRole.MANAGER) {
+      const scopeTeamId = getManagerScopeTeamId(caller);
+      if (scopeTeamId === null) {
+        // A teamless manager manages no team, so they see no members —
+        // not "no team filter", which would otherwise leak every other
+        // teamless membership to them.
+        return [];
+      }
+      where.teamId = scopeTeamId;
+    }
+
     const memberships = await this.memberships.find({
-      where: { organisationId, status: MembershipStatus.ACTIVE },
+      where,
       relations: { user: true },
       order: { createdAt: 'ASC' },
     });
@@ -51,9 +91,12 @@ export class MembershipsService {
   }
 
   /**
-   * Authorization is enforced upstream by RoleGuard/@RequireRole on the
-   * route — reaching this method already implies the caller is an
-   * admin/manager of this Organisation.
+   * RoleGuard/@RequireRole upstream only confirms the caller is an
+   * admin/manager of this Organisation — admin has no further restriction,
+   * but a manager caller is further restricted here: they can never modify
+   * their own Membership or touch an admin's Membership (current or
+   * requested role), and stay scoped to their own team, same as
+   * listActiveForOrganisation.
    */
   async update(
     organisationId: string,
@@ -61,6 +104,18 @@ export class MembershipsService {
     actorUserId: string,
     dto: UpdateMembershipDto,
   ): Promise<ActiveMemberSummary> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: actorUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
     const membership = await this.memberships.findOne({
       where: { id: membershipId, organisationId },
       relations: { user: true },
@@ -68,6 +123,19 @@ export class MembershipsService {
 
     if (!membership) {
       throw new NotFoundException('Membership not found.');
+    }
+
+    if (caller.role === MembershipRole.MANAGER) {
+      this.assertManagerCanModify(caller, membership, dto);
+    }
+
+    const losesAdmin =
+      membership.role === MembershipRole.ADMIN &&
+      ((dto.role !== undefined && dto.role !== MembershipRole.ADMIN) ||
+        dto.deactivate === true);
+
+    if (losesAdmin) {
+      await this.assertNotLastAdmin(organisationId, membershipId);
     }
 
     if (dto.role !== undefined) {
@@ -113,5 +181,61 @@ export class MembershipsService {
       status: membership.status,
       joinedAt: membership.createdAt,
     };
+  }
+
+  /**
+   * A manager can never modify their own Membership (self role-change/
+   * deactivate is a one-way footgun — a deactivated Membership can't
+   * reactivate itself). Admin access is also off-limits to managers
+   * entirely: they can't touch a Membership that's currently admin, and
+   * can't grant admin to anyone. They're otherwise scoped to their own
+   * team, same as the member list.
+   */
+  private assertManagerCanModify(
+    caller: Membership,
+    target: Membership,
+    dto: UpdateMembershipDto,
+  ): void {
+    if (caller.id === target.id) {
+      throw new ForbiddenException(
+        'Managers cannot modify their own membership.',
+      );
+    }
+
+    if (
+      target.role === MembershipRole.ADMIN ||
+      dto.role === MembershipRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        "Managers cannot modify an admin's role or access.",
+      );
+    }
+
+    const scopeTeamId = getManagerScopeTeamId(caller);
+    if (scopeTeamId === null || target.teamId !== scopeTeamId) {
+      throw new ForbiddenException(
+        'You can only manage members on your own team.',
+      );
+    }
+  }
+
+  private async assertNotLastAdmin(
+    organisationId: string,
+    excludingMembershipId: string,
+  ): Promise<void> {
+    const remainingAdmins = await this.memberships.count({
+      where: {
+        organisationId,
+        role: MembershipRole.ADMIN,
+        status: MembershipStatus.ACTIVE,
+        id: Not(excludingMembershipId),
+      },
+    });
+
+    if (remainingAdmins === 0) {
+      throw new ConflictException(
+        'This organisation must always have at least one active admin.',
+      );
+    }
   }
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
+import { ActivitiesModule } from '../../activities/modules/activities.module';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { AuthModule } from '../../auth/modules/auth.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
@@ -32,6 +33,7 @@ function inviteCreateTracker(req: Request): string {
     JwtAuthModule,
     AuthModule,
     DevicesModule,
+    ActivitiesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 10 },
       {

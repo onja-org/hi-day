@@ -10,6 +10,7 @@ export type OrganisationProfile = {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  userId: string;
 };
 
 export type GetOrganisationResult =

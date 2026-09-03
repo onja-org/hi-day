@@ -50,6 +50,7 @@ describe('OrganisationsService', () => {
   function makeTeamsRepo(overrides: Partial<Repository<Team>> = {}) {
     return {
       find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
       ...overrides,
     } as unknown as Repository<Team>;
   }
@@ -172,6 +173,7 @@ describe('OrganisationsService', () => {
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
+        userId: 'user-1',
       });
     });
 
@@ -191,19 +193,22 @@ describe('OrganisationsService', () => {
   });
 
   describe('listTeams', () => {
-    it("returns the organisation's teams as id/name pairs, ordered by name", async () => {
+    it('returns every organisation team for an admin caller', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValue({ role: MembershipRole.ADMIN, teamId: 'team-1' });
       const find = jest.fn().mockResolvedValue([
         { id: 'team-2', name: 'Sales', organisationId: 'org-1' },
         { id: 'team-1', name: 'General', organisationId: 'org-1' },
       ]);
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
-        makeMembershipsRepo(),
+        makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
       );
 
-      const teams = await service.listTeams('org-1');
+      const teams = await service.listTeams('org-1', 'admin-1');
 
       expect(find).toHaveBeenCalledWith({
         where: { organisationId: 'org-1' },
@@ -213,6 +218,60 @@ describe('OrganisationsService', () => {
         { id: 'team-2', name: 'Sales' },
         { id: 'team-1', name: 'General' },
       ]);
+    });
+
+    it('returns only their own team for a manager caller', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValue({ role: MembershipRole.MANAGER, teamId: 'team-1' });
+      const teamsFindOne = jest
+        .fn()
+        .mockResolvedValue({ id: 'team-1', name: 'General' });
+      const find = jest.fn();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo({ findOne: teamsFindOne, find }),
+        makeAuditLogService().auditLogService,
+      );
+
+      const teams = await service.listTeams('org-1', 'manager-1');
+
+      expect(teamsFindOne).toHaveBeenCalledWith({
+        where: { id: 'team-1', organisationId: 'org-1' },
+      });
+      expect(find).not.toHaveBeenCalled();
+      expect(teams).toEqual([{ id: 'team-1', name: 'General' }]);
+    });
+
+    it('returns an empty list for a teamless member caller', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValue({ role: MembershipRole.MEMBER, teamId: null });
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const teams = await service.listTeams('org-1', 'member-1');
+
+      expect(teams).toEqual([]);
+    });
+
+    it('throws when the caller has no active membership in the organisation', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(
+        service.listTeams('org-1', 'caller-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -233,7 +292,7 @@ describe('OrganisationsService', () => {
         makeAuditLogService().auditLogService,
       );
 
-      const profile = await service.updateProfile('org-1', {
+      const profile = await service.updateProfile('org-1', 'user-1', {
         name: 'Acme International',
         address: 'new address',
       });
@@ -242,6 +301,7 @@ describe('OrganisationsService', () => {
       expect(profile.name).toBe('Acme International');
       expect(profile.address).toBe('new address');
       expect(profile.role).toBe(MembershipRole.ADMIN);
+      expect(profile.userId).toBe('user-1');
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'Acme International',

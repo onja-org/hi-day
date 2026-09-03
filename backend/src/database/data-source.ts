@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
+import { Activity } from './entities/activity.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
 import { DeviceSession } from './entities/device-session.entity';
@@ -31,6 +32,7 @@ export default new DataSource({
     Device,
     DeviceSession,
     TimeEntry,
+    Activity,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });

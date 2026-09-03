@@ -7,6 +7,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ActivitiesService } from '../../activities/services/activities.service';
+import type { ActivityEntry } from '../../activities/services/activities.service';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
@@ -20,12 +22,16 @@ import { MembershipsService } from '../services/memberships.service';
 @UseGuards(JwtAuthGuard, RoleGuard)
 @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
 export class MembershipsController {
-  constructor(private readonly membershipsService: MembershipsService) {}
+  constructor(
+    private readonly membershipsService: MembershipsService,
+    private readonly activitiesService: ActivitiesService,
+  ) {}
 
   @Get()
   list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberSummary[]> {
     return this.membershipsService.listActiveForOrganisation(
       request.organisationId!,
+      request.userId,
     );
   }
 
@@ -40,6 +46,23 @@ export class MembershipsController {
       membershipId,
       request.userId,
       dto,
+    );
+  }
+
+  @Get(':membershipId/activities')
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
+  listActivity(
+    @Param('membershipId') membershipId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ActivityEntry[]> {
+    return this.activitiesService.listForMembership(
+      request.organisationId!,
+      request.userId,
+      membershipId,
     );
   }
 }

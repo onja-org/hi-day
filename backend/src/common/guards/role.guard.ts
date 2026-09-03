@@ -43,14 +43,6 @@ export class RoleGuard implements CanActivate {
 
     request.organisationId = organisation.id;
 
-    const requiredRoles = this.reflector.getAllAndOverride<
-      MembershipRole[] | undefined
-    >(REQUIRE_ROLE_KEY, [context.getHandler(), context.getClass()]);
-
-    if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
-    }
-
     const membership = await this.memberships.findOne({
       where: {
         userId: request.userId,
@@ -59,7 +51,21 @@ export class RoleGuard implements CanActivate {
       },
     });
 
-    if (!membership || !requiredRoles.includes(membership.role)) {
+    if (!membership) {
+      throw new ForbiddenException(
+        'You do not have access to this organisation.',
+      );
+    }
+
+    const requiredRoles = this.reflector.getAllAndOverride<
+      MembershipRole[] | undefined
+    >(REQUIRE_ROLE_KEY, [context.getHandler(), context.getClass()]);
+
+    if (
+      requiredRoles &&
+      requiredRoles.length > 0 &&
+      !requiredRoles.includes(membership.role)
+    ) {
       throw new ForbiddenException(
         'You do not have the required role for this organisation.',
       );

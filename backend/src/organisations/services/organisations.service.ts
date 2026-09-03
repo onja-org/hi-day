@@ -37,6 +37,7 @@ interface OrganisationSettings {
   website?: string | null;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
+  userId: string;
 }
 
 @Injectable()
@@ -105,17 +106,44 @@ export class OrganisationsService {
       throw new NotFoundException('No organisation found for this user.');
     }
 
-    return this.toProfile(membership.organisation, membership.role);
+    return this.toProfile(membership.organisation, membership.role, userId);
   }
 
   /**
-   * Authorization is enforced upstream by RoleGuard/@RequireRole on the
-   * route — reaching this method already implies the caller belongs to
-   * this Organisation.
+   * "Teams" is a personal space, same as Activity/dashboard: an admin sees
+   * every team in the Organisation (they manage the whole org), but anyone
+   * else only sees the team(s) they themselves belong to — today that's at
+   * most one team, via `Membership.teamId` (see docs/adr/0008). This also
+   * governs which teams a manager can assign a new invite to.
    */
   async listTeams(
     organisationId: string,
+    callerUserId: string,
   ): Promise<{ id: string; name: string }[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: callerUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    if (caller.role !== MembershipRole.ADMIN) {
+      if (caller.teamId === null) {
+        return [];
+      }
+
+      const team = await this.teams.findOne({
+        where: { id: caller.teamId, organisationId },
+      });
+
+      return team ? [{ id: team.id, name: team.name }] : [];
+    }
+
     const teams = await this.teams.find({
       where: { organisationId },
       order: { name: 'ASC' },
@@ -131,6 +159,7 @@ export class OrganisationsService {
    */
   async updateProfile(
     organisationId: string,
+    userId: string,
     dto: UpdateOrganisationDto,
   ): Promise<OrganisationProfile> {
     const organisation = await this.organisations.findOneOrFail({
@@ -154,7 +183,7 @@ export class OrganisationsService {
 
     await this.organisations.save(organisation);
 
-    return this.toProfile(organisation, MembershipRole.ADMIN);
+    return this.toProfile(organisation, MembershipRole.ADMIN, userId);
   }
 
   /**
@@ -178,6 +207,7 @@ export class OrganisationsService {
   private toProfile(
     organisation: Organisation,
     role: MembershipRole,
+    userId: string,
   ): OrganisationProfile {
     const settings = organisation.settings as OrganisationSettings;
 
@@ -187,9 +217,13 @@ export class OrganisationsService {
       address: settings.address ?? null,
       website: settings.website ?? null,
       role,
+<<<<<<< HEAD
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+=======
+      userId,
+>>>>>>> a2dd858 (work progress)
     };
   }
 }
