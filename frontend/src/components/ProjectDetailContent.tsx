@@ -10,6 +10,7 @@ import { ProjectColourBadge } from "./ProjectColourBadge";
 import { ProjectFormModal } from "./ProjectFormModal";
 import { ProjectMembersSection } from "./ProjectMembersSection";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
+import { ProjectTasksSection } from "./ProjectTasksSection";
 import { Spinner } from "./Spinner";
 
 type ProjectDetailContentProps = {
@@ -76,12 +77,6 @@ export function ProjectDetailContent({
           <ProjectStatusBadge status={project.status} />
         </div>
         <div className="flex items-center gap-4">
-          <Link
-            href={`/organisations/${organisationId}/projects/${projectId}/tasks`}
-            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10"
-          >
-            Tasks
-          </Link>
           <button
             type="button"
             onClick={() => setEditOpen(true)}
@@ -119,6 +114,8 @@ export function ProjectDetailContent({
       </dl>
 
       <ProjectMembersSection organisationId={organisationId} project={project} />
+
+      <ProjectTasksSection organisationId={organisationId} projectId={projectId} />
 
       {editOpen && (
         <ProjectFormModal

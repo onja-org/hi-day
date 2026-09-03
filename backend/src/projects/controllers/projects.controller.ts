@@ -23,6 +23,7 @@ import { ProjectRoleGuard } from '../guards/project-role.guard';
 import type {
   AssignableMemberSummary,
   ProjectDetail,
+  ProjectListItem,
   ProjectMemberSummary,
   ProjectSummary,
 } from '../services/projects.service';
@@ -42,7 +43,7 @@ export class ProjectsController {
     @Req() request: AuthenticatedRequest,
     @Query('status') status?: 'active' | 'archived',
     @Query('client') client?: string,
-  ): Promise<ProjectSummary[]> {
+  ): Promise<ProjectListItem[]> {
     return this.projectsService.list(request.organisationId!, {
       status,
       client,

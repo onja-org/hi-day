@@ -7,6 +7,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { Task } from '../../database/entities/task.entity';
 import { ProjectsController } from '../controllers/projects.controller';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
 import { ProjectsService } from '../services/projects.service';
@@ -15,6 +16,7 @@ import { ProjectsService } from '../services/projects.service';
   imports: [
     TypeOrmModule.forFeature([
       Project,
+      Task,
       ProjectMembership,
       Membership,
       Organisation,

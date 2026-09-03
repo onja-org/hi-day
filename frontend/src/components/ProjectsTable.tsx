@@ -85,6 +85,7 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
               <th className="px-3 py-2 font-medium">Name</th>
               <th className="px-3 py-2 font-medium">Client</th>
               <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Tasks</th>
               <th className="px-3 py-2 font-medium">Rate</th>
               <th className="px-3 py-2 font-medium" />
             </tr>
@@ -99,7 +100,7 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
             ))}
             {projects.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-4 text-center text-slate-900">
+                <td colSpan={6} className="px-3 py-4 text-center text-slate-900">
                   {hasFilters
                     ? "No projects match your filters."
                     : "No projects yet. Create one to start tracking time against real work."}

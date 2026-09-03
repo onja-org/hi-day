@@ -7,6 +7,7 @@ import { Project } from '../../../database/entities/project.entity';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../../database/entities/project-membership-role.enum';
+import { Task } from '../../../database/entities/task.entity';
 import { ProjectsService } from '../projects.service';
 
 function uniqueViolationError(): QueryFailedError {
@@ -37,6 +38,21 @@ describe('ProjectsService', () => {
     } as unknown as Repository<Project> & {
       __queryBuilder: typeof queryBuilder;
     };
+  }
+
+  function makeTasksRepo(overrides: Partial<Repository<Task>> = {}) {
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    };
+    return {
+      createQueryBuilder: jest.fn(() => queryBuilder),
+      ...overrides,
+      __queryBuilder: queryBuilder,
+    } as unknown as Repository<Task> & { __queryBuilder: typeof queryBuilder };
   }
 
   function makeProjectMembershipsRepo(
@@ -86,6 +102,7 @@ describe('ProjectsService', () => {
   function makeService(
     overrides: {
       projectsRepo?: Repository<Project>;
+      tasksRepo?: Repository<Task>;
       projectMembershipsRepo?: Repository<ProjectMembership>;
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
@@ -94,6 +111,7 @@ describe('ProjectsService', () => {
   ) {
     return new ProjectsService(
       overrides.projectsRepo ?? makeProjectsRepo(),
+      overrides.tasksRepo ?? makeTasksRepo(),
       overrides.projectMembershipsRepo ?? makeProjectMembershipsRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
@@ -618,6 +636,43 @@ describe('ProjectsService', () => {
         'project.client = :client',
         { client: 'Acme' },
       );
+    });
+
+    it('attaches a task count per project from a single grouped query', async () => {
+      const projectsRepo = makeProjectsRepo();
+      (
+        projectsRepo as unknown as { __queryBuilder: { getMany: jest.Mock } }
+      ).__queryBuilder.getMany.mockResolvedValue([
+        { ...baseProject, id: 'project-1' },
+        { ...baseProject, id: 'project-2' },
+      ]);
+      const getRawMany = jest
+        .fn()
+        .mockResolvedValue([{ projectId: 'project-1', count: '3' }]);
+      const tasksRepo = makeTasksRepo();
+      (
+        tasksRepo as unknown as { __queryBuilder: { getRawMany: jest.Mock } }
+      ).__queryBuilder.getRawMany = getRawMany;
+      const service = makeService({ projectsRepo, tasksRepo });
+
+      const result = await service.list('org-1', {});
+
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'project-1', taskCount: 3 }),
+        expect.objectContaining({ id: 'project-2', taskCount: 0 }),
+      ]);
+    });
+
+    it('skips the task count query when there are no projects', async () => {
+      const tasksRepo = makeTasksRepo();
+      const service = makeService({ tasksRepo });
+
+      await service.list('org-1', {});
+
+      const createQueryBuilder = (
+        tasksRepo as unknown as { createQueryBuilder: jest.Mock }
+      ).createQueryBuilder;
+      expect(createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 

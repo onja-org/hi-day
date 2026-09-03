@@ -12,6 +12,7 @@ import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import { Task } from '../../database/entities/task.entity';
 import { AddProjectMemberDto } from '../dto/add-project-member.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
@@ -49,6 +50,10 @@ export interface ProjectDetail extends ProjectSummary {
   members: ProjectMemberSummary[];
 }
 
+export interface ProjectListItem extends ProjectSummary {
+  taskCount: number;
+}
+
 export interface ListProjectsFilter {
   status?: 'active' | 'archived';
   client?: string;
@@ -66,6 +71,8 @@ export class ProjectsService {
   constructor(
     @InjectRepository(Project)
     private readonly projects: Repository<Project>,
+    @InjectRepository(Task)
+    private readonly tasks: Repository<Task>,
     @InjectRepository(ProjectMembership)
     private readonly projectMemberships: Repository<ProjectMembership>,
     @InjectRepository(Membership)
@@ -77,7 +84,7 @@ export class ProjectsService {
   async list(
     organisationId: string,
     filter: ListProjectsFilter,
-  ): Promise<ProjectSummary[]> {
+  ): Promise<ProjectListItem[]> {
     const query = this.projects
       .createQueryBuilder('project')
       .where('project.organisationId = :organisationId', { organisationId });
@@ -95,7 +102,34 @@ export class ProjectsService {
     query.orderBy('project.name', 'ASC');
 
     const projects = await query.getMany();
-    return projects.map((project) => this.toSummary(project));
+    const taskCounts = await this.getTaskCounts(projects.map((p) => p.id));
+
+    return projects.map((project) => ({
+      ...this.toSummary(project),
+      taskCount: taskCounts.get(project.id) ?? 0,
+    }));
+  }
+
+  /**
+   * A single grouped count query instead of one COUNT per project, so the
+   * list page stays O(1) queries regardless of how many projects it shows.
+   */
+  private async getTaskCounts(
+    projectIds: string[],
+  ): Promise<Map<string, number>> {
+    if (projectIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.tasks
+      .createQueryBuilder('task')
+      .select('task.projectId', 'projectId')
+      .addSelect('COUNT(*)', 'count')
+      .where('task.projectId IN (:...projectIds)', { projectIds })
+      .groupBy('task.projectId')
+      .getRawMany<{ projectId: string; count: string }>();
+
+    return new Map(rows.map((row) => [row.projectId, Number(row.count)]));
   }
 
   /**

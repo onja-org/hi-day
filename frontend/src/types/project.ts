@@ -41,6 +41,10 @@ export type ProjectDetail = Project & {
   members: ProjectMember[];
 };
 
+export type ProjectListItem = Project & {
+  taskCount: number;
+};
+
 export type ProjectFormInput = {
   name: string;
   client?: string;
@@ -51,7 +55,7 @@ export type ProjectFormInput = {
 };
 
 export type GetProjectsResult =
-  | { ok: true; projects: Project[] }
+  | { ok: true; projects: ProjectListItem[] }
   | { ok: false; message: string };
 
 export type GetProjectResult =
