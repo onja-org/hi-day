@@ -64,7 +64,7 @@ describe('OrganisationsService', () => {
   }
 
   describe('createForUser', () => {
-    it('creates the organisation, a default "General" team, and an admin membership linked to it', async () => {
+    it('creates the organisation, a default "General" team, and an admin membership with no team_memberships row', async () => {
       const { manager, create } = makeManager();
       const { auditLogService, record } = makeAuditLogService();
       const service = new OrganisationsService(
@@ -105,10 +105,13 @@ describe('OrganisationsService', () => {
         expect.objectContaining({
           userId: 'user-1',
           organisationId: 'org-1',
-          teamId: 'team-1',
           role: MembershipRole.ADMIN,
         }),
       );
+      const membershipCreateCall = create.mock.calls.find(
+        (call) => call[1].userId === 'user-1',
+      );
+      expect(membershipCreateCall?.[1]).not.toHaveProperty('teamId');
       expect(record).toHaveBeenCalledWith(
         manager,
         expect.objectContaining({
@@ -194,9 +197,10 @@ describe('OrganisationsService', () => {
 
   describe('listTeams', () => {
     it('returns every organisation team for an admin caller', async () => {
-      const findOne = jest
-        .fn()
-        .mockResolvedValue({ role: MembershipRole.ADMIN, teamId: 'team-1' });
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      });
       const find = jest.fn().mockResolvedValue([
         { id: 'team-2', name: 'Sales', organisationId: 'org-1' },
         { id: 'team-1', name: 'General', organisationId: 'org-1' },
@@ -220,44 +224,77 @@ describe('OrganisationsService', () => {
       ]);
     });
 
-    it('returns only their own team for a manager caller', async () => {
-      const findOne = jest
+    it('returns only the teams a manager caller belongs to', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const find = jest
         .fn()
-        .mockResolvedValue({ role: MembershipRole.MANAGER, teamId: 'team-1' });
-      const teamsFindOne = jest
-        .fn()
-        .mockResolvedValue({ id: 'team-1', name: 'General' });
-      const find = jest.fn();
+        .mockResolvedValue([{ id: 'team-1', name: 'General' }]);
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo({ findOne }),
-        makeTeamsRepo({ findOne: teamsFindOne, find }),
+        makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
       );
 
       const teams = await service.listTeams('org-1', 'manager-1');
 
-      expect(teamsFindOne).toHaveBeenCalledWith({
-        where: { id: 'team-1', organisationId: 'org-1' },
-      });
-      expect(find).not.toHaveBeenCalled();
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: 'org-1',
+          }) as unknown,
+        }),
+      );
       expect(teams).toEqual([{ id: 'team-1', name: 'General' }]);
     });
 
     it('returns an empty list for a teamless member caller', async () => {
-      const findOne = jest
-        .fn()
-        .mockResolvedValue({ role: MembershipRole.MEMBER, teamId: null });
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+      });
+      const find = jest.fn();
       const service = new OrganisationsService(
         makeOrganisationsRepo(),
         makeMembershipsRepo({ findOne }),
-        makeTeamsRepo(),
+        makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
       );
 
       const teams = await service.listTeams('org-1', 'member-1');
 
+      expect(find).not.toHaveBeenCalled();
       expect(teams).toEqual([]);
+    });
+
+    it('returns every team a member belongs to when they are on more than one', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MEMBER,
+        teamMemberships: [
+          { teamId: 'team-1', isManager: false },
+          { teamId: 'team-2', isManager: false },
+        ],
+      });
+      const find = jest.fn().mockResolvedValue([
+        { id: 'team-1', name: 'General' },
+        { id: 'team-2', name: 'Sales' },
+      ]);
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo({ find }),
+        makeAuditLogService().auditLogService,
+      );
+
+      const teams = await service.listTeams('org-1', 'member-1');
+
+      expect(teams).toEqual([
+        { id: 'team-1', name: 'General' },
+        { id: 'team-2', name: 'Sales' },
+      ]);
     });
 
     it('throws when the caller has no active membership in the organisation', async () => {

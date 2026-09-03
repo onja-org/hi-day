@@ -12,6 +12,7 @@ import { ProjectMembership } from './entities/project-membership.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
+import { TeamMembership } from './entities/team-membership.entity';
 import { TimeEntry } from './entities/time-entry.entity';
 import { User } from './entities/user.entity';
 
@@ -23,6 +24,7 @@ export default new DataSource({
     User,
     Membership,
     Team,
+    TeamMembership,
     Project,
     ProjectMembership,
     Task,

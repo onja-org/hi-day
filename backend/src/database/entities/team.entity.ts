@@ -9,8 +9,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Invitation } from './invitation.entity';
-import { Membership } from './membership.entity';
 import { Organisation } from './organisation.entity';
+import { TeamMembership } from './team-membership.entity';
 
 @Entity({ name: 'teams' })
 export class Team {
@@ -36,8 +36,8 @@ export class Team {
   @JoinColumn({ name: 'organisationId' })
   organisation: Organisation;
 
-  @OneToMany(() => Membership, (membership) => membership.team)
-  memberships: Membership[];
+  @OneToMany(() => TeamMembership, (teamMembership) => teamMembership.team)
+  teamMemberships: TeamMembership[];
 
   @OneToMany(() => Invitation, (invitation) => invitation.team)
   invitations: Invitation[];

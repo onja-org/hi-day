@@ -32,9 +32,8 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
   const pathname = usePathname();
   const organisationQuery = useCurrentOrganisation();
   const organisationName = organisationQuery.data?.name ?? "Workforce";
-  const canSeeMembers =
-    organisationQuery.data?.role === "admin" ||
-    organisationQuery.data?.role === "manager";
+  const isAdmin = organisationQuery.data?.role === "admin";
+  const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
   const items: NavItem[] = [
     { label: "Dashboard", href: `/dashboard/${organisationId}/me`, icon: Gauge },
@@ -48,11 +47,15 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
       href: `/organisations/${organisationId}/activities`,
       icon: ChartLineUp,
     },
-    {
-      label: "Teams",
-      href: `/organisations/${organisationId}/teams`,
-      icon: UsersThree,
-    },
+    ...(isAdmin
+      ? [
+          {
+            label: "Teams",
+            href: `/organisations/${organisationId}/teams`,
+            icon: UsersThree,
+          },
+        ]
+      : []),
     ...(canSeeMembers
       ? [
           {

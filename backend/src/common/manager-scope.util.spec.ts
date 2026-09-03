@@ -1,16 +1,28 @@
 import { Membership } from '../database/entities/membership.entity';
-import { getManagerScopeTeamId } from './manager-scope.util';
+import { getManagerScopeTeamIds } from './manager-scope.util';
 
-describe('getManagerScopeTeamId', () => {
-  it("returns the manager's own teamId", () => {
-    const membership = { teamId: 'team-1' } as Membership;
+describe('getManagerScopeTeamIds', () => {
+  it('returns the teams the manager manages', () => {
+    const membership = {
+      teamMemberships: [
+        { teamId: 'team-1', isManager: true },
+        { teamId: 'team-2', isManager: false },
+        { teamId: 'team-3', isManager: true },
+      ],
+    } as Membership;
 
-    expect(getManagerScopeTeamId(membership)).toBe('team-1');
+    expect(getManagerScopeTeamIds(membership)).toEqual(['team-1', 'team-3']);
   });
 
-  it('returns null when the manager has no team', () => {
-    const membership = { teamId: null } as Membership;
+  it('returns an empty array when the manager has no team memberships', () => {
+    const membership = { teamMemberships: [] } as unknown as Membership;
 
-    expect(getManagerScopeTeamId(membership)).toBeNull();
+    expect(getManagerScopeTeamIds(membership)).toEqual([]);
+  });
+
+  it('returns an empty array when teamMemberships was not loaded', () => {
+    const membership = {} as Membership;
+
+    expect(getManagerScopeTeamIds(membership)).toEqual([]);
   });
 });

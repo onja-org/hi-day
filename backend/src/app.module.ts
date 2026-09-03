@@ -12,6 +12,7 @@ import { MembersModule } from './members/modules/members.module';
 import { ProjectsModule } from './projects/modules/projects.module';
 import { TasksModule } from './tasks/modules/tasks.module';
 import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
+import { TeamsModule } from './teams/modules/teams.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
     DeviceTrackingModule,
     ActivitiesModule,
     TimeEntriesModule,
+    TeamsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -90,9 +90,11 @@ export class ActivitiesService {
           organisationId,
           status: MembershipStatus.ACTIVE,
         },
+        relations: { teamMemberships: true },
       }),
       this.memberships.findOne({
         where: { id: targetMembershipId, organisationId },
+        relations: { teamMemberships: true },
       }),
     ]);
 

@@ -14,6 +14,7 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { Organisation } from '../../../database/entities/organisation.entity';
+import { TeamMembership } from '../../../database/entities/team-membership.entity';
 import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
 import { InvitationsService } from '../invitations.service';
@@ -575,13 +576,23 @@ describe('InvitationsService', () => {
           passwordHash: 'hashed-password',
         }),
       );
-      expect(create).toHaveBeenCalledWith(
-        Membership,
+      const membershipCreateCall = create.mock.calls.find(
+        (call) => call[0] === Membership,
+      );
+      expect(membershipCreateCall?.[1]).toEqual(
         expect.objectContaining({
           organisationId: 'org-1',
           role: MembershipRole.MEMBER,
-          teamId: 'team-1',
           status: MembershipStatus.ACTIVE,
+        }),
+      );
+      expect(membershipCreateCall?.[1]).not.toHaveProperty('teamId');
+      expect(create).toHaveBeenCalledWith(
+        TeamMembership,
+        expect.objectContaining({
+          membershipId: 'new-id',
+          teamId: 'team-1',
+          isManager: false,
         }),
       );
       expect(update).toHaveBeenCalledWith(
@@ -596,6 +607,33 @@ describe('InvitationsService', () => {
       expect(issue).toHaveBeenCalled();
       expect(cookie).toHaveBeenCalled();
       expect(result.message).toContain('Acme Inc');
+    });
+
+    it('does not create a team_memberships row when the invitation targets no team', async () => {
+      const invitationsRepo = makeInvitationsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue(pendingInvitation({ teamId: null })),
+      });
+      const { dataSource, create } = makeDataSource();
+      const { refreshTokenService } = makeRefreshTokenService();
+      const service = makeService({
+        invitationsRepo,
+        dataSource,
+        refreshTokenService,
+      });
+
+      await service.accept(
+        'the-token',
+        { password: 'Password1', firstName: 'Jane', lastName: 'Doe' },
+        makeRequest(),
+        makeResponse().response,
+      );
+
+      expect(create).not.toHaveBeenCalledWith(
+        TeamMembership,
+        expect.anything(),
+      );
     });
 
     it('requires a password when the invited email has no existing account', async () => {

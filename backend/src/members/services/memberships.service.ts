@@ -5,10 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, FindOptionsWhere, Not, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { DevicesService } from '../../devices/services/devices.service';
-import { getManagerScopeTeamId } from '../../common/manager-scope.util';
+import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -20,7 +20,7 @@ export interface ActiveMemberSummary {
   email: string;
   name: string | null;
   role: MembershipRole;
-  teamId: string | null;
+  teamIds: string[];
   status: MembershipStatus;
   joinedAt: Date;
 }
@@ -36,9 +36,9 @@ export class MembershipsService {
   ) {}
 
   /**
-   * Admins see every active member; managers are scoped to their own team
-   * (see docs/adr/0008 for why that's `Membership.teamId` today, not a real
-   * multi-team model).
+   * Admins see every active member; managers are scoped to the team(s) they
+   * manage (see docs/adr/0008 for the history of this scoping, now backed
+   * by the real `team_memberships` join table).
    */
   async listActiveForOrganisation(
     organisationId: string,
@@ -50,44 +50,51 @@ export class MembershipsService {
         organisationId,
         status: MembershipStatus.ACTIVE,
       },
+      relations: { teamMemberships: true },
     });
 
     if (!caller) {
       throw new NotFoundException('Membership not found.');
     }
 
-    const where: FindOptionsWhere<Membership> = {
-      organisationId,
-      status: MembershipStatus.ACTIVE,
-    };
+    let memberships: Membership[];
 
     if (caller.role === MembershipRole.MANAGER) {
-      const scopeTeamId = getManagerScopeTeamId(caller);
-      if (scopeTeamId === null) {
-        // A teamless manager manages no team, so they see no members —
-        // not "no team filter", which would otherwise leak every other
-        // teamless membership to them.
+      const scopeTeamIds = getManagerScopeTeamIds(caller);
+      if (scopeTeamIds.length === 0) {
+        // A teamless (or non-managing) manager manages no team, so they see
+        // no members — not "no team filter", which would otherwise leak
+        // every other teamless membership to them.
         return [];
       }
-      where.teamId = scopeTeamId;
+
+      memberships = await this.memberships
+        .createQueryBuilder('membership')
+        .innerJoinAndSelect('membership.user', 'user')
+        .innerJoin(
+          'membership.teamMemberships',
+          'scopeTm',
+          'scopeTm.teamId IN (:...scopeTeamIds)',
+          { scopeTeamIds },
+        )
+        .leftJoinAndSelect('membership.teamMemberships', 'allTm')
+        .where('membership.organisationId = :organisationId', {
+          organisationId,
+        })
+        .andWhere('membership.status = :status', {
+          status: MembershipStatus.ACTIVE,
+        })
+        .orderBy('membership.createdAt', 'ASC')
+        .getMany();
+    } else {
+      memberships = await this.memberships.find({
+        where: { organisationId, status: MembershipStatus.ACTIVE },
+        relations: { user: true, teamMemberships: true },
+        order: { createdAt: 'ASC' },
+      });
     }
 
-    const memberships = await this.memberships.find({
-      where,
-      relations: { user: true },
-      order: { createdAt: 'ASC' },
-    });
-
-    return memberships.map((membership) => ({
-      id: membership.id,
-      userId: membership.userId,
-      email: membership.user.email,
-      name: membership.user.name,
-      role: membership.role,
-      teamId: membership.teamId,
-      status: membership.status,
-      joinedAt: membership.createdAt,
-    }));
+    return memberships.map((membership) => this.toSummary(membership));
   }
 
   /**
@@ -95,7 +102,7 @@ export class MembershipsService {
    * admin/manager of this Organisation — admin has no further restriction,
    * but a manager caller is further restricted here: they can never modify
    * their own Membership or touch an admin's Membership (current or
-   * requested role), and stay scoped to their own team, same as
+   * requested role), and stay scoped to the team(s) they manage, same as
    * listActiveForOrganisation.
    */
   async update(
@@ -110,6 +117,7 @@ export class MembershipsService {
         organisationId,
         status: MembershipStatus.ACTIVE,
       },
+      relations: { teamMemberships: true },
     });
 
     if (!caller) {
@@ -118,7 +126,7 @@ export class MembershipsService {
 
     const membership = await this.memberships.findOne({
       where: { id: membershipId, organisationId },
-      relations: { user: true },
+      relations: { user: true, teamMemberships: true },
     });
 
     if (!membership) {
@@ -171,16 +179,7 @@ export class MembershipsService {
       }
     });
 
-    return {
-      id: membership.id,
-      userId: membership.userId,
-      email: membership.user.email,
-      name: membership.user.name,
-      role: membership.role,
-      teamId: membership.teamId,
-      status: membership.status,
-      joinedAt: membership.createdAt,
-    };
+    return this.toSummary(membership);
   }
 
   /**
@@ -188,8 +187,8 @@ export class MembershipsService {
    * deactivate is a one-way footgun — a deactivated Membership can't
    * reactivate itself). Admin access is also off-limits to managers
    * entirely: they can't touch a Membership that's currently admin, and
-   * can't grant admin to anyone. They're otherwise scoped to their own
-   * team, same as the member list.
+   * can't grant admin to anyone. They're otherwise scoped to the team(s)
+   * they manage, same as the member list.
    */
   private assertManagerCanModify(
     caller: Membership,
@@ -211,8 +210,15 @@ export class MembershipsService {
       );
     }
 
-    const scopeTeamId = getManagerScopeTeamId(caller);
-    if (scopeTeamId === null || target.teamId !== scopeTeamId) {
+    const scopeTeamIds = getManagerScopeTeamIds(caller);
+    const targetTeamIds = (target.teamMemberships ?? []).map(
+      (teamMembership) => teamMembership.teamId,
+    );
+    const sharesManagedTeam = targetTeamIds.some((teamId) =>
+      scopeTeamIds.includes(teamId),
+    );
+
+    if (scopeTeamIds.length === 0 || !sharesManagedTeam) {
       throw new ForbiddenException(
         'You can only manage members on your own team.',
       );
@@ -237,5 +243,20 @@ export class MembershipsService {
         'This organisation must always have at least one active admin.',
       );
     }
+  }
+
+  private toSummary(membership: Membership): ActiveMemberSummary {
+    return {
+      id: membership.id,
+      userId: membership.userId,
+      email: membership.user.email,
+      name: membership.user.name,
+      role: membership.role,
+      teamIds: (membership.teamMemberships ?? []).map(
+        (teamMembership) => teamMembership.teamId,
+      ),
+      status: membership.status,
+      joinedAt: membership.createdAt,
+    };
   }
 }

@@ -8,7 +8,7 @@ export type ActiveMember = {
   email: string;
   name: string | null;
   role: MembershipRole;
-  teamId: string | null;
+  teamIds: string[];
   status: MembershipStatus;
   joinedAt: string;
 };

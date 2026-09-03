@@ -1,6 +1,8 @@
 ---
-status: accepted
+status: superseded
 ---
+
+> **Superseded**: the Teams ticket this ADR anticipated has shipped. `Membership.teamId` is gone, replaced by the `team_memberships(membershipId, teamId, isManager)` join table this ADR predicted. `getManagerScopeTeamId` is now `getManagerScopeTeamIds`, returning every team the caller manages rather than at most one. The prediction that "only this one function needs to change" held for the scope *decision* logic, but turned out incomplete in one respect: five existing `Membership` lookups elsewhere (in `activities`, `timesheets`, and `memberships` services) also needed a `relations: { teamMemberships: true }` addition, since that relation isn't populated unless explicitly requested — unlike the scalar `teamId` column they replaced. This document is kept for history.
 
 # A manager's scope is computed from `Membership.teamId`, not a real multi-team model
 

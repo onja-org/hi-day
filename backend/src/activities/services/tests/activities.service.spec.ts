@@ -121,7 +121,7 @@ describe('ActivitiesService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
       };
       const findOne = jest.fn().mockResolvedValue(self);
@@ -145,14 +145,14 @@ describe('ActivitiesService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
         status: MembershipStatus.ACTIVE,
       };
       const target = {
         id: 'membership-2',
         userId: 'user-2',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
         status: MembershipStatus.ACTIVE,
       };
       const findOne = jest
@@ -168,19 +168,19 @@ describe('ActivitiesService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it("allows a manager to view a member on the manager's team", async () => {
+    it('allows a manager to view a member on a team they manage', async () => {
       const caller = {
         id: 'membership-1',
         userId: 'manager-1',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
         status: MembershipStatus.ACTIVE,
       };
       const target = {
         id: 'membership-2',
         userId: 'user-2',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
         status: MembershipStatus.ACTIVE,
       };
       const findOne = jest
@@ -207,14 +207,14 @@ describe('ActivitiesService', () => {
         id: 'membership-1',
         userId: 'admin-1',
         role: MembershipRole.ADMIN,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
       };
       const target = {
         id: 'membership-2',
         userId: 'user-2',
         role: MembershipRole.MEMBER,
-        teamId: 'team-9',
+        teamMemberships: [{ teamId: 'team-9', isManager: false }],
         status: MembershipStatus.ACTIVE,
       };
       const findOne = jest

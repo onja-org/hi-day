@@ -1,11 +1,12 @@
 import { Membership } from '../database/entities/membership.entity';
 import { MembershipRole } from '../database/entities/membership-role.enum';
-import { getManagerScopeTeamId } from './manager-scope.util';
+import { getManagerScopeTeamIds } from './manager-scope.util';
 
 /**
  * Whether `caller` may view data belonging to `target`: always themselves,
- * admins see everyone, managers see their own team, and peers never see
- * each other.
+ * admins see everyone, managers see anyone sharing one of their managed
+ * teams, and peers never see each other. Requires both `caller` and
+ * `target` to have `teamMemberships` loaded.
  */
 export function canViewMembership(
   caller: Membership,
@@ -20,8 +21,15 @@ export function canViewMembership(
   }
 
   if (caller.role === MembershipRole.MANAGER) {
-    const scopeTeamId = getManagerScopeTeamId(caller);
-    return scopeTeamId !== null && target.teamId === scopeTeamId;
+    const scopeTeamIds = getManagerScopeTeamIds(caller);
+    if (scopeTeamIds.length === 0) {
+      return false;
+    }
+
+    const targetTeamIds = (target.teamMemberships ?? []).map(
+      (teamMembership) => teamMembership.teamId,
+    );
+    return targetTeamIds.some((teamId) => scopeTeamIds.includes(teamId));
   }
 
   return false;

@@ -12,14 +12,39 @@ import { MembershipStatus } from '../../../database/entities/membership-status.e
 import { MembershipsService } from '../memberships.service';
 
 describe('MembershipsService', () => {
+  function makeQueryBuilder(result: unknown[] = []) {
+    const qb = {
+      innerJoinAndSelect: jest.fn(),
+      innerJoin: jest.fn(),
+      leftJoinAndSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      getMany: jest.fn().mockResolvedValue(result),
+    };
+    qb.innerJoinAndSelect.mockReturnValue(qb);
+    qb.innerJoin.mockReturnValue(qb);
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.where.mockReturnValue(qb);
+    qb.andWhere.mockReturnValue(qb);
+    qb.orderBy.mockReturnValue(qb);
+    return qb;
+  }
+
   function makeMembershipsRepo(
-    overrides: Partial<Repository<Membership>> = {},
+    overrides: Partial<Repository<Membership>> & {
+      queryBuilder?: ReturnType<typeof makeQueryBuilder>;
+    } = {},
   ) {
+    const { queryBuilder, ...rest } = overrides;
     return {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
-      ...overrides,
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValue(queryBuilder ?? makeQueryBuilder()),
+      ...rest,
     } as unknown as Repository<Membership>;
   }
 
@@ -77,15 +102,16 @@ describe('MembershipsService', () => {
     });
 
     it('lists every active membership, unfiltered, for an admin caller', async () => {
-      const findOne = jest
-        .fn()
-        .mockResolvedValue({ role: MembershipRole.ADMIN, teamId: null });
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      });
       const find = jest.fn().mockResolvedValue([
         {
           id: 'membership-1',
           userId: 'user-1',
           role: MembershipRole.MEMBER,
-          teamId: 'team-2',
+          teamMemberships: [{ teamId: 'team-2', isManager: false }],
           status: MembershipStatus.ACTIVE,
           createdAt: new Date('2026-01-01'),
           user: { email: 'a@b.test', name: 'A B' },
@@ -112,42 +138,58 @@ describe('MembershipsService', () => {
           email: 'a@b.test',
           name: 'A B',
           role: MembershipRole.MEMBER,
-          teamId: 'team-2',
+          teamIds: ['team-2'],
           status: MembershipStatus.ACTIVE,
           joinedAt: new Date('2026-01-01'),
         },
       ]);
     });
 
-    it("scopes the list to the manager caller's own team", async () => {
-      const findOne = jest
-        .fn()
-        .mockResolvedValue({ role: MembershipRole.MANAGER, teamId: 'team-1' });
-      const find = jest.fn().mockResolvedValue([]);
+    it('scopes the list to the teams the manager caller manages', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const queryBuilder = makeQueryBuilder([]);
       const service = makeService({
-        membershipsRepo: makeMembershipsRepo({ findOne, find }),
+        membershipsRepo: makeMembershipsRepo({ findOne, queryBuilder }),
       });
 
       await service.listActiveForOrganisation('org-1', 'caller-1');
 
-      expect(find).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            organisationId: 'org-1',
-            status: MembershipStatus.ACTIVE,
-            teamId: 'team-1',
-          },
-        }),
+      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+        'membership.teamMemberships',
+        'scopeTm',
+        'scopeTm.teamId IN (:...scopeTeamIds)',
+        { scopeTeamIds: ['team-1'] },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'membership.status = :status',
+        { status: MembershipStatus.ACTIVE },
       );
     });
 
-    it('returns no members for a teamless manager without querying every other teamless membership', async () => {
-      const findOne = jest
-        .fn()
-        .mockResolvedValue({ role: MembershipRole.MANAGER, teamId: null });
-      const find = jest.fn().mockResolvedValue([]);
+    it('includes every team a returned member belongs to, not just the scoping team', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const queryBuilder = makeQueryBuilder([
+        {
+          id: 'membership-1',
+          userId: 'user-1',
+          role: MembershipRole.MEMBER,
+          teamMemberships: [
+            { teamId: 'team-1', isManager: false },
+            { teamId: 'team-2', isManager: false },
+          ],
+          status: MembershipStatus.ACTIVE,
+          createdAt: new Date('2026-01-01'),
+          user: { email: 'a@b.test', name: 'A B' },
+        },
+      ]);
       const service = makeService({
-        membershipsRepo: makeMembershipsRepo({ findOne, find }),
+        membershipsRepo: makeMembershipsRepo({ findOne, queryBuilder }),
       });
 
       const summaries = await service.listActiveForOrganisation(
@@ -155,7 +197,30 @@ describe('MembershipsService', () => {
         'caller-1',
       );
 
+      expect(summaries[0].teamIds).toEqual(['team-1', 'team-2']);
+    });
+
+    it('returns no members for a manager who manages no team, without querying', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [],
+      });
+      const find = jest.fn();
+      const createQueryBuilder = jest.fn();
+      const membershipsRepo = makeMembershipsRepo({
+        findOne,
+        find,
+        createQueryBuilder,
+      });
+      const service = makeService({ membershipsRepo });
+
+      const summaries = await service.listActiveForOrganisation(
+        'org-1',
+        'caller-1',
+      );
+
       expect(summaries).toEqual([]);
+      expect(createQueryBuilder).not.toHaveBeenCalled();
       expect(find).not.toHaveBeenCalled();
     });
   });
@@ -177,7 +242,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -206,7 +271,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -254,7 +319,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -283,7 +348,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -307,7 +372,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -331,7 +396,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -366,7 +431,7 @@ describe('MembershipsService', () => {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -387,17 +452,54 @@ describe('MembershipsService', () => {
       expect(count).not.toHaveBeenCalled();
     });
 
-    it('allows a manager to modify a member on their own team', async () => {
+    it('allows a manager to modify a member on a team they manage', async () => {
       const caller = {
         id: 'manager-membership',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
       };
       const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'membership-1',
+        'manager-1',
+        { deactivate: true },
+      );
+
+      expect(result.status).toBe(MembershipStatus.DEACTIVATED);
+    });
+
+    it('allows a manager to modify a member who is also on another team the manager does not manage', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [
+          { teamId: 'team-1', isManager: false },
+          { teamId: 'team-2', isManager: false },
+        ],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -426,7 +528,7 @@ describe('MembershipsService', () => {
         id: 'manager-membership',
         userId: 'manager-1',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -451,7 +553,7 @@ describe('MembershipsService', () => {
         id: 'manager-membership',
         userId: 'manager-1',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -475,13 +577,13 @@ describe('MembershipsService', () => {
       const caller = {
         id: 'manager-membership',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
       };
       const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -505,13 +607,13 @@ describe('MembershipsService', () => {
       const caller = {
         id: 'manager-membership',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
       };
       const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -531,17 +633,17 @@ describe('MembershipsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('rejects a manager modifying a member outside their team', async () => {
+    it('rejects a manager modifying a member outside every team they manage', async () => {
       const caller = {
         id: 'manager-membership',
         role: MembershipRole.MANAGER,
-        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
       };
       const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: 'team-2',
+        teamMemberships: [{ teamId: 'team-2', isManager: false }],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
@@ -561,17 +663,17 @@ describe('MembershipsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('rejects a teamless manager modifying anyone', async () => {
+    it('rejects a manager who manages no team modifying anyone', async () => {
       const caller = {
         id: 'manager-membership',
         role: MembershipRole.MANAGER,
-        teamId: null,
+        teamMemberships: [],
       };
       const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),

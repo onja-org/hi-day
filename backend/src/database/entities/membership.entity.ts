@@ -13,6 +13,7 @@ import { MembershipStatus } from './membership-status.enum';
 import { Organisation } from './organisation.entity';
 import { ProjectMembership } from './project-membership.entity';
 import { Team } from './team.entity';
+import { TeamMembership } from './team-membership.entity';
 import { User } from './user.entity';
 
 @Entity({ name: 'memberships' })
@@ -74,4 +75,9 @@ export class Membership {
     (projectMembership) => projectMembership.membership,
   )
   projectMemberships: ProjectMembership[];
+  @OneToMany(
+    () => TeamMembership,
+    (teamMembership) => teamMembership.membership,
+  )
+  teamMemberships: TeamMembership[];
 }

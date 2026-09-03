@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -71,18 +71,19 @@ export class OrganisationsService {
       }),
     );
 
-    const team = await manager.save(
+    await manager.save(
       manager.create(Team, {
         name: DEFAULT_TEAM_NAME,
         organisationId: organisation.id,
       }),
     );
 
+    // The founding admin gets no `team_memberships` row — admins see every
+    // team in the Organisation by role, not by team membership.
     await manager.save(
       manager.create(Membership, {
         userId,
         organisationId: organisation.id,
-        teamId: team.id,
         role: MembershipRole.ADMIN,
       }),
     );
@@ -112,9 +113,10 @@ export class OrganisationsService {
   /**
    * "Teams" is a personal space, same as Activity/dashboard: an admin sees
    * every team in the Organisation (they manage the whole org), but anyone
-   * else only sees the team(s) they themselves belong to — today that's at
-   * most one team, via `Membership.teamId` (see docs/adr/0008). This also
-   * governs which teams a manager can assign a new invite to.
+   * else only sees the team(s) they themselves belong to, via
+   * `Membership.teamMemberships`. This also governs which teams a manager's
+   * invite-form UI offers for a new invite (not backend-enforced today —
+   * see docs/adr/0008).
    */
   async listTeams(
     organisationId: string,
@@ -126,6 +128,7 @@ export class OrganisationsService {
         organisationId,
         status: MembershipStatus.ACTIVE,
       },
+      relations: { teamMemberships: true },
     });
 
     if (!caller) {
@@ -133,15 +136,20 @@ export class OrganisationsService {
     }
 
     if (caller.role !== MembershipRole.ADMIN) {
-      if (caller.teamId === null) {
+      const teamIds = caller.teamMemberships.map(
+        (teamMembership) => teamMembership.teamId,
+      );
+
+      if (teamIds.length === 0) {
         return [];
       }
 
-      const team = await this.teams.findOne({
-        where: { id: caller.teamId, organisationId },
+      const teams = await this.teams.find({
+        where: { id: In(teamIds), organisationId },
+        order: { name: 'ASC' },
       });
 
-      return team ? [{ id: team.id, name: team.name }] : [];
+      return teams.map((team) => ({ id: team.id, name: team.name }));
     }
 
     const teams = await this.teams.find({

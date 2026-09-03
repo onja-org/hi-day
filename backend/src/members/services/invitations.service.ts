@@ -27,6 +27,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailService } from '../../email/services/email.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
@@ -314,15 +315,24 @@ export class InvitationsService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.save(
+      const newMembership = await manager.save(
         manager.create(Membership, {
           userId,
           organisationId: invitation.organisationId,
-          teamId: invitation.teamId,
           role: invitation.role,
           status: MembershipStatus.ACTIVE,
         }),
       );
+
+      if (invitation.teamId) {
+        await manager.save(
+          manager.create(TeamMembership, {
+            membershipId: newMembership.id,
+            teamId: invitation.teamId,
+            isManager: false,
+          }),
+        );
+      }
 
       await manager.update(Invitation, invitation.id, {
         status: InvitationStatus.ACCEPTED,
