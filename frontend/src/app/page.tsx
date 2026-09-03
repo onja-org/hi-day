@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Header } from "@/components/Header";
 import { LandingCta } from "@/components/landing/LandingCta";
+import { LandingDownload } from "@/components/landing/LandingDownload";
 import { LandingFeatures } from "@/components/landing/LandingFeatures";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { LandingHero } from "@/components/landing/LandingHero";
@@ -28,6 +29,7 @@ export default async function Home() {
         <LandingFeatures />
         <LandingHowItWorks />
         <LandingRoles />
+        <LandingDownload />
         <LandingCta />
       </main>
       <LandingFooter />
