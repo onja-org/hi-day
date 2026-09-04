@@ -305,6 +305,8 @@ export class InvitationsService {
           manager.create(User, {
             email: invitation.email,
             name: `${dto.firstName} ${dto.lastName}`,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
             passwordHash,
             emailVerifiedAt: new Date(),
           }),

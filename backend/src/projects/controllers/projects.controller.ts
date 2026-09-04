@@ -49,7 +49,7 @@ export class ProjectsController {
     @Query('status') status?: 'active' | 'archived',
     @Query('client') client?: string,
   ): Promise<ProjectListItem[]> {
-    return this.projectsService.list(request.organisationId!, {
+    return this.projectsService.list(request.organisationId!, request.userId, {
       status,
       client,
     });

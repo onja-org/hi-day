@@ -732,9 +732,15 @@ describe('ProjectsService', () => {
       (
         tasksRepo as unknown as { __queryBuilder: { getRawMany: jest.Mock } }
       ).__queryBuilder.getRawMany = getRawMany;
-      const service = makeService({ projectsRepo, tasksRepo });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({ projectsRepo, tasksRepo, membershipsRepo });
 
-      const result = await service.list('org-1', {});
+      const result = await service.list('org-1', 'admin-1', {});
 
       expect(result).toEqual([
         expect.objectContaining({ id: 'project-1', taskCount: 3 }),
@@ -744,9 +750,15 @@ describe('ProjectsService', () => {
 
     it('skips the task count query when there are no projects', async () => {
       const tasksRepo = makeTasksRepo();
-      const service = makeService({ tasksRepo });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({ tasksRepo, membershipsRepo });
 
-      await service.list('org-1', {});
+      await service.list('org-1', 'admin-1', {});
 
       const createQueryBuilder = (
         tasksRepo as unknown as { createQueryBuilder: jest.Mock }

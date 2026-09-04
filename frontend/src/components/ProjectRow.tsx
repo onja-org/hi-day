@@ -12,9 +12,10 @@ import { ProjectTasksSection } from "./ProjectTasksSection";
 type ProjectRowProps = {
   organisationId: string;
   project: ProjectListItem;
+  canManage: boolean;
 };
 
-export function ProjectRow({ organisationId, project }: ProjectRowProps) {
+export function ProjectRow({ organisationId, project, canManage }: ProjectRowProps) {
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
   return (
@@ -52,7 +53,9 @@ export function ProjectRow({ organisationId, project }: ProjectRowProps) {
           {project.billable ? (project.rate ? `$${project.rate}/hr` : "Billable") : "Not billable"}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
-          <ArchiveProjectButton organisationId={organisationId} project={project} />
+          {canManage && (
+            <ArchiveProjectButton organisationId={organisationId} project={project} />
+          )}
         </td>
       </tr>
       {tasksExpanded && (

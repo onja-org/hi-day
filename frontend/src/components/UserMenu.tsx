@@ -4,11 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SignOut, UserCircle } from "@phosphor-icons/react";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import { logout } from "@/lib/logout";
 import { Spinner } from "./Spinner";
 
 export function UserMenu() {
   const router = useRouter();
+  const profileQuery = useMyProfile();
+  const avatarUrl = profileQuery.data?.avatarUrl ?? null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -40,9 +43,14 @@ export function UserMenu() {
         onClick={() => setMenuOpen((open) => !open)}
         aria-label="Account menu"
         aria-expanded={menuOpen}
-        className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition-colors duration-150 hover:bg-primary/90"
+        className="flex size-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary text-white transition-colors duration-150 hover:bg-primary/90"
       >
-        <UserCircle size={24} aria-hidden="true" />
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <UserCircle size={24} aria-hidden="true" />
+        )}
       </button>
 
       {menuOpen && (

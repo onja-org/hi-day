@@ -135,6 +135,18 @@ export class ProjectsService {
     callerUserId: string,
     filter: ListProjectsFilter,
   ): Promise<ProjectListItem[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: callerUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
     const query = this.projects
       .createQueryBuilder('project')
       .where('project.organisationId = :organisationId', { organisationId });
