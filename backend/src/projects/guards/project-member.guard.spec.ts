@@ -111,14 +111,14 @@ describe('ProjectMemberGuard', () => {
     });
   });
 
-  it('allows an org member who is a project admin on this project', async () => {
+  it('allows an org member who is a project manager on this project', async () => {
     const guard = new ProjectMemberGuard(
       makeMembershipsRepo(
         jest.fn().mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
       ).repo,
       makeOrganisationsRepo().repo,
       makeProjectMembershipsRepo(
-        jest.fn().mockResolvedValue({ role: ProjectMembershipRole.ADMIN }),
+        jest.fn().mockResolvedValue({ role: ProjectMembershipRole.MANAGER }),
       ).repo,
     );
 
