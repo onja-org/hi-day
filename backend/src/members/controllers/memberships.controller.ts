@@ -14,8 +14,8 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
-import { TimeEntriesService } from '../../timesheets/services/time-entries.service';
-import type { TimeEntrySummary } from '../../timesheets/services/time-entries.service';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
+import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import type { ActiveMemberSummary } from '../services/memberships.service';
 import { MembershipsService } from '../services/memberships.service';
@@ -78,8 +78,8 @@ export class MembershipsController {
   listTimeEntries(
     @Param('membershipId') membershipId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary[]> {
-    return this.timeEntriesService.listForMembership(
+  ): Promise<TimeEntryListItem[]> {
+    return this.timeEntriesService.list(
       request.organisationId!,
       request.userId,
       membershipId,

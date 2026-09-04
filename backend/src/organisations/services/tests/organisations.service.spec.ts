@@ -366,13 +366,14 @@ describe('OrganisationsService', () => {
         makeAuditLogService().auditLogService,
       );
 
-      const profile = await service.updateProfile('org-1', {
+      const profile = await service.updateProfile('org-1', 'user-1', {
         idleHandling: 'auto_subtract',
         idleThresholdMinutes: 10,
       });
 
       expect(profile.idleHandling).toBe('auto_subtract');
       expect(profile.idleThresholdMinutes).toBe(10);
+      expect(profile.userId).toBe('user-1');
     });
   });
 

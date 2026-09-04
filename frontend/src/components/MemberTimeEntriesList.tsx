@@ -3,6 +3,7 @@
 import { useMemberTimeEntries } from "@/hooks/useMemberTimeEntries";
 import { formatDuration } from "@/lib/formatDuration";
 import { ErrorMessage } from "./ErrorMessage";
+import { ProjectColourBadge } from "./ProjectColourBadge";
 import { Spinner } from "./Spinner";
 
 type MemberTimeEntriesListProps = {
@@ -48,12 +49,22 @@ export function MemberTimeEntriesList({
           key={entry.id}
           className="rounded-md border border-input-border p-3 text-slate-900"
         >
-          <p className="font-medium">{formatDuration(entry.durationMinutes)}</p>
-          <p className="text-sm text-slate-900/70">
-            {new Date(entry.startedAt).toLocaleString()} –{" "}
-            {new Date(entry.endedAt).toLocaleString()}
+          <p className="flex items-center gap-2 font-medium">
+            <ProjectColourBadge colour={entry.projectColour} />
+            {entry.projectName}
+            {entry.taskName && (
+              <span className="text-slate-900/70">— {entry.taskName}</span>
+            )}
           </p>
-          {entry.note && <p>{entry.note}</p>}
+          <p className="text-sm text-slate-900/70">
+            {new Date(entry.startedAt).toLocaleString()}
+            {entry.endedAt && ` – ${new Date(entry.endedAt).toLocaleString()}`}
+          </p>
+          <p className="text-sm">
+            {entry.durationSeconds === null
+              ? "In progress"
+              : formatDuration(Math.round(entry.durationSeconds / 60))}
+          </p>
         </li>
       ))}
     </ul>

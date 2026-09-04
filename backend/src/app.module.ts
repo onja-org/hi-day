@@ -28,7 +28,6 @@ import { TeamsModule } from './teams/modules/teams.module';
     TimeEntriesModule,
     DeviceTrackingModule,
     ActivitiesModule,
-    TimeEntriesModule,
     TeamsModule,
   ],
   controllers: [AppController],

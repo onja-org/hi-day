@@ -30,6 +30,7 @@ export interface OrganisationProfile {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  userId: string;
 }
 
 interface OrganisationSettings {
@@ -37,7 +38,6 @@ interface OrganisationSettings {
   website?: string | null;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
-  userId: string;
 }
 
 @Injectable()
@@ -225,13 +225,10 @@ export class OrganisationsService {
       address: settings.address ?? null,
       website: settings.website ?? null,
       role,
-<<<<<<< HEAD
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
-=======
       userId,
->>>>>>> a2dd858 (work progress)
     };
   }
 }
