@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProject } from "@/hooks/useProject";
 import { ArchiveProjectButton } from "./ArchiveProjectButton";
 import { ErrorMessage } from "./ErrorMessage";
@@ -36,6 +37,7 @@ export function ProjectDetailContent({
 }: ProjectDetailContentProps) {
   const [editOpen, setEditOpen] = useState(false);
   const projectQuery = useProject(organisationId, projectId);
+  const organisationQuery = useCurrentOrganisation();
 
   if (projectQuery.isLoading) {
     return (
@@ -65,6 +67,15 @@ export function ProjectDetailContent({
   }
 
   const project = projectQuery.data;
+  const callerRole = organisationQuery.data?.role;
+  const callerUserId = organisationQuery.data?.userId;
+  const ownMembership = project.members.find(
+    (member) => member.userId === callerUserId,
+  );
+  const canManage =
+    callerRole === "admin" ||
+    callerRole === "manager" ||
+    ownMembership?.role === "manager";
 
   return (
     <div className="flex flex-col gap-8">
@@ -76,22 +87,24 @@ export function ProjectDetailContent({
           <h1 className="text-2xl font-semibold text-primary-dark">{project.name}</h1>
           <ProjectStatusBadge status={project.status} />
         </div>
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setEditOpen(true)}
-            disabled={project.status === "archived"}
-            title={
-              project.status === "archived"
-                ? "Unarchive this project to edit it."
-                : undefined
-            }
-            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Edit
-          </button>
-          <ArchiveProjectButton organisationId={organisationId} project={project} />
-        </div>
+        {canManage && (
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              disabled={project.status === "archived"}
+              title={
+                project.status === "archived"
+                  ? "Unarchive this project to edit it."
+                  : undefined
+              }
+              className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Edit
+            </button>
+            <ArchiveProjectButton organisationId={organisationId} project={project} />
+          </div>
+        )}
       </div>
 
       <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -113,7 +126,11 @@ export function ProjectDetailContent({
         </div>
       </dl>
 
-      <ProjectMembersSection organisationId={organisationId} project={project} />
+      <ProjectMembersSection
+        organisationId={organisationId}
+        project={project}
+        canManage={canManage}
+      />
 
       <ProjectTasksSection organisationId={organisationId} projectId={projectId} />
 

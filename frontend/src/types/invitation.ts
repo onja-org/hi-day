@@ -61,11 +61,3 @@ export type AcceptInvitationResult =
   | { ok: true; message: string }
   | { ok: false; message: string; accountExists?: boolean };
 
-export type OrganisationTeam = {
-  id: string;
-  name: string;
-};
-
-export type GetOrganisationTeamsResult =
-  | { ok: true; teams: OrganisationTeam[] }
-  | { ok: false; message: string };

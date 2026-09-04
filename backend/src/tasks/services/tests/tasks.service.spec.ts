@@ -365,7 +365,7 @@ describe('TasksService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('allows a project admin to reopen a task', async () => {
+    it('allows a project manager to reopen a task', async () => {
       const tasksRepo = makeTasksRepo({
         findOne: jest
           .fn()
@@ -383,7 +383,7 @@ describe('TasksService', () => {
         projectMembershipsRepo: makeProjectMembershipsRepo({
           findOne: jest.fn().mockResolvedValue({
             id: 'pm-1',
-            role: ProjectMembershipRole.ADMIN,
+            role: ProjectMembershipRole.MANAGER,
           }),
         }),
       });

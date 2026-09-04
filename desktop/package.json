@@ -6,6 +6,9 @@
   "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
   "author": "Rinon <rinon.ten@onja.org>",
   "main": "dist/main/main.js",
+  "engines": {
+    "node": ">=22 <24"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs",
     "dev": "pnpm build && electron .",

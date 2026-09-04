@@ -1,6 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_PIPE } from '@nestjs/core';
+import { ActivitiesModule } from './activities/modules/activities.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
@@ -11,6 +12,7 @@ import { MembersModule } from './members/modules/members.module';
 import { ProjectsModule } from './projects/modules/projects.module';
 import { TasksModule } from './tasks/modules/tasks.module';
 import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
+import { TeamsModule } from './teams/modules/teams.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
     TasksModule,
     TimeEntriesModule,
     DeviceTrackingModule,
+    ActivitiesModule,
+    TeamsModule,
   ],
   controllers: [AppController],
   providers: [

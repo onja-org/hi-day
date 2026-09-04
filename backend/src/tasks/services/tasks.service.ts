@@ -319,7 +319,7 @@ export class TasksService {
   private canManage(role: ActorRole): boolean {
     return (
       role.isOrgAdminOrManager ||
-      role.projectMembership?.role === ProjectMembershipRole.ADMIN
+      role.projectMembership?.role === ProjectMembershipRole.MANAGER
     );
   }
 

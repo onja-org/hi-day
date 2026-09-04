@@ -29,6 +29,7 @@ describe('ProjectsService', () => {
     const queryBuilder = {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
     };
@@ -470,7 +471,7 @@ describe('ProjectsService', () => {
       expect(result.role).toBe(ProjectMembershipRole.MEMBER);
     });
 
-    it('assigns an ADMIN role when specified', async () => {
+    it('assigns a MANAGER role when specified', async () => {
       const projectsRepo = makeProjectsRepo({
         findOne: jest.fn().mockResolvedValue({ ...baseProject }),
       });
@@ -488,10 +489,10 @@ describe('ProjectsService', () => {
 
       const result = await service.addMember('org-1', 'project-1', 'admin-1', {
         membershipId: 'membership-1',
-        role: ProjectMembershipRole.ADMIN,
+        role: ProjectMembershipRole.MANAGER,
       });
 
-      expect(result.role).toBe(ProjectMembershipRole.ADMIN);
+      expect(result.role).toBe(ProjectMembershipRole.MANAGER);
     });
   });
 
@@ -508,7 +509,7 @@ describe('ProjectsService', () => {
       },
     };
 
-    it('promotes a member to project admin', async () => {
+    it('promotes a member to project manager', async () => {
       const projectsRepo = makeProjectsRepo({
         findOne: jest.fn().mockResolvedValue({ ...baseProject }),
       });
@@ -529,10 +530,10 @@ describe('ProjectsService', () => {
         'project-1',
         'membership-1',
         'admin-1',
-        { role: ProjectMembershipRole.ADMIN },
+        { role: ProjectMembershipRole.MANAGER },
       );
 
-      expect(result.role).toBe(ProjectMembershipRole.ADMIN);
+      expect(result.role).toBe(ProjectMembershipRole.MANAGER);
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ action: 'project.member_updated' }),
@@ -570,7 +571,7 @@ describe('ProjectsService', () => {
 
       await expect(
         service.updateMember('org-1', 'project-1', 'membership-1', 'admin-1', {
-          role: ProjectMembershipRole.ADMIN,
+          role: ProjectMembershipRole.MANAGER,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -585,7 +586,7 @@ describe('ProjectsService', () => {
 
       await expect(
         service.updateMember('org-1', 'project-1', 'membership-1', 'admin-1', {
-          role: ProjectMembershipRole.ADMIN,
+          role: ProjectMembershipRole.MANAGER,
         }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
@@ -650,11 +651,20 @@ describe('ProjectsService', () => {
   });
 
   describe('list', () => {
-    it('scopes the query to the organisation and applies status/client filters', async () => {
+    it('scopes the query to the organisation and applies status/client filters for an admin', async () => {
       const projectsRepo = makeProjectsRepo();
-      const service = makeService({ projectsRepo });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({ projectsRepo, membershipsRepo });
 
-      await service.list('org-1', { status: 'active', client: 'Acme' });
+      await service.list('org-1', 'admin-1', {
+        status: 'active',
+        client: 'Acme',
+      });
 
       const queryBuilder = (
         projectsRepo as unknown as { __queryBuilder: Record<string, jest.Mock> }
@@ -670,6 +680,41 @@ describe('ProjectsService', () => {
         'project.client = :client',
         { client: 'Acme' },
       );
+      expect(queryBuilder.innerJoin).not.toHaveBeenCalled();
+    });
+
+    it("scopes the query to the caller's own projects for a manager", async () => {
+      const projectsRepo = makeProjectsRepo();
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'manager-membership',
+          role: MembershipRole.MANAGER,
+        }),
+      });
+      const service = makeService({ projectsRepo, membershipsRepo });
+
+      await service.list('org-1', 'manager-1', {});
+
+      const queryBuilder = (
+        projectsRepo as unknown as { __queryBuilder: Record<string, jest.Mock> }
+      ).__queryBuilder;
+      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+        'project.memberships',
+        'callerMembership',
+        'callerMembership.membershipId = :callerMembershipId',
+        { callerMembershipId: 'manager-membership' },
+      );
+    });
+
+    it('throws when the caller has no active membership in the organisation', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.list('org-1', 'caller-1', {}),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('attaches a task count per project from a single grouped query', async () => {
@@ -687,9 +732,15 @@ describe('ProjectsService', () => {
       (
         tasksRepo as unknown as { __queryBuilder: { getRawMany: jest.Mock } }
       ).__queryBuilder.getRawMany = getRawMany;
-      const service = makeService({ projectsRepo, tasksRepo });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({ projectsRepo, tasksRepo, membershipsRepo });
 
-      const result = await service.list('org-1', {});
+      const result = await service.list('org-1', 'admin-1', {});
 
       expect(result).toEqual([
         expect.objectContaining({ id: 'project-1', taskCount: 3 }),
@@ -699,9 +750,15 @@ describe('ProjectsService', () => {
 
     it('skips the task count query when there are no projects', async () => {
       const tasksRepo = makeTasksRepo();
-      const service = makeService({ tasksRepo });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({ tasksRepo, membershipsRepo });
 
-      await service.list('org-1', {});
+      await service.list('org-1', 'admin-1', {});
 
       const createQueryBuilder = (
         tasksRepo as unknown as { createQueryBuilder: jest.Mock }

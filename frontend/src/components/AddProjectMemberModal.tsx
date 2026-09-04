@@ -94,7 +94,7 @@ export function AddProjectMemberModal({
             className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             <option value="member">Member — can be assigned and logged against</option>
-            <option value="admin">Admin — can manage this project</option>
+            <option value="manager">Manager — can manage this project</option>
           </select>
         </label>
 

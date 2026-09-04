@@ -11,6 +11,7 @@ import { Task } from '../../database/entities/task.entity';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { ProjectsController } from '../controllers/projects.controller';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
+import { ProjectViewGuard } from '../guards/project-view.guard';
 import { ProjectsService } from '../services/projects.service';
 
 @Module({
@@ -27,7 +28,7 @@ import { ProjectsService } from '../services/projects.service';
     TimeEntriesModule,
   ],
   controllers: [ProjectsController],
-  providers: [ProjectsService, RoleGuard, ProjectRoleGuard],
+  providers: [ProjectsService, RoleGuard, ProjectRoleGuard, ProjectViewGuard],
   exports: [ProjectsService],
 })
 export class ProjectsModule {}
