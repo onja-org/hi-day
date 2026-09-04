@@ -84,7 +84,14 @@ export class AuthService {
     });
 
     if (existingUser) {
-      await this.emailService.sendDuplicateRegistrationNotice(dto.email);
+      const organisationName = await this.resolveOrganisationNameForUser(
+        existingUser.id,
+        existingUser.pendingOrganisationName,
+      );
+      await this.emailService.sendDuplicateRegistrationNotice(
+        dto.email,
+        organisationName,
+      );
       return { message: SIGNUP_RESPONSE_MESSAGE };
     }
 
@@ -116,13 +123,24 @@ export class AuthService {
       });
 
     if (!user) {
-      await this.emailService.sendDuplicateRegistrationNotice(dto.email);
+      const conflictingUser = await this.users.findOneOrFail({
+        where: { email: dto.email },
+      });
+      const organisationName = await this.resolveOrganisationNameForUser(
+        conflictingUser.id,
+        conflictingUser.pendingOrganisationName,
+      );
+      await this.emailService.sendDuplicateRegistrationNotice(
+        dto.email,
+        organisationName,
+      );
       return { message: SIGNUP_RESPONSE_MESSAGE };
     }
 
     await this.emailService.sendSetPasswordEmail(
       dto.email,
       emailVerificationToken,
+      dto.companyName,
     );
 
     return { message: SIGNUP_RESPONSE_MESSAGE };
@@ -147,6 +165,7 @@ export class AuthService {
       await this.emailService.sendSetPasswordEmail(
         dto.email,
         emailVerificationToken,
+        user.pendingOrganisationName!,
       );
     }
 
@@ -298,9 +317,14 @@ export class AuthService {
         passwordResetExpiresAt,
       });
 
+      const organisationName = await this.resolveOrganisationNameForUser(
+        user.id,
+        user.pendingOrganisationName,
+      );
       await this.emailService.sendPasswordResetEmail(
         dto.email,
         passwordResetToken,
+        organisationName,
       );
     } else if (user && !user.passwordHash) {
       const emailVerificationToken = this.tokenService.generateToken();
@@ -316,6 +340,7 @@ export class AuthService {
       await this.emailService.sendSetPasswordEmail(
         dto.email,
         emailVerificationToken,
+        user.pendingOrganisationName!,
       );
     }
 
@@ -433,6 +458,28 @@ export class AuthService {
     });
 
     return this.getProfile(userId);
+  }
+
+  /**
+   * A user always has an organisation name available: `pendingOrganisationName`
+   * before they've set their password (the org doesn't exist yet), or a real
+   * Organisation via their Membership once they have. Callers pass whichever
+   * of those they already have loaded to avoid a redundant query.
+   */
+  private async resolveOrganisationNameForUser(
+    userId: string,
+    pendingOrganisationName: string | null,
+  ): Promise<string> {
+    if (pendingOrganisationName) {
+      return pendingOrganisationName;
+    }
+
+    const membership = await this.memberships.findOne({
+      where: { userId },
+      relations: { organisation: true },
+    });
+
+    return membership!.organisation.name;
   }
 
   private isUniqueViolation(error: unknown): boolean {

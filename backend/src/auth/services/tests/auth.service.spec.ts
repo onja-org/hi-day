@@ -257,6 +257,7 @@ describe('AuthService', () => {
       expect(sendSetPasswordEmail).toHaveBeenCalledWith(
         'jane@acme.test',
         'the-token',
+        'Acme Inc',
       );
       expect(result.message).toContain('Check your email');
     });
@@ -264,7 +265,10 @@ describe('AuthService', () => {
     it('sends a duplicate-registration notice without creating a second user', async () => {
       const save = jest.fn();
       const usersRepo = makeUsersRepo({
-        findOne: jest.fn().mockResolvedValue({ id: 'existing-user' }),
+        findOne: jest.fn().mockResolvedValue({
+          id: 'existing-user',
+          pendingOrganisationName: 'Acme Inc',
+        }),
         save,
       });
       const { emailService, sendDuplicateRegistrationNotice } =
@@ -276,6 +280,7 @@ describe('AuthService', () => {
       expect(save).not.toHaveBeenCalled();
       expect(sendDuplicateRegistrationNotice).toHaveBeenCalledWith(
         'jane@acme.test',
+        'Acme Inc',
       );
     });
 
@@ -286,6 +291,10 @@ describe('AuthService', () => {
       );
       const usersRepo = makeUsersRepo({
         findOne: jest.fn().mockResolvedValue(null),
+        findOneOrFail: jest.fn().mockResolvedValue({
+          id: 'existing-user',
+          pendingOrganisationName: 'Acme Inc',
+        }),
         save: jest.fn().mockRejectedValue(uniqueViolation),
       });
       const { emailService, sendDuplicateRegistrationNotice } =
@@ -296,6 +305,7 @@ describe('AuthService', () => {
 
       expect(sendDuplicateRegistrationNotice).toHaveBeenCalledWith(
         'jane@acme.test',
+        'Acme Inc',
       );
       expect(result.message).toContain('Check your email');
     });
@@ -306,6 +316,7 @@ describe('AuthService', () => {
       const user = {
         id: 'user-1',
         passwordHash: null,
+        pendingOrganisationName: 'Acme Inc',
       } as User;
       const update = jest.fn();
       const usersRepo = makeUsersRepo({
@@ -326,6 +337,7 @@ describe('AuthService', () => {
       expect(sendSetPasswordEmail).toHaveBeenCalledWith(
         'jane@acme.test',
         'the-token',
+        'Acme Inc',
       );
       expect(result.message).toContain("we've sent a new link");
     });
@@ -727,9 +739,14 @@ describe('AuthService', () => {
         findOne: jest.fn().mockResolvedValue(user),
         update,
       });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ organisation: { name: 'Acme Inc' } }),
+      });
       const { emailService, sendPasswordResetEmail, sendSetPasswordEmail } =
         makeEmailService();
-      const service = makeService({ usersRepo, emailService });
+      const service = makeService({ usersRepo, membershipsRepo, emailService });
 
       const result = await service.forgotPassword({ email: 'jane@acme.test' });
 
@@ -740,13 +757,18 @@ describe('AuthService', () => {
       expect(sendPasswordResetEmail).toHaveBeenCalledWith(
         'jane@acme.test',
         'the-token',
+        'Acme Inc',
       );
       expect(sendSetPasswordEmail).not.toHaveBeenCalled();
       expect(result.message).toContain('sent a password reset link');
     });
 
     it('resends the set-password email instead, for a user who never finished signup', async () => {
-      const user = { id: 'user-1', passwordHash: null } as User;
+      const user = {
+        id: 'user-1',
+        passwordHash: null,
+        pendingOrganisationName: 'Acme Inc',
+      } as User;
       const update = jest.fn();
       const usersRepo = makeUsersRepo({
         findOne: jest.fn().mockResolvedValue(user),
@@ -761,6 +783,7 @@ describe('AuthService', () => {
       expect(sendSetPasswordEmail).toHaveBeenCalledWith(
         'jane@acme.test',
         'the-token',
+        'Acme Inc',
       );
       expect(sendPasswordResetEmail).not.toHaveBeenCalled();
     });

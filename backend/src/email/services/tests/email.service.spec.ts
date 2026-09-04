@@ -39,20 +39,43 @@ describe('EmailService', () => {
     service = module.get(EmailService);
   });
 
-  it('sends a set-password email with a link containing the token', async () => {
-    await service.sendSetPasswordEmail('owner@acme.test', 'the-token');
+  it('sends a set-password email with a link containing the token and mentions the app and org', async () => {
+    await service.sendSetPasswordEmail(
+      'owner@acme.test',
+      'the-token',
+      'Acme Inc',
+    );
 
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'owner@acme.test',
-        html: expect.stringContaining(
-          'http://localhost:3000/set-password?token=the-token',
+        subject: 'Set your password for Acme Inc',
+        html: expect.stringMatching(
+          /(?=.*http:\/\/localhost:3000\/set-password\?token=the-token)(?=.*Workforce Monitoring)(?=.*Acme Inc)/s,
         ) as string,
       }),
     );
   });
 
-  it('sends an invitation email with a link containing the token and org name', async () => {
+  it('sends a password-reset email mentioning the app and org', async () => {
+    await service.sendPasswordResetEmail(
+      'owner@acme.test',
+      'the-token',
+      'Acme Inc',
+    );
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'owner@acme.test',
+        subject: 'Reset your Workforce Monitoring password',
+        html: expect.stringMatching(
+          /(?=.*http:\/\/localhost:3000\/reset-password\?token=the-token)(?=.*Acme Inc)/s,
+        ) as string,
+      }),
+    );
+  });
+
+  it('sends an invitation email with a join button linking to the accept-invitation page', async () => {
     await service.sendInvitationEmail(
       'invitee@acme.test',
       'the-token',
@@ -62,22 +85,27 @@ describe('EmailService', () => {
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'invitee@acme.test',
-        subject: expect.stringContaining('Acme Inc') as string,
-        html: expect.stringContaining(
-          'http://localhost:3000/accept-invitation?token=the-token',
+        subject: 'Join Acme Inc on Workforce Monitoring',
+        html: expect.stringMatching(
+          /<a href="http:\/\/localhost:3000\/accept-invitation\?token=the-token"[^>]*>Join Acme Inc<\/a>/,
         ) as string,
       }),
     );
   });
 
-  it('sends a duplicate-registration notice with a link to sign in', async () => {
-    await service.sendDuplicateRegistrationNotice('owner@acme.test');
+  it('sends a duplicate-registration notice with a sign-in button, mentioning the app and org', async () => {
+    await service.sendDuplicateRegistrationNotice(
+      'owner@acme.test',
+      'Acme Inc',
+    );
 
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'owner@acme.test',
-        subject: expect.stringMatching(/tried to register/i) as string,
-        html: expect.stringContaining('http://localhost:3000/login') as string,
+        subject: 'Someone tried to register with your email',
+        html: expect.stringMatching(
+          /(?=.*<a href="http:\/\/localhost:3000\/login")(?=.*Workforce Monitoring)(?=.*Acme Inc)/s,
+        ) as string,
       }),
     );
   });
@@ -92,7 +120,7 @@ describe('EmailService', () => {
       .mockImplementation(() => undefined);
 
     await expect(
-      service.sendSetPasswordEmail('owner@acme.test', 'the-token'),
+      service.sendSetPasswordEmail('owner@acme.test', 'the-token', 'Acme Inc'),
     ).resolves.toBeUndefined();
 
     expect(errorSpy).toHaveBeenCalledWith(

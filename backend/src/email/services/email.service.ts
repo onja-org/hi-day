@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
+const APP_NAME = 'Workforce Monitoring';
+const BUTTON_STYLE =
+  'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -17,14 +21,22 @@ export class EmailService {
     this.frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
   }
 
-  async sendSetPasswordEmail(to: string, token: string): Promise<void> {
+  private button(url: string, label: string): string {
+    return `<p><a href="${url}" style="${BUTTON_STYLE}">${label}</a></p>`;
+  }
+
+  async sendSetPasswordEmail(
+    to: string,
+    token: string,
+    organisationName: string,
+  ): Promise<void> {
     const setPasswordUrl = `${this.frontendUrl}/set-password?token=${encodeURIComponent(token)}`;
 
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
-      subject: 'Set your password',
-      html: `<p>Confirm your email address and set your password to finish creating your account:</p><p><a href="${setPasswordUrl}">${setPasswordUrl}</a></p>`,
+      subject: `Set your password for ${organisationName}`,
+      html: `<p>Welcome to <strong>${organisationName}</strong> on ${APP_NAME}. Confirm your email address and set your password to finish creating your account:</p><p><a href="${setPasswordUrl}">${setPasswordUrl}</a></p>`,
     });
 
     if (error) {
@@ -34,14 +46,18 @@ export class EmailService {
     }
   }
 
-  async sendPasswordResetEmail(to: string, token: string): Promise<void> {
+  async sendPasswordResetEmail(
+    to: string,
+    token: string,
+    organisationName: string,
+  ): Promise<void> {
     const resetUrl = `${this.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
-      subject: 'Reset your password',
-      html: `<p>We received a request to reset your password. This link expires soon and can only be used once:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      subject: `Reset your ${APP_NAME} password`,
+      html: `<p>We received a request to reset the password for your <strong>${organisationName}</strong> account on ${APP_NAME}. This link expires soon and can only be used once:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
     });
 
     if (error) {
@@ -61,8 +77,8 @@ export class EmailService {
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
-      subject: `You've been invited to join ${organisationName}`,
-      html: `<p>You've been invited to join <strong>${organisationName}</strong>. This link expires soon and can only be used once:</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`,
+      subject: `Join ${organisationName} on ${APP_NAME}`,
+      html: `<p>You've been invited to join <strong>${organisationName}</strong> on ${APP_NAME}. This link expires soon and can only be used once:</p>${this.button(acceptUrl, `Join ${organisationName}`)}`,
     });
 
     if (error) {
@@ -72,14 +88,17 @@ export class EmailService {
     }
   }
 
-  async sendDuplicateRegistrationNotice(to: string): Promise<void> {
+  async sendDuplicateRegistrationNotice(
+    to: string,
+    organisationName: string,
+  ): Promise<void> {
     const loginUrl = `${this.frontendUrl}/login`;
 
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
       subject: 'Someone tried to register with your email',
-      html: `<p>Someone just tried to create a new account using this email address, which is already registered. If this wasn't you, no action is needed. If it was, sign in to your existing account instead.</p><p><a href="${loginUrl}" style="display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;">Sign in to your account</a></p>`,
+      html: `<p>Someone just tried to create a new account on ${APP_NAME} using this email address, which is already registered to <strong>${organisationName}</strong>. If this wasn't you, no action is needed. If it was, sign in to your existing account instead.</p>${this.button(loginUrl, 'Sign in to your account')}`,
     });
 
     if (error) {
