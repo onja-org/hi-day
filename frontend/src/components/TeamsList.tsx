@@ -103,16 +103,12 @@ export function TeamsList({ organisationId }: TeamsListProps) {
               key={team.id}
               className="flex items-center justify-between gap-3 rounded-md border border-input-border px-3 py-2 text-slate-900"
             >
-              {isAdmin ? (
-                <Link
-                  href={`/organisations/${organisationId}/teams/${team.id}`}
-                  className="hover:underline"
-                >
-                  {team.name}
-                </Link>
-              ) : (
-                <span>{team.name}</span>
-              )}
+              <Link
+                href={`/organisations/${organisationId}/teams/${team.id}`}
+                className="hover:underline"
+              >
+                {team.name}
+              </Link>
               {isAdmin && (
                 <button
                   type="button"

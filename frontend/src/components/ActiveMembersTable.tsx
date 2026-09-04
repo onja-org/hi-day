@@ -10,7 +10,7 @@ type ActiveMembersTableProps = {
   organisationId: string;
 };
 
-const COLUMN_COUNT = 5;
+const COLUMN_COUNT = 4;
 
 export function ActiveMembersTable({ organisationId }: ActiveMembersTableProps) {
   const membersQuery = useActiveMembers(organisationId);
@@ -57,7 +57,6 @@ export function ActiveMembersTable({ organisationId }: ActiveMembersTableProps) 
       <table className="w-full min-w-[480px] text-left text-sm">
         <thead>
           <tr className="border-b border-input-border text-slate-900">
-            <th className="px-3 py-2 font-medium" />
             <th className="px-3 py-2 font-medium">Name</th>
             <th className="px-3 py-2 font-medium">Email</th>
             <th className="px-3 py-2 font-medium">Role</th>

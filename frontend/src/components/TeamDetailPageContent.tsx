@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { RequireRole } from "./RequireRole";
 import { TeamDetail } from "./TeamDetail";
 
 type TeamDetailPageContentProps = {
@@ -20,9 +19,7 @@ export function TeamDetailPageContent({
         ← Teams
       </Link>
 
-      <RequireRole role="admin">
-        <TeamDetail organisationId={organisationId} teamId={teamId} />
-      </RequireRole>
+      <TeamDetail organisationId={organisationId} teamId={teamId} />
     </div>
   );
 }

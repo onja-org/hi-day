@@ -16,7 +16,7 @@ export function SignUpSuccess({ email }: SignUpSuccessProps) {
   const mutation = useMutation({ mutationFn: resendVerification });
 
   return (
-    <section className="flex flex-col items-start gap-4 rounded-lg border border-primary p-6">
+    <section className="animate-fade-in-up flex flex-col items-start gap-4 rounded-lg border border-primary p-6">
       <CheckCircle size={32} className="text-primary" aria-hidden="true" />
       <h1 className="text-lg font-semibold text-primary-dark">
         Verify your email
@@ -38,7 +38,7 @@ export function SignUpSuccess({ email }: SignUpSuccessProps) {
           type="button"
           onClick={() => mutation.mutate({ email })}
           disabled={mutation.isPending}
-          className="flex items-center justify-center gap-2 rounded-md border border-primary px-4 py-2 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center justify-center gap-2 rounded-md border border-primary px-4 py-2 text-primary transition-all duration-150 hover:scale-105 hover:bg-primary/10 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
         >
           {mutation.isPending && <Spinner />}
           {mutation.isPending ? "Resending…" : "Resend verification email"}

@@ -10,12 +10,14 @@ type TeamMemberRowProps = {
   organisationId: string;
   teamId: string;
   member: TeamMember;
+  canManage: boolean;
 };
 
 export function TeamMemberRow({
   organisationId,
   teamId,
   member,
+  canManage,
 }: TeamMemberRowProps) {
   const queryClient = useQueryClient();
   const queryKey = TEAM_DETAIL_QUERY_KEY(organisationId, teamId);
@@ -56,18 +58,20 @@ export function TeamMemberRow({
             type="checkbox"
             checked={member.isManager}
             onChange={(event) => toggleManagerMutation.mutate(event.target.checked)}
-            disabled={toggleManagerMutation.isPending}
+            disabled={!canManage || toggleManagerMutation.isPending}
           />
           Manager
         </label>
-        <button
-          type="button"
-          onClick={() => removeMutation.mutate()}
-          disabled={removeMutation.isPending}
-          className="cursor-pointer text-error underline disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Remove
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => removeMutation.mutate()}
+            disabled={removeMutation.isPending}
+            className="cursor-pointer text-error underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Remove
+          </button>
+        )}
       </div>
     </li>
   );

@@ -9,7 +9,7 @@ export default async function ActivitiesPage({ params }: ActivitiesPageProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold text-primary-dark">Activity</h1>
+      <h1 className="text-2xl font-semibold text-primary-dark">Activity Dummy Content</h1>
       <ActivityFeed organisationId={organisationId} />
     </div>
   );

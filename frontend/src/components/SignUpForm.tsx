@@ -39,7 +39,7 @@ export function SignUpForm() {
             type="text"
             autoComplete="given-name"
             required
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
@@ -50,7 +50,7 @@ export function SignUpForm() {
             type="text"
             autoComplete="family-name"
             required
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
       </div>
@@ -62,7 +62,7 @@ export function SignUpForm() {
           type="email"
           autoComplete="email"
           required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -73,7 +73,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="organization"
           required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -84,7 +84,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="street-address"
           required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -95,7 +95,7 @@ export function SignUpForm() {
           type="text"
           autoComplete="url"
           placeholder="https://example.com"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
 
@@ -112,7 +112,7 @@ export function SignUpForm() {
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Creating your account…" : "Create account"}
