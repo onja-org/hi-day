@@ -5,10 +5,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
 import { DatabaseModule } from './database/database.module';
+import { DeviceTrackingModule } from './device-tracking/modules/device-tracking.module';
 import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
 import { ProjectsModule } from './projects/modules/projects.module';
 import { TasksModule } from './tasks/modules/tasks.module';
+import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { TasksModule } from './tasks/modules/tasks.module';
     DevicesModule,
     ProjectsModule,
     TasksModule,
+    TimeEntriesModule,
+    DeviceTrackingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -6,7 +6,11 @@ export const PROJECT_TASKS_QUERY_KEY = (
   projectId: string,
 ) => ["projects", organisationId, projectId, "tasks"];
 
-export function useProjectTasks(organisationId: string, projectId: string) {
+export function useProjectTasks(
+  organisationId: string,
+  projectId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: PROJECT_TASKS_QUERY_KEY(organisationId, projectId),
     queryFn: async () => {
@@ -16,5 +20,6 @@ export function useProjectTasks(organisationId: string, projectId: string) {
       }
       return result.data;
     },
+    enabled: options.enabled ?? true,
   });
 }

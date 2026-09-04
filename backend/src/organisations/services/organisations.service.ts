@@ -9,6 +9,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
 import { Team } from '../../database/entities/team.entity';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
+import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import { generateSlug } from '../slug.util';
 
 const DEFAULT_TIMEZONE = 'UTC';
@@ -27,6 +28,15 @@ export interface OrganisationProfile {
   address: string | null;
   website: string | null;
   role: MembershipRole;
+  idleHandling: IdleHandling;
+  idleThresholdMinutes: number;
+}
+
+interface OrganisationSettings {
+  address?: string | null;
+  website?: string | null;
+  idleHandling?: IdleHandling;
+  idleThresholdMinutes?: number;
 }
 
 @Injectable()
@@ -134,6 +144,12 @@ export class OrganisationsService {
       ...organisation.settings,
       ...(dto.address !== undefined ? { address: dto.address } : {}),
       ...(dto.website !== undefined ? { website: dto.website } : {}),
+      ...(dto.idleHandling !== undefined
+        ? { idleHandling: dto.idleHandling }
+        : {}),
+      ...(dto.idleThresholdMinutes !== undefined
+        ? { idleThresholdMinutes: dto.idleThresholdMinutes }
+        : {}),
     };
 
     await this.organisations.save(organisation);
@@ -141,14 +157,29 @@ export class OrganisationsService {
     return this.toProfile(organisation, MembershipRole.ADMIN);
   }
 
+  /**
+   * Read by the desktop agent (via DeviceTrackingController) to decide how
+   * to react to idle time — kept as its own narrow method rather than
+   * making device routes depend on the full `OrganisationProfile` shape.
+   */
+  async getIdlePolicy(organisationId: string): Promise<IdlePolicy> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return {
+      handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
+      thresholdMinutes:
+        settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+    };
+  }
+
   private toProfile(
     organisation: Organisation,
     role: MembershipRole,
   ): OrganisationProfile {
-    const settings = organisation.settings as {
-      address?: string | null;
-      website?: string | null;
-    };
+    const settings = organisation.settings as OrganisationSettings;
 
     return {
       id: organisation.publicId,
@@ -156,6 +187,9 @@ export class OrganisationsService {
       address: settings.address ?? null,
       website: settings.website ?? null,
       role,
+      idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
+      idleThresholdMinutes:
+        settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
     };
   }
 }

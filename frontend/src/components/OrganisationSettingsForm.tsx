@@ -8,7 +8,7 @@ import {
   useCurrentOrganisation,
 } from "@/hooks/useCurrentOrganisation";
 import { updateOrganisation } from "@/lib/updateOrganisation";
-import type { UpdateOrganisationInput } from "@/types/organisation";
+import type { IdleHandling, UpdateOrganisationInput } from "@/types/organisation";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
@@ -49,11 +49,16 @@ export function OrganisationSettingsForm({
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const website = formData.get("website");
+    const idleThresholdMinutes = Number(formData.get("idleThresholdMinutes"));
 
     updateMutation.mutate({
       name: String(formData.get("name") ?? ""),
       address: String(formData.get("address") ?? ""),
       website: website ? String(website) : undefined,
+      idleHandling: formData.get("idleHandling") as IdleHandling,
+      idleThresholdMinutes: Number.isFinite(idleThresholdMinutes)
+        ? idleThresholdMinutes
+        : undefined,
     });
   }
 
@@ -122,6 +127,37 @@ export function OrganisationSettingsForm({
           className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
+
+      <div className="flex flex-col gap-5 sm:flex-row">
+        <label className="flex flex-1 flex-col gap-1.5">
+          Idle handling
+          <select
+            name="idleHandling"
+            defaultValue={organisation.idleHandling}
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="off">Off — never react to idle time</option>
+            <option value="flag">
+              Flag — ask the person to keep or discard it
+            </option>
+            <option value="auto_subtract">
+              Auto-subtract — end the timer automatically
+            </option>
+          </select>
+        </label>
+
+        <label className="flex flex-1 flex-col gap-1.5">
+          Idle threshold (minutes)
+          <input
+            name="idleThresholdMinutes"
+            type="number"
+            min="1"
+            step="1"
+            defaultValue={organisation.idleThresholdMinutes}
+            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </label>
+      </div>
 
       <button
         type="submit"

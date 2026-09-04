@@ -170,6 +170,8 @@ describe('OrganisationsService', () => {
         address: '1 Main St',
         website: 'https://acme.test',
         role: MembershipRole.MANAGER,
+        idleHandling: 'flag',
+        idleThresholdMinutes: 5,
       });
     });
 
@@ -248,6 +250,72 @@ describe('OrganisationsService', () => {
           }) as unknown,
         }),
       );
+    });
+
+    it('updates the idle policy fields', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', {
+        idleHandling: 'auto_subtract',
+        idleThresholdMinutes: 10,
+      });
+
+      expect(profile.idleHandling).toBe('auto_subtract');
+      expect(profile.idleThresholdMinutes).toBe(10);
+    });
+  });
+
+  describe('getIdlePolicy', () => {
+    it('returns the defaults when the organisation has no explicit idle settings', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: {},
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
+        handling: 'flag',
+        thresholdMinutes: 5,
+      });
+    });
+
+    it('returns the organisation-configured policy when set', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { idleHandling: 'off', idleThresholdMinutes: 15 },
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
+        handling: 'off',
+        thresholdMinutes: 15,
+      });
     });
   });
 });

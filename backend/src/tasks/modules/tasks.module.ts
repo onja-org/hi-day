@@ -26,5 +26,6 @@ import { TasksService } from '../services/tasks.service';
   ],
   controllers: [TasksController],
   providers: [TasksService, ProjectRoleGuard, ProjectMemberGuard],
+  exports: [TasksService],
 })
 export class TasksModule {}

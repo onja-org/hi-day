@@ -8,6 +8,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { Task } from '../../database/entities/task.entity';
+import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { ProjectsController } from '../controllers/projects.controller';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
 import { ProjectsService } from '../services/projects.service';
@@ -23,6 +24,7 @@ import { ProjectsService } from '../services/projects.service';
     ]),
     AuditLogModule,
     JwtAuthModule,
+    TimeEntriesModule,
   ],
   controllers: [ProjectsController],
   providers: [ProjectsService, RoleGuard, ProjectRoleGuard],

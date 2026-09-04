@@ -2,6 +2,7 @@
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { ErrorMessage } from "./ErrorMessage";
+import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
 
 export function DashboardSections() {
@@ -28,11 +29,13 @@ export function DashboardSections() {
     );
   }
 
+  const organisationId = String(organisationQuery.data.id);
+
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-primary-dark">Timesheet</h2>
-        <p className="text-slate-900">You haven&apos;t logged any hours yet.</p>
+        <RecentTimesheetWidget organisationId={organisationId} />
       </section>
 
       <section className="flex flex-col gap-2">

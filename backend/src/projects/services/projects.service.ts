@@ -1,18 +1,21 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, IsNull, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
 import { Task } from '../../database/entities/task.entity';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { AddProjectMemberDto } from '../dto/add-project-member.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
@@ -20,6 +23,7 @@ import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
 import { resolveProjectRate } from '../resolve-project-rate.util';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
+const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 
 export interface ProjectSummary {
   id: string;
@@ -79,7 +83,52 @@ export class ProjectsService {
     private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
+
+  /**
+   * The projects a caller can track time against: every active Project for
+   * an org admin/manager, or just the ones they hold a ProjectMembership on
+   * otherwise — mirrors the access rule TimeEntriesService.start enforces,
+   * so this list never shows a project that starting a timer would then
+   * reject.
+   */
+  async listForTimeTracking(
+    organisationId: string,
+    userId: string,
+  ): Promise<ProjectListItem[]> {
+    const membership = await this.memberships.findOne({
+      where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+    });
+    if (!membership) {
+      throw new ForbiddenException(
+        'You do not have the required role for this organisation.',
+      );
+    }
+
+    let projects: Project[];
+    if (ORG_WIDE_ROLES.includes(membership.role)) {
+      projects = await this.projects.find({
+        where: { organisationId, archivedAt: IsNull() },
+        order: { name: 'ASC' },
+      });
+    } else {
+      const projectMemberships = await this.projectMemberships.find({
+        where: { membershipId: membership.id },
+        relations: { project: true },
+      });
+      projects = projectMemberships
+        .map((pm) => pm.project)
+        .filter((project) => !project.archivedAt)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    const taskCounts = await this.getTaskCounts(projects.map((p) => p.id));
+    return projects.map((project) => ({
+      ...this.toSummary(project),
+      taskCount: taskCounts.get(project.id) ?? 0,
+    }));
+  }
 
   async list(
     organisationId: string,
@@ -267,6 +316,12 @@ export class ProjectsService {
 
     if (project.archivedAt) {
       return this.toSummary(project);
+    }
+
+    if (await this.timeEntriesService.hasRunningEntryForProject(projectId)) {
+      throw new ConflictException(
+        'A timer is currently running against this project — stop it before archiving.',
+      );
     }
 
     project.archivedAt = new Date();

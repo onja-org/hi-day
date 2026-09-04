@@ -1,11 +1,15 @@
 import type { MembershipRole } from "./membership";
 
+export type IdleHandling = "off" | "flag" | "auto_subtract";
+
 export type OrganisationProfile = {
   id: number;
   name: string;
   address: string | null;
   website: string | null;
   role: MembershipRole;
+  idleHandling: IdleHandling;
+  idleThresholdMinutes: number;
 };
 
 export type GetOrganisationResult =
@@ -16,6 +20,8 @@ export type UpdateOrganisationInput = {
   name: string;
   address: string;
   website?: string;
+  idleHandling?: IdleHandling;
+  idleThresholdMinutes?: number;
 };
 
 export type UpdateOrganisationResult =

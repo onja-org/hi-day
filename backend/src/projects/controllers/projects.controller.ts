@@ -50,6 +50,19 @@ export class ProjectsController {
     });
   }
 
+  // Backs the time-tracking project picker (web + desktop agent): every
+  // active member needs to see which projects *they* can log time
+  // against, not just admins/managers — see
+  // ProjectsService.listForTimeTracking.
+  @Get('my-projects')
+  @UseGuards(RoleGuard)
+  myProjects(@Req() request: AuthenticatedRequest): Promise<ProjectListItem[]> {
+    return this.projectsService.listForTimeTracking(
+      request.organisationId!,
+      request.userId,
+    );
+  }
+
   @Post()
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)

@@ -36,7 +36,34 @@
 
       <section id="status-view" hidden>
         <p>Logged in as <strong id="status-email"></strong>.</p>
-        <p class="hint">This device is registered. Time tracking isn't available yet.</p>
+
+        <div id="tracking-view">
+          <p id="tracking-error" role="alert" hidden></p>
+
+          <div id="idle-banner" class="idle-banner" role="alert" hidden>
+            <p id="idle-banner-message"></p>
+            <button id="idle-keep-button" type="button">Keep this time</button>
+            <button id="idle-discard-button" type="button">Discard idle time</button>
+          </div>
+          <p id="idle-notice" class="idle-notice" hidden></p>
+
+          <label for="project-select">Project</label>
+          <select id="project-select"></select>
+
+          <label for="task-select">Task (optional)</label>
+          <select id="task-select">
+            <option value="">No task</option>
+          </select>
+
+          <p id="timer-display" class="timer-display" hidden>00:00:00</p>
+
+          <button id="start-button" type="button">Start timer</button>
+          <button id="stop-button" type="button" hidden>Stop timer</button>
+          <button id="switch-button" type="button" hidden>
+            Stop the other timer and start this one
+          </button>
+        </div>
+
         <button id="logout-button" type="button">Log out</button>
       </section>
     </main>

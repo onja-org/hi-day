@@ -12,6 +12,7 @@ import { ProjectMembership } from './entities/project-membership.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
+import { TimeEntry } from './entities/time-entry.entity';
 import { User } from './entities/user.entity';
 
 @Module({
@@ -34,6 +35,7 @@ import { User } from './entities/user.entity';
           RefreshToken,
           Device,
           DeviceSession,
+          TimeEntry,
         ],
         synchronize: false,
       }),

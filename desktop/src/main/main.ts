@@ -1,10 +1,16 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
+import type { TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
+
+const NOT_LOGGED_IN: TrackingResult<never> = {
+  ok: false,
+  message: "You've been signed out — please log in to continue.",
+};
 
 const API_BASE_URL = process.env.DESKTOP_API_URL ?? 'http://localhost:3001';
 
@@ -90,6 +96,66 @@ function registerIpcHandlers(): void {
     }
     return { loggedIn: false };
   });
+
+  ipcMain.handle('tracking:listProjects', () => {
+    const session = authStore.load();
+    return session ? apiClient.listProjects(session.deviceToken) : NOT_LOGGED_IN;
+  });
+
+  ipcMain.handle('tracking:listTasks', (_event, projectId: string) => {
+    const session = authStore.load();
+    return session
+      ? apiClient.listTasks(session.deviceToken, projectId)
+      : NOT_LOGGED_IN;
+  });
+
+  ipcMain.handle(
+    'tracking:start',
+    (_event, projectId: string, taskId: string | null) => {
+      const session = authStore.load();
+      return session
+        ? apiClient.startTimer(session.deviceToken, projectId, taskId)
+        : NOT_LOGGED_IN;
+    },
+  );
+
+  ipcMain.handle(
+    'tracking:switch',
+    (_event, projectId: string, taskId: string | null) => {
+      const session = authStore.load();
+      return session
+        ? apiClient.switchTimer(session.deviceToken, projectId, taskId)
+        : NOT_LOGGED_IN;
+    },
+  );
+
+  ipcMain.handle('tracking:stop', (_event, endedAt?: string) => {
+    const session = authStore.load();
+    return session
+      ? apiClient.stopTimer(session.deviceToken, endedAt)
+      : NOT_LOGGED_IN;
+  });
+
+  ipcMain.handle('tracking:status', () => {
+    const session = authStore.load();
+    return session
+      ? apiClient.getCurrentTimer(session.deviceToken)
+      : NOT_LOGGED_IN;
+  });
+
+  ipcMain.handle('tracking:idlePolicy', () => {
+    const session = authStore.load();
+    return session
+      ? apiClient.getIdlePolicy(session.deviceToken)
+      : NOT_LOGGED_IN;
+  });
+
+  // Native, synchronous, and free of any network round-trip — the renderer
+  // polls this on its own short interval while a timer is running.
+  // See docs/adr/0007-... : unreliable under Wayland (X11 XScreenSaver
+  // extension only), matching the desktop app's existing "Linux
+  // best-effort" support level.
+  ipcMain.handle('idle:seconds', () => powerMonitor.getSystemIdleTime());
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

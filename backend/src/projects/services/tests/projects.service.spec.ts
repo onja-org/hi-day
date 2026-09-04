@@ -1,13 +1,19 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Membership } from '../../../database/entities/membership.entity';
+import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { Project } from '../../../database/entities/project.entity';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../../database/entities/project-membership-role.enum';
 import { Task } from '../../../database/entities/task.entity';
+import type { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { ProjectsService } from '../projects.service';
 
 function uniqueViolationError(): QueryFailedError {
@@ -99,6 +105,17 @@ describe('ProjectsService', () => {
     };
   }
 
+  function makeTimeEntriesService(overrides: Partial<TimeEntriesService> = {}) {
+    const hasRunningEntryForProject = jest.fn().mockResolvedValue(false);
+    return {
+      timeEntriesService: {
+        hasRunningEntryForProject,
+        ...overrides,
+      } as unknown as TimeEntriesService,
+      hasRunningEntryForProject,
+    };
+  }
+
   function makeService(
     overrides: {
       projectsRepo?: Repository<Project>;
@@ -107,6 +124,7 @@ describe('ProjectsService', () => {
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
+      timeEntriesService?: TimeEntriesService;
     } = {},
   ) {
     return new ProjectsService(
@@ -116,6 +134,8 @@ describe('ProjectsService', () => {
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.timeEntriesService ??
+        makeTimeEntriesService().timeEntriesService,
     );
   }
 
@@ -268,6 +288,20 @@ describe('ProjectsService', () => {
       await service.archive('org-1', 'project-1', 'admin-1');
 
       expect(record).not.toHaveBeenCalled();
+    });
+
+    it('rejects archiving while a timer is running against the project', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const { timeEntriesService } = makeTimeEntriesService({
+        hasRunningEntryForProject: jest.fn().mockResolvedValue(true),
+      });
+      const service = makeService({ projectsRepo, timeEntriesService });
+
+      await expect(
+        service.archive('org-1', 'project-1', 'admin-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('unarchives a project and records an audit log entry', async () => {
@@ -673,6 +707,61 @@ describe('ProjectsService', () => {
         tasksRepo as unknown as { createQueryBuilder: jest.Mock }
       ).createQueryBuilder;
       expect(createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listForTimeTracking', () => {
+    it('returns every active project for an org admin, regardless of ProjectMembership', async () => {
+      const projectsFind = jest.fn().mockResolvedValue([{ ...baseProject }]);
+      const projectsRepo = makeProjectsRepo({ find: projectsFind });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
+      });
+      const projectMembershipsFind = jest.fn().mockResolvedValue([]);
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        find: projectMembershipsFind,
+      });
+      const service = makeService({
+        projectsRepo,
+        membershipsRepo,
+        projectMembershipsRepo,
+      });
+
+      const result = await service.listForTimeTracking('org-1', 'admin-1');
+
+      expect(result).toHaveLength(1);
+      expect(projectsFind).toHaveBeenCalledTimes(1);
+      expect(projectMembershipsFind).not.toHaveBeenCalled();
+    });
+
+    it('returns only projects the caller holds a ProjectMembership on, for a plain member', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        find: jest.fn().mockResolvedValue([{ project: { ...baseProject } }]),
+      });
+      const service = makeService({ membershipsRepo, projectMembershipsRepo });
+
+      const result = await service.listForTimeTracking('org-1', 'user-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('project-1');
+    });
+
+    it('rejects a caller with no active membership in the organisation', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.listForTimeTracking('org-1', 'user-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

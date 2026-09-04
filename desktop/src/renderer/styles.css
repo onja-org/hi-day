@@ -25,12 +25,79 @@ label {
   margin: 12px 0 4px;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #d0d5dd;
   border-radius: 6px;
   font-size: 14px;
+  font-family: inherit;
+}
+
+#tracking-view {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #eaecf0;
+}
+
+.timer-display {
+  margin: 16px 0 0;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: #003673;
+}
+
+#tracking-error {
+  margin: 0 0 12px;
+  color: #b42318;
+  font-size: 13px;
+}
+
+.idle-banner {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #fec84b;
+  border-radius: 6px;
+  background: #fffaeb;
+}
+
+.idle-banner p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #93700c;
+}
+
+.idle-banner button {
+  margin-top: 0;
+  display: inline-block;
+  width: auto;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+#idle-keep-button {
+  margin-right: 8px;
+  background: #eaecf0;
+  color: #003673;
+}
+
+.idle-notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #eaecf0;
+  color: #003673;
+  font-size: 13px;
+}
+
+#stop-button {
+  background: #b42318;
+}
+
+#switch-button {
+  background: #5d5490;
 }
 
 button {

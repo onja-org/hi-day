@@ -13,6 +13,15 @@ import { DeviceSession } from '../database/entities/device-session.entity';
 export interface DeviceAuthenticatedRequest extends Request {
   deviceId: string;
   deviceSessionId: string;
+  /**
+   * From `DeviceSession.userId`/`organisationId`, not `Device`'s own
+   * columns — a shared machine's `Device` row reflects whoever logged in
+   * *last*, while the session tied to this specific bearer token still
+   * knows who (and which org) it was actually issued to. See CONTEXT.md's
+   * Device entry and `DeviceSession`'s field comments.
+   */
+  userId: string;
+  organisationId: string;
 }
 
 const SIGNED_OUT_MESSAGE =
@@ -45,6 +54,8 @@ export class DeviceSessionGuard implements CanActivate {
 
     request.deviceId = session.deviceId;
     request.deviceSessionId = session.id;
+    request.userId = session.userId;
+    request.organisationId = session.organisationId;
     return true;
   }
 

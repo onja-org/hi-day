@@ -2,6 +2,7 @@
 
 import { List } from "@phosphor-icons/react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { HeaderTimerWidget } from "./HeaderTimerWidget";
 import { UserMenu } from "./UserMenu";
 
 type DashboardHeaderProps = {
@@ -27,7 +28,12 @@ export function DashboardHeader({ onOpenMenu }: DashboardHeaderProps) {
         </span>
       </div>
 
-      <UserMenu />
+      <div className="flex items-center gap-3">
+        {organisationQuery.data && (
+          <HeaderTimerWidget organisationId={String(organisationQuery.data.id)} />
+        )}
+        <UserMenu />
+      </div>
     </header>
   );
 }

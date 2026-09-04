@@ -1,8 +1,10 @@
 # Workforce Monitor Desktop
 
-The downloadable desktop agent. **This is a login + device-registration
-shell only — it does not track time yet.** That's deliberate scope for this
-pass; see `docs/TECH_DESIGN.md` for where activity capture is headed.
+The downloadable desktop agent. **It handles login, device registration,
+and starting/stopping a timer against a Project (and optional Task) —
+activity capture (apps/windows, screenshots, activity level, idle
+detection) isn't built yet.** That's deliberate scope for this pass; see
+`docs/TECH_DESIGN.md` for where activity capture is headed.
 
 On first successful login, the app registers itself as a Device against
 your account (see the backend's auto-registration flow in
@@ -54,6 +56,19 @@ under Electron's `userData` directory — not a hardware fingerprint.
    dev` — it should skip straight to the logged-in screen instead of
    showing the login form again.
 
+7. **Test time tracking**: once logged in, pick a Project (and optionally
+   a Task) from the dropdowns and click **Start timer** — the elapsed time
+   should start ticking, polling `GET /device/time-entries/current` every
+   15s to stay in sync with whatever's actually running server-side.
+   **Stop timer** ends it. Starting a *second* timer while one is already
+   running (e.g. from the web console's own start action, on the
+   `organisations/:id/projects/:projectId/time-entries/start` route) shows
+   the conflict and a **Stop the other timer and start this one** button
+   instead of silently switching — see `docs/adr/0006-...` for why. The
+   project dropdown only lists Projects this account can log time against
+   (`GET /device/projects` — org admin/manager sees every active Project;
+   anyone else needs their own Project membership).
+
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
 AppImage/`.deb` directly.
@@ -94,4 +109,8 @@ from the run's artifacts.
   guaranteed everywhere.
 - **No background heartbeat.** The app doesn't yet poll `/devices/heartbeat`,
   so a device stays "active" (per `computeDeviceStatus`) only as long as
-  something else updates `lastSeenAt` — this lands with the tracking feature.
+  something else updates `lastSeenAt` — starting/stopping a timer doesn't
+  touch it either; this is still open.
+- **No offline queue.** Timer start/stop calls hit the backend directly and
+  fail (with an on-screen error) if it's unreachable — the SQLite-backed
+  offline queue described in `docs/TECH_DESIGN.md` isn't built yet.

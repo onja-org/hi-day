@@ -101,6 +101,7 @@ export class DeviceSessionService {
       manager.create(DeviceSession, {
         deviceId: device.id,
         userId: input.userId,
+        organisationId: input.organisationId,
         tokenHash: hashToken(token),
       }),
     );

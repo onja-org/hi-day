@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Device } from './device.entity';
+import { Organisation } from './organisation.entity';
 import { User } from './user.entity';
 
 @Entity({ name: 'device_sessions' })
@@ -51,4 +52,22 @@ export class DeviceSession {
   })
   @JoinColumn({ name: 'userId' })
   user: User;
+
+  /**
+   * Denormalized at issuance, same reasoning as `userId` above: a device's
+   * own `organisationId` gets overwritten on every login (including by a
+   * different org's user re-logging into the same machine), so it's not
+   * safe to resolve "which org is this request for" from `Device` either.
+   * This column is what device-scoped requests (see DeviceSessionGuard)
+   * actually trust.
+   */
+  @Column()
+  organisationId: string;
+
+  @ManyToOne(() => Organisation, {
+    onDelete: 'RESTRICT',
+    onUpdate: 'CASCADE',
+  })
+  @JoinColumn({ name: 'organisationId' })
+  organisation: Organisation;
 }
