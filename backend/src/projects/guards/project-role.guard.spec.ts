@@ -106,10 +106,10 @@ describe('ProjectRoleGuard', () => {
     ).resolves.toBe(true);
   });
 
-  it('allows an org member who is a project admin on this project', async () => {
+  it('allows an org member who is a project manager on this project', async () => {
     const { repo: projectMembershipsRepo, findOne: projectMembershipsFindOne } =
       makeProjectMembershipsRepo(
-        jest.fn().mockResolvedValue({ role: ProjectMembershipRole.ADMIN }),
+        jest.fn().mockResolvedValue({ role: ProjectMembershipRole.MANAGER }),
       );
     const guard = new ProjectRoleGuard(
       makeMembershipsRepo(

@@ -18,15 +18,20 @@ import { ProjectMembershipRole } from '../../database/entities/project-membershi
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 
 /**
- * Authorizes project-scoped routes (:projectId in the URL): an org
- * admin/manager can always manage any project, and — layered on top —
- * a ProjectMembership with role ADMIN on that specific project can manage
- * that project too, even if the caller's org role is plain "member". This
- * is what makes project-level admin useful as a delegation mechanism,
- * rather than just a label.
+ * Authorizes mutating project-scoped routes (:projectId in the URL): an
+ * org admin/manager can always manage any project, and — layered on top —
+ * a ProjectMembership with role MANAGER on that specific project can
+ * manage that project too (add/remove members, change other members'
+ * roles, edit, archive/unarchive), even if the caller's org role is plain
+ * "member". This is what makes project-level manager useful as a
+ * delegation mechanism, rather than just a label. A plain project MEMBER
+ * never passes this guard — see ProjectViewGuard for their read-only
+ * access instead.
  *
- * `list`/`create` (no :projectId — org-wide operations) stay behind the
- * plain RoleGuard + @RequireRole(ADMIN, MANAGER) instead of this guard.
+ * `create` (no :projectId — an org-wide operation) stays behind the plain
+ * RoleGuard + @RequireRole(ADMIN, MANAGER) instead of this guard. `list`
+ * uses RoleGuard + @RequireRole(ADMIN, MANAGER, MEMBER), scoped per-caller
+ * inside ProjectsService.list.
  */
 @Injectable()
 export class ProjectRoleGuard implements CanActivate {
@@ -82,7 +87,7 @@ export class ProjectRoleGuard implements CanActivate {
         })
       : null;
 
-    if (projectMembership?.role === ProjectMembershipRole.ADMIN) {
+    if (projectMembership?.role === ProjectMembershipRole.MANAGER) {
       return true;
     }
 

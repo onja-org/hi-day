@@ -8,6 +8,8 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Team } from '../../database/entities/team.entity';
 import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { TeamsController } from '../controllers/teams.controller';
+import { TeamRoleGuard } from '../guards/team-role.guard';
+import { TeamViewGuard } from '../guards/team-view.guard';
 import { TeamsService } from '../services/teams.service';
 
 @Module({
@@ -17,7 +19,7 @@ import { TeamsService } from '../services/teams.service';
     JwtAuthModule,
   ],
   controllers: [TeamsController],
-  providers: [TeamsService, RoleGuard],
+  providers: [TeamsService, RoleGuard, TeamRoleGuard, TeamViewGuard],
   exports: [TeamsService],
 })
 export class TeamsModule {}

@@ -99,11 +99,15 @@ export class MembershipsService {
 
   /**
    * RoleGuard/@RequireRole upstream only confirms the caller is an
-   * admin/manager of this Organisation — admin has no further restriction,
-   * but a manager caller is further restricted here: they can never modify
-   * their own Membership or touch an admin's Membership (current or
-   * requested role), and stay scoped to the team(s) they manage, same as
-   * listActiveForOrganisation.
+   * admin/manager of this Organisation. Regardless of role, nobody can
+   * change their own role or deactivate their own Membership — that's a
+   * blanket rule, not a manager-specific one (self-deactivation is a
+   * one-way footgun; a deactivated Membership can't reactivate itself).
+   * Beyond that, an admin can freely change any *other* Membership's role
+   * (including granting/demoting admin) or deactivate it. A manager
+   * caller is further restricted: they can never touch an admin's
+   * Membership (current or requested role), and stay scoped to the
+   * team(s) they manage, same as listActiveForOrganisation.
    */
   async update(
     organisationId: string,
@@ -131,6 +135,15 @@ export class MembershipsService {
 
     if (!membership) {
       throw new NotFoundException('Membership not found.');
+    }
+
+    if (
+      caller.id === membership.id &&
+      (dto.role !== undefined || dto.deactivate)
+    ) {
+      throw new ForbiddenException(
+        'You cannot change your own role or deactivate your own membership.',
+      );
     }
 
     if (caller.role === MembershipRole.MANAGER) {
@@ -183,24 +196,17 @@ export class MembershipsService {
   }
 
   /**
-   * A manager can never modify their own Membership (self role-change/
-   * deactivate is a one-way footgun — a deactivated Membership can't
-   * reactivate itself). Admin access is also off-limits to managers
-   * entirely: they can't touch a Membership that's currently admin, and
-   * can't grant admin to anyone. They're otherwise scoped to the team(s)
-   * they manage, same as the member list.
+   * Self-modification is already blocked universally above. Beyond that,
+   * admin access is off-limits to managers entirely: they can't touch a
+   * Membership that's currently admin, and can't grant admin to anyone.
+   * They're otherwise scoped to the team(s) they manage, same as the
+   * member list.
    */
   private assertManagerCanModify(
     caller: Membership,
     target: Membership,
     dto: UpdateMembershipDto,
   ): void {
-    if (caller.id === target.id) {
-      throw new ForbiddenException(
-        'Managers cannot modify their own membership.',
-      );
-    }
-
     if (
       target.role === MembershipRole.ADMIN ||
       dto.role === MembershipRole.ADMIN

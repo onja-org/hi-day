@@ -20,6 +20,7 @@ import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
+import { ProjectViewGuard } from '../guards/project-view.guard';
 import type {
   AssignableMemberSummary,
   ProjectDetail,
@@ -34,11 +35,15 @@ import { ProjectsService } from '../services/projects.service';
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
-  // list/create are org-wide operations (no specific project to be a
-  // project-admin of yet) — stay behind the plain org admin/manager gate.
+  // Every role can list projects — scoped per-caller inside the service
+  // (admin sees all, manager/member see only projects they belong to).
   @Get()
   @UseGuards(RoleGuard)
-  @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
   list(
     @Req() request: AuthenticatedRequest,
     @Query('status') status?: 'active' | 'archived',
@@ -77,11 +82,10 @@ export class ProjectsController {
     );
   }
 
-  // Everything below is scoped to a specific :projectId — an org
-  // admin/manager can always manage it, and so can a project-level admin
-  // even if their org role is plain "member". See ProjectRoleGuard.
+  // Read-only: an org admin/manager, or anyone holding a ProjectMembership
+  // on this project (any role), can view it — see ProjectViewGuard.
   @Get(':projectId')
-  @UseGuards(ProjectRoleGuard)
+  @UseGuards(ProjectViewGuard)
   findOne(
     @Param('projectId') projectId: string,
     @Req() request: AuthenticatedRequest,
@@ -91,7 +95,7 @@ export class ProjectsController {
 
   // Backs the "add member" picker — deliberately narrower than the org-wide
   // /memberships list (see AssignableMemberSummary), and project-scoped so
-  // a project-admin who is only an org "member" can use it without being
+  // a project manager who is only an org "member" can use it without being
   // granted the org-wide member roster.
   @Get(':projectId/assignable-members')
   @UseGuards(ProjectRoleGuard)

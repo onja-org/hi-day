@@ -238,6 +238,12 @@ describe('MembershipsService', () => {
     });
 
     it('changes the role without touching status when deactivate is not set', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
@@ -248,9 +254,11 @@ describe('MembershipsService', () => {
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource, save } = makeDataSource();
       const service = makeService({ membershipsRepo, dataSource });
 
@@ -267,6 +275,12 @@ describe('MembershipsService', () => {
     });
 
     it('deactivates the membership and records an audit log entry', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
@@ -277,9 +291,11 @@ describe('MembershipsService', () => {
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource, save } = makeDataSource();
       const { auditLogService, record } = makeAuditLogService();
       const { devicesService, signOutAllForUser } = makeDevicesService();
@@ -315,6 +331,12 @@ describe('MembershipsService', () => {
     });
 
     it('does not sign out devices when the membership is not being deactivated', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
@@ -325,9 +347,11 @@ describe('MembershipsService', () => {
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource } = makeDataSource();
       const { devicesService, signOutAllForUser } = makeDevicesService();
       const service = makeService({
@@ -344,7 +368,13 @@ describe('MembershipsService', () => {
     });
 
     it('rejects demoting the last admin', async () => {
-      const membership = {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
@@ -354,8 +384,12 @@ describe('MembershipsService', () => {
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
       const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
+        findOne,
         count: jest.fn().mockResolvedValue(0),
       });
       const service = makeService({ membershipsRepo });
@@ -368,7 +402,13 @@ describe('MembershipsService', () => {
     });
 
     it('rejects deactivating the last admin', async () => {
-      const membership = {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
@@ -378,8 +418,12 @@ describe('MembershipsService', () => {
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
       const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
+        findOne,
         count: jest.fn().mockResolvedValue(0),
       });
       const service = makeService({ membershipsRepo });
@@ -392,7 +436,13 @@ describe('MembershipsService', () => {
     });
 
     it('allows demoting an admin when another admin remains', async () => {
-      const membership = {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.ADMIN,
@@ -403,10 +453,11 @@ describe('MembershipsService', () => {
         user: { email: 'a@b.test', name: 'A B' },
       };
       const count = jest.fn().mockResolvedValue(1);
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-        count,
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
       const { dataSource } = makeDataSource();
       const service = makeService({ membershipsRepo, dataSource });
 
@@ -426,7 +477,167 @@ describe('MembershipsService', () => {
       );
     });
 
+    it('rejects an admin deactivating their own membership', async () => {
+      const admin = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin@b.test', name: 'Admin' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(admin)
+        .mockResolvedValueOnce(admin);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'admin-membership', 'admin-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects an admin changing their own role', async () => {
+      const admin = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin@b.test', name: 'Admin' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(admin)
+        .mockResolvedValueOnce(admin);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'admin-membership', 'admin-1', {
+          role: MembershipRole.MEMBER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("allows an admin to deactivate another admin's membership", async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'admin-membership-2',
+        userId: 'admin-2',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin2@b.test', name: 'Admin Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const count = jest.fn().mockResolvedValue(1);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'admin-membership-2',
+        'admin-1',
+        { deactivate: true },
+      );
+
+      expect(result.status).toBe(MembershipStatus.DEACTIVATED);
+    });
+
+    it("allows an admin to change another admin's role", async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'admin-membership-2',
+        userId: 'admin-2',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin2@b.test', name: 'Admin Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const count = jest.fn().mockResolvedValue(1);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'admin-membership-2',
+        'admin-1',
+        { role: MembershipRole.MANAGER },
+      );
+
+      expect(result.role).toBe(MembershipRole.MANAGER);
+    });
+
+    it('allows an admin to promote another member to admin', async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-2',
+        userId: 'user-2',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'user2@b.test', name: 'User Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update('org-1', 'membership-2', 'admin-1', {
+        role: MembershipRole.ADMIN,
+      });
+
+      expect(result.role).toBe(MembershipRole.ADMIN);
+    });
+
     it('does not check last-admin status for a non-admin role change', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
@@ -438,10 +649,11 @@ describe('MembershipsService', () => {
         user: { email: 'a@b.test', name: 'A B' },
       };
       const count = jest.fn().mockResolvedValue(0);
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-        count,
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
       const { dataSource } = makeDataSource();
       const service = makeService({ membershipsRepo, dataSource });
 

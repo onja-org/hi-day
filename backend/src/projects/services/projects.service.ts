@@ -132,11 +132,21 @@ export class ProjectsService {
 
   async list(
     organisationId: string,
+    callerUserId: string,
     filter: ListProjectsFilter,
   ): Promise<ProjectListItem[]> {
     const query = this.projects
       .createQueryBuilder('project')
       .where('project.organisationId = :organisationId', { organisationId });
+
+    if (caller.role !== MembershipRole.ADMIN) {
+      query.innerJoin(
+        'project.memberships',
+        'callerMembership',
+        'callerMembership.membershipId = :callerMembershipId',
+        { callerMembershipId: caller.id },
+      );
+    }
 
     if (filter.status === 'active') {
       query.andWhere('project.archivedAt IS NULL');
@@ -183,7 +193,7 @@ export class ProjectsService {
 
   /**
    * Deliberately narrower than MembershipsService.listActiveForOrganisation
-   * — a project-admin who is only an org "member" shouldn't see the whole
+   * — a project manager who is only an org "member" shouldn't see the whole
    * org's roster (roles, teams, status) just to pick who to assign to
    * their project, only enough to identify each person.
    */
