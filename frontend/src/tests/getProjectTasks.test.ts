@@ -25,7 +25,7 @@ describe("getProjectTasks", () => {
       expect(result.data.canManage).toBe(true);
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/tasks",
+      "/api/backend/organisations/org-1/projects/p-1/tasks",
       expect.objectContaining({ method: "GET" }),
     );
   });

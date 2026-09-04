@@ -20,7 +20,7 @@ describe("archiveProject", () => {
       expect(result.project.status).toBe("archived");
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/archive",
+      "/api/backend/organisations/org-1/projects/p-1/archive",
       expect.objectContaining({ method: "POST" }),
     );
   });

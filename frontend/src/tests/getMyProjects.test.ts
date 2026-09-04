@@ -20,7 +20,7 @@ describe("getMyProjects", () => {
       projects: [{ id: "p-1", name: "Website" }],
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/my-projects",
+      "/api/backend/organisations/org-1/projects/my-projects",
       expect.objectContaining({ method: "GET" }),
     );
   });

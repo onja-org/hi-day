@@ -17,7 +17,7 @@ describe("updateTask", () => {
 
     expect(result).toEqual({ ok: true, task: { id: "t-1", name: "Renamed" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/tasks/t-1",
+      "/api/backend/organisations/org-1/projects/p-1/tasks/t-1",
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ name: "Renamed" }),

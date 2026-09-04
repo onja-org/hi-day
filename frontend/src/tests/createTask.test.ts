@@ -17,7 +17,7 @@ describe("createTask", () => {
 
     expect(result).toEqual({ ok: true, task: { id: "t-1", name: "Write copy" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/tasks",
+      "/api/backend/organisations/org-1/projects/p-1/tasks",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ name: "Write copy" }),

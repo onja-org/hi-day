@@ -20,7 +20,7 @@ describe("getTimeEntries", () => {
       entries: [{ id: "te-1", projectName: "Website" }],
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries",
+      "/api/backend/organisations/org-1/time-entries",
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -35,7 +35,7 @@ describe("getTimeEntries", () => {
     await getTimeEntries("org-1", { membershipId: "membership-2" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries?membershipId=membership-2",
+      "/api/backend/organisations/org-1/time-entries?membershipId=membership-2",
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -52,7 +52,7 @@ describe("getTimeEntries", () => {
     await getTimeEntries("org-1", { from, to });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `http://localhost:3001/organisations/org-1/time-entries?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+      `/api/backend/organisations/org-1/time-entries?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
       expect.objectContaining({ method: "GET" }),
     );
   });

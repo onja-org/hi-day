@@ -20,7 +20,7 @@ describe("stopTimeEntry", () => {
       entry: { id: "te-1", endedAt: "2026-01-01T00:00:00Z" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries/stop",
+      "/api/backend/organisations/org-1/time-entries/stop",
       expect.objectContaining({ method: "POST" }),
     );
   });

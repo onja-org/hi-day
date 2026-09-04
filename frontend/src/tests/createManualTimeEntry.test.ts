@@ -22,7 +22,7 @@ describe("createManualTimeEntry", () => {
 
     expect(result).toEqual({ ok: true, entry: { id: "te-1", source: "manual" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/time-entries",
+      "/api/backend/organisations/org-1/projects/p-1/time-entries",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({

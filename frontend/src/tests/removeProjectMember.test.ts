@@ -14,7 +14,7 @@ describe("removeProjectMember", () => {
 
     expect(result).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/members/m-1",
+      "/api/backend/organisations/org-1/projects/p-1/members/m-1",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

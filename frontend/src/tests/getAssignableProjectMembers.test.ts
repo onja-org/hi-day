@@ -21,7 +21,7 @@ describe("getAssignableProjectMembers", () => {
       expect(result.members).toHaveLength(1);
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/assignable-members",
+      "/api/backend/organisations/org-1/projects/p-1/assignable-members",
       expect.objectContaining({ method: "GET" }),
     );
   });

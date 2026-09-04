@@ -20,7 +20,7 @@ describe("getProjects", () => {
       expect(result.projects).toHaveLength(1);
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects",
+      "/api/backend/organisations/org-1/projects",
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -35,7 +35,7 @@ describe("getProjects", () => {
     await getProjects("org-1", { status: "archived", client: "Acme Inc" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects?status=archived&client=Acme+Inc",
+      "/api/backend/organisations/org-1/projects?status=archived&client=Acme+Inc",
       expect.objectContaining({ method: "GET" }),
     );
   });

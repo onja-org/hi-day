@@ -22,7 +22,7 @@ describe("updateProjectMember", () => {
       expect(result.member.role).toBe("manager");
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/members/m-1",
+      "/api/backend/organisations/org-1/projects/p-1/members/m-1",
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ role: "manager" }),

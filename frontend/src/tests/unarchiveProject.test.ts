@@ -20,7 +20,7 @@ describe("unarchiveProject", () => {
       expect(result.project.status).toBe("active");
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/unarchive",
+      "/api/backend/organisations/org-1/projects/p-1/unarchive",
       expect.objectContaining({ method: "POST" }),
     );
   });

@@ -17,7 +17,7 @@ describe("closeTask", () => {
 
     expect(result).toEqual({ ok: true, task: { id: "t-1", status: "closed" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/tasks/t-1/close",
+      "/api/backend/organisations/org-1/projects/p-1/tasks/t-1/close",
       expect.objectContaining({ method: "POST" }),
     );
   });

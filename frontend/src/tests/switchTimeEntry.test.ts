@@ -17,7 +17,7 @@ describe("switchTimeEntry", () => {
 
     expect(result).toEqual({ ok: true, entry: { id: "te-2", projectId: "p-2" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries/switch",
+      "/api/backend/organisations/org-1/time-entries/switch",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ projectId: "p-2", taskId: "task-2" }),

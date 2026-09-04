@@ -16,7 +16,7 @@ describe("updateTimeEntry", () => {
     await updateTimeEntry("org-1", "te-1", { endedAt: "2026-01-01T11:00" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries/te-1",
+      "/api/backend/organisations/org-1/time-entries/te-1",
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({

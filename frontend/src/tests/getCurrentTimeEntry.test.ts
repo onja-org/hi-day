@@ -20,7 +20,7 @@ describe("getCurrentTimeEntry", () => {
       data: { entry: null, now: "2026-01-01T00:00:00Z" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/time-entries/current",
+      "/api/backend/organisations/org-1/time-entries/current",
       expect.objectContaining({ method: "GET" }),
     );
   });

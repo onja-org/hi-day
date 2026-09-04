@@ -24,7 +24,7 @@ describe("addProjectMember", () => {
       expect(result.member.effectiveRate).toBe("75.00");
     }
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects/p-1/members",
+      "/api/backend/organisations/org-1/projects/p-1/members",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ membershipId: "m-1", rate: "75.00" }),

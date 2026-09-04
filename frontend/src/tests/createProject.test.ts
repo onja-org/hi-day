@@ -17,7 +17,7 @@ describe("createProject", () => {
 
     expect(result).toEqual({ ok: true, project: { id: "p-1", name: "Website" } });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/organisations/org-1/projects",
+      "/api/backend/organisations/org-1/projects",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ name: "Website" }),

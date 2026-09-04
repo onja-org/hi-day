@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { API_URL } from "./apiUrl";
+import { BACKEND_ORIGIN } from "./backendOrigin";
 import type { OrganisationProfile } from "@/types/organisation";
 
 const ACCESS_TOKEN_COOKIE = "access_token";
@@ -19,7 +19,7 @@ export async function getCurrentOrganisationId(): Promise<number | null> {
   }
 
   try {
-    const response = await fetch(`${API_URL}/organisations/current`, {
+    const response = await fetch(`${BACKEND_ORIGIN}/organisations/current`, {
       headers: { Cookie: `${ACCESS_TOKEN_COOKIE}=${token}` },
       cache: "no-store",
     });
