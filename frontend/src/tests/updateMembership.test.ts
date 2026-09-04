@@ -18,7 +18,7 @@ describe("updateMembership", () => {
             email: "a@b.test",
             name: "A B",
             role: "manager",
-            teamId: null,
+            teamIds: [],
             status: "active",
             joinedAt: "2026-01-01T00:00:00.000Z",
           }),

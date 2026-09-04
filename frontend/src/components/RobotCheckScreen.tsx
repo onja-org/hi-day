@@ -59,7 +59,7 @@ export function RobotCheckScreen({ onVerified }: RobotCheckScreenProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-primary-dark px-4 text-white">
+    <div className="animate-fade-in fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-primary-dark px-4 text-white">
       <Script
         id="recaptcha-script"
         src="https://www.google.com/recaptcha/api.js"

@@ -72,6 +72,9 @@ body {
 @theme {
   --animate-float: float 6s ease-in-out infinite;
   --animate-float-slow: float 8s ease-in-out 1s infinite;
+  --animate-fade-in: fade-in 0.5s ease-out both;
+  --animate-fade-in-up: fade-in-up 0.6s ease-out both;
+  --animate-fade-in-up-delay: fade-in-up 0.6s ease-out 0.12s both;
 }
 
 @keyframes float {
@@ -81,5 +84,25 @@ body {
   }
   50% {
     transform: translateY(-16px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

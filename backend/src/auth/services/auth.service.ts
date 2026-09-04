@@ -54,6 +54,9 @@ const DUMMY_PASSWORD_HASH =
 export interface UserProfile {
   email: string;
   name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
 }
 
 @Injectable()
@@ -95,6 +98,8 @@ export class AuthService {
         this.users.create({
           email: dto.email,
           name: `${dto.firstName} ${dto.lastName}`,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
           passwordHash: null,
           emailVerificationToken,
           emailVerificationExpiresAt,
@@ -400,14 +405,33 @@ export class AuthService {
 
   async getProfile(userId: string): Promise<UserProfile> {
     const user = await this.users.findOneOrFail({ where: { id: userId } });
-    return { email: user.email, name: user.name };
+    return {
+      email: user.email,
+      name: user.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatarUrl: user.avatarUrl,
+    };
   }
 
   async updateProfile(
     userId: string,
     dto: UpdateProfileDto,
   ): Promise<UserProfile> {
-    await this.users.update(userId, { name: dto.name });
+    const user = await this.users.findOneOrFail({ where: { id: userId } });
+
+    const firstName = dto.firstName ?? user.firstName;
+    const lastName = dto.lastName ?? user.lastName;
+
+    await this.users.update(userId, {
+      firstName,
+      lastName,
+      name: [firstName, lastName].filter(Boolean).join(' ') || null,
+      ...(dto.avatarUrl !== undefined
+        ? { avatarUrl: dto.avatarUrl === '' ? null : dto.avatarUrl }
+        : {}),
+    });
+
     return this.getProfile(userId);
   }
 

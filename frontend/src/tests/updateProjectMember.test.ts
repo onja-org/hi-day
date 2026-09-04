@@ -9,23 +9,23 @@ describe("updateProjectMember", () => {
   it("returns ok with the updated member on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ membershipId: "m-1", role: "admin" }),
+      json: () => Promise.resolve({ membershipId: "m-1", role: "manager" }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await updateProjectMember("org-1", "p-1", "m-1", {
-      role: "admin",
+      role: "manager",
     });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.member.role).toBe("admin");
+      expect(result.member.role).toBe("manager");
     }
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:3001/organisations/org-1/projects/p-1/members/m-1",
       expect.objectContaining({
         method: "PATCH",
-        body: JSON.stringify({ role: "admin" }),
+        body: JSON.stringify({ role: "manager" }),
       }),
     );
   });
@@ -54,7 +54,7 @@ describe("updateProjectMember", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
     const result = await updateProjectMember("org-1", "p-1", "m-1", {
-      role: "admin",
+      role: "manager",
     });
 
     expect(result).toEqual({

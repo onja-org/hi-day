@@ -29,6 +29,7 @@ export class OrganisationsController {
   ): Promise<OrganisationProfile> {
     return this.organisationsService.updateProfile(
       request.organisationId!,
+      request.userId,
       dto,
     );
   }
@@ -44,6 +45,9 @@ export class OrganisationsController {
   listTeams(
     @Req() request: AuthenticatedRequest,
   ): Promise<{ id: string; name: string }[]> {
-    return this.organisationsService.listTeams(request.organisationId!);
+    return this.organisationsService.listTeams(
+      request.organisationId!,
+      request.userId,
+    );
   }
 }

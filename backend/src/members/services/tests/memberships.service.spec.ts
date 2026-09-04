@@ -1,4 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { DevicesService } from '../../../devices/services/devices.service';
@@ -8,13 +12,39 @@ import { MembershipStatus } from '../../../database/entities/membership-status.e
 import { MembershipsService } from '../memberships.service';
 
 describe('MembershipsService', () => {
+  function makeQueryBuilder(result: unknown[] = []) {
+    const qb = {
+      innerJoinAndSelect: jest.fn(),
+      innerJoin: jest.fn(),
+      leftJoinAndSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      getMany: jest.fn().mockResolvedValue(result),
+    };
+    qb.innerJoinAndSelect.mockReturnValue(qb);
+    qb.innerJoin.mockReturnValue(qb);
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.where.mockReturnValue(qb);
+    qb.andWhere.mockReturnValue(qb);
+    qb.orderBy.mockReturnValue(qb);
+    return qb;
+  }
+
   function makeMembershipsRepo(
-    overrides: Partial<Repository<Membership>> = {},
+    overrides: Partial<Repository<Membership>> & {
+      queryBuilder?: ReturnType<typeof makeQueryBuilder>;
+    } = {},
   ) {
+    const { queryBuilder, ...rest } = overrides;
     return {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
-      ...overrides,
+      count: jest.fn().mockResolvedValue(1),
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValue(queryBuilder ?? makeQueryBuilder()),
+      ...rest,
     } as unknown as Repository<Membership>;
   }
 
@@ -60,23 +90,41 @@ describe('MembershipsService', () => {
   }
 
   describe('listActiveForOrganisation', () => {
-    it('lists only active memberships, mapped to a summary shape', async () => {
+    it('throws when the caller has no active membership in the organisation', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.listActiveForOrganisation('org-1', 'caller-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('lists every active membership, unfiltered, for an admin caller', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      });
       const find = jest.fn().mockResolvedValue([
         {
           id: 'membership-1',
           userId: 'user-1',
           role: MembershipRole.MEMBER,
-          teamId: null,
+          teamMemberships: [{ teamId: 'team-2', isManager: false }],
           status: MembershipStatus.ACTIVE,
           createdAt: new Date('2026-01-01'),
           user: { email: 'a@b.test', name: 'A B' },
         },
       ]);
       const service = makeService({
-        membershipsRepo: makeMembershipsRepo({ find }),
+        membershipsRepo: makeMembershipsRepo({ findOne, find }),
       });
 
-      const summaries = await service.listActiveForOrganisation('org-1');
+      const summaries = await service.listActiveForOrganisation(
+        'org-1',
+        'caller-1',
+      );
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -90,11 +138,90 @@ describe('MembershipsService', () => {
           email: 'a@b.test',
           name: 'A B',
           role: MembershipRole.MEMBER,
-          teamId: null,
+          teamIds: ['team-2'],
           status: MembershipStatus.ACTIVE,
           joinedAt: new Date('2026-01-01'),
         },
       ]);
+    });
+
+    it('scopes the list to the teams the manager caller manages', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const queryBuilder = makeQueryBuilder([]);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne, queryBuilder }),
+      });
+
+      await service.listActiveForOrganisation('org-1', 'caller-1');
+
+      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+        'membership.teamMemberships',
+        'scopeTm',
+        'scopeTm.teamId IN (:...scopeTeamIds)',
+        { scopeTeamIds: ['team-1'] },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'membership.status = :status',
+        { status: MembershipStatus.ACTIVE },
+      );
+    });
+
+    it('includes every team a returned member belongs to, not just the scoping team', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const queryBuilder = makeQueryBuilder([
+        {
+          id: 'membership-1',
+          userId: 'user-1',
+          role: MembershipRole.MEMBER,
+          teamMemberships: [
+            { teamId: 'team-1', isManager: false },
+            { teamId: 'team-2', isManager: false },
+          ],
+          status: MembershipStatus.ACTIVE,
+          createdAt: new Date('2026-01-01'),
+          user: { email: 'a@b.test', name: 'A B' },
+        },
+      ]);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne, queryBuilder }),
+      });
+
+      const summaries = await service.listActiveForOrganisation(
+        'org-1',
+        'caller-1',
+      );
+
+      expect(summaries[0].teamIds).toEqual(['team-1', 'team-2']);
+    });
+
+    it('returns no members for a manager who manages no team, without querying', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.MANAGER,
+        teamMemberships: [],
+      });
+      const find = jest.fn();
+      const createQueryBuilder = jest.fn();
+      const membershipsRepo = makeMembershipsRepo({
+        findOne,
+        find,
+        createQueryBuilder,
+      });
+      const service = makeService({ membershipsRepo });
+
+      const summaries = await service.listActiveForOrganisation(
+        'org-1',
+        'caller-1',
+      );
+
+      expect(summaries).toEqual([]);
+      expect(createQueryBuilder).not.toHaveBeenCalled();
+      expect(find).not.toHaveBeenCalled();
     });
   });
 
@@ -111,19 +238,27 @@ describe('MembershipsService', () => {
     });
 
     it('changes the role without touching status when deactivate is not set', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource, save } = makeDataSource();
       const service = makeService({ membershipsRepo, dataSource });
 
@@ -140,19 +275,27 @@ describe('MembershipsService', () => {
     });
 
     it('deactivates the membership and records an audit log entry', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource, save } = makeDataSource();
       const { auditLogService, record } = makeAuditLogService();
       const { devicesService, signOutAllForUser } = makeDevicesService();
@@ -188,19 +331,27 @@ describe('MembershipsService', () => {
     });
 
     it('does not sign out devices when the membership is not being deactivated', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
       const membership = {
         id: 'membership-1',
         userId: 'user-1',
         role: MembershipRole.MEMBER,
-        teamId: null,
+        teamMemberships: [],
         status: MembershipStatus.ACTIVE,
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
         user: { email: 'a@b.test', name: 'A B' },
       };
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
       const { dataSource } = makeDataSource();
       const { devicesService, signOutAllForUser } = makeDevicesService();
       const service = makeService({
@@ -214,6 +365,544 @@ describe('MembershipsService', () => {
       });
 
       expect(signOutAllForUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects demoting the last admin', async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({
+        findOne,
+        count: jest.fn().mockResolvedValue(0),
+      });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'admin-1', {
+          role: MembershipRole.MEMBER,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects deactivating the last admin', async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({
+        findOne,
+        count: jest.fn().mockResolvedValue(0),
+      });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'admin-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('allows demoting an admin when another admin remains', async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const count = jest.fn().mockResolvedValue(1);
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        role: MembershipRole.MEMBER,
+      });
+
+      expect(result.role).toBe(MembershipRole.MEMBER);
+      expect(count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: 'org-1',
+            role: MembershipRole.ADMIN,
+            status: MembershipStatus.ACTIVE,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('rejects an admin deactivating their own membership', async () => {
+      const admin = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin@b.test', name: 'Admin' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(admin)
+        .mockResolvedValueOnce(admin);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'admin-membership', 'admin-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects an admin changing their own role', async () => {
+      const admin = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin@b.test', name: 'Admin' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(admin)
+        .mockResolvedValueOnce(admin);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'admin-membership', 'admin-1', {
+          role: MembershipRole.MEMBER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("allows an admin to deactivate another admin's membership", async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'admin-membership-2',
+        userId: 'admin-2',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin2@b.test', name: 'Admin Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const count = jest.fn().mockResolvedValue(1);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'admin-membership-2',
+        'admin-1',
+        { deactivate: true },
+      );
+
+      expect(result.status).toBe(MembershipStatus.DEACTIVATED);
+    });
+
+    it("allows an admin to change another admin's role", async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'admin-membership-2',
+        userId: 'admin-2',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'admin2@b.test', name: 'Admin Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const count = jest.fn().mockResolvedValue(1);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'admin-membership-2',
+        'admin-1',
+        { role: MembershipRole.MANAGER },
+      );
+
+      expect(result.role).toBe(MembershipRole.MANAGER);
+    });
+
+    it('allows an admin to promote another member to admin', async () => {
+      const caller = {
+        id: 'admin-membership-1',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-2',
+        userId: 'user-2',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'user2@b.test', name: 'User Two' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update('org-1', 'membership-2', 'admin-1', {
+        role: MembershipRole.ADMIN,
+      });
+
+      expect(result.role).toBe(MembershipRole.ADMIN);
+    });
+
+    it('does not check last-admin status for a non-admin role change', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const count = jest.fn().mockResolvedValue(0);
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne, count });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      await service.update('org-1', 'membership-1', 'admin-1', {
+        deactivate: true,
+      });
+
+      expect(count).not.toHaveBeenCalled();
+    });
+
+    it('allows a manager to modify a member on a team they manage', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'membership-1',
+        'manager-1',
+        { deactivate: true },
+      );
+
+      expect(result.status).toBe(MembershipStatus.DEACTIVATED);
+    });
+
+    it('allows a manager to modify a member who is also on another team the manager does not manage', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [
+          { teamId: 'team-1', isManager: false },
+          { teamId: 'team-2', isManager: false },
+        ],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const { dataSource } = makeDataSource();
+      const service = makeService({ membershipsRepo, dataSource });
+
+      const result = await service.update(
+        'org-1',
+        'membership-1',
+        'manager-1',
+        { deactivate: true },
+      );
+
+      expect(result.status).toBe(MembershipStatus.DEACTIVATED);
+    });
+
+    it('rejects a manager modifying their own membership', async () => {
+      const membership = {
+        id: 'manager-membership',
+        userId: 'manager-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'manager@b.test', name: 'Manager' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(membership)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'manager-membership', 'manager-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager changing their own role', async () => {
+      const membership = {
+        id: 'manager-membership',
+        userId: 'manager-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'manager@b.test', name: 'Manager' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(membership)
+        .mockResolvedValueOnce(membership);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'manager-membership', 'manager-1', {
+          role: MembershipRole.MEMBER,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager modifying a target who is currently an admin', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'manager-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager trying to grant admin to a member', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'manager-1', {
+          role: MembershipRole.ADMIN,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager modifying a member outside every team they manage', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-2', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'manager-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager who manages no team modifying anyone', async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const membershipsRepo = makeMembershipsRepo({ findOne });
+      const service = makeService({ membershipsRepo });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'manager-1', {
+          deactivate: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });

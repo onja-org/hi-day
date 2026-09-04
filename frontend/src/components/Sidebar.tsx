@@ -32,9 +32,8 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
   const pathname = usePathname();
   const organisationQuery = useCurrentOrganisation();
   const organisationName = organisationQuery.data?.name ?? "Workforce";
-  const canSeeMembers =
-    organisationQuery.data?.role === "admin" ||
-    organisationQuery.data?.role === "manager";
+  const isAdmin = organisationQuery.data?.role === "admin";
+  const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
   const items: NavItem[] = [
     { label: "Dashboard", href: `/dashboard/${organisationId}/me`, icon: Gauge },
@@ -53,13 +52,13 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
       href: `/organisations/${organisationId}/teams`,
       icon: UsersThree,
     },
+    {
+      label: "Projects",
+      href: `/organisations/${organisationId}/projects`,
+      icon: Briefcase,
+    },
     ...(canSeeMembers
       ? [
-          {
-            label: "Projects",
-            href: `/organisations/${organisationId}/projects`,
-            icon: Briefcase,
-          },
           {
             label: "Members",
             href: `/organisations/${organisationId}/members`,
@@ -85,7 +84,7 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
         />
       )}
 
-      <nav className="hidden shrink-0 flex-col bg-sidebar pt-12 sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-20 lg:w-88">
+      <nav className="hidden shrink-0 flex-col bg-sidebar pt-12 sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-20 lg:w-56">
         <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
           {items.map((item) => {
             const isActive = pathname === item.href;

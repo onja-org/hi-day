@@ -36,7 +36,7 @@ describe('RoleGuard', () => {
     overrides: Partial<Repository<Membership>> = {},
   ) {
     return {
-      findOne: jest.fn(),
+      findOne: jest.fn().mockResolvedValue({ role: MembershipRole.MEMBER }),
       ...overrides,
     } as unknown as Repository<Membership>;
   }
@@ -101,16 +101,32 @@ describe('RoleGuard', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('allows the request through when no role is required', async () => {
+  it('allows the request through when no role is required, as long as the caller has an active membership', async () => {
+    const findOne = jest
+      .fn()
+      .mockResolvedValue({ role: MembershipRole.MEMBER });
     const guard = new RoleGuard(
       makeReflector(undefined),
-      makeMembershipsRepo(),
+      makeMembershipsRepo({ findOne }),
       makeOrganisationsRepo(),
     );
 
     await expect(
       guard.canActivate(makeContext('user-1', '100000')),
     ).resolves.toBe(true);
+  });
+
+  it('rejects when no role is required but the caller has no active membership in that organisation', async () => {
+    const findOne = jest.fn().mockResolvedValue(null);
+    const guard = new RoleGuard(
+      makeReflector(undefined),
+      makeMembershipsRepo({ findOne }),
+      makeOrganisationsRepo(),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("allows the request when the caller's membership has one of the required roles", async () => {

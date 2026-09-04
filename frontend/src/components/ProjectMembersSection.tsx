@@ -11,11 +11,13 @@ import { AddProjectMemberModal } from "./AddProjectMemberModal";
 type ProjectMembersSectionProps = {
   organisationId: string;
   project: ProjectDetail;
+  canManage: boolean;
 };
 
 export function ProjectMembersSection({
   organisationId,
   project,
+  canManage,
 }: ProjectMembersSectionProps) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -48,15 +50,17 @@ export function ProjectMembersSection({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-primary-dark">Members</h2>
-        <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          disabled={isArchived}
-          title={isArchived ? "Unarchive this project to change members." : undefined}
-          className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Add member
-        </button>
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            disabled={isArchived}
+            title={isArchived ? "Unarchive this project to change members." : undefined}
+            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add member
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-md border border-input-border">
@@ -79,24 +83,30 @@ export function ProjectMembersSection({
                   )}
                 </td>
                 <td className="px-3 py-2 text-slate-900">
-                  <label className="sr-only" htmlFor={`role-${member.membershipId}`}>
-                    Role for {member.name ?? member.email}
-                  </label>
-                  <select
-                    id={`role-${member.membershipId}`}
-                    value={member.role}
-                    onChange={(event) =>
-                      updateRoleMutation.mutate({
-                        membershipId: member.membershipId,
-                        role: event.target.value as ProjectMembershipRole,
-                      })
-                    }
-                    disabled={isArchived || updateRoleMutation.isPending}
-                    className="rounded-md border border-input-border bg-white px-2 py-1 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                  {canManage ? (
+                    <>
+                      <label className="sr-only" htmlFor={`role-${member.membershipId}`}>
+                        Role for {member.name ?? member.email}
+                      </label>
+                      <select
+                        id={`role-${member.membershipId}`}
+                        value={member.role}
+                        onChange={(event) =>
+                          updateRoleMutation.mutate({
+                            membershipId: member.membershipId,
+                            role: event.target.value as ProjectMembershipRole,
+                          })
+                        }
+                        disabled={isArchived || updateRoleMutation.isPending}
+                        className="rounded-md border border-input-border bg-white px-2 py-1 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="member">Member</option>
+                        <option value="manager">Manager</option>
+                      </select>
+                    </>
+                  ) : (
+                    <span className="capitalize">{member.role}</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-slate-900">
                   {member.effectiveRate
@@ -104,14 +114,16 @@ export function ProjectMembersSection({
                     : "—"}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => removeMutation.mutate(member.membershipId)}
-                    disabled={isArchived || removeMutation.isPending}
-                    className="cursor-pointer text-error underline disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => removeMutation.mutate(member.membershipId)}
+                      disabled={isArchived || removeMutation.isPending}
+                      className="cursor-pointer text-error underline disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

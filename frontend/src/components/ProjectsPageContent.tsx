@@ -1,22 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { ProjectFormModal } from "./ProjectFormModal";
 import { ProjectsTable } from "./ProjectsTable";
-import { RequireRole } from "./RequireRole";
 
 type ProjectsPageContentProps = {
   organisationId: string;
 };
 
 export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps) {
+  const organisationQuery = useCurrentOrganisation();
+  const canCreate =
+    organisationQuery.data?.role === "admin" ||
+    organisationQuery.data?.role === "manager";
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold text-primary-dark">Projects</h1>
-        <RequireRole role={["admin", "manager"]}>
+        {canCreate && (
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -24,12 +28,10 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
           >
             New project
           </button>
-        </RequireRole>
+        )}
       </div>
 
-      <RequireRole role={["admin", "manager"]}>
-        <ProjectsTable organisationId={organisationId} />
-      </RequireRole>
+      <ProjectsTable organisationId={organisationId} />
 
       {createOpen && (
         <ProjectFormModal

@@ -20,6 +20,15 @@ export class User {
   name: string | null;
 
   @Column({ type: 'varchar', nullable: true })
+  firstName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  lastName: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  avatarUrl: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
   passwordHash: string | null;
 
   @Column({ type: 'timestamp', precision: 3, nullable: true })

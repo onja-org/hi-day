@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -30,6 +30,7 @@ export interface OrganisationProfile {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  userId: string;
 }
 
 interface OrganisationSettings {
@@ -70,18 +71,19 @@ export class OrganisationsService {
       }),
     );
 
-    const team = await manager.save(
+    await manager.save(
       manager.create(Team, {
         name: DEFAULT_TEAM_NAME,
         organisationId: organisation.id,
       }),
     );
 
+    // The founding admin gets no `team_memberships` row — admins see every
+    // team in the Organisation by role, not by team membership.
     await manager.save(
       manager.create(Membership, {
         userId,
         organisationId: organisation.id,
-        teamId: team.id,
         role: MembershipRole.ADMIN,
       }),
     );
@@ -105,17 +107,51 @@ export class OrganisationsService {
       throw new NotFoundException('No organisation found for this user.');
     }
 
-    return this.toProfile(membership.organisation, membership.role);
+    return this.toProfile(membership.organisation, membership.role, userId);
   }
 
   /**
-   * Authorization is enforced upstream by RoleGuard/@RequireRole on the
-   * route — reaching this method already implies the caller belongs to
-   * this Organisation.
+   * "Teams" is a personal space, same as Activity/dashboard: an admin sees
+   * every team in the Organisation (they manage the whole org), but anyone
+   * else only sees the team(s) they themselves belong to, via
+   * `Membership.teamMemberships`. This also governs which teams a manager's
+   * invite-form UI offers for a new invite (not backend-enforced today —
+   * see docs/adr/0008).
    */
   async listTeams(
     organisationId: string,
+    callerUserId: string,
   ): Promise<{ id: string; name: string }[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: callerUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    if (caller.role !== MembershipRole.ADMIN) {
+      const teamIds = caller.teamMemberships.map(
+        (teamMembership) => teamMembership.teamId,
+      );
+
+      if (teamIds.length === 0) {
+        return [];
+      }
+
+      const teams = await this.teams.find({
+        where: { id: In(teamIds), organisationId },
+        order: { name: 'ASC' },
+      });
+
+      return teams.map((team) => ({ id: team.id, name: team.name }));
+    }
+
     const teams = await this.teams.find({
       where: { organisationId },
       order: { name: 'ASC' },
@@ -131,6 +167,7 @@ export class OrganisationsService {
    */
   async updateProfile(
     organisationId: string,
+    userId: string,
     dto: UpdateOrganisationDto,
   ): Promise<OrganisationProfile> {
     const organisation = await this.organisations.findOneOrFail({
@@ -154,7 +191,7 @@ export class OrganisationsService {
 
     await this.organisations.save(organisation);
 
-    return this.toProfile(organisation, MembershipRole.ADMIN);
+    return this.toProfile(organisation, MembershipRole.ADMIN, userId);
   }
 
   /**
@@ -178,6 +215,7 @@ export class OrganisationsService {
   private toProfile(
     organisation: Organisation,
     role: MembershipRole,
+    userId: string,
   ): OrganisationProfile {
     const settings = organisation.settings as OrganisationSettings;
 
@@ -190,6 +228,7 @@ export class OrganisationsService {
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+      userId,
     };
   }
 }

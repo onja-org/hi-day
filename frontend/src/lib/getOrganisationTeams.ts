@@ -1,5 +1,5 @@
 import { API_URL } from "./apiUrl";
-import type { GetOrganisationTeamsResult } from "@/types/invitation";
+import type { GetOrganisationTeamsResult } from "@/types/team";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 

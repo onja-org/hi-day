@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Activity } from './entities/activity.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
 import { DeviceSession } from './entities/device-session.entity';
@@ -12,6 +13,7 @@ import { ProjectMembership } from './entities/project-membership.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
+import { TeamMembership } from './entities/team-membership.entity';
 import { TimeEntry } from './entities/time-entry.entity';
 import { User } from './entities/user.entity';
 
@@ -27,6 +29,7 @@ import { User } from './entities/user.entity';
           User,
           Membership,
           Team,
+          TeamMembership,
           Project,
           ProjectMembership,
           Task,
@@ -35,6 +38,8 @@ import { User } from './entities/user.entity';
           RefreshToken,
           Device,
           DeviceSession,
+          TimeEntry,
+          Activity,
           TimeEntry,
         ],
         synchronize: false,

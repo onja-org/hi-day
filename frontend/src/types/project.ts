@@ -10,7 +10,7 @@ export type ProjectColour =
 
 export type ProjectStatus = "active" | "archived";
 
-export type ProjectMembershipRole = "admin" | "member";
+export type ProjectMembershipRole = "manager" | "member";
 
 export type Project = {
   id: string;

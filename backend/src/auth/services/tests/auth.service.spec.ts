@@ -936,36 +936,112 @@ describe('AuthService', () => {
   });
 
   describe('getProfile', () => {
-    it("returns the user's email and name", async () => {
+    it("returns the user's profile fields", async () => {
       const usersRepo = makeUsersRepo({
-        findOneOrFail: jest
-          .fn()
-          .mockResolvedValue({ email: 'jane@acme.test', name: 'Jane Doe' }),
+        findOneOrFail: jest.fn().mockResolvedValue({
+          email: 'jane@acme.test',
+          name: 'Jane Doe',
+          firstName: 'Jane',
+          lastName: 'Doe',
+          avatarUrl: null,
+        }),
       });
       const service = makeService({ usersRepo });
 
       await expect(service.getProfile('user-1')).resolves.toEqual({
         email: 'jane@acme.test',
         name: 'Jane Doe',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        avatarUrl: null,
       });
     });
   });
 
   describe('updateProfile', () => {
-    it("updates the user's name and returns the refreshed profile", async () => {
+    it('updates the provided name fields, keeps the rest, and returns the refreshed profile', async () => {
       const update = jest.fn().mockResolvedValue(undefined);
       const findOneOrFail = jest
         .fn()
-        .mockResolvedValue({ email: 'jane@acme.test', name: 'Jane Smith' });
+        .mockResolvedValueOnce({
+          email: 'jane@acme.test',
+          name: 'Jane Doe',
+          firstName: 'Jane',
+          lastName: 'Doe',
+          avatarUrl: null,
+        })
+        .mockResolvedValueOnce({
+          email: 'jane@acme.test',
+          name: 'Jane Smith',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          avatarUrl: null,
+        });
       const usersRepo = makeUsersRepo({ update, findOneOrFail });
       const service = makeService({ usersRepo });
 
       const profile = await service.updateProfile('user-1', {
-        name: 'Jane Smith',
+        lastName: 'Smith',
       });
 
-      expect(update).toHaveBeenCalledWith('user-1', { name: 'Jane Smith' });
-      expect(profile).toEqual({ email: 'jane@acme.test', name: 'Jane Smith' });
+      expect(update).toHaveBeenCalledWith('user-1', {
+        firstName: 'Jane',
+        lastName: 'Smith',
+        name: 'Jane Smith',
+      });
+      expect(profile).toEqual({
+        email: 'jane@acme.test',
+        name: 'Jane Smith',
+        firstName: 'Jane',
+        lastName: 'Smith',
+        avatarUrl: null,
+      });
+    });
+
+    it('clears the avatar when avatarUrl is an empty string', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const findOneOrFail = jest.fn().mockResolvedValue({
+        email: 'jane@acme.test',
+        name: 'Jane Doe',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        avatarUrl: 'data:image/png;base64,abc',
+      });
+      const usersRepo = makeUsersRepo({ update, findOneOrFail });
+      const service = makeService({ usersRepo });
+
+      await service.updateProfile('user-1', { avatarUrl: '' });
+
+      expect(update).toHaveBeenCalledWith('user-1', {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        name: 'Jane Doe',
+        avatarUrl: null,
+      });
+    });
+
+    it('stores a new avatar data URI as-is', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const findOneOrFail = jest.fn().mockResolvedValue({
+        email: 'jane@acme.test',
+        name: 'Jane Doe',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        avatarUrl: null,
+      });
+      const usersRepo = makeUsersRepo({ update, findOneOrFail });
+      const service = makeService({ usersRepo });
+
+      await service.updateProfile('user-1', {
+        avatarUrl: 'data:image/png;base64,xyz',
+      });
+
+      expect(update).toHaveBeenCalledWith('user-1', {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        name: 'Jane Doe',
+        avatarUrl: 'data:image/png;base64,xyz',
+      });
     });
   });
 });

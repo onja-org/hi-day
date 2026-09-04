@@ -11,7 +11,7 @@ export default async function SignUpPage() {
   return (
     <main className="flex flex-col lg:flex-row">
       <div className="px-5 sm:px-10 lg:px-20 flex lg:w-2/5 min-h-screen flex-col justify-center gap-8 py-20">
-        <div className="md:px-20 lg:px-0">
+        <div className="md:px-20 lg:px-0 animate-fade-in-up">
           <h2 className="text-3xl font-semibold">
             Track time. Trust the numbers.
           </h2>
@@ -20,7 +20,9 @@ export default async function SignUpPage() {
             organisation the visibility it needs to grow with confidence.
           </p>
         </div>
-        <SignUpForm />
+        <div className="animate-fade-in-up-delay">
+          <SignUpForm />
+        </div>
       </div>
 
       <AuthAside

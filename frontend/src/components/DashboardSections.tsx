@@ -1,6 +1,7 @@
 "use client";
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { ActivityFeed } from "./ActivityFeed";
 import { ErrorMessage } from "./ErrorMessage";
 import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
@@ -40,7 +41,10 @@ export function DashboardSections() {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
-        <p className="text-slate-900">No recent activity.</p>
+        <ActivityFeed
+          organisationId={String(organisationQuery.data.id)}
+          maxEntries={3}
+        />
       </section>
 
       <section className="flex flex-col gap-2">

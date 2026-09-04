@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjects } from "@/hooks/useProjects";
 import type { ProjectStatus } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
@@ -20,6 +21,10 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
     status: statusFilter,
     client: client.trim() || undefined,
   });
+  const organisationQuery = useCurrentOrganisation();
+  const canManage =
+    organisationQuery.data?.role === "admin" ||
+    organisationQuery.data?.role === "manager";
 
   if (projectsQuery.isLoading) {
     return (
@@ -96,6 +101,7 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
                 key={project.id}
                 organisationId={organisationId}
                 project={project}
+                canManage={canManage}
               />
             ))}
             {projects.length === 0 && (

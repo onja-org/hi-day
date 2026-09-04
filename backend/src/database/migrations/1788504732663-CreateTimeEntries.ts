@@ -4,6 +4,14 @@ export class CreateTimeEntries1788504732663 implements MigrationInterface {
   name = 'CreateTimeEntries1788504732663';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // An earlier, since-superseded design (AddTimeEntries1788434452158) already
+    // created a `time_entries` table shaped for manual note-based logging
+    // (userId/note, non-nullable endedAt). That feature never shipped past a
+    // handful of dev rows, so we drop it here rather than threading a
+    // backward-compatible ALTER through a shape with no real overlap (no
+    // project/task attribution to migrate old rows into).
+    await queryRunner.query(`DROP TABLE IF EXISTS "time_entries"`);
+
     await queryRunner.query(
       `CREATE TYPE "TimeEntrySource" AS ENUM('web', 'agent')`,
     );
