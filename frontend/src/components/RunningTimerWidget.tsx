@@ -33,7 +33,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
       {timer.entry ? (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary" />
             </span>
             <div className="flex flex-col">

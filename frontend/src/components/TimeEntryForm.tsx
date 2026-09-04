@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMyProjects } from "@/hooks/useMyProjects";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
-import { TIME_ENTRIES_QUERY_KEY } from "@/hooks/useTimeEntries";
+import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "@/hooks/useTimeEntries";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
@@ -42,7 +42,7 @@ export function TimeEntryForm({
 
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: TIME_ENTRIES_QUERY_KEY(organisationId),
+      queryKey: TIME_ENTRIES_QUERY_KEY_PREFIX(organisationId),
     });
 
   const createMutation = useMutation({

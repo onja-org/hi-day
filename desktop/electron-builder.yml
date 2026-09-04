@@ -1,6 +1,11 @@
 appId: org.onja.workforce-monitor
 productName: Workforce Monitor
-artifactName: workforce-monitor-${version}-${os}-${arch}.${ext}
+# Deliberately version-free: the landing page links to
+# github.com/<repo>/releases/latest/download/<this filename>, a URL GitHub
+# keeps pointing at whatever the latest release's matching asset is. If
+# ${version} were in the name, every release would need a landing-page
+# code change to match.
+artifactName: workforce-monitor-${os}-${arch}.${ext}
 directories:
   output: release
 files:

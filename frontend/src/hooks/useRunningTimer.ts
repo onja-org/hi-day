@@ -5,7 +5,7 @@ import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
 import { useMyProjects } from "./useMyProjects";
-import { TIME_ENTRIES_QUERY_KEY } from "./useTimeEntries";
+import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 
 /**
  * All the state and actions a timer control needs — shared by the
@@ -37,9 +37,12 @@ export function useRunningTimer(organisationId: string) {
     // The Timesheets page's list is stale the moment a timer stops (a new
     // completed entry exists) or starts (a running one now belongs there
     // too) — invalidate it here rather than relying on the user to reload
-    // that page after the fact.
+    // that page after the fact. The bare prefix (no membership/date
+    // segments) matches every timesheet query for this org — whichever
+    // date filter or member is currently being viewed — since react-query
+    // invalidates by key prefix.
     void queryClient.invalidateQueries({
-      queryKey: TIME_ENTRIES_QUERY_KEY(organisationId),
+      queryKey: TIME_ENTRIES_QUERY_KEY_PREFIX(organisationId),
     });
   };
 

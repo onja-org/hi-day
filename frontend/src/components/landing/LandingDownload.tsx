@@ -2,19 +2,49 @@ import type { Icon } from "@phosphor-icons/react";
 import { AppleLogo, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/dist/ssr";
 import { ScrollReveal } from "../ScrollReveal";
 
+// electron-builder's artifactName (desktop/electron-builder.yml) is
+// deliberately version-free, so releases/latest/download/<filename>
+// always resolves to the newest release's matching asset — no landing
+// page change needed when a new version ships.
+const RELEASE_DOWNLOAD_BASE =
+  "https://github.com/onja-org/workfoce-monitoring-app/releases/latest/download";
+
+type Download = {
+  label: string;
+  fileName: string;
+};
+
 type Platform = {
   icon: Icon;
   name: string;
   detail: string;
+  downloads: Download[];
 };
 
 const PLATFORMS: Platform[] = [
-  { icon: WindowsLogo, name: "Windows", detail: "Windows 10 and later" },
-  { icon: AppleLogo, name: "macOS", detail: "Apple silicon and Intel" },
+  {
+    icon: WindowsLogo,
+    name: "Windows",
+    detail: "Windows 10 and later",
+    downloads: [{ label: "Download for Windows", fileName: "workforce-monitor-win-x64.exe" }],
+  },
+  {
+    icon: AppleLogo,
+    name: "macOS",
+    detail: "Apple silicon and Intel",
+    downloads: [
+      { label: "Apple Silicon (M1/M2/M3)", fileName: "workforce-monitor-mac-arm64.dmg" },
+      { label: "Intel", fileName: "workforce-monitor-mac-x64.dmg" },
+    ],
+  },
   {
     icon: LinuxLogo,
     name: "Linux",
     detail: "Ubuntu, Pop!_OS, and most Debian-based distros",
+    downloads: [
+      { label: "Download AppImage", fileName: "workforce-monitor-linux-x86_64.AppImage" },
+      { label: ".deb package", fileName: "workforce-monitor-linux-amd64.deb" },
+    ],
   },
 ];
 
@@ -28,7 +58,6 @@ export function LandingDownload() {
           </h2>
           <p className="mt-4 text-lg text-slate-900">
             Sign in from the app to link your device to your account.
-            Installers for every platform are on the way.
           </p>
         </ScrollReveal>
 
@@ -43,16 +72,35 @@ export function LandingDownload() {
                   {platform.name}
                 </h3>
                 <p className="text-sm text-slate-900">{platform.detail}</p>
-                <span
-                  aria-disabled="true"
-                  className="mt-2 cursor-not-allowed rounded-md border border-primary-dark/20 px-4 py-2 text-sm font-medium text-slate-900/60"
-                >
-                  Coming soon
-                </span>
+
+                <div className="mt-2 flex w-full flex-col gap-2">
+                  {platform.downloads.map((download, index) => (
+                    <a
+                      key={download.fileName}
+                      href={`${RELEASE_DOWNLOAD_BASE}/${download.fileName}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={
+                        index === 0
+                          ? "cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+                          : "cursor-pointer rounded-md border border-primary-dark/20 px-4 py-2 text-sm font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
+                      }
+                    >
+                      {download.label}
+                    </a>
+                  ))}
+                </div>
               </div>
             </ScrollReveal>
           ))}
         </div>
+
+        <p className="mx-auto mt-8 max-w-2xl text-center text-sm text-slate-900/70">
+          Installers aren&apos;t code-signed yet, so your OS will show a warning
+          the first time you open one — on macOS, right-click the app and
+          choose Open; on Windows, click &quot;More info&quot; then &quot;Run
+          anyway&quot; on the SmartScreen prompt.
+        </p>
       </div>
     </section>
   );

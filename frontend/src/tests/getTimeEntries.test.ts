@@ -32,10 +32,27 @@ describe("getTimeEntries", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await getTimeEntries("org-1", "membership-2");
+    await getTimeEntries("org-1", { membershipId: "membership-2" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:3001/organisations/org-1/time-entries?membershipId=membership-2",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("includes from/to as ISO query params when given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const to = new Date("2026-01-01T23:59:59.999Z");
+
+    await getTimeEntries("org-1", { from, to });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://localhost:3001/organisations/org-1/time-entries?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
       expect.objectContaining({ method: "GET" }),
     );
   });

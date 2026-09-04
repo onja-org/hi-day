@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
 import type { TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
+import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
@@ -12,7 +13,7 @@ const NOT_LOGGED_IN: TrackingResult<never> = {
   message: "You've been signed out — please log in to continue.",
 };
 
-const API_BASE_URL = process.env.DESKTOP_API_URL ?? 'http://localhost:3001';
+const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
 
 interface LoginCredentials {
   email: string;

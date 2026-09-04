@@ -34,15 +34,21 @@ export class TimeEntriesController {
 
   // `membershipId` is optional and defaults to the caller's own — see
   // TimeEntriesService.list for who's allowed to pass someone else's.
+  // `from`/`to` are ISO instants (not bare dates) — the frontend resolves
+  // what "today" etc. means in the viewer's own timezone before sending.
   @Get()
   list(
     @Query('membershipId') membershipId: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<TimeEntryListItem[]> {
     return this.timeEntriesService.list(
       request.organisationId!,
       request.userId,
       membershipId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
     );
   }
 

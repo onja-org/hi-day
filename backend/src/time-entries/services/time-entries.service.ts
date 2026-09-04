@@ -5,7 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import {
+  Between,
+  DataSource,
+  IsNull,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -284,11 +291,18 @@ export class TimeEntriesService {
    * round-trip per row. A plain member/finance can only ever reach their
    * own (passing someone else's id 403s), matching who's allowed to edit
    * (see `canEditEntry`) — viewing and editing use the same role gate.
+   *
+   * `from`/`to` filter on `startedAt` (both inclusive) when given — the
+   * caller (the frontend) resolves what "today"/"this week" etc. mean in
+   * the viewer's own timezone and sends absolute instants, so this method
+   * itself stays timezone-naive.
    */
   async list(
     organisationId: string,
     userId: string,
     targetMembershipId?: string,
+    from?: Date,
+    to?: Date,
   ): Promise<TimeEntryListItem[]> {
     const membership = await this.getActiveMembership(organisationId, userId);
 
@@ -309,7 +323,16 @@ export class TimeEntriesService {
     }
 
     const entries = await this.timeEntries.find({
-      where: { membershipId: subjectMembershipId },
+      where: {
+        membershipId: subjectMembershipId,
+        ...(from && to
+          ? { startedAt: Between(from, to) }
+          : from
+            ? { startedAt: MoreThanOrEqual(from) }
+            : to
+              ? { startedAt: LessThanOrEqual(to) }
+              : {}),
+      },
       relations: { project: true, task: true },
       order: { startedAt: 'DESC' },
       take: LIST_LIMIT,

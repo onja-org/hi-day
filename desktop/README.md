@@ -1,9 +1,9 @@
 # Workforce Monitor Desktop
 
 The downloadable desktop agent. **It handles login, device registration,
-and starting/stopping a timer against a Project (and optional Task) —
-activity capture (apps/windows, screenshots, activity level, idle
-detection) isn't built yet.** That's deliberate scope for this pass; see
+starting/stopping a timer against a Project (and optional Task), and idle
+detection/handling — activity capture (apps/windows, screenshots, activity
+level) isn't built yet.** That's deliberate scope for this pass; see
 `docs/TECH_DESIGN.md` for where activity capture is headed.
 
 On first successful login, the app registers itself as a Device against
@@ -19,8 +19,10 @@ under Electron's `userData` directory — not a hardware fingerprint.
    nvm use 22 && pnpm --filter backend start:dev
    ```
 
-   It listens on `http://localhost:3001` by default — that's what the
-   desktop app talks to unless you override `DESKTOP_API_URL`.
+   It listens on `http://localhost:3001` by default — that's what a
+   *dev-mode* desktop app (`pnpm dev`, i.e. `electron .`) talks to. See
+   "Which backend the app talks to" below for how a packaged/installed
+   build picks its URL instead.
 
 2. **Launch the desktop app:**
 
@@ -72,6 +74,25 @@ under Electron's `userData` directory — not a hardware fingerprint.
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
 AppImage/`.deb` directly.
+
+## Which backend the app talks to
+
+`resolveApiBaseUrl` (`desktop/src/main/api-base-url.ts`) picks the API
+base URL in this order:
+
+1. `DESKTOP_API_URL`, if set — always wins. Point a local build or a
+   one-off CI build at staging with this.
+2. Otherwise, [`app.isPackaged`](https://www.electronjs.org/docs/latest/api/app#appispackaged):
+   an installed `.exe`/`.dmg`/`.AppImage` defaults to the production API
+   (`https://workfoce-monitoring-api.up.railway.app`); `electron .` (dev
+   mode) defaults to `http://localhost:3001`.
+
+This matters because an *installed* app has no way to inherit a
+developer's shell environment — an env-var-only default would leave every
+real user's copy silently trying (and failing) to reach `localhost`. If
+the production API URL ever changes, update `PRODUCTION_API_URL` in
+`api-base-url.ts` (and re-cut a release — there's no remote config or
+auto-update yet, see **Known limitations** below).
 
 ## Building installers
 

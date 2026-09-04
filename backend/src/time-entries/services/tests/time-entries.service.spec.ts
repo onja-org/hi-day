@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { Between, EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
@@ -769,6 +769,30 @@ describe('TimeEntriesService', () => {
       await expect(service.list('org-1', 'user-1')).rejects.toBeInstanceOf(
         ForbiddenException,
       );
+    });
+
+    it('filters by startedAt between from and to when both are given', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const timeEntriesRepo = makeTimeEntriesRepo({ find });
+      const service = makeService({ timeEntriesRepo });
+      const from = new Date('2026-01-01T00:00:00.000Z');
+      const to = new Date('2026-01-01T23:59:59.999Z');
+
+      await service.list('org-1', 'user-1', undefined, from, to);
+
+      const call = find.mock.calls[0] as [{ where: { startedAt: unknown } }];
+      expect(call[0].where.startedAt).toEqual(Between(from, to));
+    });
+
+    it('applies no date filter when neither from nor to is given', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const timeEntriesRepo = makeTimeEntriesRepo({ find });
+      const service = makeService({ timeEntriesRepo });
+
+      await service.list('org-1', 'user-1');
+
+      const call = find.mock.calls[0] as [{ where: Record<string, unknown> }];
+      expect(call[0].where).not.toHaveProperty('startedAt');
     });
 
     it('marks canEdit false for a plain member viewing their own entries', async () => {

@@ -13,7 +13,7 @@ export function DashboardHeader({ onOpenMenu }: DashboardHeaderProps) {
   const organisationQuery = useCurrentOrganisation();
 
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-primary-dark/10 bg-white px-4 py-3">
+    <header className="flex items-center justify-between gap-3 border-b border-primary-dark/10 bg-white px-4 py-4">
       <div className="flex items-center gap-3">
         <button
           type="button"

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
+import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
+import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { ErrorMessage } from "./ErrorMessage";
@@ -14,6 +16,15 @@ type TimesheetTableProps = {
   organisationId: string;
   /** Omit to view the caller's own timesheet. */
   membershipId?: string;
+  /** Defaults to "today". */
+  datePreset?: TimesheetDatePreset;
+};
+
+const DATE_PRESET_EMPTY_LABEL: Record<Exclude<TimesheetDatePreset, "all">, string> = {
+  today: "today",
+  yesterday: "yesterday",
+  this_week: "this week",
+  this_month: "this month",
 };
 
 function formatTimeRange(entry: TimeEntryListItem): string {
@@ -31,8 +42,17 @@ function formatTimeRange(entry: TimeEntryListItem): string {
   return `${start} – ${end}`;
 }
 
-export function TimesheetTable({ organisationId, membershipId }: TimesheetTableProps) {
-  const entriesQuery = useTimeEntries(organisationId, membershipId);
+export function TimesheetTable({
+  organisationId,
+  membershipId,
+  datePreset = "today",
+}: TimesheetTableProps) {
+  const range = getTimesheetDateRange(datePreset);
+  const entriesQuery = useTimeEntries(organisationId, {
+    membershipId,
+    from: range?.from,
+    to: range?.to,
+  });
   const [editingEntry, setEditingEntry] = useState<TimeEntryListItem | null>(null);
 
   if (entriesQuery.isLoading) {
@@ -59,11 +79,10 @@ export function TimesheetTable({ organisationId, membershipId }: TimesheetTableP
   const entries = entriesQuery.data;
 
   if (entries.length === 0) {
+    const period = datePreset === "all" ? "" : ` for ${DATE_PRESET_EMPTY_LABEL[datePreset]}`;
     return (
       <p className="text-slate-900">
-        {membershipId
-          ? "No hours logged yet."
-          : "You haven't logged any hours yet."}
+        {membershipId ? `No hours logged${period}.` : `No hours logged${period} yet.`}
       </p>
     );
   }
