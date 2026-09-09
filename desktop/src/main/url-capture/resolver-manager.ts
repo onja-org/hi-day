@@ -19,6 +19,13 @@ export interface ResolverSpawnConfig {
   /** Never a hardcoded platform path here — Stage B/C/D decide which binary this is. */
   command: string;
   args?: string[];
+  /**
+   * Merged over process.env for the spawned child — needed for e.g. the
+   * darwin resolver, which is a plain JS file run via Electron's own
+   * binary as `command` with ELECTRON_RUN_AS_NODE=1 here, rather than a
+   * separately-built native executable.
+   */
+  env?: Record<string, string>;
 }
 
 export interface ResolverManagerOptions {
@@ -204,7 +211,9 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
 
   private spawnChild(): void {
     this.stdoutBuffer = '';
-    const child = spawn(this.spawnConfig.command, this.spawnConfig.args ?? []);
+    const child = spawn(this.spawnConfig.command, this.spawnConfig.args ?? [], {
+      env: this.spawnConfig.env ? { ...process.env, ...this.spawnConfig.env } : undefined,
+    });
     this.child = child;
     let gone = false;
 

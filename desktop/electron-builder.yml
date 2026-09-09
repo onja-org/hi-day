@@ -26,6 +26,19 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # The published self-contained win-resolver.exe plus the browser-registry/
+  # firefox-private-markers JSON files copied alongside it (see
+  # WinResolver.csproj's linked-file <None> entries) — NOT the AOT/trimmed
+  # variants ruled out by native/win/spike/RESULTS.md. Run
+  # `dotnet publish native/win/resolver/WinResolver/WinResolver.csproj -c
+  # Release -r win-x64 --self-contained -p:PublishSingleFile=true` first;
+  # this doesn't build it. Resolved at runtime via process.resourcesPath,
+  # per resolvers/win32/resolver-path.ts and CLAUDE.md's side-car
+  # convention — wired into main.ts's resolverSpawnConfigForPlatform, still
+  # unverified against a real Windows machine.
+  extraResources:
+    - from: native/win/resolver/WinResolver/bin/Release/net8.0-windows/win-x64/publish
+      to: native/win/resolver
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

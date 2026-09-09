@@ -11,6 +11,7 @@ import { loadBrowserRegistry, lookupBrowser } from '../../url-capture/browser-re
 import { AppleEventsResolver } from './apple-events';
 import { AppleScriptFocusSource, FocusMonitor, type FocusTarget } from './focus-monitor';
 import { FirefoxAxResolver } from './firefox-ax';
+import { resolveFirefoxAxHelperPathFromEnv } from './firefox-ax-helper-path';
 import { OsascriptRunner } from './osascript-runner';
 
 /**
@@ -70,7 +71,12 @@ function main(): void {
   // the whole side-car, not per-component.
   const runner = new OsascriptRunner();
   const appleEventsResolver = new AppleEventsResolver(runner);
-  const firefoxAxResolver = new FirefoxAxResolver();
+  // This whole process runs via ELECTRON_RUN_AS_NODE (see main.ts) — a
+  // plain Node process, not Electron's main process — so app.isPackaged/
+  // process.resourcesPath aren't available here directly; main.ts passes
+  // the equivalent information in via env vars instead (see
+  // firefox-ax-helper-path.ts).
+  const firefoxAxResolver = new FirefoxAxResolver({ binaryPath: resolveFirefoxAxHelperPathFromEnv() });
   const focusMonitor = new FocusMonitor(new AppleScriptFocusSource(runner));
 
   let lastFocus: FocusTarget | null = null;
@@ -105,7 +111,7 @@ function main(): void {
       await new Promise((r) => setTimeout(r, 75));
       outcome = await appleEventsResolver.resolve(entry);
     }
-    if (!outcome.ok) return { ok: false, message: outcome.error.message };
+    if (!outcome.ok) return { ok: false, message: `[${outcome.error.code}] ${outcome.error.message}` };
     return {
       ok: true,
       url: outcome.url,
@@ -118,7 +124,7 @@ function main(): void {
 
   async function resolveViaFirefoxAx(pid: number): Promise<ResolvedUrl | ResolveFailed> {
     const outcome = await firefoxAxResolver.resolve(pid);
-    if (!outcome.ok) return { ok: false, message: outcome.error.message };
+    if (!outcome.ok) return { ok: false, message: `[${outcome.error.code}] ${outcome.error.message}` };
     return {
       ok: true,
       url: outcome.url,

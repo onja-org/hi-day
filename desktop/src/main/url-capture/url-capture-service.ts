@@ -21,13 +21,16 @@ export interface UrlCaptureServiceOptions {
  * Wires the session engine (A.2), the power/idle adapter and local store
  * (A.3) together into one thing `main.ts` can own for a logged-in session.
  *
- * Deliberately NOT wired in here yet: focus/URL capture (ResolverManager,
- * A.1). There is no real per-OS resolver binary — Stage B/C/D — so there is
- * nothing legitimate to spawn. Until then, `urlResolved` never fires, so the
- * engine never opens a session; what this class exercises today is timer
- * start/stop plus real idle/lock/suspend/shutdown signals flowing correctly
- * into the engine and being persisted. Wiring a ResolverManager in is a
- * small, additive change once a real resolver exists — see `reportEvent`.
+ * Focus/URL capture (ResolverManager) is NOT owned by this class directly
+ * — that's ResolverOrchestrator's job (see main.ts's startUrlCapture),
+ * which turns a platform resolver's `focus`/`resolve()` output into
+ * EngineEvents and feeds them through `reportEvent`, same as this class's
+ * own idle/lock/suspend signals. This class works identically whether or
+ * not an orchestrator is attached — on Linux (no resolver yet) or if one
+ * is never wired in for some other reason, it still exercises real
+ * timer/idle/lock/suspend/shutdown signals flowing into the engine and
+ * being persisted; `reportEvent` is public specifically so that stays true
+ * without this class needing to know a resolver exists at all.
  */
 export class UrlCaptureService {
   private readonly store: UrlSessionStore;

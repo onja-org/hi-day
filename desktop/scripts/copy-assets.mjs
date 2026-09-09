@@ -19,7 +19,7 @@ function copyInto(srcDir, outDir, files) {
 copyInto(
   join(rootDir, 'src', 'renderer'),
   join(rootDir, 'dist', 'renderer'),
-  ['index.html', 'styles.css'],
+  ['index.html', 'coverage.html', 'styles.css'],
 );
 
 // The browser registry (docs/url-tracking-plan.md Step 2) is data, not code —
@@ -37,4 +37,13 @@ copyInto(
   join(rootDir, 'src', 'main', 'resolvers', 'darwin'),
   join(rootDir, 'dist', 'main', 'resolvers', 'darwin'),
   ['firefox-private-markers.json'],
+);
+
+// Stage E.1's normalization config — placeholder strings and the
+// sensitive-path denylist are data (edited without a rebuild), read at
+// their own __dirname-relative paths, same reason as the two copies above.
+copyInto(
+  join(rootDir, 'src', 'main', 'url-capture', 'normalization'),
+  join(rootDir, 'dist', 'main', 'url-capture', 'normalization'),
+  ['placeholder-strings.json', 'sensitive-path-patterns.json'],
 );

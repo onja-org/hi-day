@@ -1,75 +1,7 @@
 export {};
 
-interface AuthStatus {
-  loggedIn: boolean;
-  email?: string;
-  message?: string;
-}
-
-interface TrackedProject {
-  id: string;
-  name: string;
-  colour: string;
-  client: string | null;
-}
-
-interface TrackedTask {
-  id: string;
-  name: string;
-  status: 'open' | 'closed';
-}
-
-interface TimeEntry {
-  id: string;
-  projectId: string;
-  taskId: string | null;
-  startedAt: string;
-  endedAt: string | null;
-}
-
-interface CurrentTimer {
-  entry: TimeEntry | null;
-  now: string;
-}
-
-type IdleHandling = 'off' | 'flag' | 'auto_subtract';
-
-interface IdlePolicy {
-  handling: IdleHandling;
-  thresholdMinutes: number;
-}
-
-type TrackingResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry };
-
-declare global {
-  interface Window {
-    api: {
-      getStatus: () => Promise<AuthStatus>;
-      login: (email: string, password: string) => Promise<AuthStatus>;
-      logout: () => Promise<AuthStatus>;
-      tracking: {
-        listProjects: () => Promise<TrackingResult<TrackedProject[]>>;
-        listTasks: (projectId: string) => Promise<TrackingResult<{ tasks: TrackedTask[] }>>;
-        start: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
-        switchTo: (
-          projectId: string,
-          taskId: string | null,
-        ) => Promise<TrackingResult<TimeEntry>>;
-        stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
-        status: () => Promise<TrackingResult<CurrentTimer>>;
-        idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
-      };
-      idle: {
-        seconds: () => Promise<number>;
-      };
-      urlCapture: {
-        timerStateChanged: (running: boolean) => void;
-      };
-    };
-  }
-}
+// AuthStatus/TrackedProject/.../Window.api are declared once, ambiently,
+// in window.d.ts — shared across every renderer entry point.
 
 // How often the agent re-syncs with the server's own idea of what's
 // running — catches a timer started/stopped from the web console, and
@@ -129,6 +61,10 @@ document.getElementById('logout-button')!.addEventListener('click', () => {
   void window.api.logout().then(() => showLoginForm());
 });
 
+document.getElementById('coverage-button')!.addEventListener('click', () => {
+  window.api.coverage.openWindow();
+});
+
 // --- Time tracking -----------------------------------------------------
 
 const projectSelect = document.getElementById('project-select') as HTMLSelectElement;
@@ -166,6 +102,25 @@ let pendingIdleDiscardAt: string | null = null;
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
   trackingError.hidden = false;
+}
+
+/**
+ * Every tracking:* failure goes through this — `unauthorized` means the
+ * backend has actually revoked this device's session (most commonly an
+ * admin's remote sign-out from the Devices page), not a transient/network
+ * failure, so this switches straight to the login screen instead of
+ * showing an inline error the person would otherwise have to notice and
+ * act on themselves. Without this, a remote sign-out had no visible effect
+ * on the desktop app at all — it kept showing the logged-in UI
+ * indefinitely, since every failure (including this one) was treated the
+ * same as "server's briefly unreachable, try again next poll".
+ */
+function handleTrackingFailure(result: { message: string; unauthorized?: boolean }): void {
+  if (result.unauthorized) {
+    showLoginForm(result.message);
+    return;
+  }
+  showTrackingError(result.message);
 }
 
 function clearTrackingError(): void {
@@ -266,11 +221,12 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleMinutes, idleStartedAtIso);
 }
 
-async function loadProjects(): Promise<void> {
+/** Returns false when the session turned out to be signed out — callers chaining further tracking setup should stop rather than continue. */
+async function loadProjects(): Promise<boolean> {
   const result = await window.api.tracking.listProjects();
   if (!result.ok) {
-    showTrackingError(result.message);
-    return;
+    handleTrackingFailure(result);
+    return !result.unauthorized;
   }
 
   projectSelect.innerHTML = '';
@@ -284,13 +240,14 @@ async function loadProjects(): Promise<void> {
   if (result.data.length > 0) {
     await loadTasks(result.data[0].id);
   }
+  return true;
 }
 
 async function loadTasks(projectId: string): Promise<void> {
   const result = await window.api.tracking.listTasks(projectId);
   taskSelect.innerHTML = '<option value="">No task</option>';
   if (!result.ok) {
-    showTrackingError(result.message);
+    handleTrackingFailure(result);
     return;
   }
 
@@ -312,8 +269,17 @@ projectSelect.addEventListener('change', () => {
 async function refreshStatus(): Promise<void> {
   const result = await window.api.tracking.status();
   if (!result.ok) {
-    // A transient/offline failure shouldn't wipe the currently-displayed
-    // timer — just skip this poll and try again next interval.
+    if (result.unauthorized) {
+      // Not a transient/offline blip — the backend has actually revoked
+      // this session (e.g. an admin's remote sign-out). Every future poll
+      // would fail identically, so switch to the login screen right away
+      // instead of silently retrying forever.
+      showLoginForm(result.message);
+      return;
+    }
+    // A genuinely transient/offline failure shouldn't wipe the
+    // currently-displayed timer — just skip this poll and try again next
+    // interval.
     return;
   }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
@@ -350,8 +316,8 @@ startButton.addEventListener('click', () => {
       return;
     }
 
-    showTrackingError(result.message);
-    if (result.runningEntry) {
+    handleTrackingFailure(result);
+    if (result.runningEntry && !result.unauthorized) {
       pendingSwitch = { projectId, taskId };
       switchButton.hidden = false;
     }
@@ -365,7 +331,7 @@ stopButton.addEventListener('click', () => {
     if (result.ok) {
       setRunning(null);
     } else {
-      showTrackingError(result.message);
+      handleTrackingFailure(result);
     }
   })();
 });
@@ -379,7 +345,7 @@ switchButton.addEventListener('click', () => {
       clearTrackingError();
       setRunning(result.data);
     } else {
-      showTrackingError(result.message);
+      handleTrackingFailure(result);
     }
   })();
 });
@@ -398,14 +364,15 @@ idleDiscardButton.addEventListener('click', () => {
     if (result.ok) {
       setRunning(null);
     } else {
-      showTrackingError(result.message);
+      handleTrackingFailure(result);
     }
   })();
 });
 
 async function initTracking(): Promise<void> {
   clearTrackingError();
-  await loadProjects();
+  const stillSignedIn = await loadProjects();
+  if (!stillSignedIn) return; // loadProjects already switched to the login screen
 
   const idlePolicyResult = await window.api.tracking.idlePolicy();
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;

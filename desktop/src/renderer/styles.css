@@ -126,3 +126,53 @@ button:hover {
   color: #667085;
   font-size: 13px;
 }
+
+.coverage-app {
+  max-width: 100%;
+}
+
+.coverage-intro {
+  color: #667085;
+  font-size: 13px;
+}
+
+#coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+#coverage-table th,
+#coverage-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid #eaecf0;
+  vertical-align: top;
+}
+
+.coverage-status--active {
+  color: #067647;
+  font-weight: 600;
+}
+
+.coverage-status--degraded {
+  color: #b54708;
+  font-weight: 600;
+}
+
+.coverage-status--off {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.coverage-approximate {
+  color: #667085;
+  font-style: italic;
+}
+
+#coverage-health {
+  margin-top: 20px;
+  font-size: 13px;
+  color: #667085;
+}

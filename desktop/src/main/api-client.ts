@@ -55,7 +55,7 @@ export interface IdlePolicy {
 
 export type TrackingResult<T> =
   | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry };
+  | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
 interface ErrorResponseBody {
   message?: string[] | string;
@@ -102,6 +102,31 @@ export class ApiClient {
       // Best-effort: if the server is unreachable, the session is left to
       // expire naturally rather than blocking the user from logging out
       // locally.
+    }
+  }
+
+  /**
+   * Keeps this device's `lastSeenAt` fresh so the Devices page's
+   * active/offline status (computed purely from how recently this was
+   * last called — see backend's computeDeviceStatus) reflects reality
+   * while the app is actually running, not just at login. Best-effort,
+   * same reasoning as logout(): a missed heartbeat due to a transient
+   * network blip just means this device shows offline until the next
+   * one succeeds, not something worth surfacing to the user.
+   */
+  async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${deviceToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ appVersion }),
+      });
+      return response.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -202,6 +227,13 @@ export class ApiClient {
       ok: false,
       message: message ?? 'Something went wrong. Please try again.',
       runningEntry: errorBody.runningEntry,
+      // DeviceSessionGuard returns exactly this status for a missing,
+      // expired, or (the case this exists for) admin-revoked session —
+      // never for a validation error or a genuinely transient failure, so
+      // callers can safely treat this as "sign out locally right now"
+      // rather than "retry next poll". Distinct from checking the message
+      // string, which is just human-readable text, not a contract.
+      unauthorized: response.status === 401,
     };
   }
 }
