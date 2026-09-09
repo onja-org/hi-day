@@ -30,3 +30,11 @@ copyInto(
   join(rootDir, 'dist', 'main', 'url-capture'),
   ['browser-registry.json'],
 );
+
+// Same reason — the per-locale Firefox private-window marker table (Prompt
+// B.2) is data FirefoxAxResolver reads at its own __dirname-relative path.
+copyInto(
+  join(rootDir, 'src', 'main', 'resolvers', 'darwin'),
+  join(rootDir, 'dist', 'main', 'resolvers', 'darwin'),
+  ['firefox-private-markers.json'],
+);
