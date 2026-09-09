@@ -2,9 +2,8 @@ name: Windows native spike
 
 # workflow_dispatch only — this is a one-time (or occasional re-check)
 # decision spike (Prompt C.0), not something every push needs. The
-# permanent Windows native build (native/win/fixture-capture today,
-# native/win/resolver/ once Stage C.1+ lands) is the windows-native job
-# in desktop-build.yml instead.
+# permanent Windows native build (native/win/resolver/) is the
+# windows-native job in desktop-build.yml instead.
 #
 # The temporary push-trigger workaround (needed only because a brand-new
 # workflow file's workflow_dispatch doesn't become dispatchable until it

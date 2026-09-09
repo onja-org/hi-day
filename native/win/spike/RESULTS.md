@@ -78,13 +78,14 @@ typed API (element trees, patterns) is materially easier to write and maintain t
 address-bar-reading resolver against, with no remaining downside once AOT is out of the
 picture.
 
-**Before writing production Stage C.1 code**, get a real-machine confirmation that a plain
-self-contained FlaUI build's UIA read actually works outside of CI's hosted-runner
-environment. `native/win/fixture-capture/` already exists for exactly this — it's a
-FlaUI-based, non-AOT, non-trimmed, self-contained single-file tool built for manual use on
-a real Windows machine (see `desktop-build.yml`'s `windows-native` job for the build/upload
-step). Running that on a real machine is a more reliable way to confirm feasibility than
-continuing to fight the hosted-runner hang in this throwaway spike.
+**Before trusting production Stage C.1-C.3 code** (now written — see `native/win/resolver/`),
+get a real-machine confirmation that a plain self-contained FlaUI build's UIA read actually
+works outside of CI's hosted-runner environment — none of it has run on real hardware yet.
+`native/win/resolver/WinResolver`'s own `--capture-fixtures` mode is the tool for this now
+(see `native/win/resolver/MANUAL_TESTING.md`); it exercises the real toolbar-scoped,
+registry-driven read path directly, which is a more representative check than the standalone
+`native/win/fixture-capture/` tool this originally pointed to — that tool predated the real
+resolver and was removed once `--capture-fixtures` made it redundant.
 
 ## How to reproduce
 
