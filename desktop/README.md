@@ -135,3 +135,13 @@ from the run's artifacts.
 - **No offline queue.** Timer start/stop calls hit the backend directly and
   fail (with an on-screen error) if it's unreachable — the SQLite-backed
   offline queue described in `docs/TECH_DESIGN.md` isn't built yet.
+- **`better-sqlite3` (used by url-capture's local store) is a native addon,
+  and `pnpm test` and `pnpm dev`/packaging need it built for two *different*
+  Node ABIs** — plain Node for vitest, Electron's own bundled Node for the
+  app. `pnpm install` leaves it built for plain Node (so `pnpm test` works
+  out of the box); `pnpm dev` rebuilds it for Electron automatically as
+  part of the script (`rebuild:electron`) before launching. If you run
+  `pnpm test` again right after `pnpm dev` and it fails with a
+  `NODE_MODULE_VERSION` mismatch, run `pnpm --filter desktop rebuild:node`
+  to flip it back. `dist:*` isn't affected — electron-builder rebuilds
+  native deps for Electron itself as part of packaging.

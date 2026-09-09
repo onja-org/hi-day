@@ -10,17 +10,23 @@
     "node": ">=22 <24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs",
-    "dev": "pnpm build && electron .",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-assets.mjs",
+    "dev": "pnpm build && pnpm rebuild:electron && electron .",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "rebuild:electron": "cd node_modules/better-sqlite3 && (npm_config_runtime=electron npm_config_target=33.4.11 npm_config_disturl=https://electronjs.org/headers ./node_modules/.bin/prebuild-install || npm_config_runtime=electron npm_config_target=33.4.11 npm_config_disturl=https://electronjs.org/headers ./node_modules/.bin/node-gyp rebuild --release)",
+    "rebuild:node": "pnpm rebuild better-sqlite3",
     "dist:linux": "pnpm build && electron-builder --linux",
     "dist:win": "pnpm build && electron-builder --win",
     "dist:mac": "pnpm build && electron-builder --mac"
   },
+  "dependencies": {
+    "better-sqlite3": "^12.0.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
