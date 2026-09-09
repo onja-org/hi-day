@@ -1,0 +1,6 @@
+{
+  "rules": [
+    { "op": "ping", "action": "hang" },
+    { "op": "ping", "action": "hang" }
+  ]
+}
