@@ -35,10 +35,18 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # timeout-minutes here: a real run hung for 18+ minutes with zero
+      # output making a COM call from the wrong threading apartment (see
+      # the [STAThread] fix in each variant's Program.cs). That fix should
+      # prevent a repeat, but this bounds any *future* unrelated hang to a
+      # known, short wait instead of silently consuming hours of CI time
+      # before anyone notices.
       - name: Run FlaUI variant
+        timeout-minutes: 10
         run: ./native/win/spike/run-variant.ps1 -VariantPath native/win/spike/flaui-variant/flaui-variant.csproj -VariantName FlaUI
 
       - name: Run CsWin32 variant
+        timeout-minutes: 10
         run: ./native/win/spike/run-variant.ps1 -VariantPath native/win/spike/cswin32-variant/cswin32-variant.csproj -VariantName CsWin32
 
       - name: Print combined summary
