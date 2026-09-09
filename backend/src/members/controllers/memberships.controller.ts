@@ -4,11 +4,14 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ActivitiesService } from '../../activities/services/activities.service';
 import type { ActivityEntry } from '../../activities/services/activities.service';
+import { AppEventsService } from '../../app-events/services/app-events.service';
+import type { AppTimeSummary } from '../../app-events/services/app-events.service';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
@@ -28,6 +31,7 @@ export class MembershipsController {
     private readonly membershipsService: MembershipsService,
     private readonly activitiesService: ActivitiesService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly appEventsService: AppEventsService,
   ) {}
 
   @Get()
@@ -83,6 +87,25 @@ export class MembershipsController {
       request.organisationId!,
       request.userId,
       membershipId,
+    );
+  }
+
+  @Get(':membershipId/app-events/summary')
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
+  getAppEventsSummary(
+    @Param('membershipId') membershipId: string,
+    @Query('date') date: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<AppTimeSummary> {
+    return this.appEventsService.getSummaryForMembership(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+      date,
     );
   }
 }

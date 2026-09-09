@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -32,4 +33,8 @@ export class UpdateOrganisationDto {
   @IsInt()
   @Min(1)
   idleThresholdMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  windowTrackingEnabled?: boolean;
 }

@@ -176,6 +176,7 @@ describe('OrganisationsService', () => {
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
+        windowTrackingEnabled: false,
         userId: 'user-1',
       });
     });
@@ -375,6 +376,30 @@ describe('OrganisationsService', () => {
       expect(profile.idleThresholdMinutes).toBe(10);
       expect(profile.userId).toBe('user-1');
     });
+
+    it('updates the windowTrackingEnabled field', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        windowTrackingEnabled: true,
+      });
+
+      expect(profile.windowTrackingEnabled).toBe(true);
+    });
   });
 
   describe('getIdlePolicy', () => {
@@ -413,6 +438,44 @@ describe('OrganisationsService', () => {
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
         handling: 'off',
         thresholdMinutes: 15,
+      });
+    });
+  });
+
+  describe('getCaptureSettings', () => {
+    it('defaults to disabled when the organisation has no explicit capture settings', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: {},
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
+        windowTrackingEnabled: false,
+      });
+    });
+
+    it('returns the organisation-configured value when set', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { windowTrackingEnabled: true },
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
+        windowTrackingEnabled: true,
       });
     });
   });

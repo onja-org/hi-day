@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Activity } from './entities/activity.entity';
+import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
 import { DeviceSession } from './entities/device-session.entity';
@@ -40,7 +41,7 @@ import { User } from './entities/user.entity';
           DeviceSession,
           TimeEntry,
           Activity,
-          TimeEntry,
+          AppEvent,
         ],
         synchronize: false,
       }),
