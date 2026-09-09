@@ -1,0 +1,28 @@
+{
+  "_comment": "Step 21's sensitive-path denylist — path segments/query keys strongly associated with a one-time, credential-bearing link (password reset, email verification, magic-link login, unsubscribe tokens). Matched case-insensitively against the path+query BEFORE the query-string policy strips the query, since the token itself often lives in the query. This list is a starting point, not exhaustive — expand it as real captures surface more patterns; it is deliberately conservative (biased toward over-matching, since dropping a normal reading is far cheaper than storing a live password-reset token).",
+  "pathPatterns": [
+    "reset-password",
+    "resetpassword",
+    "password-reset",
+    "forgot-password",
+    "reset_token",
+    "verify-email",
+    "email-verification",
+    "confirm-email",
+    "magic-link",
+    "unsubscribe",
+    "auth/callback",
+    "oauth/callback",
+    "sso/callback"
+  ],
+  "queryKeyPatterns": [
+    "token",
+    "reset_token",
+    "access_token",
+    "auth_token",
+    "otp",
+    "code",
+    "confirmation_token",
+    "verification_token"
+  ]
+}

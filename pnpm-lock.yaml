@@ -138,6 +138,9 @@ importers:
       better-sqlite3:
         specifier: ^12.0.0
         version: 12.11.1
+      tldts:
+        specifier: ^7.4.12
+        version: 7.4.12
     devDependencies:
       '@eslint/js':
         specifier: ^9.18.0
@@ -5430,8 +5433,15 @@ packages:
   tldts-core@7.4.10:
     resolution: {integrity: sha512-KnQjp53ZekKgm/r3l+u8kJGGzYgrWdP8+Mql7a4vijh2WE0IrZWspQj/TpTxDho/YxO+AnOZnIjQcCD+q6iJsw==}
 
+  tldts-core@7.4.12:
+    resolution: {integrity: sha512-nYNzS2WRf4QJmjzFFgAxLOBjyBxAGRbCy9PVBPaglcYyYajh40VBn+v5Ngr96ZMc7oM0+aCJdtQnNejvdBnXMQ==}
+
   tldts@7.4.10:
     resolution: {integrity: sha512-GgouD1B+sWwvkaEq8vXC15DjQitxbvs12oIXELpconwm+Tg3zfcEv4jgzq3vtKverDXsg3VI8aRgNL2Nra0Iog==}
+    hasBin: true
+
+  tldts@7.4.12:
+    resolution: {integrity: sha512-WylhSDKVeYnWXL3a+vKTaOxjnOeEGw938hImY8zoRWJjRRK/Jp1K+IihBzIONpUmW4e3WmXT6q5FW6vlESVZCA==}
     hasBin: true
 
   tmp-promise@3.0.3:
@@ -11840,9 +11850,15 @@ snapshots:
 
   tldts-core@7.4.10: {}
 
+  tldts-core@7.4.12: {}
+
   tldts@7.4.10:
     dependencies:
       tldts-core: 7.4.10
+
+  tldts@7.4.12:
+    dependencies:
+      tldts-core: 7.4.12
 
   tmp-promise@3.0.3:
     dependencies:

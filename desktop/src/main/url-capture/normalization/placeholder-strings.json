@@ -1,0 +1,19 @@
+{
+  "_comment": "Step 21's placeholder-string reject list — strings that pass basic host validation but carry no real navigation content (a fresh/blank tab, etc). Only the English entries are confirmed against real browser output; the rest are best-effort from common browser localization strings and need confirming per-locale once real --capture-fixtures/debug-harness data exists, same caveat as resolvers/darwin/firefox-private-markers.json. Add a locale here, not in normalize.ts.",
+  "placeholders": [
+    "about:blank",
+    "chrome://newtab",
+    "chrome://newtab/",
+    "edge://newtab",
+    "edge://newtab/",
+    "new tab",
+    "nouvel onglet",
+    "neuer tab",
+    "nueva pestaña",
+    "nuova scheda",
+    "nieuw tabblad",
+    "ny flik",
+    "新しいタブ",
+    "новая вкладка"
+  ]
+}
