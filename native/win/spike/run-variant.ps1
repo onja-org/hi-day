@@ -10,6 +10,17 @@
 # A variant whose AOT publish fails to COMPILE is not treated as a CI
 # failure (exit 0 either way) — that is itself a valid, informative spike
 # result, not a broken pipeline.
+#
+# Every external command below streams its own output live (via
+# Tee-Object) instead of only being captured silently into a variable —
+# a real CI run hung for 18+ minutes, then again past a 10-minute
+# timeout, with ZERO console output the whole time, because every step
+# up to Write-Result was captured-not-printed. That made it impossible to
+# tell which of 5 different steps (JIT build, AOT publish, AOT run,
+# fallback publish, fallback run) was actually stuck. Do not go back to
+# silent capture-only here even if it looks redundant with the JSON
+# result — the JSON only appears if the script finishes, which is
+# exactly what's in question when something hangs.
 
 param(
     [Parameter(Mandatory = $true)][string]$VariantPath,
@@ -45,20 +56,25 @@ function Write-Result {
 }
 
 # 1. Plain JIT build — fast sanity check before attempting AOT.
-$buildOutput = dotnet build $VariantPath -c Release 2>&1
+Write-Host "[$VariantName] Starting JIT build..."
+dotnet build $VariantPath -c Release 2>&1 | Tee-Object -Variable buildOutputLines
 if ($LASTEXITCODE -ne 0) {
+    Write-Host "[$VariantName] JIT build FAILED (exit $LASTEXITCODE)."
     $result.jitBuildSucceeded = $false
-    $result.aotPublishError = "JIT build itself failed:`n" + ($buildOutput -join "`n")
+    $result.aotPublishError = "JIT build itself failed:`n" + ($buildOutputLines -join "`n")
     Write-Result
     exit 0
 }
+Write-Host "[$VariantName] JIT build succeeded."
 $result.jitBuildSucceeded = $true
 
 # 2. Attempt NativeAOT publish — the real question this spike is asking.
+Write-Host "[$VariantName] Starting NativeAOT publish (this restores the AOT toolchain and can take a few minutes on first run)..."
 $aotOutDir = Join-Path $projectDir "publish-aot"
-$aotOutput = dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=true -o $aotOutDir 2>&1
+dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=true -o $aotOutDir 2>&1 | Tee-Object -Variable aotOutputLines
 
 if ($LASTEXITCODE -eq 0) {
+    Write-Host "[$VariantName] AOT publish succeeded."
     $result.aotPublishSucceeded = $true
     $exeFile = Get-ChildItem $aotOutDir -Filter "*.exe" | Select-Object -First 1
     $exePath = $exeFile.FullName
@@ -66,9 +82,11 @@ if ($LASTEXITCODE -eq 0) {
 
     # 3. Run the published binary for real — does the UIA read actually
     #    work, or did AOT trim away dynamic COM marshalling it needed?
-    $runOutput = & $exePath 2>&1
-    $result.uiaReadRawOutput = ($runOutput -join "`n")
-    $jsonLine = $runOutput | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
+    Write-Host "[$VariantName] Running the AOT-published binary ($exePath)..."
+    & $exePath 2>&1 | Tee-Object -Variable runOutputLines
+    $result.uiaReadRawOutput = ($runOutputLines -join "`n")
+    Write-Host "[$VariantName] AOT-published binary exited."
+    $jsonLine = $runOutputLines | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
 
     if ($jsonLine) {
         try {
@@ -93,6 +111,7 @@ if ($LASTEXITCODE -eq 0) {
     #    binary can "cold start" fast too, so don't let that be mistaken
     #    for a working measurement.
     if ($result.uiaReadSucceededUnderAot) {
+        Write-Host "[$VariantName] Read succeeded — running indicative-only timing (cold start + 100 reads)..."
         try {
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
             & $exePath | Out-Null
@@ -105,15 +124,18 @@ if ($LASTEXITCODE -eq 0) {
             }
             $sw100.Stop()
             $result.hundredReadTimeMsIndicativeOnly = $sw100.ElapsedMilliseconds
+            Write-Host "[$VariantName] Timing done."
         }
         catch {
             # Timing is optional — never let a failure here affect the result above.
+            Write-Host "[$VariantName] Timing run threw (ignored, timing is optional): $($_.Exception.Message)"
         }
     }
 }
 else {
+    Write-Host "[$VariantName] AOT publish FAILED (exit $LASTEXITCODE)."
     $result.aotPublishSucceeded = $false
-    $result.aotPublishError = ($aotOutput -join "`n")
+    $result.aotPublishError = ($aotOutputLines -join "`n")
 }
 
 # Fallback per the brief: whenever AOT doesn't actually deliver a working
@@ -134,9 +156,11 @@ else {
 # size. PublishAot=false explicitly overrides the csproj's
 # <PublishAot>true</PublishAot> — without it this would just retry AOT.
 if (-not $result.uiaReadSucceededUnderAot) {
+    Write-Host "[$VariantName] AOT read did not succeed — starting the self-contained (non-trimmed) fallback publish..."
     $fallbackOutDir = Join-Path $projectDir "publish-self-contained"
-    dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishTrimmed=false -p:PublishSingleFile=true -o $fallbackOutDir 2>&1 | Out-Null
+    dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishTrimmed=false -p:PublishSingleFile=true -o $fallbackOutDir 2>&1 | Tee-Object -Variable fallbackPublishOutputLines
     if ($LASTEXITCODE -eq 0) {
+        Write-Host "[$VariantName] Fallback publish succeeded."
         $result.fallbackSelfContainedPublishSucceeded = $true
         $fallbackExe = Get-ChildItem $fallbackOutDir -Filter "*.exe" | Select-Object -First 1
         $result.fallbackSelfContainedBinarySizeBytes = $fallbackExe.Length
@@ -144,8 +168,10 @@ if (-not $result.uiaReadSucceededUnderAot) {
         # The self-contained fallback is the candidate we'd actually ship
         # if AOT is off the table — so this is the one build whose real
         # read result and timing matter for the recommendation.
-        $fallbackRunOutput = & $fallbackExe.FullName 2>&1
-        $fallbackJsonLine = $fallbackRunOutput | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
+        Write-Host "[$VariantName] Running the fallback binary ($($fallbackExe.FullName))..."
+        & $fallbackExe.FullName 2>&1 | Tee-Object -Variable fallbackRunOutputLines
+        Write-Host "[$VariantName] Fallback binary exited."
+        $fallbackJsonLine = $fallbackRunOutputLines | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
         if ($fallbackJsonLine) {
             try {
                 $fallbackParsed = $fallbackJsonLine | ConvertFrom-Json
@@ -165,6 +191,7 @@ if (-not $result.uiaReadSucceededUnderAot) {
         }
 
         if ($result.uiaReadSucceededUnderFallbackSelfContained) {
+            Write-Host "[$VariantName] Fallback read succeeded — running indicative-only cold-start timing..."
             try {
                 $swFallback = [System.Diagnostics.Stopwatch]::StartNew()
                 & $fallbackExe.FullName | Out-Null
@@ -173,10 +200,15 @@ if (-not $result.uiaReadSucceededUnderAot) {
             }
             catch {
                 # Timing is optional — never let a failure here affect the result above.
+                Write-Host "[$VariantName] Fallback timing run threw (ignored, timing is optional): $($_.Exception.Message)"
             }
         }
     }
+    else {
+        Write-Host "[$VariantName] Fallback publish FAILED (exit $LASTEXITCODE)."
+    }
 }
 
+Write-Host "[$VariantName] Done. Writing result."
 Write-Result
 exit 0

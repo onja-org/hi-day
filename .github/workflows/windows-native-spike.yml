@@ -1,24 +1,17 @@
 name: Windows native spike
 
-# workflow_dispatch only is the end state — this is a one-time (or
-# occasional re-check) decision spike (Prompt C.0), not something every
-# push needs. The permanent Windows native build (native/win/fixture-capture
-# today, native/win/resolver/ once Stage C.1+ lands) is the windows-native
-# job in desktop-build.yml instead.
+# workflow_dispatch only — this is a one-time (or occasional re-check)
+# decision spike (Prompt C.0), not something every push needs. The
+# permanent Windows native build (native/win/fixture-capture today,
+# native/win/resolver/ once Stage C.1+ lands) is the windows-native job
+# in desktop-build.yml instead.
 #
-# TEMPORARY: a brand-new workflow file's workflow_dispatch trigger doesn't
-# appear in the Actions UI (or become dispatchable via the API) until the
-# file exists on the repo's default branch — a real GitHub platform
-# limitation, not something fixable in this YAML. The `push` trigger below
-# is a workaround so this can actually run from a feature branch before
-# merge. REMOVE the `push` block (leaving only workflow_dispatch) once
-# real spike results are in and RESULTS.md is filled out, before this
-# merges to main.
+# The temporary push-trigger workaround (needed only because a brand-new
+# workflow file's workflow_dispatch doesn't become dispatchable until it
+# exists on the default branch) has been removed now that real spike
+# results are in — see RESULTS.md.
 on:
   workflow_dispatch: {}
-  push:
-    branches:
-      - sandy/feat/implement-website-url-tracking
 
 jobs:
   spike:
