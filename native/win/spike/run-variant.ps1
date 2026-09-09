@@ -29,13 +29,13 @@ $result = [ordered]@{
     uiaReadSucceededUnderAot = $null
     uiaReadError = $null
     uiaReadRawOutput = $null
-    fallbackTrimmedPublishSucceeded = $false
-    fallbackTrimmedBinarySizeBytes = $null
-    uiaReadSucceededUnderFallbackTrimmed = $null
-    uiaReadErrorUnderFallbackTrimmed = $null
+    fallbackSelfContainedPublishSucceeded = $false
+    fallbackSelfContainedBinarySizeBytes = $null
+    uiaReadSucceededUnderFallbackSelfContained = $null
+    uiaReadErrorUnderFallbackSelfContained = $null
     coldStartMsIndicativeOnly = $null
     hundredReadTimeMsIndicativeOnly = $null
-    coldStartMsIndicativeOnlyFallbackTrimmed = $null
+    coldStartMsIndicativeOnlyFallbackSelfContained = $null
 }
 
 function Write-Result {
@@ -119,51 +119,57 @@ else {
 # Fallback per the brief: whenever AOT doesn't actually deliver a working
 # UIA read — whether because the publish step itself failed to compile/link,
 # or (as real CI runs showed) because publish succeeds but the binary
-# throws InvalidProgramException at runtime — record self-contained trimmed
-# size instead of guessing. PublishAot=false explicitly overrides the
-# csproj's <PublishAot>true</PublishAot> — without it, this would just
-# silently retry the same failing/broken AOT publish again. PublishSingleFile
-# =true matters here too: without it this produces a directory of many DLLs
-# plus the exe, and measuring just the .exe's size would understate the
-# real deployable size — "can we ship a small single binary" is the whole
-# question this fallback answers.
+# throws InvalidProgramException at runtime — record a plain self-contained
+# publish instead of guessing.
+#
+# Deliberately NOT PublishTrimmed=true: a real CI run showed trimming, on
+# its own, disables built-in/classic COM interop via a documented .NET
+# feature switch (see https://aka.ms/dotnet-illink/com) — the exact same
+# root cause as the AOT failure, just surfaced as a NotSupportedException
+# instead of InvalidProgramException. So a trimmed build was never a viable
+# fallback here regardless of AOT; only a non-trimmed self-contained publish
+# can actually use classic COM interop. PublishSingleFile=true is kept —
+# it does NOT imply trimming on its own, and without it this produces a
+# directory of many DLLs plus the exe, understating the real deployable
+# size. PublishAot=false explicitly overrides the csproj's
+# <PublishAot>true</PublishAot> — without it this would just retry AOT.
 if (-not $result.uiaReadSucceededUnderAot) {
-    $fallbackOutDir = Join-Path $projectDir "publish-trimmed"
-    dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishTrimmed=true -p:PublishSingleFile=true -o $fallbackOutDir 2>&1 | Out-Null
+    $fallbackOutDir = Join-Path $projectDir "publish-self-contained"
+    dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishTrimmed=false -p:PublishSingleFile=true -o $fallbackOutDir 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        $result.fallbackTrimmedPublishSucceeded = $true
+        $result.fallbackSelfContainedPublishSucceeded = $true
         $fallbackExe = Get-ChildItem $fallbackOutDir -Filter "*.exe" | Select-Object -First 1
-        $result.fallbackTrimmedBinarySizeBytes = $fallbackExe.Length
+        $result.fallbackSelfContainedBinarySizeBytes = $fallbackExe.Length
 
-        # The trimmed fallback is the candidate we'd actually ship if AOT
-        # is off the table — so this is the one build whose real read
-        # result and timing matter for the recommendation.
+        # The self-contained fallback is the candidate we'd actually ship
+        # if AOT is off the table — so this is the one build whose real
+        # read result and timing matter for the recommendation.
         $fallbackRunOutput = & $fallbackExe.FullName 2>&1
         $fallbackJsonLine = $fallbackRunOutput | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
         if ($fallbackJsonLine) {
             try {
                 $fallbackParsed = $fallbackJsonLine | ConvertFrom-Json
-                $result.uiaReadSucceededUnderFallbackTrimmed = $fallbackParsed.UiaReadSucceeded
+                $result.uiaReadSucceededUnderFallbackSelfContained = $fallbackParsed.UiaReadSucceeded
                 if (-not $fallbackParsed.UiaReadSucceeded) {
-                    $result.uiaReadErrorUnderFallbackTrimmed = $fallbackParsed.Error
+                    $result.uiaReadErrorUnderFallbackSelfContained = $fallbackParsed.Error
                 }
             }
             catch {
-                $result.uiaReadSucceededUnderFallbackTrimmed = $false
-                $result.uiaReadErrorUnderFallbackTrimmed = "Could not parse JSON output line: $fallbackJsonLine"
+                $result.uiaReadSucceededUnderFallbackSelfContained = $false
+                $result.uiaReadErrorUnderFallbackSelfContained = "Could not parse JSON output line: $fallbackJsonLine"
             }
         }
         else {
-            $result.uiaReadSucceededUnderFallbackTrimmed = $false
-            $result.uiaReadErrorUnderFallbackTrimmed = "No JSON line found in fallback program output."
+            $result.uiaReadSucceededUnderFallbackSelfContained = $false
+            $result.uiaReadErrorUnderFallbackSelfContained = "No JSON line found in fallback program output."
         }
 
-        if ($result.uiaReadSucceededUnderFallbackTrimmed) {
+        if ($result.uiaReadSucceededUnderFallbackSelfContained) {
             try {
                 $swFallback = [System.Diagnostics.Stopwatch]::StartNew()
                 & $fallbackExe.FullName | Out-Null
                 $swFallback.Stop()
-                $result.coldStartMsIndicativeOnlyFallbackTrimmed = $swFallback.ElapsedMilliseconds
+                $result.coldStartMsIndicativeOnlyFallbackSelfContained = $swFallback.ElapsedMilliseconds
             }
             catch {
                 # Timing is optional — never let a failure here affect the result above.
