@@ -172,7 +172,26 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     }, this.options.requestTimeoutMs);
 
     this.pending.set(request.id, { onSettle, timer });
-    this.child.stdin.write(`${JSON.stringify(request)}\n`);
+
+    try {
+      this.child.stdin.write(`${JSON.stringify(request)}\n`);
+    } catch (err) {
+      // A synchronous write failure (e.g. the stream was already destroyed
+      // by a child that died between the `!this.child` check above and
+      // this call) — settle immediately rather than waiting out the full
+      // timeout for something already known to have failed. The far more
+      // common case — an asynchronous EPIPE reported via the stream's
+      // 'error' event — is handled by the listener attached in
+      // spawnChild(); without one, that event becomes an unhandled
+      // exception (this is what crashed under CI's tighter watchdog
+      // restart-cycle timing).
+      const entry = this.pending.get(request.id);
+      if (entry) {
+        clearTimeout(entry.timer);
+        this.pending.delete(request.id);
+        entry.onSettle(undefined, `Failed to write to resolver: ${(err as Error).message}`);
+      }
+    }
   }
 
   private failAllPending(message: string): void {
@@ -205,6 +224,15 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     child.stdout.on('data', (chunk: string) => this.handleStdoutChunk(chunk));
     child.stderr.setEncoding('utf-8');
     child.stderr.on('data', (chunk: string) => this.options.logger(chunk));
+    // Without this, a write to a child that already died between our own
+    // liveness check and the actual write (routine during rapid watchdog
+    // restart cycles) emits an async EPIPE on the stream with no listener —
+    // an unhandled exception, not a caught error. onGone() here is safe to
+    // call even if 'exit' also fires for the same death; it's idempotent.
+    child.stdin.on('error', (err) => {
+      this.options.logger(`Resolver stdin error: ${err.message}`);
+      onGone();
+    });
     child.on('exit', onGone);
     child.on('error', (err) => {
       this.options.logger(`Resolver process error: ${err.message}`);
