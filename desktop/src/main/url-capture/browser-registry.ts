@@ -14,6 +14,14 @@ export interface BrowserRegistryEntry {
   family: BrowserFamily;
   strategy: Partial<Record<RegistryPlatform, string>>;
   privateDetect: string;
+  /**
+   * The app/process name AppleScript needs for `tell application "..."` and
+   * `System Events`' `process "..."` — distinct from the bundle id in
+   * `match.darwin`, which AppleScript can't address a running process by.
+   * Only meaningful on darwin; absent for browsers the Apple Events resolver
+   * doesn't (yet) support by name (e.g. Firefox, which uses the AX helper).
+   */
+  darwinAppName?: string;
 }
 
 export type BrowserRegistry = Record<string, BrowserRegistryEntry>;

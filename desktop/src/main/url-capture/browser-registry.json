@@ -3,31 +3,36 @@
     "match": { "darwin": "com.google.Chrome", "win32": "chrome.exe", "linux": "google-chrome" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
-    "privateDetect": "chromium-window-mode"
+    "privateDetect": "chromium-window-mode",
+    "darwinAppName": "Google Chrome"
   },
   "edge": {
     "match": { "darwin": "com.microsoft.edgemac", "win32": "msedge.exe", "linux": "microsoft-edge" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
-    "privateDetect": "chromium-window-mode"
+    "privateDetect": "chromium-window-mode",
+    "darwinAppName": "Microsoft Edge"
   },
   "brave": {
     "match": { "darwin": "com.brave.Browser", "win32": "brave.exe", "linux": "brave-browser" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
-    "privateDetect": "chromium-window-mode"
+    "privateDetect": "chromium-window-mode",
+    "darwinAppName": "Brave Browser"
   },
   "opera": {
     "match": { "darwin": "com.operasoftware.Opera", "win32": "opera.exe", "linux": "opera" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
-    "privateDetect": "chromium-window-mode"
+    "privateDetect": "chromium-window-mode",
+    "darwinAppName": "Opera"
   },
   "vivaldi": {
     "match": { "darwin": "com.vivaldi.Vivaldi", "win32": "vivaldi.exe", "linux": "vivaldi-stable" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
-    "privateDetect": "chromium-window-mode"
+    "privateDetect": "chromium-window-mode",
+    "darwinAppName": "Vivaldi"
   },
   "arc": {
     "match": { "darwin": "company.thebrowser.Browser" },
@@ -45,7 +50,8 @@
     "match": { "darwin": "com.apple.Safari" },
     "family": "webkit",
     "strategy": { "darwin": "apple-events-safari" },
-    "privateDetect": "none"
+    "privateDetect": "none",
+    "darwinAppName": "Safari"
   },
   "chromium-generic": {
     "family": "chromium",
