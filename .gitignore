@@ -12,6 +12,16 @@ build/
 out/
 release/
 
+# ...except desktop/build/, which is electron-builder's conventional
+# location for source assets (entitlements, icons) — not compiled output.
+!desktop/build/
+!desktop/build/**
+
+# Swift Package Manager build output, and the compiled universal binary
+# build.sh copies out of it — both are build artifacts, not source.
+desktop/native/darwin/firefox-ax-helper-swift/.build/
+desktop/native/darwin/firefox-ax-helper
+
 # turborepo
 .turbo/
 

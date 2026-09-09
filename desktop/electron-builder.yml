@@ -37,7 +37,31 @@ mac:
     - target: zip
       arch: [x64, arm64]
   category: public.app-category.productivity
+  # Still no real Developer ID certificate (see README's "Known
+  # limitations") — identity: null means electron-builder skips proper
+  # signing, so hardenedRuntime/entitlements below are prepared but inert
+  # until Step 27's real signing/notarization setup lands. Left in now
+  # rather than later because they're specifically about what Stage F's
+  # permission model needs, not about signing itself.
   identity: null
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # Shown verbatim in the Automation consent prompt — plain language,
+    # not API names (Prompt B.3 point 4).
+    NSAppleEventsUsageDescription: >-
+      Workforce Monitor reads the address bar of your browser windows while
+      a timer is running, so your time entries can include which websites
+      you were working on. It never controls your browser or changes
+      anything in it.
+  # The compiled universal firefox-ax-helper binary (see
+  # native/darwin/firefox-ax-helper-swift/build.sh) — run that build first,
+  # this doesn't build it. Resolved at runtime via process.resourcesPath,
+  # per CLAUDE.md's side-car convention.
+  extraResources:
+    - from: native/darwin/firefox-ax-helper
+      to: native/darwin/firefox-ax-helper
 
 linux:
   target:
