@@ -75,4 +75,15 @@ export interface SessionEngineOptions {
   mergeWindowMs?: number;
   /** Sessions whose final activeMs never reaches this are never emitted as `closed`. */
   minSessionFloorMs?: number;
+  /**
+   * Step 23's policy for a browser whose private-mode state can't be
+   * detected at all (private resolves to null — Safari today): either
+   * suppress URL capture for it entirely, or capture normally (the
+   * existing `private: null` field on the stored session already serves
+   * as the "indistinguishable" flag downstream). Explicit config, never
+   * an implicit default baked into behavior — see
+   * URL_TRACKING_CONTEXT.md's "Decided: private === null policy" for why
+   * "capture-with-flag" is the default here, not "suppress".
+   */
+  nullPrivacyPolicy?: 'suppress' | 'capture-with-flag';
 }

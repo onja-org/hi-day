@@ -71,7 +71,27 @@ export class UrlSessionStore {
     runMigrations(this.db);
   }
 
+  /**
+   * Defense in depth for Step 23's core privacy guarantee — session-engine.ts
+   * already strips url/host/path before a private session ever reaches here
+   * (see its toUrlSession), but this assertion means a regression in that
+   * logic fails loudly (an exception, caught nowhere, surfacing immediately)
+   * rather than silently persisting a real private-window URL to disk.
+   * Deliberately checks the RAW field values, not just "was private true" —
+   * a future refactor could set private:true while accidentally leaving
+   * url/host populated from an earlier assignment, and this must catch that.
+   */
+  private assertPrivacyInvariant(session: UrlSession): void {
+    if (session.private === true && (session.url !== '' || session.host !== '')) {
+      throw new Error(
+        `Refusing to store a private session (id=${session.id}) with a non-empty url/host — ` +
+          'session-engine.ts must strip these before a private reading reaches the store.',
+      );
+    }
+  }
+
   upsert(session: UrlSession): void {
+    this.assertPrivacyInvariant(session);
     this.db
       .prepare(
         `INSERT INTO url_sessions

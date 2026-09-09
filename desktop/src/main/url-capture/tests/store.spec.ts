@@ -107,6 +107,32 @@ describe('UrlSessionStore — pending sync selection', () => {
   });
 });
 
+describe('UrlSessionStore — private-session invariant (Step 23)', () => {
+  it('accepts a private session whose url/host are already stripped', () => {
+    expect(() => store.upsert(makeSession({ private: true, url: '', host: '', path: null }))).not.toThrow();
+  });
+
+  it('refuses to write a private session with a non-empty url', () => {
+    expect(() => store.upsert(makeSession({ private: true, url: 'secret.example.com/a', host: '' }))).toThrow(
+      /Refusing to store a private session/,
+    );
+  });
+
+  it('refuses to write a private session with a non-empty host even if url is empty', () => {
+    expect(() => store.upsert(makeSession({ private: true, url: '', host: 'secret.example.com' }))).toThrow(
+      /Refusing to store a private session/,
+    );
+  });
+
+  it('does not throw for a non-private session with a normal url/host', () => {
+    expect(() => store.upsert(makeSession({ private: false }))).not.toThrow();
+  });
+
+  it('does not throw for private: null (unknown) with a normal url/host', () => {
+    expect(() => store.upsert(makeSession({ private: null }))).not.toThrow();
+  });
+});
+
 describe('UrlSessionStore — purge', () => {
   it('deletes closed rows older than the cutoff, never touches an open session', () => {
     store.upsert(makeSession({ id: 'old-closed', endedAt: 1_000 }));

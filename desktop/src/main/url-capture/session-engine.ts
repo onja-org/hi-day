@@ -56,6 +56,7 @@ const DEFAULT_MIN_SESSION_FLOOR_MS = 2_000;
 export class SessionEngine {
   private readonly mergeWindowMs: number;
   private readonly minSessionFloorMs: number;
+  private readonly nullPrivacyPolicy: 'suppress' | 'capture-with-flag';
 
   private timerRunning = false;
   private idle = false;
@@ -68,6 +69,7 @@ export class SessionEngine {
   constructor(private readonly options: SessionEngineOptions) {
     this.mergeWindowMs = options.mergeWindowMs ?? DEFAULT_MERGE_WINDOW_MS;
     this.minSessionFloorMs = options.minSessionFloorMs ?? DEFAULT_MIN_SESSION_FLOOR_MS;
+    this.nullPrivacyPolicy = options.nullPrivacyPolicy ?? 'capture-with-flag';
   }
 
   processEvent(event: EngineEvent): EngineOutput[] {
@@ -155,6 +157,19 @@ export class SessionEngine {
 
     if (!this.focusedTarget || this.focusedTarget.pid !== event.pid || this.focusedTarget.hwnd !== event.hwnd) {
       return; // stale/irrelevant reading for a window that isn't focused
+    }
+
+    if (event.private === null && this.nullPrivacyPolicy === 'suppress') {
+      // Step 23: this browser's private-mode state can't be detected at
+      // all, and the configured policy is to suppress capture for it
+      // entirely — treated exactly as if no reading arrived, not merely
+      // as a reading to withhold from an otherwise-open session. If a
+      // session is already open for this window (e.g. the policy changed
+      // mid-session, or a differently-configured resolver briefly
+      // reported non-null earlier), it is left to close via the normal
+      // focus-loss/idle/etc. paths rather than force-closed here — this
+      // is solely a gate on OPENING/EXTENDING from this reading.
+      return;
     }
 
     if (this.open && this.open.pid === event.pid && this.open.hwnd === event.hwnd) {
@@ -253,12 +268,24 @@ export class SessionEngine {
     return open.activeMs > wallSpan ? ['active-ms-exceeds-wall-clock'] : [];
   }
 
+  /**
+   * Strips url/host/path for a private/incognito session before it ever
+   * leaves the engine — per docs/url-tracking-plan.md Step 23's policy
+   * ("record the session with the host and path stripped") and the
+   * anti-goal pinned in URL_TRACKING_CONTEXT.md ("do not store
+   * private-window URLs where private === true"). Only the external
+   * UrlSession is stripped; `open` (internal engine state) keeps the real
+   * values so merge-window matching in openOrMergeSession still compares
+   * real URLs — otherwise every private session would spuriously "match"
+   * every other stripped one.
+   */
   private toUrlSession(open: OpenSessionState, endedAt: number | null): UrlSession {
+    const isPrivate = open.private === true;
     return {
       id: open.id,
-      url: open.url,
-      host: open.host,
-      path: open.path,
+      url: isPrivate ? '' : open.url,
+      host: isPrivate ? '' : open.host,
+      path: isPrivate ? null : open.path,
       title: open.title,
       browser: open.browser,
       private: open.private,

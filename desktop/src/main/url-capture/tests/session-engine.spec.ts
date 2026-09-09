@@ -60,7 +60,11 @@ function urlResolved(
     path: overrides.path ?? null,
     title: overrides.title ?? url,
     browser: overrides.browser ?? CHROME.browser,
-    private: overrides.private ?? false,
+    // Not `?? false`: private is a tri-state (true | false | null), and `??`
+    // would treat an explicitly-passed `null` as absent and silently
+    // substitute `false` — exactly the distinction the null/unknown test
+    // case below needs to exercise.
+    private: 'private' in overrides ? (overrides.private as boolean | null) : false,
     source: overrides.source ?? 'uia',
     confidence: overrides.confidence ?? 'displayed',
   };
@@ -344,5 +348,139 @@ describe('SessionEngine — additional coverage', () => {
       confidence: 'displayed',
     });
     expect(resolved[0].session.tzOffsetMin).toBe(-300);
+  });
+});
+
+describe('SessionEngine — private-mode URL stripping (docs/url-tracking-plan.md Step 23)', () => {
+  it('strips url/host/path from an opened session when private is true, keeping title/browser/duration', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    const opened = engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const resolved = engine.processEvent(
+      urlResolved(0, 'secret.example.com/very-private-path', {
+        host: 'secret.example.com',
+        path: '/very-private-path',
+        title: 'A Private Page',
+        private: true,
+      }),
+    );
+
+    expect(opened).toEqual([]);
+    const session = resolved[0].session;
+    expect(session.url).toBe('');
+    expect(session.host).toBe('');
+    expect(session.path).toBeNull();
+    // Not stripped: still useful for "time spent privately browsing" without
+    // recording what was visited.
+    expect(session.title).toBe('A Private Page');
+    expect(session.browser).toBe('chrome');
+    expect(session.private).toBe(true);
+  });
+
+  it('strips a private session on extend and on close, not just on open', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    engine.processEvent(urlResolved(0, 'secret.example.com/a', { private: true }));
+
+    const extended = engine.processEvent(heartbeat(1_000));
+    expect(extended[0].session.url).toBe('');
+
+    const closed = engine.processEvent(focusChanged(1_500, null));
+    const closedOut = closed[closed.length - 1];
+    expect(closedOut.kind).toBe('closed');
+    expect(closedOut.session.url).toBe('');
+    expect(closedOut.session.host).toBe('');
+    expect(closedOut.session.path).toBeNull();
+  });
+
+  it('does not strip when private is false', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    const opened = openBaseline(engine, 'example.com/a');
+
+    expect(opened[0].session.url).toBe('example.com/a');
+  });
+
+  it('does not strip when private is null (unknown)', () => {
+    // Whether an unknown (Safari-style) private state should suppress
+    // capture entirely or be disclosed as a known gap is an explicit,
+    // separate policy decision per Step 23 ("pick one deliberately") —
+    // this only pins today's actual behavior (pass-through), not an
+    // endorsement of it.
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    const opened = engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const resolved = engine.processEvent(urlResolved(0, 'example.com/a', { private: null }));
+
+    expect(opened).toEqual([]);
+    expect(resolved[0].session.url).toBe('example.com/a');
+    expect(resolved[0].session.private).toBeNull();
+  });
+
+  it('keeps internal merge matching against the real URL even though the emitted session is stripped', () => {
+    // A regression this specifically guards against: if merge-window
+    // matching compared against the already-stripped external session
+    // instead of internal engine state, every private session would
+    // spuriously match every other one (they'd all have url === '').
+    const { engine } = makeEngine({ minSessionFloorMs: 0, mergeWindowMs: 30_000 });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    engine.processEvent(urlResolved(0, 'secret.example.com/a', { private: true }));
+    engine.processEvent(heartbeat(1_000));
+    engine.processEvent(focusChanged(1_500, null)); // closes, becomes a merge candidate
+
+    engine.processEvent(focusChanged(2_000, CHROME));
+    // A different private URL within the merge window must NOT merge with
+    // the closed candidate — internal matching must compare the real
+    // (unstripped) URLs, not the stripped '' both would otherwise share.
+    const reopened = engine.processEvent(urlResolved(2_000, 'secret.example.com/different-page', { private: true }));
+
+    expect(kinds(reopened)).toEqual(['opened']);
+  });
+});
+
+describe('SessionEngine — nullPrivacyPolicy for private === null (Step 23)', () => {
+  it('defaults to capture-with-flag: a null-private reading opens a session normally', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const resolved = engine.processEvent(urlResolved(0, 'example.com/a', { private: null }));
+
+    expect(kinds(resolved)).toEqual(['opened']);
+    expect(resolved[0].session.url).toBe('example.com/a');
+    expect(resolved[0].session.private).toBeNull();
+  });
+
+  it('suppress: a null-private reading never opens a session at all', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0, nullPrivacyPolicy: 'suppress' });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const resolved = engine.processEvent(urlResolved(0, 'example.com/a', { private: null }));
+
+    expect(resolved).toEqual([]);
+  });
+
+  it('suppress: does not affect readings where private is true or false', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0, nullPrivacyPolicy: 'suppress' });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const resolved = engine.processEvent(urlResolved(0, 'example.com/a', { private: false }));
+
+    expect(kinds(resolved)).toEqual(['opened']);
+  });
+
+  it('suppress: an already-open session keeps accumulating time but ignores the suppressed reading itself', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0, nullPrivacyPolicy: 'suppress' });
+    openBaseline(engine, 'example.com/a'); // private: false by default — opens normally
+    // accumulate() runs unconditionally for every event (even a suppressed
+    // one) — this proves the suppression rejects the READING (url/title
+    // never update to 'example.com/b'), not that time stops accruing.
+    const duringNullReading = engine.processEvent(urlResolved(1_000, 'example.com/b', { private: null }));
+    expect(kinds(duringNullReading)).toEqual(['extended']);
+    expect(duringNullReading[0].session.url).toBe('example.com/a');
+
+    const closed = engine.processEvent(focusChanged(1_500, null));
+    expect(kinds(closed)).toEqual(['extended', 'closed']);
+    expect(closed[closed.length - 1].session.url).toBe('example.com/a'); // never updated by the suppressed reading
   });
 });
