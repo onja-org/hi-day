@@ -161,3 +161,12 @@ on GNOME-under-Wayland or any-WM-under-Xorg; detect and disable elsewhere.
 - Do not capture screenshots as part of §7.3 (separate spec section).
 - Do not add telemetry beyond the documented sync contract.
 - Do not store private-window URLs where `private === true`.
+
+## Decided: `private === null` (unknown) policy
+
+Step 23 of the plan requires picking this deliberately rather than letting it be an accident.
+Decision: where a browser's private-mode state can't be detected at all (`private` resolves to
+`null` — Safari today, since it has no incognito signal), capture proceeds as normal and the gap
+is disclosed in user-facing privacy documentation instead of suppressing capture for that
+browser. This keeps full coverage everywhere else at the cost of Safari private windows not
+being distinguishable from normal ones — a deliberate tradeoff, not a bug.
