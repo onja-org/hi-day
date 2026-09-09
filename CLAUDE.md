@@ -7,3 +7,4 @@ This is a pnpm workspace monorepo with three packages: `frontend` (Next.js), `ba
 - **Desktop work** (anything under `desktop/`): read [`desktop/README.md`](desktop/README.md) — it's a login + device-registration shell only, no time tracking yet.
 
 See [`CONTEXT.md`](CONTEXT.md) for domain terms (Organisation, Membership, etc.) shared across packages.
+See [`URL_TRACKING_CONTEXT`](URL_TRACKING_CONTEXT.md) for anything related to website/URL tracking.
