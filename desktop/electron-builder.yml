@@ -21,6 +21,9 @@ afterPack: scripts/afterPack.mjs
 files:
   - dist/**/*
   - package.json
+# Native addons can't be require()'d from inside an asar archive.
+asarUnpack:
+  - node_modules/get-windows/**/*
 
 win:
   target:

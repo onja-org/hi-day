@@ -1,0 +1,31 @@
+---
+status: accepted
+---
+
+# App activity reporting: a new `app_events` table, batched upload from the desktop agent, and a "time spent per app" summary under Activity → Apps
+
+Window tracking (`docs/adr/0009-...`) only logged samples locally. This ticket asked for a Hubstaff-style "App activity" view — see which apps a person's time went to — which meant building the rest of the pipeline `docs/TECH_DESIGN.md` always described but that hadn't been built yet: batched ingest, storage, and an aggregation query.
+
+## Considered options
+
+- **Storage: a new `app_events` table vs. reusing an existing one.** New entity/migration (`AppEvent`, `backend/src/database/entities/app-event.entity.ts`), following `TimeEntry`'s exact conventions (`membershipId` FK — never `Device`'s own columns, since a shared machine's Device reflects whoever logged in *last*; see CONTEXT.md's Device entry), plus `deviceId`, `appName`, `title`, `titleUnavailableReason` (a real Postgres enum, mirroring `TimeEntrySource`), and `sampledAt` (`timestamptz`). No raw-event read API — only an aggregated summary is ever exposed.
+
+- **Ingest: batched, matching the agent's own cadence.** `POST /device/app-events` (new, on the existing `DeviceTrackingController`) accepts `{ events: AppEventItemDto[] }` (up to 1000 per batch), validated with the same `@ValidateNested({ each: true }) @Type(() => Item)` pattern as `CreateInvitationsDto` — the only existing nested-array-validation precedent in this codebase. On the desktop side, `AppEventUploader` (`desktop/src/main/app-event-uploader.ts`) buffers samples in memory and flushes every 60s (`docs/TECH_DESIGN.md` §4's own stated batching cadence), or immediately once the buffer hits 500 (matching the backend's own per-batch cap), or immediately when window tracking turns off (no reason to sit on a partial batch). **No offline queue** — a failed flush just drops the batch, same as every other network call this agent makes today; wiring in the SQLite-backed offline queue `docs/TECH_DESIGN.md` describes is a separate, larger ticket.
+
+- **A sample with no app name (Wayland) is never uploaded.** `get-windows` provides zero information at all under Wayland (`docs/adr/0009-...`'s second accepted gap) — there's nothing meaningful to store, and the backend's `appName` field is required (non-empty). `AppEventUploader.enqueue` (the sink handed directly to `WindowSampler`) drops these before they ever reach the buffer, satisfying "never skip a sample" at the sampling-tick level without inventing a placeholder app name for the backend. There's no local console logging of samples either way (removed after review — see below) — the Activity → Apps tab is the only way to observe sampling working.
+
+- **"Time spent" is a fixed-per-sample approximation, not a measured duration.** The aggregation (`AppEventsService.summariseForMembershipId`) does `COUNT(*) GROUP BY appName`, then multiplies by a hardcoded `SAMPLE_INTERVAL_SECONDS = 5` matching `WindowSampler`'s own default interval. This is a deliberate simplification, not an oversight: a gap-based calculation (elapsed time between consecutive samples, attributed to the earlier one) would be more accurate and would keep working if the interval ever becomes configurable, but needs window functions (`LAG`/`LEAD`) that don't fit the codebase's established `createQueryBuilder().groupBy().getRawMany()` aggregation style (see `ProjectsService.getTaskCounts` for that precedent) — a reasonable follow-up if the interval ever changes or the approximation proves too coarse in practice.
+
+- **Visibility rule: reused, not reinvented.** `getSummaryForMembership` calls the existing `canViewMembership` (`backend/src/common/membership-visibility.util.ts`) — the exact same self/admin/manager-own-team rule `ActivitiesService.listForMembership` and `TimeEntriesService.list` already use. No new visibility logic was written for this feature.
+
+- **Date range: a single day, not a range.** `GET .../app-events/summary/mine` and the per-membership equivalent both take an optional `?date=YYYY-MM-DD` (default: today, UTC calendar day — **not** the Organisation's own `timezone` setting, a known simplification), returning one day's summary. Hubstaff's own reference screenshot didn't show a date-range picker either; a real range picker is a frontend-only follow-up once wanted, since the backend query already takes an arbitrary `date`.
+
+- **Placement: a new "Apps" tab under the existing Activity nav, not a new top-level nav item.** This deliberately puts two unrelated concepts (user-authored Activity notes, and automated app-activity tracking) under one label, which `CONTEXT.md` had explicitly warned against conflating — a deliberate, confirmed choice (mirroring Hubstaff's own Activity → Screenshots/Apps/URLs grouping) over introducing a new top-level nav item that would've kept the two concepts more clearly separated. `frontend/src/components/ActivityTabs.tsx` is the first tab/sub-nav construct in this frontend — there was no existing pattern to extend.
+
+## Consequences
+
+Two orphaned pieces of unrelated database state were found and removed while building this: a `window_activity_events` table (from a similarly-named, never-committed migration that predates this work and isn't in this repo's git history at all) was dropped, along with its orphaned `migrations` table row, after confirming it was empty and unreferenced by any code.
+
+No admin-facing UI exists yet to browse another Membership's app activity (the `GET .../memberships/:membershipId/app-events/summary` route exists and is tested, but nothing in the frontend calls it yet) — only the caller's own "mine" view is wired up. Building a per-member view (mirroring `MemberActivityList`/`MemberTimeEntriesList`) is a natural follow-up once wanted.
+
+Window tracking's local `[window-sample]` console logging (`logWindowSample`, added in `docs/adr/0009-...`) was removed once this reporting pipeline existed — the per-5s terminal dump was only ever meant as a stopgap for verifying the sampling loop before there was anywhere else to look; the Activity → Apps tab is the intended way to confirm tracking is working now. `WindowSampler`'s default sink is a no-op; `main.ts` hands it `AppEventUploader.enqueue` directly rather than composing it with a logger.

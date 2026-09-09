@@ -59,6 +59,7 @@ export function OrganisationSettingsForm({
       idleThresholdMinutes: Number.isFinite(idleThresholdMinutes)
         ? idleThresholdMinutes
         : undefined,
+      windowTrackingEnabled: formData.get("windowTrackingEnabled") === "on",
     });
   }
 
@@ -158,6 +159,16 @@ export function OrganisationSettingsForm({
           />
         </label>
       </div>
+
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          name="windowTrackingEnabled"
+          defaultChecked={organisation.windowTrackingEnabled}
+          className="h-4 w-4 rounded border-input-border"
+        />
+        Track window titles (desktop agent)
+      </label>
 
       <button
         type="submit"

@@ -1,4 +1,5 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { TitleUnavailableReason } from './window-sample';
 
 export interface StartPairingRequest {
   deviceFingerprint: string;
@@ -69,6 +70,23 @@ export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
+}
+
+export interface CaptureSettings {
+  windowTrackingEnabled: boolean;
+}
+
+/**
+ * The wire shape for `POST /device/app-events` — deliberately omits
+ * `title`/`titleUnavailableReason` when absent (`undefined`) rather than
+ * sending an explicit `null`, matching the backend DTO's `@IsOptional()`
+ * fields.
+ */
+export interface AppEventPayload {
+  appName: string;
+  title?: string;
+  titleUnavailableReason?: TitleUnavailableReason;
+  sampledAt: string;
 }
 
 export type TrackingResult<T> =
@@ -237,8 +255,23 @@ export class ApiClient {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
   }
 
+  postAppEvents(
+    deviceToken: string,
+    events: AppEventPayload[],
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/app-events', deviceToken, {
+      events,
+    });
+  }
+
   getIdlePolicy(deviceToken: string): Promise<TrackingResult<IdlePolicy>> {
     return this.deviceRequest('GET', '/device/idle-policy', deviceToken);
+  }
+
+  getCaptureSettings(
+    deviceToken: string,
+  ): Promise<TrackingResult<CaptureSettings>> {
+    return this.deviceRequest('GET', '/device/capture-settings', deviceToken);
   }
 
   private async deviceRequest<T>(

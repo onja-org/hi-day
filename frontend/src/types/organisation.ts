@@ -10,6 +10,7 @@ export type OrganisationProfile = {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  windowTrackingEnabled: boolean;
   userId: string;
 };
 
@@ -23,6 +24,7 @@ export type UpdateOrganisationInput = {
   website?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
+  windowTrackingEnabled?: boolean;
 };
 
 export type UpdateOrganisationResult =
