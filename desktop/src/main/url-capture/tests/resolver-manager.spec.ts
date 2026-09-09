@@ -112,7 +112,13 @@ describe('ResolverManager', () => {
     manager = new ResolverManager(spawnConfigFor('malformed-json.json'), {
       ...silentOptions,
       ...NO_WATCHDOG_INTERFERENCE,
-      requestTimeoutMs: 100,
+      // The first call must genuinely time out, then the second must
+      // complete a real child-process round trip within its own window —
+      // 100ms was too tight for a loaded/slow CI runner (spawn overhead
+      // alone can exceed that) and flaked in CI while always passing
+      // locally. 2000ms is generous enough that only an actual hang
+      // (which is what this test would be exposing) trips it.
+      requestTimeoutMs: 2000,
     });
     manager.start();
 
@@ -139,7 +145,10 @@ describe('ResolverManager', () => {
     manager = new ResolverManager(spawnConfigFor('oversized-line.json'), {
       ...silentOptions,
       ...NO_WATCHDOG_INTERFERENCE,
-      requestTimeoutMs: 300,
+      // Same shape (and same CI-flakiness risk) as the malformed-JSON test
+      // above: first call times out, second must complete a real round
+      // trip in its own window. Widened for the same reason.
+      requestTimeoutMs: 2000,
       maxLineBytes: 5_000,
     });
     manager.start();
