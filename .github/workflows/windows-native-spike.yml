@@ -1,0 +1,47 @@
+name: Windows native spike
+
+# workflow_dispatch only, deliberately — this is a one-time (or occasional
+# re-check) decision spike (Prompt C.0), not something every push needs.
+# The permanent Windows native build (native/win/fixture-capture today,
+# native/win/resolver/ once Stage C.1+ lands) is the windows-native job in
+# desktop-build.yml instead.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  spike:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run FlaUI variant
+        run: ./native/win/spike/run-variant.ps1 -VariantPath native/win/spike/flaui-variant/flaui-variant.csproj -VariantName FlaUI
+
+      - name: Run CsWin32 variant
+        run: ./native/win/spike/run-variant.ps1 -VariantPath native/win/spike/cswin32-variant/cswin32-variant.csproj -VariantName CsWin32
+
+      - name: Print combined summary
+        run: |
+          Write-Host "===================================="
+          Write-Host "Copy everything below back to Claude"
+          Write-Host "===================================="
+          Get-Content spike-results/FlaUI.json
+          Get-Content spike-results/CsWin32.json
+          Get-Content spike-results/*.json | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload spike results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-spike-results
+          path: spike-results/
+          if-no-files-found: warn

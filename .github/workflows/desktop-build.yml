@@ -60,6 +60,37 @@ jobs:
             desktop/release/*.zip
           if-no-files-found: error
 
+  # Permanent (not workflow_dispatch-only) because Windows CI needs to
+  # build whatever lives under native/win/ for every release, same as the
+  # Electron installer above — currently just the fixture-capture tool
+  # (Stage C.0); once native/win/resolver/ exists (Stage C.1+), publish and
+  # upload it here too. The throwaway FlaUI-vs-CsWin32 comparison itself
+  # lives in the separate windows-native-spike.yml — workflow_dispatch
+  # only, since it's a one-time decision, not something every push needs.
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish fixture-capture tool
+        run: >-
+          dotnet publish native/win/fixture-capture/fixture-capture.csproj
+          -c Release -r win-x64 --self-contained
+          -o native/win/fixture-capture/publish
+
+      - name: Upload fixture-capture artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-capture-win-x64
+          path: native/win/fixture-capture/publish/fixture-capture.exe
+          if-no-files-found: error
+
   # Only runs for the `desktop-v*` tag push, once every platform in the
   # matrix above has built successfully — attaches every installer to a
   # GitHub Release in the separate *public* onja-org/workfoce-monitoring-app-releases

@@ -1,0 +1,83 @@
+// Throwaway spike (Prompt C.0) — do not integrate this into the real
+// resolver. Tests whether FlaUI's dynamic COM interop survives NativeAOT
+// publish at RUNTIME, not just compile time: launches Notepad (not a
+// browser — same COM interop path, no browser install/window-focus
+// flakiness needed on a CI runner) and reads its text area's value via
+// UIA's ValuePattern, exactly the kind of call the real resolver will make
+// against a browser's address bar.
+//
+// NEVER VERIFIED BY THE AGENT THAT WROTE THIS — no Windows machine, no
+// dotnet SDK, and NativeAOT can't cross-compile from Linux anyway. This is
+// a best-effort attempt at FlaUI's documented API shape, meant to be built
+// and run for real in CI. If it fails to compile, that's expected — fix
+// from the real compiler error, don't guess further blind.
+
+using System;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Threading;
+using FlaUI.Core;
+using FlaUI.Core.Definitions;
+using FlaUI.UIA3;
+
+var result = new SpikeResult { Variant = "FlaUI" };
+Process? notepad = null;
+
+try
+{
+    notepad = Process.Start("notepad.exe");
+    if (notepad is null)
+    {
+        throw new InvalidOperationException("Process.Start returned null for notepad.exe.");
+    }
+
+    using var automation = new UIA3Automation();
+    var app = Application.Attach(notepad);
+    var window = app.GetMainWindow(automation, TimeSpan.FromSeconds(10));
+    if (window is null)
+    {
+        throw new TimeoutException("Notepad's main window did not appear within 10s.");
+    }
+
+    var editElement = window.FindFirstDescendant(cf => cf.ByControlType(ControlType.Edit));
+    if (editElement is null)
+    {
+        throw new InvalidOperationException("Could not find an Edit control in Notepad's window.");
+    }
+
+    var textBox = editElement.AsTextBox();
+    var value = textBox.Text; // FlaUI's TextBox.Text getter reads via UIA's ValuePattern
+
+    result.UiaReadSucceeded = true;
+    result.Value = value;
+}
+catch (Exception ex)
+{
+    result.UiaReadSucceeded = false;
+    result.Error = ex.ToString();
+}
+finally
+{
+    if (notepad is not null)
+    {
+        try
+        {
+            notepad.Kill();
+            notepad.WaitForExit(5000);
+        }
+        catch
+        {
+            // Best-effort cleanup — don't let a failed kill mask the real result.
+        }
+    }
+}
+
+Console.WriteLine(JsonSerializer.Serialize(result));
+
+internal sealed class SpikeResult
+{
+    public string Variant { get; set; } = "";
+    public bool UiaReadSucceeded { get; set; }
+    public string? Value { get; set; }
+    public string? Error { get; set; }
+}
