@@ -64,6 +64,9 @@ declare global {
       idle: {
         seconds: () => Promise<number>;
       };
+      urlCapture: {
+        timerStateChanged: (running: boolean) => void;
+      };
     };
   }
 }
@@ -191,6 +194,7 @@ function tick(): void {
 }
 
 function setRunning(entry: TimeEntry | null): void {
+  const wasRunning = runningEntry !== null;
   runningEntry = entry;
   startButton.hidden = entry !== null;
   stopButton.hidden = entry === null;
@@ -200,6 +204,12 @@ function setRunning(entry: TimeEntry | null): void {
     idleHandled = false;
     lastIdleSeconds = 0;
     hideIdleBanner();
+  }
+  // The single place the renderer's own notion of "is a timer running"
+  // changes — mirror it to main so the url-capture session engine (which
+  // has no other way to know) can gate on it too.
+  if (wasRunning !== (entry !== null)) {
+    window.api.urlCapture.timerStateChanged(entry !== null);
   }
   tick();
 }

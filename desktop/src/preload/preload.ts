@@ -78,6 +78,13 @@ const api = {
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,
   },
+  urlCapture: {
+    // Fire-and-forget push, not invoke — main has nothing to return, and the
+    // renderer stays the authoritative source of "is a timer running".
+    timerStateChanged: (running: boolean): void => {
+      ipcRenderer.send('urlCapture:timerStateChanged', running);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

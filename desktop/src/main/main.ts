@@ -7,6 +7,7 @@ import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
+import { UrlCaptureService } from './url-capture/url-capture-service';
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -34,6 +35,26 @@ interface AuthStatus {
 app.setName('Workforce Monitor');
 
 let mainWindow: BrowserWindow | null = null;
+let urlCaptureService: UrlCaptureService | null = null;
+
+// Not wired to a real focus/URL resolver yet — see UrlCaptureService's own
+// doc comment for why. Today this only exercises timer/idle/lock/suspend
+// flowing into the session engine and being persisted locally.
+function startUrlCapture(deviceId: string): void {
+  urlCaptureService?.stop();
+  urlCaptureService = new UrlCaptureService({
+    deviceId,
+    userDataDir: app.getPath('userData'),
+    powerMonitor,
+    logger: (line) => console.log(line),
+  });
+  urlCaptureService.start();
+}
+
+function stopUrlCapture(): void {
+  urlCaptureService?.stop();
+  urlCaptureService = null;
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -85,6 +106,7 @@ function registerIpcHandlers(): void {
         deviceId: result.deviceId,
         deviceToken: result.deviceToken,
       });
+      startUrlCapture(result.deviceId);
       return { loggedIn: true, email: credentials.email };
     },
   );
@@ -95,6 +117,7 @@ function registerIpcHandlers(): void {
       await apiClient.logout(session.deviceToken);
       authStore.clear();
     }
+    stopUrlCapture();
     return { loggedIn: false };
   });
 
@@ -157,6 +180,22 @@ function registerIpcHandlers(): void {
   // extension only), matching the desktop app's existing "Linux
   // best-effort" support level.
   ipcMain.handle('idle:seconds', () => powerMonitor.getSystemIdleTime());
+
+  // Fire-and-forget push, not invoke/handle — this is the only signal the
+  // main process needs about timer state that it can't get from powerMonitor
+  // itself. The renderer is still the authoritative poller of
+  // /device/time-entries/current; this just mirrors what it already knows.
+  ipcMain.on('urlCapture:timerStateChanged', (_event, running: boolean) => {
+    urlCaptureService?.setTimerRunning(running);
+  });
+
+  // A returning, already-logged-in user skips the login form (see
+  // auth:status above) — start url-capture for them too, not just on a
+  // fresh login.
+  const existingSession = authStore.load();
+  if (existingSession) {
+    startUrlCapture(existingSession.deviceId);
+  }
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -188,5 +227,9 @@ if (!gotSingleInstanceLock) {
     if (process.platform !== 'darwin') {
       app.quit();
     }
+  });
+
+  app.on('before-quit', () => {
+    stopUrlCapture();
   });
 }
