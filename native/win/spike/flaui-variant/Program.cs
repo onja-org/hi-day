@@ -46,8 +46,20 @@ try
         throw new InvalidOperationException("Could not find an Edit control in Notepad's window.");
     }
 
-    var textBox = editElement.AsTextBox();
-    var value = textBox.Text; // FlaUI's TextBox.Text getter reads via UIA's ValuePattern
+    // Reading via FlaUI's pattern-access API instead of the typed wrapper
+    // (editElement.AsTextBox()) — a real CS1061 compiler error showed that
+    // method isn't resolvable against these usings/this package version.
+    // Patterns is a member of AutomationElement itself (FlaUI.Core), not an
+    // extension method living in some other namespace, so this is a more
+    // robust choice than guessing a different wrapper method name — but
+    // it's still unverified against a real compiler. If PatternOrDefault or
+    // the nested .Value shape is wrong, fix from the next real error.
+    var valuePattern = editElement.Patterns.Value.PatternOrDefault;
+    if (valuePattern is null)
+    {
+        throw new InvalidOperationException("Edit element does not support the UIA Value pattern.");
+    }
+    var value = valuePattern.Value.Value;
 
     result.UiaReadSucceeded = true;
     result.Value = value;
