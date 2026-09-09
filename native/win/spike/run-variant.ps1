@@ -31,8 +31,11 @@ $result = [ordered]@{
     uiaReadRawOutput = $null
     fallbackTrimmedPublishSucceeded = $false
     fallbackTrimmedBinarySizeBytes = $null
+    uiaReadSucceededUnderFallbackTrimmed = $null
+    uiaReadErrorUnderFallbackTrimmed = $null
     coldStartMsIndicativeOnly = $null
     hundredReadTimeMsIndicativeOnly = $null
+    coldStartMsIndicativeOnlyFallbackTrimmed = $null
 }
 
 function Write-Result {
@@ -86,41 +89,86 @@ if ($LASTEXITCODE -eq 0) {
     }
 
     # 4. Indicative-only timing — never used to decide the recommendation.
-    try {
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        & $exePath | Out-Null
-        $sw.Stop()
-        $result.coldStartMsIndicativeOnly = $sw.ElapsedMilliseconds
-
-        $sw100 = [System.Diagnostics.Stopwatch]::StartNew()
-        for ($i = 0; $i -lt 100; $i++) {
+    #    Only meaningful when the read itself actually worked; a crashing
+    #    binary can "cold start" fast too, so don't let that be mistaken
+    #    for a working measurement.
+    if ($result.uiaReadSucceededUnderAot) {
+        try {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
             & $exePath | Out-Null
+            $sw.Stop()
+            $result.coldStartMsIndicativeOnly = $sw.ElapsedMilliseconds
+
+            $sw100 = [System.Diagnostics.Stopwatch]::StartNew()
+            for ($i = 0; $i -lt 100; $i++) {
+                & $exePath | Out-Null
+            }
+            $sw100.Stop()
+            $result.hundredReadTimeMsIndicativeOnly = $sw100.ElapsedMilliseconds
         }
-        $sw100.Stop()
-        $result.hundredReadTimeMsIndicativeOnly = $sw100.ElapsedMilliseconds
-    }
-    catch {
-        # Timing is optional — never let a failure here affect the result above.
+        catch {
+            # Timing is optional — never let a failure here affect the result above.
+        }
     }
 }
 else {
     $result.aotPublishSucceeded = $false
     $result.aotPublishError = ($aotOutput -join "`n")
+}
 
-    # Fallback per the brief: if AOT doesn't work, record self-contained
-    # trimmed size instead of guessing. PublishAot=false explicitly
-    # overrides the csproj's <PublishAot>true</PublishAot> — without it,
-    # this would just silently retry the same failing AOT publish again.
-    # PublishSingleFile=true matters here too: without it this produces a
-    # directory of many DLLs plus the exe, and measuring just the .exe's
-    # size would understate the real deployable size — "can we ship a
-    # small single binary" is the whole question this fallback answers.
+# Fallback per the brief: whenever AOT doesn't actually deliver a working
+# UIA read — whether because the publish step itself failed to compile/link,
+# or (as real CI runs showed) because publish succeeds but the binary
+# throws InvalidProgramException at runtime — record self-contained trimmed
+# size instead of guessing. PublishAot=false explicitly overrides the
+# csproj's <PublishAot>true</PublishAot> — without it, this would just
+# silently retry the same failing/broken AOT publish again. PublishSingleFile
+# =true matters here too: without it this produces a directory of many DLLs
+# plus the exe, and measuring just the .exe's size would understate the
+# real deployable size — "can we ship a small single binary" is the whole
+# question this fallback answers.
+if (-not $result.uiaReadSucceededUnderAot) {
     $fallbackOutDir = Join-Path $projectDir "publish-trimmed"
     dotnet publish $VariantPath -c Release -r win-x64 --self-contained -p:PublishAot=false -p:PublishTrimmed=true -p:PublishSingleFile=true -o $fallbackOutDir 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         $result.fallbackTrimmedPublishSucceeded = $true
         $fallbackExe = Get-ChildItem $fallbackOutDir -Filter "*.exe" | Select-Object -First 1
         $result.fallbackTrimmedBinarySizeBytes = $fallbackExe.Length
+
+        # The trimmed fallback is the candidate we'd actually ship if AOT
+        # is off the table — so this is the one build whose real read
+        # result and timing matter for the recommendation.
+        $fallbackRunOutput = & $fallbackExe.FullName 2>&1
+        $fallbackJsonLine = $fallbackRunOutput | Where-Object { $_ -like "{*}" } | Select-Object -Last 1
+        if ($fallbackJsonLine) {
+            try {
+                $fallbackParsed = $fallbackJsonLine | ConvertFrom-Json
+                $result.uiaReadSucceededUnderFallbackTrimmed = $fallbackParsed.UiaReadSucceeded
+                if (-not $fallbackParsed.UiaReadSucceeded) {
+                    $result.uiaReadErrorUnderFallbackTrimmed = $fallbackParsed.Error
+                }
+            }
+            catch {
+                $result.uiaReadSucceededUnderFallbackTrimmed = $false
+                $result.uiaReadErrorUnderFallbackTrimmed = "Could not parse JSON output line: $fallbackJsonLine"
+            }
+        }
+        else {
+            $result.uiaReadSucceededUnderFallbackTrimmed = $false
+            $result.uiaReadErrorUnderFallbackTrimmed = "No JSON line found in fallback program output."
+        }
+
+        if ($result.uiaReadSucceededUnderFallbackTrimmed) {
+            try {
+                $swFallback = [System.Diagnostics.Stopwatch]::StartNew()
+                & $fallbackExe.FullName | Out-Null
+                $swFallback.Stop()
+                $result.coldStartMsIndicativeOnlyFallbackTrimmed = $swFallback.ElapsedMilliseconds
+            }
+            catch {
+                # Timing is optional — never let a failure here affect the result above.
+            }
+        }
     }
 }
 
