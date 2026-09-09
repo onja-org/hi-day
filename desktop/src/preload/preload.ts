@@ -39,6 +39,15 @@ export interface IdlePolicy {
   thresholdMinutes: number;
 }
 
+export type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
+
+export interface CapturePermissionStatus {
+  windowTrackingEnabled: boolean;
+  platform: DesktopDevicePlatformName;
+  accessibilityGranted: boolean;
+  waylandUnsupported: boolean;
+}
+
 export type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry };
@@ -74,6 +83,14 @@ const api = {
       ipcRenderer.invoke('tracking:status') as Promise<TrackingResult<CurrentTimer>>,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke('tracking:idlePolicy') as Promise<TrackingResult<IdlePolicy>>,
+    permissionStatus: (): Promise<TrackingResult<CapturePermissionStatus>> =>
+      ipcRenderer.invoke('tracking:permissionStatus') as Promise<
+        TrackingResult<CapturePermissionStatus>
+      >,
+    requestAccessibilityAccess: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:requestAccessibilityAccess') as Promise<void>,
+    openAccessibilitySettings: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:openAccessibilitySettings') as Promise<void>,
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,

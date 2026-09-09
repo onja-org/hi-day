@@ -39,6 +39,15 @@ interface IdlePolicy {
   thresholdMinutes: number;
 }
 
+type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
+
+interface CapturePermissionStatus {
+  windowTrackingEnabled: boolean;
+  platform: DesktopDevicePlatformName;
+  accessibilityGranted: boolean;
+  waylandUnsupported: boolean;
+}
+
 type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry };
@@ -60,6 +69,9 @@ declare global {
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
         status: () => Promise<TrackingResult<CurrentTimer>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
+        permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
+        requestAccessibilityAccess: () => Promise<void>;
+        openAccessibilitySettings: () => Promise<void>;
       };
       idle: {
         seconds: () => Promise<number>;
@@ -75,6 +87,11 @@ const STATUS_POLL_INTERVAL_MS = 15_000;
 // How often the agent checks the OS's own idle-time counter while a timer
 // is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
+// After "Grant Access" is clicked, macOS gives no callback for when the
+// person actually flips the switch in System Settings — poll a few times
+// a second for a short window to detect it and auto-dismiss the banner.
+const ACCESSIBILITY_POLL_INTERVAL_MS = 2_500;
+const ACCESSIBILITY_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
@@ -140,10 +157,19 @@ const idleBannerMessage = document.getElementById('idle-banner-message')!;
 const idleKeepButton = document.getElementById('idle-keep-button') as HTMLButtonElement;
 const idleDiscardButton = document.getElementById('idle-discard-button') as HTMLButtonElement;
 const idleNotice = document.getElementById('idle-notice')!;
+const accessibilityBanner = document.getElementById('accessibility-banner')!;
+const accessibilityGrantButton = document.getElementById(
+  'accessibility-grant-button',
+) as HTMLButtonElement;
+const accessibilitySettingsButton = document.getElementById(
+  'accessibility-settings-button',
+) as HTMLButtonElement;
+const waylandNotice = document.getElementById('wayland-notice')!;
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 let idlePollHandle: ReturnType<typeof setInterval> | null = null;
+let accessibilityPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
 // Server clock minus local clock, at the moment of the last successful
 // poll — lets the 1s tick compute elapsed time from the server's own
@@ -256,6 +282,52 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleMinutes, idleStartedAtIso);
 }
 
+// --- Window-tracking permission banner ----------------------------------
+
+async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus | null> {
+  const result = await window.api.tracking.permissionStatus();
+  if (!result.ok) return null;
+  const status = result.data;
+
+  accessibilityBanner.hidden = !(
+    status.windowTrackingEnabled &&
+    status.platform === 'macos' &&
+    !status.accessibilityGranted
+  );
+  // Wayland has no fix available, so this is informational only — no
+  // "Grant Access"-style call to action, unlike the accessibility banner.
+  waylandNotice.hidden = !(status.windowTrackingEnabled && status.waylandUnsupported);
+
+  return status;
+}
+
+function stopAccessibilityGrantPolling(): void {
+  if (accessibilityPollHandle) clearInterval(accessibilityPollHandle);
+  accessibilityPollHandle = null;
+}
+
+accessibilityGrantButton.addEventListener('click', () => {
+  void window.api.tracking.requestAccessibilityAccess().then(() => {
+    // macOS won't re-show its native prompt on repeat calls, so grant
+    // detection has to be polled rather than awaited — stop as soon as
+    // access is detected, or after a bounded timeout either way.
+    stopAccessibilityGrantPolling();
+    const deadline = Date.now() + ACCESSIBILITY_POLL_TIMEOUT_MS;
+    accessibilityPollHandle = setInterval(() => {
+      void (async () => {
+        const status = await refreshCapturePermissionBanner();
+        if (status?.accessibilityGranted || Date.now() > deadline) {
+          stopAccessibilityGrantPolling();
+        }
+      })();
+    }, ACCESSIBILITY_POLL_INTERVAL_MS);
+  });
+});
+
+accessibilitySettingsButton.addEventListener('click', () => {
+  void window.api.tracking.openAccessibilitySettings();
+});
+
 async function loadProjects(): Promise<void> {
   const result = await window.api.tracking.listProjects();
   if (!result.ok) {
@@ -313,7 +385,10 @@ async function refreshStatus(): Promise<void> {
 function startPolling(): void {
   stopPolling();
   void refreshStatus();
-  pollHandle = setInterval(() => void refreshStatus(), STATUS_POLL_INTERVAL_MS);
+  pollHandle = setInterval(() => {
+    void refreshStatus();
+    void refreshCapturePermissionBanner();
+  }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
   idlePollHandle = setInterval(() => void checkIdle(), IDLE_POLL_INTERVAL_MS);
 }
@@ -325,6 +400,7 @@ function stopPolling(): void {
   pollHandle = null;
   tickHandle = null;
   idlePollHandle = null;
+  stopAccessibilityGrantPolling();
 }
 
 startButton.addEventListener('click', () => {
@@ -400,6 +476,7 @@ async function initTracking(): Promise<void> {
   const idlePolicyResult = await window.api.tracking.idlePolicy();
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
 
+  void refreshCapturePermissionBanner();
   startPolling();
 }
 

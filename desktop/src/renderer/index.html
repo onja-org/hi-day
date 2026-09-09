@@ -40,6 +40,20 @@
         <div id="tracking-view">
           <p id="tracking-error" role="alert" hidden></p>
 
+          <div id="accessibility-banner" class="idle-banner" role="alert" hidden>
+            <p id="accessibility-banner-message">
+              Window title tracking is off — needs Accessibility access.
+            </p>
+            <button id="accessibility-grant-button" type="button">Grant Access</button>
+            <button id="accessibility-settings-button" type="button">
+              Open System Settings
+            </button>
+          </div>
+          <p id="wayland-notice" class="idle-notice" hidden>
+            App and window tracking isn't available on this Linux session
+            (Wayland) — this can't be fixed from within the app.
+          </p>
+
           <div id="idle-banner" class="idle-banner" role="alert" hidden>
             <p id="idle-banner-message"></p>
             <button id="idle-keep-button" type="button">Keep this time</button>

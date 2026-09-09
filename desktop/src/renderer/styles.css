@@ -83,6 +83,15 @@ select {
   color: #003673;
 }
 
+#accessibility-grant-button {
+  margin-right: 8px;
+}
+
+#accessibility-settings-button {
+  background: #eaecf0;
+  color: #003673;
+}
+
 .idle-notice {
   margin: 0 0 12px;
   padding: 8px 12px;
