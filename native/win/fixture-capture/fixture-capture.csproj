@@ -2,7 +2,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- net8.0-windows (not plain net8.0): FlaUI.Core/FlaUI.UIA3 reference
+         WinForms/WPF-adjacent packages, which NETSDK1136 refuses to build
+         against a non-Windows-suffixed TFM. Same root cause confirmed by a
+         real CI build failure against these same packages in
+         native/win/spike/flaui-variant — not a guess. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

@@ -18,6 +18,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Windows.Win32.UI.Accessibility;
 
 var result = new SpikeResult { Variant = "CsWin32" };
@@ -43,7 +44,13 @@ try
     var count = 0;
     while (current is not null && count < 5)
     {
-        names.Add(current.CurrentName ?? "(no name)");
+        // current.CurrentName is a CsWin32-generated BSTR, not a C# string —
+        // CsWin32's static/source-generated interop exposes the raw COM
+        // type rather than auto-marshalling it the way classic dynamic COM
+        // interop did. Confirmed via a real CS0019 compiler error (`??`
+        // cannot apply to BSTR and string), not guessed in advance.
+        var name = current.CurrentName.ToString();
+        names.Add(string.IsNullOrEmpty(name) ? "(no name)" : name);
         current = walker.GetNextSiblingElement(current);
         count++;
     }
@@ -62,7 +69,7 @@ catch (Exception ex)
     result.Error = ex.ToString();
 }
 
-Console.WriteLine(JsonSerializer.Serialize(result));
+Console.WriteLine(JsonSerializer.Serialize(result, SpikeResultJsonContext.Default.SpikeResult));
 
 internal sealed class SpikeResult
 {
@@ -70,4 +77,15 @@ internal sealed class SpikeResult
     public bool UiaReadSucceeded { get; set; }
     public string? Value { get; set; }
     public string? Error { get; set; }
+}
+
+// Source-generated (not reflection-based) JSON serialization — the generic
+// JsonSerializer.Serialize<T> overload triggers an IL3050 AOT-safety warning
+// because the trimmer can't prove it won't need reflection metadata that got
+// trimmed away. Using a JsonSerializerContext sidesteps that: it removes any
+// doubt about whether a *result-reporting* warning is contaminating the
+// actual question this spike asks (does the UIA COM read work under AOT).
+[JsonSerializable(typeof(SpikeResult))]
+internal partial class SpikeResultJsonContext : JsonSerializerContext
+{
 }

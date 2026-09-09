@@ -15,6 +15,7 @@
 using System;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using FlaUI.Core;
 using FlaUI.Core.Definitions;
@@ -72,7 +73,7 @@ finally
     }
 }
 
-Console.WriteLine(JsonSerializer.Serialize(result));
+Console.WriteLine(JsonSerializer.Serialize(result, SpikeResultJsonContext.Default.SpikeResult));
 
 internal sealed class SpikeResult
 {
@@ -80,4 +81,13 @@ internal sealed class SpikeResult
     public bool UiaReadSucceeded { get; set; }
     public string? Value { get; set; }
     public string? Error { get; set; }
+}
+
+// Source-generated (not reflection-based) JSON serialization — see the
+// identical note in the CsWin32 variant's Program.cs: this removes an
+// AOT-safety warning about result reporting that's unrelated to the actual
+// question this spike asks (does the UIA COM read work under AOT).
+[JsonSerializable(typeof(SpikeResult))]
+internal partial class SpikeResultJsonContext : JsonSerializerContext
+{
 }
