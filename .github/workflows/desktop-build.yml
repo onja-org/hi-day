@@ -41,7 +41,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint and test desktop package
-        run: pnpm --filter desktop lint test
+        run: |
+          pnpm --filter desktop lint
+          pnpm --filter desktop test
 
       - name: Build installer
         run: pnpm --filter desktop ${{ matrix.dist-script }}
