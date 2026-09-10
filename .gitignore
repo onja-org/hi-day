@@ -25,6 +25,10 @@ desktop/native/darwin/firefox-ax-helper
 # turborepo
 .turbo/
 
+# Python (native/linux's resolver side-car)
+__pycache__/
+*.pyc
+
 # editor
 .idea/
 .vscode/
