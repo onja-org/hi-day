@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
+import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
 import { startTimeEntry } from "@/lib/startTimeEntry";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
@@ -73,16 +75,41 @@ export function useRunningTimer(organisationId: string) {
     },
   });
 
-  // Ticks the elapsed-time display once a second while a timer is running.
-  // The offset between the server's clock (from the last poll) and this
-  // device's own clock is recomputed each time `serverNow` changes, so a
-  // skewed local clock never desyncs the displayed elapsed time.
+  const pauseMutation = useMutation({
+    mutationFn: () => pauseTimeEntry(organisationId),
+    onSuccess: invalidate,
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: () => resumeTimeEntry(organisationId),
+    onSuccess: invalidate,
+  });
+
+  const isPaused = entry?.pausedAt != null;
+
+  // While paused, elapsed time is fully derived from the entry itself (no
+  // ticking) — computed directly during render rather than via state, since
+  // an effect must never call setState synchronously with a value that's
+  // already derivable from its own inputs.
+  const frozenElapsedMs =
+    entry && entry.pausedAt
+      ? new Date(entry.pausedAt).getTime() -
+        new Date(entry.startedAt).getTime() -
+        entry.pausedSeconds * 1000
+      : null;
+
+  // Ticks the elapsed-time display once a second while a timer is actually
+  // running (not paused). The offset between the server's clock (from the
+  // last poll) and this device's own clock is recomputed each time
+  // `serverNow` changes, so a skewed local clock never desyncs the
+  // displayed elapsed time.
   useEffect(() => {
-    if (!entry || !serverNow) return;
-    const serverOffsetMs = new Date(serverNow).getTime() - Date.now();
+    if (!entry || !serverNow || entry.pausedAt) return;
     const startedAtMs = new Date(entry.startedAt).getTime();
+    const pausedMs = entry.pausedSeconds * 1000;
+    const serverOffsetMs = new Date(serverNow).getTime() - Date.now();
     const interval = setInterval(
-      () => setElapsedMs(Date.now() + serverOffsetMs - startedAtMs),
+      () => setElapsedMs(Date.now() + serverOffsetMs - startedAtMs - pausedMs),
       1000,
     );
     return () => clearInterval(interval);
@@ -93,7 +120,8 @@ export function useRunningTimer(organisationId: string) {
     isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
     entry,
     activeProject,
-    elapsedMs,
+    elapsedMs: frozenElapsedMs ?? elapsedMs,
+    isPaused,
     projects: projectsQuery.data ?? [],
     projectId,
     taskId,
@@ -101,6 +129,8 @@ export function useRunningTimer(organisationId: string) {
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,
+    isPausing: pauseMutation.isPending,
+    isResuming: resumeMutation.isPending,
     onProjectChange: (id: string) => {
       setProjectId(id);
       setTaskId("");
@@ -109,6 +139,8 @@ export function useRunningTimer(organisationId: string) {
     onStart: () => startMutation.mutate(),
     onStop: () => stopMutation.mutate(),
     onSwitch: () => switchMutation.mutate(),
+    onPause: () => pauseMutation.mutate(),
+    onResume: () => resumeMutation.mutate(),
   };
 }
 

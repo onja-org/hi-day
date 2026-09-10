@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CaretDownIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, PlayIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useRunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
-import { ProjectColourBadge } from "./ProjectColourBadge";
+import { HeaderTimerRunningPanel } from "./HeaderTimerRunningPanel";
 import { Spinner } from "./Spinner";
 import { TimerPicker } from "./TimerPicker";
 
@@ -67,7 +67,12 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
       >
         {timer.entry ? (
           <>
-            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+            <span
+              className={clsx(
+                "h-2 w-2 rounded-full bg-white",
+                !timer.isPaused && "animate-pulse",
+              )}
+            />
             <span className="tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
           </>
         ) : (
@@ -82,28 +87,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
       {open && (
         <div className="absolute top-full right-0 z-50 mt-2 w-80 rounded-lg border border-primary-dark/20 bg-white p-4 shadow-lg">
           {timer.entry ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                {timer.activeProject && (
-                  <ProjectColourBadge colour={timer.activeProject.colour} />
-                )}
-                <span className="font-medium text-primary-dark">
-                  {timer.activeProject?.name ?? "Tracking time"}
-                </span>
-              </div>
-              <p className="text-center text-3xl font-semibold tabular-nums text-primary-dark">
-                {formatElapsed(timer.elapsedMs)}
-              </p>
-              <button
-                type="button"
-                onClick={timer.onStop}
-                disabled={timer.isStopping}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary-dark px-4 py-2 text-white transition-colors duration-150 hover:bg-primary-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <StopIcon size={18} weight="fill" aria-hidden="true" />
-                Stop timer
-              </button>
-            </div>
+            <HeaderTimerRunningPanel timer={timer} />
           ) : (
             <TimerPicker
               organisationId={organisationId}
