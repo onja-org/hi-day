@@ -55,7 +55,7 @@ type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
   platform: DesktopDevicePlatformName;
-  accessibilityGranted: boolean;
+  screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
 }
 
@@ -89,8 +89,8 @@ declare global {
         status: () => Promise<TrackingResult<CurrentTimer>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
-        requestAccessibilityAccess: () => Promise<void>;
-        openAccessibilitySettings: () => Promise<void>;
+        requestScreenRecordingAccess: () => Promise<void>;
+        openScreenRecordingSettings: () => Promise<void>;
       };
       idle: {
         seconds: () => Promise<number>;
@@ -122,8 +122,8 @@ const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.'
 // After "Grant Access" is clicked, macOS gives no callback for when the
 // person actually flips the switch in System Settings — poll a few times
 // a second for a short window to detect it and auto-dismiss the banner.
-const ACCESSIBILITY_POLL_INTERVAL_MS = 2_500;
-const ACCESSIBILITY_POLL_TIMEOUT_MS = 30_000;
+const SCREEN_RECORDING_POLL_INTERVAL_MS = 2_500;
+const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
@@ -275,19 +275,19 @@ const idleBannerMessage = document.getElementById('idle-banner-message')!;
 const idleKeepButton = document.getElementById('idle-keep-button') as HTMLButtonElement;
 const idleDiscardButton = document.getElementById('idle-discard-button') as HTMLButtonElement;
 const idleNotice = document.getElementById('idle-notice')!;
-const accessibilityBanner = document.getElementById('accessibility-banner')!;
-const accessibilityGrantButton = document.getElementById(
-  'accessibility-grant-button',
+const screenRecordingBanner = document.getElementById('screen-recording-banner')!;
+const screenRecordingGrantButton = document.getElementById(
+  'screen-recording-grant-button',
 ) as HTMLButtonElement;
-const accessibilitySettingsButton = document.getElementById(
-  'accessibility-settings-button',
+const screenRecordingSettingsButton = document.getElementById(
+  'screen-recording-settings-button',
 ) as HTMLButtonElement;
 const waylandNotice = document.getElementById('wayland-notice')!;
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 let idlePollHandle: ReturnType<typeof setInterval> | null = null;
-let accessibilityPollHandle: ReturnType<typeof setInterval> | null = null;
+let screenRecordingPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
 // Server clock minus local clock, at the moment of the last successful
 // poll — lets the 1s tick compute elapsed time from the server's own
@@ -409,43 +409,43 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   if (!result.ok) return null;
   const status = result.data;
 
-  accessibilityBanner.hidden = !(
+  screenRecordingBanner.hidden = !(
     status.windowTrackingEnabled &&
     status.platform === 'macos' &&
-    !status.accessibilityGranted
+    !status.screenRecordingGranted
   );
   // Wayland has no fix available, so this is informational only — no
-  // "Grant Access"-style call to action, unlike the accessibility banner.
+  // "Grant Access"-style call to action, unlike the screen-recording banner.
   waylandNotice.hidden = !(status.windowTrackingEnabled && status.waylandUnsupported);
 
   return status;
 }
 
-function stopAccessibilityGrantPolling(): void {
-  if (accessibilityPollHandle) clearInterval(accessibilityPollHandle);
-  accessibilityPollHandle = null;
+function stopScreenRecordingGrantPolling(): void {
+  if (screenRecordingPollHandle) clearInterval(screenRecordingPollHandle);
+  screenRecordingPollHandle = null;
 }
 
-accessibilityGrantButton.addEventListener('click', () => {
-  void window.api.tracking.requestAccessibilityAccess().then(() => {
+screenRecordingGrantButton.addEventListener('click', () => {
+  void window.api.tracking.requestScreenRecordingAccess().then(() => {
     // macOS won't re-show its native prompt on repeat calls, so grant
     // detection has to be polled rather than awaited — stop as soon as
     // access is detected, or after a bounded timeout either way.
-    stopAccessibilityGrantPolling();
-    const deadline = Date.now() + ACCESSIBILITY_POLL_TIMEOUT_MS;
-    accessibilityPollHandle = setInterval(() => {
+    stopScreenRecordingGrantPolling();
+    const deadline = Date.now() + SCREEN_RECORDING_POLL_TIMEOUT_MS;
+    screenRecordingPollHandle = setInterval(() => {
       void (async () => {
         const status = await refreshCapturePermissionBanner();
-        if (status?.accessibilityGranted || Date.now() > deadline) {
-          stopAccessibilityGrantPolling();
+        if (status?.screenRecordingGranted || Date.now() > deadline) {
+          stopScreenRecordingGrantPolling();
         }
       })();
-    }, ACCESSIBILITY_POLL_INTERVAL_MS);
+    }, SCREEN_RECORDING_POLL_INTERVAL_MS);
   });
 });
 
-accessibilitySettingsButton.addEventListener('click', () => {
-  void window.api.tracking.openAccessibilitySettings();
+screenRecordingSettingsButton.addEventListener('click', () => {
+  void window.api.tracking.openScreenRecordingSettings();
 });
 
 async function loadProjects(): Promise<void> {
@@ -522,7 +522,7 @@ function stopPolling(): void {
   pollHandle = null;
   tickHandle = null;
   idlePollHandle = null;
-  stopAccessibilityGrantPolling();
+  stopScreenRecordingGrantPolling();
 }
 
 startButton.addEventListener('click', () => {

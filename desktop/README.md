@@ -13,9 +13,11 @@ where the rest of activity capture is headed.
 Samples are batched and uploaded to the backend (`POST /device/app-events`,
 every 60s) via `AppEventUploader` — the web console's Activity → Apps tab
 shows a "time spent per app" summary for today, aggregated from these. See
-`docs/adr/0010-...` for the reporting pipeline and `docs/adr/0009-...` for
-the `get-windows` integration details and a known, deliberately-accepted
-gap in macOS title reading.
+`docs/adr/0010-...` for the reporting pipeline, `docs/adr/0009-...` for the
+original `get-windows` integration, and `docs/adr/0011-...` for the
+migration to `@paymoapp/active-window` (which also fixed the macOS title
+gap `0009` had deliberately accepted — the permission that actually gates
+window titles is Screen Recording, not Accessibility).
 
 **No offline queue yet** — a failed upload just drops that batch rather
 than retrying or persisting it (same as the rest of the agent's network
@@ -106,40 +108,42 @@ using a UUID generated on first run and persisted under Electron's
    (`GET /device/projects` — org admin/manager sees every active Project;
    anyone else needs their own Project membership).
 
-8. **Test window tracking**: toggle **Track window titles (desktop agent)**
+9. **Test window tracking**: toggle **Track window titles (desktop agent)**
    in the web console's org settings (`OrganisationSettingsForm`), *and*
-   **Start timer** in this app (step 7) — both must be true for sampling to
+   **Start timer** in this app (step 8) — both must be true for sampling to
    run; window tracking follows being clocked in, not merely being logged
    in. `CaptureSettingsGate` polls `GET /device/capture-settings` every 30s
    (and immediately on login/logout) and `TimerStatusGate` polls
    `GET /device/time-entries/current` every 15s (immediately on login/
    logout, and instantly on this app's own Start/Stop/switch actions).
-   Samples aren't logged to this app's terminal — see step 9 to confirm
+   Samples aren't logged to this app's terminal — see step 10 to confirm
    sampling is actually happening via the web console instead. On a
    Wayland session (`$WAYLAND_DISPLAY` set) an informational note (no
    "Grant Access"-style button — there's no fix available) should appear
-   in this app's own window instead of the Accessibility banner — samples
-   still get produced with `titleUnavailableReason: 'not-exposed'`, but
-   with **both** `appName` and `title` null (`get-windows` provides zero
-   information at all under Wayland, not just no title — verified live;
-   see `docs/adr/0009-...`), so they never reach step 9's summary either
-   (dropped before upload, see `docs/adr/0010-...`). macOS-specific
-   behavior (the Accessibility banner, "Grant Access", and the 30s
-   grant-detection poll) needs a real Mac to verify — see
-   `docs/adr/0009-...` for a known, deliberately-accepted gap in macOS
-   title reading even once granted.
+   in this app's own window instead of the Screen Recording banner —
+   samples still get produced with `titleUnavailableReason: 'not-exposed'`,
+   but with **both** `appName` and `title` null (neither `get-windows` nor
+   `@paymoapp/active-window` provides any information at all under
+   Wayland, not just no title — verified live; see `docs/adr/0009-...`),
+   so they never reach step 10's summary either (dropped before upload, see
+   `docs/adr/0010-...`). macOS-specific behavior (the Screen Recording
+   banner, "Grant Access", and the 30s grant-detection poll) needs a real
+   Mac to verify — see `docs/adr/0011-...` for the migration that fixed
+   `0009-...`'s known macOS title-reading gap (window titles are gated by
+   Screen Recording access, not Accessibility — this app now checks and
+   requests the right permission).
 
-9. **Test app-activity reporting**: with window tracking running (step 8),
-   wait at least 60s (`AppEventUploader`'s flush interval — stopping the
-   timer flushes immediately instead of waiting) then open the web
-   console's **Activity → Apps** tab
-   (`/organisations/:id/activities/apps`). It should show today's foreground
-   apps with time spent and percent used, aggregated from the uploaded
-   samples — this is now the primary way to confirm window tracking is
-   actually working, since samples aren't logged locally. See
-   `docs/adr/0010-...` for the reporting pipeline.
+10. **Test app-activity reporting**: with window tracking running (step 9),
+    wait at least 60s (`AppEventUploader`'s flush interval — stopping the
+    timer flushes immediately instead of waiting) then open the web
+    console's **Activity → Apps** tab
+    (`/organisations/:id/activities/apps`). It should show today's foreground
+    apps with time spent and percent used, aggregated from the uploaded
+    samples — this is now the primary way to confirm window tracking is
+    actually working, since samples aren't logged locally. See
+    `docs/adr/0010-...` for the reporting pipeline.
 
-10. **Test the update notice**: temporarily lower the `version` in
+11. **Test the update notice**: temporarily lower the `version` in
     `desktop/package.json` (e.g. to `0.0.1`), then `pnpm --filter desktop
     dev` — since that's older than the latest `desktop-v*` release on
     GitHub, a banner should appear under the title reading "Version X.Y.Z
@@ -187,28 +191,32 @@ builds all three in parallel via a GitHub Actions matrix
 from the Actions tab (`workflow_dispatch`) and grab the built installers
 from the run's artifacts.
 
-### Window tracking (`get-windows`) — packaging notes
+### Window tracking (`@paymoapp/active-window`) — packaging notes
 
-`get-windows` ships a prebuilt native N-API addon, and needed two
-non-obvious fixes to survive packaging (both verified by actually running
-`pnpm --filter desktop dist:linux`, unpacking the resulting asar, and
-executing `get-windows`'s `activeWindow()` directly from the packaged
+`@paymoapp/active-window` ships prebuilt native N-API addons for all three
+platforms via `prebuildify`/`node-gyp-build` (no `@mapbox/node-pre-gyp` or
+similar download-on-install step, unlike `get-windows` — see
+`docs/adr/0011-...`), and needed two non-obvious fixes to survive
+packaging (both verified by actually running `pnpm --filter desktop
+dist:linux`, unpacking the resulting asar, and executing
+`@paymoapp/active-window`'s `getActiveWindow()` directly from the packaged
 output — not just assumed from source-mode success):
 
-- **`asarUnpack: ['node_modules/get-windows/**/*']`** in
+- **`asarUnpack: ['node_modules/@paymoapp/active-window/**/*']`** in
   `electron-builder.yml` — a native `.node` addon can't be `require()`d
   from inside an asar archive.
-- **`@mapbox/node-pre-gyp` is a direct dependency of `desktop/package.json`**,
-  even though nothing in this app's own code imports it. `get-windows`'s
-  `index.js` unconditionally statically imports all three of its platform
-  modules (macOS/Linux/Windows — an ESM static import is evaluated
-  regardless of the runtime platform check that picks which one is
-  actually *used*), and the Windows one imports `@mapbox/node-pre-gyp` —
-  which `get-windows` only lists as an *optional* dependency.
-  electron-builder's default packaging drops `optionalDependencies`, so a
-  packaged build silently failed to load `get-windows` at all
-  (`Cannot find package '@mapbox/node-pre-gyp'`) despite working fine
-  under `pnpm dev`. See `docs/adr/0009-...` for the full story.
+- **`node-gyp-build` is a direct dependency of `desktop/package.json`**,
+  even though nothing in this app's own code imports it — it's
+  `@paymoapp/active-window`'s own runtime dependency (the thing that
+  actually locates and loads the right platform prebuild), but
+  electron-builder's dependency walker didn't pull it into the packaged
+  `node_modules` on its own under this repo's pnpm-workspace layout,
+  leaving a packaged build silently failing to load
+  `@paymoapp/active-window` at all (`Cannot find module
+  'node-gyp-build'`) despite working fine under `pnpm dev`. Declaring it
+  directly resolves it, the same fix shape as `get-windows`'
+  `@mapbox/node-pre-gyp` issue before it, if for a different underlying
+  reason — see `docs/adr/0011-...` for the full story.
 - **Still verify on macOS/Windows via the CI matrix above** — only the
   Linux target has been built and runtime-verified from this repo's own
   dev environment; `npmRebuild` (electron-builder's default `true`) ran
@@ -251,23 +259,27 @@ output — not just assumed from source-mode success):
   duration.** Each sample is assumed to represent
   `DEFAULT_WINDOW_SAMPLE_INTERVAL_MS` (5s) of foreground time — see
   `docs/adr/0010-...`.
-- **macOS window title reading is a known, deliberately-accepted gap.**
-  `get-windows` gates `title` on the Screen Recording permission, not
-  Accessibility, per its own docs — but this pass checks/prompts for
-  Accessibility only (per the ticket's explicit choice to avoid the
-  heavier Screen Recording prompt ahead of a future screenshot feature).
-  App name will work on macOS; window title most likely won't, regardless
-  of Accessibility grant, until a follow-up ticket revisits this on real
-  hardware. See `docs/adr/0009-...`.
+- **macOS window title reading now checks the permission that actually
+  gates it.** `docs/adr/0009-...` originally recorded this as a
+  deliberately-accepted gap: `get-windows` gates `title` on the Screen
+  Recording permission, not Accessibility, but that pass checked/prompted
+  for Accessibility only. The migration to `@paymoapp/active-window`
+  (`docs/adr/0011-...`) fixed this as a side effect — that library's own
+  permission model *is* Screen Recording (`requestPermissions()`), so the
+  banner, "Grant Access" prompt, and status check all target the right
+  permission now. Still unverified on real macOS hardware — nobody on this
+  project has a Mac — so treat "does title actually populate once granted"
+  as confirmed by the library's own docs, not by this repo's own testing.
 - **Wayland gives no app name either, not just no title** — a known,
   deliberately-accepted gap, confirmed on real hardware (not just
-  theoretical). `get-windows` provides zero window/app information at all
-  under Wayland (its own docs: unsupported "for security reasons"), so a
+  theoretical). Neither `get-windows` nor `@paymoapp/active-window`
+  provides any window/app information at all under Wayland (both only
+  support X11 on Linux, "for security reasons" per their docs), so a
   sample under Wayland is `{ appName: null, title: null,
-  titleUnavailableReason: 'not-exposed' }` — the ticket's acceptance
-  criteria assumed app name would still be recorded here, but that isn't
-  achievable through `get-windows`; a portable fix would need a
-  compositor-specific approach (e.g. a GNOME/KDE D-Bus extension), well
+  titleUnavailableReason: 'not-exposed' }` — the original ticket's
+  acceptance criteria assumed app name would still be recorded here, but
+  that isn't achievable through either library; a portable fix would need
+  a compositor-specific approach (e.g. a GNOME/KDE D-Bus extension), well
   past this ticket's scope. Matches this app's existing "Linux
   best-effort" support level (idle detection has the same caveat). See
   `docs/adr/0009-...`.

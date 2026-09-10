@@ -1,6 +1,13 @@
 ---
-status: accepted
+status: superseded-in-part
 ---
+
+> **Partially superseded by `docs/adr/0011-...`**: the capture library
+> choice (`get-windows`) and the macOS title-reading gap below were
+> revisited — the app now uses `@paymoapp/active-window` instead, which
+> also fixed the macOS gap as a side effect. The `windowTrackingEnabled`
+> setting, the `CaptureSettingsGate`/`TimerStatusGate` polling design, and
+> the Wayland gap all still stand as recorded here.
 
 # Window tracking uses `get-windows` (not `active-win`), gated by a new `windowTrackingEnabled` Organisation setting — with known, deliberately-shipped gaps on macOS title reading and Wayland app-name reading
 

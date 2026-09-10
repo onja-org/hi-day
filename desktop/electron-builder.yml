@@ -23,7 +23,7 @@ files:
   - package.json
 # Native addons can't be require()'d from inside an asar archive.
 asarUnpack:
-  - node_modules/get-windows/**/*
+  - node_modules/@paymoapp/active-window/**/*
 
 win:
   target:

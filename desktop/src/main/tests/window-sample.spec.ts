@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { classifyTitleUnavailability } from '../window-sample';
 
 describe('classifyTitleUnavailability', () => {
-  it("returns 'permission-denied' on macOS when Accessibility isn't granted", () => {
+  it("returns 'permission-denied' on macOS when Screen Recording isn't granted", () => {
     expect(
       classifyTitleUnavailability({
         platform: 'macos',
-        macAccessibilityGranted: false,
+        macScreenRecordingGranted: false,
         isWayland: false,
         rawTitle: 'Some Title',
         rawOwnerName: 'Some App',
@@ -14,11 +14,11 @@ describe('classifyTitleUnavailability', () => {
     ).toBe('permission-denied');
   });
 
-  it("takes priority over an otherwise-valid title on macOS when Accessibility isn't granted", () => {
+  it("takes priority over an otherwise-valid title on macOS when Screen Recording isn't granted", () => {
     expect(
       classifyTitleUnavailability({
         platform: 'macos',
-        macAccessibilityGranted: false,
+        macScreenRecordingGranted: false,
         isWayland: false,
         rawTitle: undefined,
         rawOwnerName: undefined,
@@ -30,7 +30,7 @@ describe('classifyTitleUnavailability', () => {
     expect(
       classifyTitleUnavailability({
         platform: 'linux',
-        macAccessibilityGranted: true,
+        macScreenRecordingGranted: true,
         isWayland: true,
         rawTitle: undefined,
         rawOwnerName: undefined,
@@ -42,7 +42,7 @@ describe('classifyTitleUnavailability', () => {
     expect(
       classifyTitleUnavailability({
         platform: 'linux',
-        macAccessibilityGranted: true,
+        macScreenRecordingGranted: true,
         isWayland: false,
         rawTitle: '',
         rawOwnerName: 'Signal',
@@ -54,7 +54,7 @@ describe('classifyTitleUnavailability', () => {
     expect(
       classifyTitleUnavailability({
         platform: 'windows',
-        macAccessibilityGranted: true,
+        macScreenRecordingGranted: true,
         isWayland: false,
         rawTitle: '   ',
         rawOwnerName: 'KeePass',
@@ -66,7 +66,7 @@ describe('classifyTitleUnavailability', () => {
     expect(
       classifyTitleUnavailability({
         platform: 'windows',
-        macAccessibilityGranted: true,
+        macScreenRecordingGranted: true,
         isWayland: false,
         rawTitle: 'Unicorns - Google Search',
         rawOwnerName: 'Google Chrome',
@@ -78,7 +78,7 @@ describe('classifyTitleUnavailability', () => {
     expect(
       classifyTitleUnavailability({
         platform: 'linux',
-        macAccessibilityGranted: true,
+        macScreenRecordingGranted: true,
         isWayland: false,
         rawTitle: undefined,
         rawOwnerName: undefined,

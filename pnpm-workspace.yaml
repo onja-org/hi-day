@@ -3,9 +3,9 @@ packages:
   - "backend"
   - "desktop"
 allowBuilds:
+  '@paymoapp/active-window': true
   argon2: true
   electron: true
-  get-windows: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@next/env@16.3.2'
