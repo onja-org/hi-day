@@ -6,6 +6,11 @@ productName: Workforce Monitor
 # ${version} were in the name, every release would need a landing-page
 # code change to match.
 artifactName: workforce-monitor-${os}-${arch}.${ext}
+# Squeezes the installer harder at build time — Electron apps bundle a full
+# Chromium + Node runtime, so this won't work miracles (typically 5-15%
+# smaller), but it's free size reduction with no functional tradeoff, just
+# a slower build.
+compression: maximum
 directories:
   output: release
 files:
