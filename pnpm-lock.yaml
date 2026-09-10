@@ -151,6 +151,9 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.43
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
       electron:
         specifier: ^33.4.11
         version: 33.4.11
