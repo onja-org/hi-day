@@ -15,6 +15,7 @@ import { Team } from './entities/team.entity';
 import { TeamMembership } from './entities/team-membership.entity';
 import { TimeEntry } from './entities/time-entry.entity';
 import { TimeEntryPause } from './entities/time-entry-pause.entity';
+import { UrlSession } from './entities/url-session.entity';
 import { User } from './entities/user.entity';
 
 export default new DataSource({
@@ -38,6 +39,7 @@ export default new DataSource({
     Activity,
     TimeEntry,
     TimeEntryPause,
+    UrlSession,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });

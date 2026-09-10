@@ -13,6 +13,7 @@ import { ProjectsModule } from './projects/modules/projects.module';
 import { TasksModule } from './tasks/modules/tasks.module';
 import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
 import { TeamsModule } from './teams/modules/teams.module';
+import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { TeamsModule } from './teams/modules/teams.module';
     DeviceTrackingModule,
     ActivitiesModule,
     TeamsModule,
+    UrlSessionsModule,
   ],
   controllers: [AppController],
   providers: [

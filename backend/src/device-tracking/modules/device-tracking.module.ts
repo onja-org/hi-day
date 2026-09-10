@@ -9,6 +9,7 @@ import { OrganisationsModule } from '../../organisations/modules/organisations.m
 import { ProjectsModule } from '../../projects/modules/projects.module';
 import { TasksModule } from '../../tasks/modules/tasks.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
+import { UrlSessionsModule } from '../../url-sessions/modules/url-sessions.module';
 import { DeviceTrackingController } from '../controllers/device-tracking.controller';
 
 @Module({
@@ -18,6 +19,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     TasksModule,
     TimeEntriesModule,
     OrganisationsModule,
+    UrlSessionsModule,
   ],
   controllers: [DeviceTrackingController],
   providers: [DeviceSessionGuard, DeviceProjectMemberGuard],

@@ -16,6 +16,7 @@ import { Team } from './entities/team.entity';
 import { TeamMembership } from './entities/team-membership.entity';
 import { TimeEntry } from './entities/time-entry.entity';
 import { TimeEntryPause } from './entities/time-entry-pause.entity';
+import { UrlSession } from './entities/url-session.entity';
 import { User } from './entities/user.entity';
 
 @Module({
@@ -43,6 +44,7 @@ import { User } from './entities/user.entity';
           Activity,
           TimeEntry,
           TimeEntryPause,
+          UrlSession,
         ],
         synchronize: false,
       }),

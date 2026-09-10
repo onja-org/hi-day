@@ -25,6 +25,9 @@ import type { ProjectTasksList } from '../../tasks/services/tasks.service';
 import { TasksService } from '../../tasks/services/tasks.service';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { SyncUrlSessionsDto } from '../../url-sessions/dto/sync-url-sessions.dto';
+import type { SyncResult } from '../../url-sessions/services/url-sessions.service';
+import { UrlSessionsService } from '../../url-sessions/services/url-sessions.service';
 
 /**
  * The desktop agent's own read/write surface for time tracking — mirrors
@@ -42,6 +45,7 @@ export class DeviceTrackingController {
     private readonly tasksService: TasksService,
     private readonly timeEntriesService: TimeEntriesService,
     private readonly organisationsService: OrganisationsService,
+    private readonly urlSessionsService: UrlSessionsService,
   ) {}
 
   @Get('idle-policy')
@@ -141,6 +145,19 @@ export class DeviceTrackingController {
     return this.timeEntriesService.resume(
       request.organisationId,
       request.userId,
+    );
+  }
+
+  @Post('url-sessions/sync')
+  syncUrlSessions(
+    @Body() dto: SyncUrlSessionsDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<SyncResult> {
+    return this.urlSessionsService.sync(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.sessions,
     );
   }
 }
