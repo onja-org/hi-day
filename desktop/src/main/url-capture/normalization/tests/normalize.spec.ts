@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeAddressBarReading } from '../normalize';
-import { loadPlaceholders } from '../placeholder-detector';
-import { loadSensitivePathPatterns } from '../sensitive-path';
+import { loadPlaceholders, loadSensitivePathPatterns } from '../denylists';
 
 // Loaded once and injected explicitly rather than relying on each call's
 // own default file read — makes it obvious these tests exercise the real

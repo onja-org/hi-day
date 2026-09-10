@@ -1,1 +1,0 @@
-31:41: execution error: Not authorized to send Apple events to Google Chrome. (-1743)

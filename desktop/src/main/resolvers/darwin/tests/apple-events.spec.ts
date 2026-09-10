@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseChromiumOutput, parseSafariOutput } from '../apple-events';
 import { classifyAppleEventsFailure } from '../errors';
@@ -9,10 +7,14 @@ import { classifyAppleEventsFailure } from '../errors';
 // not captured from a real browser (no Mac available — see the plan
 // discussion). Replace with real captured output once Stage B reaches
 // actual hardware, per docs/url-tracking-plan.md Step 21's fixture note.
-const fixturesDir = join(__dirname, 'fixtures');
+// One file keyed by scenario rather than eight one-line files: each of
+// these is a single raw string, and only this spec reads them.
+import fixtures from './fixtures.json';
 
 function fixture(name: string): string {
-  return readFileSync(join(fixturesDir, name), 'utf-8');
+  const value = (fixtures as Record<string, string>)[name.replace(/\.txt$/, '')];
+  if (value === undefined) throw new Error(`Unknown fixture: ${name}`);
+  return value;
 }
 
 describe('parseChromiumOutput', () => {

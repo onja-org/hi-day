@@ -1,7 +1,12 @@
 import { canonicalize, type CanonicalizeOptions } from './canonicalize';
 import { hostCandidateHasSpace, validateHost } from './host-validation';
-import { isPlaceholder, loadPlaceholders } from './placeholder-detector';
-import { loadSensitivePathPatterns, matchesSensitivePathDenylist, type SensitivePathPatterns } from './sensitive-path';
+import {
+  isPlaceholder,
+  loadPlaceholders,
+  loadSensitivePathPatterns,
+  matchesSensitivePathDenylist,
+  type SensitivePathPatterns,
+} from './denylists';
 
 export type RejectionReason = 'contains-space' | 'invalid-host' | 'placeholder' | 'sensitive-path' | 'unparseable';
 
