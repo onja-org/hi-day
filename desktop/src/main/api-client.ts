@@ -39,6 +39,10 @@ export interface TimeEntry {
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
+  /** Non-null while the entry has an open pause span — see the pause/resume ADR. */
+  pausedAt: string | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
 }
 
 export interface CurrentTimer {
@@ -188,6 +192,14 @@ export class ApiClient {
 
   getCurrentTimer(deviceToken: string): Promise<TrackingResult<CurrentTimer>> {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
+  }
+
+  pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
+    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {});
+  }
+
+  resumeTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
+    return this.deviceRequest('POST', '/device/time-entries/resume', deviceToken, {});
   }
 
   getIdlePolicy(deviceToken: string): Promise<TrackingResult<IdlePolicy>> {

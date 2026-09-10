@@ -334,6 +334,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('tracking:status', () => callDeviceApi((token) => apiClient.getCurrentTimer(token)));
 
+  ipcMain.handle('tracking:pause', () => callDeviceApi((token) => apiClient.pauseTimer(token)));
+
+  ipcMain.handle('tracking:resume', () => callDeviceApi((token) => apiClient.resumeTimer(token)));
+
   ipcMain.handle('tracking:idlePolicy', () =>
     callDeviceApi((token) => apiClient.getIdlePolicy(token)),
   );

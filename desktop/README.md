@@ -48,11 +48,11 @@ under Electron's `userData` directory — not a hardware fingerprint.
    (sidebar): a new row should appear with platform `Linux`/`macOS`/
    `Windows`, this machine's hostname, and status `Active`.
 
-5. **Test remote sign-out**: click **Sign out** on that device's row, then
-   trigger any action in the desktop app that hits `/devices/*` (e.g. the
-   Log out button, or restart the app). It should be rejected — there's no
-   background heartbeat yet, so this only surfaces on the next explicit
-   request, not live.
+5. **Test remote sign-out**: click **Sign out** on that device's row. The
+   app sends a heartbeat (`POST /devices/heartbeat`) every 60s while
+   logged in, so this takes effect live — within about a minute the app
+   switches back to the login screen on its own, without needing you to
+   trigger any action by hand.
 
 6. **Test session persistence**: quit and re-run `pnpm --filter desktop
    dev` — it should skip straight to the logged-in screen instead of
@@ -62,7 +62,9 @@ under Electron's `userData` directory — not a hardware fingerprint.
    a Task) from the dropdowns and click **Start timer** — the elapsed time
    should start ticking, polling `GET /device/time-entries/current` every
    15s to stay in sync with whatever's actually running server-side.
-   **Stop timer** ends it. Starting a *second* timer while one is already
+   **Pause** stops it from accumulating without ending it — the display
+   freezes and a **Resume** button takes its place; **Stop timer** ends it
+   from either state. Starting a *second* timer while one is already
    running (e.g. from the web console's own start action, on the
    `organisations/:id/projects/:projectId/time-entries/start` route) shows
    the conflict and a **Stop the other timer and start this one** button

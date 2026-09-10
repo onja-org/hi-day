@@ -39,6 +39,10 @@ declare global {
     taskId: string | null;
     startedAt: string;
     endedAt: string | null;
+    /** Non-null while the entry has an open pause span. */
+    pausedAt: string | null;
+    /** Total seconds paused so far, across every *closed* pause span. */
+    pausedSeconds: number;
   }
 
   interface CurrentTimer {
@@ -92,6 +96,8 @@ declare global {
         switchTo: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
         status: () => Promise<TrackingResult<CurrentTimer>>;
+        pause: () => Promise<TrackingResult<TimeEntry>>;
+        resume: () => Promise<TrackingResult<TimeEntry>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
       };
       idle: {

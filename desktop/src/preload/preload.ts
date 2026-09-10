@@ -25,6 +25,10 @@ export interface TimeEntry {
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
+  /** Non-null while the entry has an open pause span. */
+  pausedAt: string | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
 }
 
 export interface CurrentTimer {
@@ -94,6 +98,10 @@ const api = {
       ipcRenderer.invoke('tracking:stop', endedAt) as Promise<TrackingResult<TimeEntry>>,
     status: (): Promise<TrackingResult<CurrentTimer>> =>
       ipcRenderer.invoke('tracking:status') as Promise<TrackingResult<CurrentTimer>>,
+    pause: (): Promise<TrackingResult<TimeEntry>> =>
+      ipcRenderer.invoke('tracking:pause') as Promise<TrackingResult<TimeEntry>>,
+    resume: (): Promise<TrackingResult<TimeEntry>> =>
+      ipcRenderer.invoke('tracking:resume') as Promise<TrackingResult<TimeEntry>>,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke('tracking:idlePolicy') as Promise<TrackingResult<IdlePolicy>>,
   },

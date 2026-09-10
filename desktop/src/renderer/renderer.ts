@@ -70,8 +70,11 @@ document.getElementById('coverage-button')!.addEventListener('click', () => {
 const projectSelect = document.getElementById('project-select') as HTMLSelectElement;
 const taskSelect = document.getElementById('task-select') as HTMLSelectElement;
 const timerDisplay = document.getElementById('timer-display')!;
+const pausedNotice = document.getElementById('paused-notice')!;
 const trackingError = document.getElementById('tracking-error')!;
 const startButton = document.getElementById('start-button') as HTMLButtonElement;
+const pauseButton = document.getElementById('pause-button') as HTMLButtonElement;
+const resumeButton = document.getElementById('resume-button') as HTMLButtonElement;
 const stopButton = document.getElementById('stop-button') as HTMLButtonElement;
 const switchButton = document.getElementById('switch-button') as HTMLButtonElement;
 const idleBanner = document.getElementById('idle-banner')!;
@@ -143,7 +146,12 @@ function tick(): void {
     return;
   }
   const startedAtMs = new Date(runningEntry.startedAt).getTime();
-  const elapsed = Date.now() + serverOffsetMs - startedAtMs;
+  const pausedMs = runningEntry.pausedSeconds * 1000;
+  // While paused, elapsed time is frozen at the instant the pause began —
+  // never ticks forward from `Date.now()` the way a running timer's does.
+  const elapsed = runningEntry.pausedAt
+    ? new Date(runningEntry.pausedAt).getTime() - startedAtMs - pausedMs
+    : Date.now() + serverOffsetMs - startedAtMs - pausedMs;
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatElapsed(elapsed);
 }
@@ -151,8 +159,12 @@ function tick(): void {
 function setRunning(entry: TimeEntry | null): void {
   const wasRunning = runningEntry !== null;
   runningEntry = entry;
+  const isPaused = entry?.pausedAt != null;
   startButton.hidden = entry !== null;
+  pauseButton.hidden = entry === null || isPaused;
+  resumeButton.hidden = entry === null || !isPaused;
   stopButton.hidden = entry === null;
+  pausedNotice.hidden = !isPaused;
   projectSelect.disabled = entry !== null;
   taskSelect.disabled = entry !== null;
   if (!entry) {
@@ -189,7 +201,12 @@ function showIdleNotice(message: string): void {
 }
 
 async function checkIdle(): Promise<void> {
-  if (!runningEntry || !idlePolicy || idlePolicy.handling === 'off') return;
+  // A manual pause is the person explicitly saying "not tracking right
+  // now" — idle detection re-flagging or auto-subtracting on top of that
+  // would just be fighting their own choice.
+  if (!runningEntry || runningEntry.pausedAt || !idlePolicy || idlePolicy.handling === 'off') {
+    return;
+  }
 
   const idleSeconds = await window.api.idle.seconds();
   const thresholdSeconds = idlePolicy.thresholdMinutes * 60;
@@ -320,6 +337,30 @@ startButton.addEventListener('click', () => {
     if (result.runningEntry && !result.unauthorized) {
       pendingSwitch = { projectId, taskId };
       switchButton.hidden = false;
+    }
+  })();
+});
+
+pauseButton.addEventListener('click', () => {
+  void (async () => {
+    clearTrackingError();
+    const result = await window.api.tracking.pause();
+    if (result.ok) {
+      setRunning(result.data);
+    } else {
+      handleTrackingFailure(result);
+    }
+  })();
+});
+
+resumeButton.addEventListener('click', () => {
+  void (async () => {
+    clearTrackingError();
+    const result = await window.api.tracking.resume();
+    if (result.ok) {
+      setRunning(result.data);
+    } else {
+      handleTrackingFailure(result);
     }
   })();
 });
