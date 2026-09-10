@@ -42,7 +42,7 @@ const STEPS: Step[] = [
 
 export function LandingHowItWorks() {
   return (
-    <section className="bg-cream py-20 lg:py-28">
+    <section id="how-it-works" className="bg-cream py-20 lg:py-28">
       <div className="container">
         <ScrollReveal className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-semibold text-primary-dark sm:text-4xl">

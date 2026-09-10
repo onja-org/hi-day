@@ -5,7 +5,7 @@ import { ScrollReveal } from "../ScrollReveal";
 
 export function LandingHero() {
   return (
-    <section className="relative overflow-hidden bg-white">
+    <section id="hero" className="relative overflow-hidden bg-white">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/20 blur-3xl motion-safe:animate-float"
@@ -40,7 +40,7 @@ export function LandingHero() {
               Get started free
             </Link>
             <a
-              href="#features"
+              href="#how-it-works"
               className="cursor-pointer rounded-md border border-primary-dark/20 px-6 py-3 font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
             >
               See how it works

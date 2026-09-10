@@ -1,11 +1,39 @@
 import Link from "next/link";
 
+type Section = {
+  href: string;
+  label: string;
+};
+
+// Anchors into the landing page's sections below — each also works as a
+// standalone, shareable URL (e.g. .../#download) since Header is only ever
+// rendered on the landing page.
+const SECTIONS: Section[] = [
+  { href: "#features", label: "Features" },
+  { href: "#how-it-works", label: "How it works" },
+  { href: "#roles", label: "Roles" },
+  { href: "#download", label: "Download" },
+];
+
 export function Header() {
   return (
     <header className="container flex items-center justify-between py-4">
       <span className="text-lg font-semibold text-primary-dark">
         Workforce Monitoring
       </span>
+
+      <nav aria-label="Page sections" className="hidden gap-6 md:flex">
+        {SECTIONS.map((section) => (
+          <a
+            key={section.href}
+            href={section.href}
+            className="cursor-pointer text-sm font-medium text-slate-900 transition-colors duration-150 hover:text-primary-dark"
+          >
+            {section.label}
+          </a>
+        ))}
+      </nav>
+
       <div className="flex items-center gap-3">
         <Link
           href="/login"

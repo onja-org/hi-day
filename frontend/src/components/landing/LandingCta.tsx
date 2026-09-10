@@ -3,7 +3,10 @@ import { ScrollReveal } from "../ScrollReveal";
 
 export function LandingCta() {
   return (
-    <section className="relative overflow-hidden bg-primary-dark py-20 lg:py-28">
+    <section
+      id="get-started"
+      className="relative overflow-hidden bg-primary-dark py-20 lg:py-28"
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-16 right-0 h-72 w-72 rounded-full bg-primary/20 blur-3xl motion-safe:animate-float"
