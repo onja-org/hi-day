@@ -30,10 +30,22 @@ backend, PUT the JPEG bytes directly to Wasabi, then record the resulting
 storage key as metadata. The backend never sees the image bytes. See
 `docs/adr/0012-...` for the full design.
 
-**No offline queue yet**, for either window-tracking or screenshot
-uploads — a failed batch/upload just drops rather than retrying or
-persisting it (same as the rest of the agent's network calls today; see
-`docs/TECH_DESIGN.md`'s eventual offline-queue plan).
+Both window-tracking and screenshot uploads go through an **offline
+queue** (`OfflineQueue`/`OfflineQueueStore`, `desktop/src/main/offline-queue*.ts`):
+every sample/capture is persisted to a local SQLite database
+(`offline-queue.db`, in the same `userData` directory as the session file)
+*before* any network request is attempted, and drained in batches on a
+periodic, jittered tick (matching the batched-ingest cadence in
+`docs/TECH_DESIGN.md` §4). A dropped connection just leaves data queued
+rather than losing it, and a batch that fails to send (network down,
+backend unreachable, no session) retries later with exponential backoff
+plus jitter instead of being dropped — so many devices coming back online
+at once don't all retry in lockstep. See the doc comment atop
+`offline-queue.ts` for the one known limitation this doesn't close:
+delivery is at-least-once, not exactly-once (a crash in the narrow window
+between the backend durably accepting a batch and this process deleting
+the local rows can resend that batch) — closing it needs an idempotency
+key on the backend's ingest endpoints, out of scope for this pass.
 
 **Login only ever happens in the web app** (`docs/adr/0009-...`) — the
 desktop app itself has no password form. Clicking "Log in" opens the web
@@ -274,17 +286,17 @@ output — not just assumed from source-mode success):
   so a device stays "active" (per `computeDeviceStatus`) only as long as
   something else updates `lastSeenAt` — starting/stopping a timer doesn't
   touch it either; this is still open.
-- **No offline queue.** Timer start/stop calls hit the backend directly and
-  fail (with an on-screen error) if it's unreachable — the SQLite-backed
-  offline queue described in `docs/TECH_DESIGN.md` isn't built yet.
-- **Window-tracking uploads have no offline queue or retry.** A failed
-  `POST /device/app-events` batch (network down, backend unreachable) is
-  just dropped — not persisted, not retried. Wiring in the SQLite-backed
-  offline queue described in `docs/TECH_DESIGN.md` is a follow-up ticket.
-- **Screenshot uploads have no offline queue or retry either.** Same
-  reasoning as window tracking above — a failed presigned-URL request,
-  failed PUT to Wasabi, or failed metadata POST just drops that one
-  screenshot (see `docs/adr/0012-...`).
+- **Timer start/stop calls still aren't queued offline.** They hit the
+  backend directly and fail (with an on-screen error) if it's unreachable —
+  only captured *data* (app-events, screenshots) goes through the offline
+  queue described above; a live user action like starting/stopping a timer
+  needs the backend's immediate answer (e.g. whether a conflicting timer is
+  already running elsewhere) rather than a best-effort retry, so it was left
+  out of this pass's scope.
+- **The offline queue's delivery is at-least-once, not exactly-once** — see
+  the "offline queue" paragraph above and the doc comment atop
+  `offline-queue.ts` for the narrow crash window this leaves open, and why
+  closing it needs a backend change out of scope here.
 - **Lowering an org's screenshot retention isn't retroactive.** Each
   screenshot's deletion date is fixed at capture time from whatever
   `screenshotRetentionDays` was set then — shortening the setting later

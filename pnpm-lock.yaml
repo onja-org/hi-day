@@ -43,7 +43,7 @@ importers:
         version: 6.5.0(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)
       '@nestjs/typeorm':
         specifier: ^11.0.3
-        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.1.0(pg@8.23.0)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))
+        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.1.0(pg@8.23.0)(sql.js@1.14.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -70,7 +70,7 @@ importers:
         version: 7.8.2
       typeorm:
         specifier: ^1.1.0
-        version: 1.1.0(pg@8.23.0)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 1.1.0(pg@8.23.0)(sql.js@1.14.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.2.0
@@ -150,13 +150,22 @@ importers:
       node-gyp-build:
         specifier: ^4.8.4
         version: 4.8.4
+      sql.js:
+        specifier: ^1.14.2
+        version: 1.14.2
     devDependencies:
       '@eslint/js':
         specifier: ^9.18.0
         version: 9.39.5
+      '@types/emscripten':
+        specifier: ^1.41.6
+        version: 1.41.6
       '@types/node':
         specifier: ^20
         version: 20.19.43
+      '@types/sql.js':
+        specifier: ^1.4.11
+        version: 1.4.11
       electron:
         specifier: ^33.4.11
         version: 33.4.11
@@ -1745,6 +1754,9 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/emscripten@1.41.6':
+    resolution: {integrity: sha512-uN+9i8bFT5CUcZfyIEYDrSueACEyKGbUs5kC/72DGlZZoinh84sJfVV0i8UOJD1asdzkvLPBRrKs41kZ8MdEXg==}
+
   '@types/eslint-scope@3.7.7':
     resolution: {integrity: sha512-MzMFlSLBqNF2gcHWO0G1vP/YQyfvrxZ0bF+u7mzUdZ1/xK4A4sru+nraZz5i3iEIk1l1uyicaDVTB4QbbEkAYg==}
 
@@ -1833,6 +1845,9 @@ packages:
 
   '@types/serve-static@2.2.0':
     resolution: {integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==}
+
+  '@types/sql.js@1.4.11':
+    resolution: {integrity: sha512-QXIx38p2ZThJaK9vP5ZdqdlRe1FG9I8SmCZOS7FHfB/2qPAjZwkL7/vlfPg6N/oWHuuOaGg/P/IRwfP2W0kWVQ==}
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
@@ -5257,6 +5272,9 @@ packages:
     resolution: {integrity: sha512-ed7OK4e9ywpE7pgRMkMQmZDPKSVdm0oX5IEtZiKnFucSF0zu6c80GZBe38UqHuVhTWJ9xsKgSMjCG2bml86KvA==}
     engines: {node: '>=14'}
 
+  sql.js@1.14.2:
+    resolution: {integrity: sha512-3ZGPovObMFrdw79zrUHbfdE/DLIsy8jdNdssmMSQuRAymedU6q84asPt0kgiqrdMYlPegDItiIMfmIXzZnYFcw==}
+
   ssri@9.0.1:
     resolution: {integrity: sha512-o57Wcn66jMQvfHG1FlYbWeZWW/dHZhJXjpIcTfXldXEk5nz5lStPo3mK0OJQfGR3RbZUlbISexbljkJzuEj/8Q==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
@@ -7338,13 +7356,13 @@ snapshots:
       '@nestjs/core': 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
 
-  '@nestjs/typeorm@11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.1.0(pg@8.23.0)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))':
+  '@nestjs/typeorm@11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.1.0(pg@8.23.0)(sql.js@1.14.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))':
     dependencies:
       '@nestjs/common': 11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/core': 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
       rxjs: 7.8.2
-      typeorm: 1.1.0(pg@8.23.0)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      typeorm: 1.1.0(pg@8.23.0)(sql.js@1.14.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
 
   '@next/env@16.3.2': {}
 
@@ -7730,6 +7748,8 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
+  '@types/emscripten@1.41.6': {}
+
   '@types/eslint-scope@3.7.7':
     dependencies:
       '@types/eslint': 9.6.1
@@ -7838,6 +7858,11 @@ snapshots:
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
+      '@types/node': 24.13.3
+
+  '@types/sql.js@1.4.11':
+    dependencies:
+      '@types/emscripten': 1.41.6
       '@types/node': 24.13.3
 
   '@types/stack-utils@2.0.3': {}
@@ -11838,6 +11863,8 @@ snapshots:
 
   sql-highlight@6.1.0: {}
 
+  sql.js@1.14.2: {}
+
   ssri@9.0.1:
     dependencies:
       minipass: 3.3.6
@@ -12246,7 +12273,7 @@ snapshots:
 
   typedarray@0.0.6: {}
 
-  typeorm@1.1.0(pg@8.23.0)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
+  typeorm@1.1.0(pg@8.23.0)(sql.js@1.14.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
     dependencies:
       '@sqltools/formatter': 1.2.5
       ansis: 4.3.1
@@ -12260,6 +12287,7 @@ snapshots:
       yargs: 18.1.0
     optionalDependencies:
       pg: 8.23.0
+      sql.js: 1.14.2
       ts-node: 10.9.2(@types/node@24.13.3)(typescript@5.9.3)
     transitivePeerDependencies:
       - babel-plugin-macros

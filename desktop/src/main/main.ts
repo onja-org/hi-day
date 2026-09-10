@@ -16,6 +16,8 @@ import { AppEventUploader } from './app-event-uploader';
 import { AuthStore } from './auth-store';
 import { CaptureSettingsGate } from './capture-settings-gate';
 import { getOrCreateDeviceFingerprint } from './device-identity';
+import { OfflineQueue } from './offline-queue';
+import { OfflineQueueStore } from './offline-queue-store';
 import { isWaylandSession, toDevicePlatform } from './platform';
 import type { DesktopDevicePlatform } from './platform';
 import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
@@ -103,16 +105,31 @@ async function withSignOutDetection<T>(
   return result;
 }
 
-function registerIpcHandlers(): void {
+async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath('userData'));
   const apiClient = new ApiClient(API_BASE_URL);
-  const appEventUploader = new AppEventUploader(authStore, apiClient);
-  appEventUploader.start();
+
+  // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
+  // screenshot is persisted to SQLite before it's sent, and drained in
+  // batches on a periodic, jittered tick — a dropped connection holds data
+  // rather than losing it, and a failed batch retries with backoff instead
+  // of being dropped. One queue instance serves both capture kinds.
+  const offlineQueueStore = await OfflineQueueStore.create(
+    join(app.getPath('userData'), 'offline-queue.db'),
+  );
+  const offlineQueue = new OfflineQueue(offlineQueueStore);
+
+  const appEventUploader = new AppEventUploader(authStore, apiClient, offlineQueue);
+  offlineQueue.registerSender(appEventUploader);
   const windowSampler = new WindowSampler({ sink: appEventUploader.enqueue });
-  const screenshotUploader = new ScreenshotUploader(authStore, apiClient);
+
+  const screenshotUploader = new ScreenshotUploader(authStore, apiClient, offlineQueue);
+  offlineQueue.registerSender(screenshotUploader);
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
   });
+
+  offlineQueue.start();
 
   // Window tracking and screenshot capture each only run while BOTH are
   // true: the org has that capture's setting on, AND a timer is actually
@@ -388,8 +405,8 @@ if (!gotSingleInstanceLock) {
     }
   });
 
-  void app.whenReady().then(() => {
-    registerIpcHandlers();
+  void app.whenReady().then(async () => {
+    await registerIpcHandlers();
     createWindow();
 
     app.on('activate', () => {
