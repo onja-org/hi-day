@@ -11,6 +11,12 @@ import { buildDarwinCoverageReport } from './resolvers/darwin/coverage';
 import { resolveDarwinResolverPath } from './resolvers/darwin/resolver-path';
 import { PermissionStateMachine } from './resolvers/darwin/permission-state';
 import { buildWin32CoverageReport, detectInstalledWin32Browsers } from './resolvers/win32/coverage';
+import {
+  buildLinuxCoverageReport,
+  detectInstalledLinuxBrowsers,
+  resolveLinuxResolverPath,
+} from './resolvers/linux/coverage';
+import { evaluateSupport } from './resolvers/linux/support-gate';
 import { InstalledBrowserDetector as DarwinInstalledBrowserDetector } from './resolvers/darwin/installed-browsers';
 import { resolveWinResolverPath } from './resolvers/win32/resolver-path';
 import { loadBrowserRegistry } from './url-capture/browser-registry';
@@ -23,10 +29,9 @@ import type { UploadFn } from './url-capture/sync-contract';
 import { UrlCaptureService } from './url-capture/url-capture-service';
 
 /**
- * macOS and Windows only — Linux resolver support (Stage D) doesn't exist
- * yet. Returns null on any other platform so startUrlCapture degrades to
- * timer/idle tracking only, exactly like today's behavior everywhere,
- * rather than throwing or spawning nothing usable.
+ * All three platforms now have a resolver. Returns null only on a platform
+ * with none, so startUrlCapture degrades to timer/idle tracking rather
+ * than throwing or spawning nothing usable.
  */
 function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
   if (process.platform === 'darwin') {
@@ -52,6 +57,18 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
   if (process.platform === 'win32') {
     return {
       command: resolveWinResolverPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    };
+  }
+
+  if (process.platform === 'linux') {
+    return {
+      command: process.execPath,
+      args: [resolveLinuxResolverPath()],
+      // Same plain-Node-process trick as darwin: this resolver is compiled
+      // TypeScript inside the app's own dist/, not a separate binary. It
+      // needs no resourcesPath hints — it spawns no child of its own,
+      // talking to the accessibility bus directly over D-Bus.
+      env: { ELECTRON_RUN_AS_NODE: '1' },
     };
   }
 
@@ -237,7 +254,20 @@ async function getCoverageReport(): Promise<CoverageReport | null> {
     return buildWin32CoverageReport({ registry, installedKeys, resolverHealth, now });
   }
 
-  return null; // Linux — no resolver, nothing to report yet
+  if (process.platform === 'linux') {
+    return buildLinuxCoverageReport({
+      registry,
+      installedKeys: detectInstalledLinuxBrowsers(registry),
+      resolverHealth,
+      support: evaluateSupport({
+        sessionType: process.env.XDG_SESSION_TYPE,
+        currentDesktop: process.env.XDG_CURRENT_DESKTOP,
+      }),
+      now,
+    });
+  }
+
+  return null; // no resolver for this platform
 }
 
 function stopUrlCapture(): void {

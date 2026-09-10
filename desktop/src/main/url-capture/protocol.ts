@@ -77,3 +77,31 @@ export type ResolveOutcome =
   | { ok: false; message: string };
 
 export type PingOutcome = { ok: true } | { ok: false; message: string };
+
+/**
+ * Parses and fully validates one incoming protocol line — not just "is this
+ * JSON with an `op` field" but the exact shape a `ResolverRequest` needs.
+ * Lives here rather than in any one resolver because every side-car reads
+ * the same wire format; a malformed line must never crash a resolver
+ * process, and proving that once covers all of them.
+ */
+export function parseRequestLine(line: string): ResolverRequest | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.id !== 'number') return null;
+
+  if (obj.op === 'ping') {
+    return { id: obj.id, op: 'ping' };
+  }
+  if (obj.op === 'resolve' && typeof obj.pid === 'number' && typeof obj.hwnd === 'number') {
+    return { id: obj.id, op: 'resolve', pid: obj.pid, hwnd: obj.hwnd };
+  }
+  return null;
+}

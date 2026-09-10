@@ -7,6 +7,12 @@ allowBuilds:
   better-sqlite3: true
   electron: true
   unrs-resolver: true
+  # dbus-next's optional native dep, used only for ABSTRACT unix sockets.
+  # The accessibility bus this app talks to is addressed by real path
+  # (unix:path=/run/user/<uid>/at-spi/bus), so dbus-next's pure-JS socket
+  # path handles it and this never loads — left unbuilt rather than adding
+  # a node-gyp compile to every install for a code path we don't use.
+  usocket: false
 minimumReleaseAgeExclude:
   - '@next/env@16.3.2'
   - '@next/eslint-plugin-next@16.3.2'

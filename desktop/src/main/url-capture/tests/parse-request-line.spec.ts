@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRequestLine } from '../index';
+import { parseRequestLine } from '../protocol';
 
 describe('parseRequestLine', () => {
   it('accepts a valid ping request', () => {

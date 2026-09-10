@@ -1,5 +1,13 @@
 # Stage D.1 spike results — Linux feasibility
 
+> **Outcome: Stage D shipped.** The resolver now lives in
+> `desktop/src/main/resolvers/linux/`, written in TypeScript against AT-SPI2 over D-Bus
+> (no Python, no `pyatspi`). Item 2's blocked `GetWindows` is *not* worked around — it is
+> simply not used; AT-SPI's own `window:activate` events replace it. Item 4 was answered
+> affirmatively by that implementation: a real URL reads back from Chrome's address bar on
+> this machine. The `probe.sh`/`probe.py` diagnostics below are kept for triaging a machine
+> where capture is not working, and their Python is test-only — it ships nothing.
+
 Real output from running `probe.sh` (see that file and `probe.py`) — nothing here is guessed.
 Every row states which real machine it came from; anything not yet run says so plainly rather
 than being filled in with a plausible-looking guess.

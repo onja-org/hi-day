@@ -4,8 +4,8 @@ import type {
   ReadyEvent,
   ResolveOkResponse,
   ResolveRequest,
-  ResolverRequest,
 } from '../../url-capture/protocol';
+import { parseRequestLine } from '../../url-capture/protocol';
 import type { BrowserRegistryEntry } from '../../url-capture/browser-registry';
 import { loadBrowserRegistry, lookupBrowser } from '../../url-capture/browser-registry';
 import { AppleEventsResolver } from './apple-events';
@@ -13,36 +13,6 @@ import { AppleScriptFocusSource, FocusMonitor, type FocusTarget } from './focus-
 import { FirefoxAxResolver } from './firefox-ax';
 import { resolveFirefoxAxHelperPathFromEnv } from './firefox-ax-helper-path';
 import { OsascriptRunner } from './osascript-runner';
-
-/**
- * Parses and fully validates one incoming protocol line — not just "is this
- * JSON with an `op` field" but the exact shape a `ResolverRequest` needs.
- * Pulled out as a pure, exported function (rather than inline in the stdin
- * handler) specifically so it's unit-testable without spawning the whole
- * side-car: a malformed line here must never crash the process (it used to
- * — see the fixed bug this guards against), and that's cheap to prove in
- * isolation.
- */
-export function parseRequestLine(line: string): ResolverRequest | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null;
-
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.id !== 'number') return null;
-
-  if (obj.op === 'ping') {
-    return { id: obj.id, op: 'ping' };
-  }
-  if (obj.op === 'resolve' && typeof obj.pid === 'number' && typeof obj.hwnd === 'number') {
-    return { id: obj.id, op: 'resolve', pid: obj.pid, hwnd: obj.hwnd };
-  }
-  return null;
-}
 
 interface ResolvedUrl {
   ok: true;

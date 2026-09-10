@@ -8,9 +8,9 @@ corrects: "the SDK is a dev-only requirement" is true for *running* the packaged
 building the same resolver two different ways needs two different toolchains, and "end user
 needs nothing" is flatly wrong for Linux.
 
-Linux's resolver (`native/linux/`) is not built yet — Stage D is still at the feasibility-spike
-stage (`native/linux/spike/`, see its `RESULTS.md`). Its row below is what the plan
-(`docs/url-tracking-plan.md` Steps 18-20) commits to, not verified shipped behavior yet.
+Linux's resolver is now built and verified on real hardware — see its section below, which
+also records where the shipped implementation deliberately departs from
+`docs/url-tracking-plan.md` Steps 18-19 and why.
 
 ## Windows
 
@@ -53,25 +53,32 @@ machine.
 
 ## Linux
 
-`native/linux/` — planned as a Python side-car speaking the pinned protocol (GNOME Shell
-Introspect for focus, AT-SPI2/pyatspi for the URL); **not built yet**, only spiked
-(`native/linux/spike/RESULTS.md`). The end-user column below is the packaging plan, not
-verified shipped behavior.
+`desktop/src/main/resolvers/linux/` — **built and verified working on real hardware.** Implemented in TypeScript talking to AT-SPI2 directly over D-Bus (`dbus-next`), *not* as the Python side-car `docs/url-tracking-plan.md` Step 19 proposed. `pyatspi` is only a GObject-introspection wrapper over the same D-Bus calls, so going straight to the bus removes Python from the shipped product entirely and keeps the resolver inside the app's own TypeScript build, exactly like darwin's.
+
+**Step 18's specified focus mechanism does not work and is not used.** `org.gnome.Shell.Introspect.GetWindows` returns `AccessDenied: GetWindows is not allowed` to an ordinary user process on a stock GNOME 46 session, and so does `GetRunningApplications` — measured, not assumed. AT-SPI's own `window:activate` events supply the same information, so focus detection and URL reading both come from one mechanism.
 
 | | Build | Test URL capture | End user |
 |---|---|---|---|
-| Requires | Nothing to compile — plain Python. Development/spike work needs `python3-pyatspi` installed locally (see below) | A real Linux desktop session (GNOME-on-Wayland or any-WM-on-Xorg per Step 20's support gate — nothing else), target browsers installed, and [`accerciser`](https://gitlab.gnome.org/GNOME/accerciser) to inspect the real AT-SPI tree when a read fails (`docs/url-tracking-plan.md` Step 20's own verification spike calls this out by name) | **Real packages, not nothing** — see below |
-| Why | No compiler in the loop for a Python side-car | `native/linux/spike/probe.py` already confirms `python3-pyatspi` isn't installed by default even on a current Ubuntu LTS — a fresh test machine needs it explicitly | `pyatspi` is a GObject-introspection binding, not a self-contained library — running it requires the actual AT-SPI2 accessibility stack present and *turned on*, none of which can be bundled into the app the way Windows/macOS bundle their compiled resolvers |
-| End-user runtime dependencies (verified via `apt-cache depends python3-pyatspi` on Ubuntu 24.04) | — | — | `python3-pyatspi`, which itself depends on `python3-gi`, `gir1.2-atspi-2.0`, `libatk-adaptor`, and `at-spi2-core` (the last one is what actually provides the accessibility bus — `at-spi-bus-launcher`/`at-spi2-registryd`) |
-| End-user runtime *configuration*, not installable as a package dependency | — | — | The accessibility bus must be running (`at-spi2-core` provides it, but it still has to be active) and `org.gnome.desktop.interface toolkit-accessibility` must be `true` — GTK apps only build their AT-SPI tree when this is on, and it's off by default. Needs documenting as a first-run setup step, not just a dependency |
+| Requires | Nothing beyond the normal `pnpm build` — it is TypeScript compiled with the rest of the app | A real Linux desktop session (GNOME-on-Wayland or any-WM-on-Xorg per Step 20's gate), target browsers installed, and `toolkit-accessibility` enabled. [`accerciser`](https://gitlab.gnome.org/GNOME/accerciser) is useful for inspecting the AT-SPI tree but is not required | `at-spi2-core` (already present on any GNOME install — it provides the accessibility bus) |
+| No longer required | — | — | ~~`python3-pyatspi`, `python3-gi`, `gir1.2-atspi-2.0`, `libatk-adaptor`~~ — eliminated by dropping Python |
+
+**Still a runtime configuration step, not installable as a dependency:** `org.gnome.desktop.interface toolkit-accessibility` must be `true`. GTK apps only build their AT-SPI tree when it is on, and it is **off by default**. The resolver detects this and surfaces the exact command through the coverage screen rather than appearing silently broken:
+
+```bash
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+# then restart the browser — the setting is read at launch
+```
+
+**Verified on this machine** (Ubuntu 24.04, GNOME Shell 46.0, Wayland): the compiled resolver spawned as a real side-car, emitted `ready` with `caps: ["focus","url"]`, tracked window focus across Chrome/GNOME Shell/terminal, and answered `resolve` with a real captured URL (`nodejs.org/en/about`, `browser: "chrome"`, `source: "atspi"`, `confidence: "displayed"`) in ~14ms.
+
+**`private` is deliberately not a declared capability.** No Chromium incognito marker has been confirmed through AT-SPI on a real machine, and claiming the capability without one would under-report `private` — the failure direction that leaks a private URL. It reports `null` (unknown) instead, which the session engine already handles.
 
 **Packaging gap, not yet closed:** `desktop/electron-builder.yml`'s `linux.target` currently
 builds `AppImage` and `deb` only — no `rpm` target is configured. Fedora is one of the three
 environments the Stage D.1 spike explicitly asks to be tested against
 (`native/linux/spike/probe.sh`'s own usage instructions), but there is currently no `.rpm`
 output for it to ship as at all. When a `deb` target is built, the dependencies above should be
-declared via `deb.depends` in `electron-builder.yml` (not yet done — Linux resolver code
-doesn't exist yet to depend on); an eventual `rpm` target would need the equivalent
-`rpm.depends` with Fedora's package names (not yet confirmed against a real Fedora machine —
-same "don't guess" caveat `native/linux/spike/probe.py` already applies to Fedora's exact
-`python3-pyatspi` package name).
+declared via `deb.depends` in `electron-builder.yml`. That list is now much shorter than it
+would have been — dropping Python removed four packages, leaving `at-spi2-core` as the only
+real candidate, and it is already present on any GNOME install. An eventual `rpm` target
+would need the equivalent `rpm.depends`, still unconfirmed against a real Fedora machine.
