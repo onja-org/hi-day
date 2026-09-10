@@ -13,6 +13,11 @@ artifactName: workforce-monitor-${os}-${arch}.${ext}
 compression: maximum
 directories:
   output: release
+# Linux only (see the script itself): wraps the real binary so it always
+# launches with --no-sandbox, working around Chromium's sandbox failing to
+# start on AppArmor-restricted distros (Ubuntu 23.10+) with no packaged
+# AppArmor profile.
+afterPack: scripts/afterPack.mjs
 files:
   - dist/**/*
   - package.json
