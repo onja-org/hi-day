@@ -8,6 +8,7 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
+import ActiveWindow from '@paymoapp/active-window';
 import type { TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
@@ -41,7 +42,7 @@ interface AuthStatus {
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
   platform: DesktopDevicePlatform;
-  accessibilityGranted: boolean;
+  screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
 }
 
@@ -238,9 +239,14 @@ function registerIpcHandlers(): void {
         data: {
           windowTrackingEnabled,
           platform,
-          accessibilityGranted:
+          // Non-prompting status check (Electron's own API), not
+          // @paymoapp/active-window's `requestPermissions()` — that one
+          // triggers macOS's native Screen Recording prompt on first call,
+          // which must only ever fire from an explicit "Grant Access"
+          // click below, never from a status poll like this one.
+          screenRecordingGranted:
             platform === 'macos'
-              ? systemPreferences.isTrustedAccessibilityClient(false)
+              ? systemPreferences.getMediaAccessStatus('screen') === 'granted'
               : true,
           waylandUnsupported: isWaylandSession(),
         },
@@ -248,25 +254,26 @@ function registerIpcHandlers(): void {
     },
   );
 
-  // Triggers the native macOS prompt — never called except from this
-  // handler, itself only ever invoked by an explicit "Grant Access" click
-  // in the renderer. macOS won't re-show the prompt on repeat silent
-  // calls, so this must never be called automatically (e.g. on launch).
-  ipcMain.handle('tracking:requestAccessibilityAccess', (): void => {
+  // Triggers the native macOS Screen Recording prompt — never called
+  // except from this handler, itself only ever invoked by an explicit
+  // "Grant Access" click in the renderer. macOS won't re-show the prompt
+  // on repeat silent calls, so this must never be called automatically
+  // (e.g. on launch).
+  ipcMain.handle('tracking:requestScreenRecordingAccess', (): void => {
     if (process.platform === 'darwin') {
-      systemPreferences.isTrustedAccessibilityClient(true);
+      ActiveWindow.requestPermissions();
     }
   });
 
   // Fallback for when macOS won't re-show the native prompt (already
-  // asked/denied before) — opens the Accessibility pane directly so the
+  // asked/denied before) — opens the Screen Recording pane directly so the
   // person can grant it themselves.
   ipcMain.handle(
-    'tracking:openAccessibilitySettings',
+    'tracking:openScreenRecordingSettings',
     async (): Promise<void> => {
       if (process.platform === 'darwin') {
         await shell.openExternal(
-          'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
         );
       }
     },

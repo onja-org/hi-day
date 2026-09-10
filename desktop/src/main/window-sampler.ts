@@ -1,4 +1,5 @@
 import { systemPreferences } from 'electron';
+import ActiveWindow from '@paymoapp/active-window';
 import type { DesktopDevicePlatform } from './platform';
 import { isWaylandSession, toDevicePlatform } from './platform';
 import type { WindowSampleSink } from './window-sample';
@@ -8,46 +9,42 @@ export const DEFAULT_WINDOW_SAMPLE_INTERVAL_MS = 5_000;
 
 interface ActiveWindowResult {
   title: string;
-  owner: { name: string; processId: number; bundleId?: string; path: string };
-  platform: string;
+  application: string;
+  path: string;
+  pid: number;
+  icon: string;
 }
 
-interface ActiveWindowOptions {
-  accessibilityPermission?: boolean;
-  screenRecordingPermission?: boolean;
-}
+type GetActiveWindowFn = () => ActiveWindowResult;
 
-type ActiveWindowFn = (
-  options?: ActiveWindowOptions,
-) => Promise<ActiveWindowResult | undefined>;
+let initialized = false;
 
 /**
- * get-windows is an ESM-only package, but this main process compiles to
- * CommonJS (see desktop/tsconfig.json, `module: "commonjs"`). A literal
- * `await import('get-windows')` gets downleveled by tsc into
- * `require('get-windows')`, which throws `ERR_REQUIRE_ESM` against an
- * ESM-only package. Hiding the specifier behind `new Function` keeps the
- * compiled call a genuine runtime `import()`, which Node has supported
- * from CommonJS since Node 12 — verified against this repo's exact
- * tsconfig (see docs/adr/0009-...) rather than assumed.
+ * @paymoapp/active-window (unlike get-windows) is published as a genuine
+ * dual ESM/CommonJS package — its "require" export condition resolves to a
+ * real CJS build, so a plain `require()` (what tsc's `module: "commonjs"`
+ * downlevels a static `import` to) works fine here. No `ERR_REQUIRE_ESM`,
+ * so none of get-windows' `new Function('specifier', 'return
+ * import(specifier)')` dance is needed anymore — see docs/adr/0011-....
+ *
+ * The library also needs a one-time `initialize()` call before any
+ * `getActiveWindow()`, regardless of platform (its own docs: harmless,
+ * but required, on every OS). Electron's main process already runs an
+ * event loop by the time this ever gets called (a BrowserWindow is open),
+ * so the default (`osxRunLoop` unset) is correct — no manual run-loop
+ * pumping needed.
  */
-type Importer = (specifier: string) => Promise<unknown>;
-// This is the standard way to force a genuine dynamic `import()` past tsc's
-// automatic downlevel-to-require() for `module: commonjs`; the specifier is
-// a fixed internal string literal below, never user input.
-// eslint-disable-next-line @typescript-eslint/no-implied-eval
-const dynamicImport: Importer = new Function(
-  'specifier',
-  'return import(specifier)',
-) as Importer;
-
-let activeWindowPromise: Promise<ActiveWindowFn> | null = null;
-
-function loadActiveWindow(): Promise<ActiveWindowFn> {
-  activeWindowPromise ??= dynamicImport('get-windows').then(
-    (mod) => (mod as { activeWindow: ActiveWindowFn }).activeWindow,
-  );
-  return activeWindowPromise;
+function readActiveWindow(): ActiveWindowResult {
+  if (!initialized) {
+    ActiveWindow.initialize();
+    initialized = true;
+  }
+  // Synchronous, and throws (rather than resolving undefined, like
+  // get-windows did) when there's no focused window to report — e.g.
+  // everything minimized, or the desktop itself is focused. Left to
+  // propagate here; `tick()` below is what normalizes any throw to
+  // `undefined` so callers only have one "nothing to report" shape.
+  return ActiveWindow.getActiveWindow();
 }
 
 export interface WindowSamplerDeps {
@@ -55,15 +52,15 @@ export interface WindowSamplerDeps {
   sink?: WindowSampleSink;
   getPlatform?: () => DesktopDevicePlatform;
   isWayland?: () => boolean;
-  isMacAccessibilityGranted?: () => boolean;
-  loadActiveWindow?: () => Promise<ActiveWindowFn>;
+  isMacScreenRecordingGranted?: () => boolean;
+  getActiveWindow?: GetActiveWindowFn;
 }
 
 /**
  * Runs entirely in the main process, gated on/off by CaptureSettingsGate.
  * Every tick emits exactly one sample — a permission failure or a thrown
- * get-windows call still produces a sample via classifyTitleUnavailability,
- * it never silently skips a tick.
+ * @paymoapp/active-window call still produces a sample via
+ * classifyTitleUnavailability, it never silently skips a tick.
  *
  * All OS-touching calls are injectable so this is unit-testable with zero
  * Electron mocking: tests always pass explicit fakes, so the real
@@ -74,8 +71,8 @@ export class WindowSampler {
   private readonly sink: WindowSampleSink;
   private readonly getPlatform: () => DesktopDevicePlatform;
   private readonly isWayland: () => boolean;
-  private readonly isMacAccessibilityGranted: () => boolean;
-  private readonly loadActiveWindow: () => Promise<ActiveWindowFn>;
+  private readonly isMacScreenRecordingGranted: () => boolean;
+  private readonly getActiveWindow: GetActiveWindowFn;
   private handle: ReturnType<typeof setInterval> | null = null;
 
   constructor(deps: WindowSamplerDeps = {}) {
@@ -84,16 +81,21 @@ export class WindowSampler {
     this.getPlatform =
       deps.getPlatform ?? (() => toDevicePlatform(process.platform));
     this.isWayland = deps.isWayland ?? isWaylandSession;
-    this.isMacAccessibilityGranted =
-      deps.isMacAccessibilityGranted ??
-      (() => systemPreferences.isTrustedAccessibilityClient(false));
-    this.loadActiveWindow = deps.loadActiveWindow ?? loadActiveWindow;
+    // Non-prompting status check — deliberately Electron's own API, not
+    // @paymoapp/active-window's `requestPermissions()`, which triggers
+    // macOS's native Screen Recording prompt the first time it's called.
+    // That prompt must only ever fire from an explicit "Grant Access"
+    // click (see main.ts), never from a background sampling tick.
+    this.isMacScreenRecordingGranted =
+      deps.isMacScreenRecordingGranted ??
+      (() => systemPreferences.getMediaAccessStatus('screen') === 'granted');
+    this.getActiveWindow = deps.getActiveWindow ?? readActiveWindow;
   }
 
   start(): void {
     if (this.handle) return;
-    void this.tick();
-    this.handle = setInterval(() => void this.tick(), this.intervalMs);
+    this.tick();
+    this.handle = setInterval(() => this.tick(), this.intervalMs);
   }
 
   stop(): void {
@@ -105,8 +107,14 @@ export class WindowSampler {
     return this.handle !== null;
   }
 
-  /** Exposed directly so tests can await one sampling cycle without touching timers. */
-  async tick(): Promise<void> {
+  /**
+   * Exposed directly so tests can trigger one sampling cycle without
+   * touching timers. Synchronous end-to-end (@paymoapp/active-window's
+   * getActiveWindow() is sync, unlike get-windows' async activeWindow()) —
+   * kept `void`-returning rather than `Promise<void>` now that there's no
+   * actual async work left to await.
+   */
+  tick(): void {
     const platform = this.getPlatform();
     const sampledAt = new Date().toISOString();
 
@@ -120,35 +128,29 @@ export class WindowSampler {
       return;
     }
 
-    const macAccessibilityGranted =
-      platform === 'macos' ? this.isMacAccessibilityGranted() : true;
+    const macScreenRecordingGranted =
+      platform === 'macos' ? this.isMacScreenRecordingGranted() : true;
 
     let result: ActiveWindowResult | undefined;
     try {
-      const activeWindow = await this.loadActiveWindow();
-      result = await activeWindow({
-        accessibilityPermission: true,
-        // Per get-windows' own docs this actually forces `title` to always
-        // be an empty string on macOS — kept `false` here to match the
-        // ticket's explicit scope decision (avoid the Screen Recording
-        // prompt ahead of a future screenshot feature). Known, flagged gap
-        // — see docs/adr/0009-...
-        screenRecordingPermission: false,
-      });
+      // Throws (rather than resolving undefined) when there's no focused
+      // window to report — e.g. everything minimized, or the desktop
+      // itself is focused. Caught here so a tick is still always emitted.
+      result = this.getActiveWindow();
     } catch {
       result = undefined;
     }
 
     const reason = classifyTitleUnavailability({
       platform,
-      macAccessibilityGranted,
+      macScreenRecordingGranted,
       isWayland: false,
       rawTitle: result?.title,
-      rawOwnerName: result?.owner?.name,
+      rawOwnerName: result?.application,
     });
 
     this.sink({
-      appName: result?.owner?.name ?? null,
+      appName: result?.application ?? null,
       title: reason === null ? (result?.title ?? null) : null,
       titleUnavailableReason: reason,
       sampledAt,

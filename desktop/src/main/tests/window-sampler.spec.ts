@@ -8,24 +8,23 @@ describe('WindowSampler', () => {
     return { sink: (sample: WindowSample) => samples.push(sample), samples };
   }
 
-  it('emits app name and title when everything is available', async () => {
+  it('emits app name and title when everything is available', () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'windows',
       isWayland: () => false,
-      isMacAccessibilityGranted: () => true,
-      loadActiveWindow: () =>
-        Promise.resolve(() =>
-          Promise.resolve({
-            title: 'Budget.xlsx - Excel',
-            owner: { name: 'Excel', processId: 1, path: '/x' },
-            platform: 'windows',
-          }),
-        ),
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: () => ({
+        title: 'Budget.xlsx - Excel',
+        application: 'Excel',
+        pid: 1,
+        path: '/x',
+        icon: '',
+      }),
     });
 
-    await sampler.tick();
+    sampler.tick();
 
     expect(samples).toHaveLength(1);
     expect(samples[0]).toMatchObject({
@@ -36,24 +35,23 @@ describe('WindowSampler', () => {
     expect(typeof samples[0].sampledAt).toBe('string');
   });
 
-  it("emits app name only, tagged 'permission-denied', on macOS without Accessibility", async () => {
+  it("emits app name only, tagged 'permission-denied', on macOS without Screen Recording", () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'macos',
       isWayland: () => false,
-      isMacAccessibilityGranted: () => false,
-      loadActiveWindow: () =>
-        Promise.resolve(() =>
-          Promise.resolve({
-            title: 'Some Title',
-            owner: { name: 'Mail', processId: 1, path: '/m' },
-            platform: 'macos',
-          }),
-        ),
+      isMacScreenRecordingGranted: () => false,
+      getActiveWindow: () => ({
+        title: 'Some Title',
+        application: 'Mail',
+        pid: 1,
+        path: '/m',
+        icon: '',
+      }),
     });
 
-    await sampler.tick();
+    sampler.tick();
 
     expect(samples[0]).toEqual({
       appName: 'Mail',
@@ -63,20 +61,20 @@ describe('WindowSampler', () => {
     });
   });
 
-  it("short-circuits on Wayland, never calling get-windows, tagged 'not-exposed'", async () => {
+  it("short-circuits on Wayland, never calling @paymoapp/active-window, tagged 'not-exposed'", () => {
     const { sink, samples } = makeSink();
-    const loadActiveWindow = vi.fn();
+    const getActiveWindow = vi.fn();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'linux',
       isWayland: () => true,
-      isMacAccessibilityGranted: () => true,
-      loadActiveWindow,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow,
     });
 
-    await sampler.tick();
+    sampler.tick();
 
-    expect(loadActiveWindow).not.toHaveBeenCalled();
+    expect(getActiveWindow).not.toHaveBeenCalled();
     expect(samples[0]).toEqual({
       appName: null,
       title: null,
@@ -85,24 +83,23 @@ describe('WindowSampler', () => {
     });
   });
 
-  it("tags 'hidden-by-app' when the app returns no title despite permission being fine", async () => {
+  it("tags 'hidden-by-app' when the app returns no title despite permission being fine", () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'linux',
       isWayland: () => false,
-      isMacAccessibilityGranted: () => true,
-      loadActiveWindow: () =>
-        Promise.resolve(() =>
-          Promise.resolve({
-            title: '',
-            owner: { name: 'Signal', processId: 1, path: '/s' },
-            platform: 'linux',
-          }),
-        ),
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: () => ({
+        title: '',
+        application: 'Signal',
+        pid: 1,
+        path: '/s',
+        icon: '',
+      }),
     });
 
-    await sampler.tick();
+    sampler.tick();
 
     expect(samples[0]).toMatchObject({
       appName: 'Signal',
@@ -111,39 +108,43 @@ describe('WindowSampler', () => {
     });
   });
 
-  it('still emits a sample when the underlying call throws, never skipping a tick', async () => {
+  it('still emits a sample when the underlying call throws, never skipping a tick', () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'linux',
       isWayland: () => false,
-      isMacAccessibilityGranted: () => true,
-      loadActiveWindow: () => Promise.reject(new Error('boom')),
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: () => {
+        throw new Error('boom');
+      },
     });
 
-    await sampler.tick();
+    sampler.tick();
 
     expect(samples).toHaveLength(1);
     expect(samples[0].appName).toBeNull();
   });
 
-  it('never calls loadActiveWindow more than once — the module load is cached', async () => {
-    const { sink } = makeSink();
-    const loadActiveWindow = vi.fn().mockResolvedValue(() =>
-      Promise.resolve(undefined),
-    );
+  it('still emits a sample when there is no focused window at all (getActiveWindow throws)', () => {
+    const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'linux',
       isWayland: () => false,
-      isMacAccessibilityGranted: () => true,
-      loadActiveWindow,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: () => {
+        // @paymoapp/active-window's own contract: throws rather than
+        // returning undefined when nothing is focused (e.g. everything
+        // minimized).
+        throw new Error('no focused window');
+      },
     });
 
-    await sampler.tick();
-    await sampler.tick();
+    sampler.tick();
 
-    expect(loadActiveWindow).toHaveBeenCalledTimes(2);
+    expect(samples).toHaveLength(1);
+    expect(samples[0].appName).toBeNull();
   });
 });
 

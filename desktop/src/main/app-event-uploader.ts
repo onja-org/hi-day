@@ -23,10 +23,11 @@ export interface AppEventUploaderClient {
 }
 
 function toPayload(sample: WindowSample): AppEventPayload | null {
-  // Nothing meaningful to report — happens under Wayland, where get-windows
-  // returns no information at all (see docs/adr/0009-...). WindowSampler
-  // still called its sink for this tick (never skips one); just not worth
-  // an empty row in app_events.
+  // Nothing meaningful to report — happens under Wayland, which no
+  // available library can read window/app info from at all (see
+  // docs/adr/0009-..., docs/adr/0011-...). WindowSampler still called its
+  // sink for this tick (never skips one); just not worth an empty row in
+  // app_events.
   if (sample.appName === null) return null;
 
   return {

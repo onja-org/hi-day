@@ -44,7 +44,7 @@ export type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
 export interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
   platform: DesktopDevicePlatformName;
-  accessibilityGranted: boolean;
+  screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
 }
 
@@ -87,10 +87,10 @@ const api = {
       ipcRenderer.invoke('tracking:permissionStatus') as Promise<
         TrackingResult<CapturePermissionStatus>
       >,
-    requestAccessibilityAccess: (): Promise<void> =>
-      ipcRenderer.invoke('tracking:requestAccessibilityAccess') as Promise<void>,
-    openAccessibilitySettings: (): Promise<void> =>
-      ipcRenderer.invoke('tracking:openAccessibilitySettings') as Promise<void>,
+    requestScreenRecordingAccess: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:requestScreenRecordingAccess') as Promise<void>,
+    openScreenRecordingSettings: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:openScreenRecordingSettings') as Promise<void>,
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,

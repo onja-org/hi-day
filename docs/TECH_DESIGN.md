@@ -48,7 +48,7 @@ A generic *device* concept is kept from the start (desktop today, mobile later) 
 
 The agent is an Electron app whose first job is boring reliability; capture is layered on afterward, each module behind a feature flag.
 
-- **Capture modules:** get-windows (apps/windows), the OS screenshot tool (screenshots), uiohook-napi (activity level), Electron powerMonitor (idle).
+- **Capture modules:** @paymoapp/active-window (apps/windows), the OS screenshot tool (screenshots), uiohook-napi (activity level), Electron powerMonitor (idle).
 - **Always-on hygiene:** bounded memory, crash auto-restart, auto-launch on login, auto-update via electron-updater.
 - **Permissions:** macOS Screen Recording (screenshots) and Accessibility (window titles, input) are requested transparently.
 - **Native-module discipline:** pin versions, ship prebuilt binaries, re-test on real Windows/macOS after any OS or Electron update.
@@ -90,7 +90,7 @@ At 1,000 concurrent all-day users the system sits comfortably on one modest serv
 | Backend | NestJS + Postgres |
 | Queue / cache | BullMQ + Redis |
 | Object storage | Cloudflare R2 |
-| Desktop agent | Electron + get-windows, screenshot-desktop, uiohook-napi |
+| Desktop agent | Electron + @paymoapp/active-window, screenshot-desktop, uiohook-napi |
 | Browser extension | TypeScript, Manifest V3 |
 | Auth | WorkOS or Clerk |
 | Local agent store | SQLite (offline queue) |
