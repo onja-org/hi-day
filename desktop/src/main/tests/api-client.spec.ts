@@ -20,9 +20,12 @@ describe('ApiClient#heartbeat', () => {
       `${BASE_URL}/devices/heartbeat`,
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer device-token-123' }),
         body: JSON.stringify({ appVersion: '1.2.3' }),
       }),
+    );
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestInit.headers).toEqual(
+      expect.objectContaining({ Authorization: 'Bearer device-token-123' }),
     );
   });
 

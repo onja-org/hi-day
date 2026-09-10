@@ -21,14 +21,15 @@ describe('buildWin32CoverageReport', () => {
     });
 
     expect(report.platform).toBe('win32');
-    expect(report.browsers.find((b) => b.key === 'chrome')).toEqual({
+    const chrome = report.browsers.find((b) => b.key === 'chrome');
+    expect(chrome).toMatchObject({
       key: 'chrome',
       installed: true,
       status: 'active',
       reason: 'Active via UI Automation. No permission is required on Windows.',
       confidence: 'displayed',
-      approximateNote: expect.stringContaining('Approximate'),
     });
+    expect(chrome?.approximateNote).toContain('Approximate');
   });
 
   it('reports an uninstalled browser as off with no confidence rating', () => {

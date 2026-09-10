@@ -81,10 +81,6 @@ function timerStateChanged(monotonicMs: number, running: boolean, wallClockMs = 
   return { type: 'timerStateChanged', monotonicMs, wallClockMs, tzOffsetMin: 0, running };
 }
 
-function kinds(outputs: EngineOutput[]): string[] {
-  return outputs.map((o) => o.kind);
-}
-
 describe('Failure drill: SPA navigation through many URLs in a tight window', () => {
   it('10 different URLs in 60s each close the previous and open the next, none dropped', () => {
     const engine = makeEngine();
