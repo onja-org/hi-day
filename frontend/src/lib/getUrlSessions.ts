@@ -1,15 +1,18 @@
 import { API_URL } from "./apiUrl";
-import type { GetActivityResult } from "@/types/activity";
+import type { GetUrlSessionsResult } from "@/types/urlSession";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
-export async function getMyActivity(
+export async function getUrlSessions(
   organisationId: string,
-): Promise<GetActivityResult> {
+  membershipId?: string,
+): Promise<GetUrlSessionsResult> {
+  const query = membershipId ? `?membershipId=${membershipId}` : "";
+
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/activities/mine`,
+      `${API_URL}/organisations/${organisationId}/url-sessions${query}`,
       { method: "GET", credentials: "include" },
     );
   } catch {
@@ -17,8 +20,8 @@ export async function getMyActivity(
   }
 
   if (response.ok) {
-    const entries = await response.json();
-    return { ok: true, entries };
+    const groups = await response.json();
+    return { ok: true, groups };
   }
 
   const data = (await response.json().catch(() => null)) as {

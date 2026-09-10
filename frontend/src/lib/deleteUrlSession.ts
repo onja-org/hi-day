@@ -1,33 +1,27 @@
 import { API_URL } from "./apiUrl";
-import type {
-  CreateActivityInput,
-  CreateActivityResult,
-} from "@/types/activity";
+import type { DeleteUrlSessionResult } from "@/types/urlSession";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
-export async function createActivity(
+export async function deleteUrlSession(
   organisationId: string,
-  input: CreateActivityInput,
-): Promise<CreateActivityResult> {
+  membershipId: string,
+  url: string,
+): Promise<DeleteUrlSessionResult> {
+  const params = new URLSearchParams({ membershipId, url });
+
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/activities`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      },
+      `${API_URL}/organisations/${organisationId}/url-sessions?${params.toString()}`,
+      { method: "DELETE", credentials: "include" },
     );
   } catch {
     return { ok: false, message: GENERIC_ERROR_MESSAGE };
   }
 
   if (response.ok) {
-    const entry = await response.json();
-    return { ok: true, entry };
+    return { ok: true };
   }
 
   const data = (await response.json().catch(() => null)) as {

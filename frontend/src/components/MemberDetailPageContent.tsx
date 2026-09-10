@@ -4,10 +4,10 @@ import { ArrowLeftIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { ErrorMessage } from "./ErrorMessage";
-import { MemberActivityList } from "./MemberActivityList";
 import { MemberTimeEntriesList } from "./MemberTimeEntriesList";
 import { RequireRole } from "./RequireRole";
 import { Spinner } from "./Spinner";
+import { UrlSessionList } from "./UrlSessionList";
 
 type MemberDetailPageContentProps = {
   organisationId: string;
@@ -116,9 +116,10 @@ function MemberDetail({
 
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
-          <MemberActivityList
+          <UrlSessionList
             organisationId={organisationId}
             membershipId={member.id}
+            showDelete
           />
         </section>
       </div>
