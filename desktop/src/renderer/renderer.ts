@@ -54,6 +54,7 @@ type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
 
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
@@ -409,14 +410,19 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   if (!result.ok) return null;
   const status = result.data;
 
+  // Window titles and screenshots are gated by the same macOS permission
+  // (see docs/adr/0011-..., docs/adr/0012-...) — one banner covers both,
+  // shown whenever either capture feature is on and access isn't granted
+  // yet.
+  const captureRequested = status.windowTrackingEnabled || status.screenshotsEnabled;
   screenRecordingBanner.hidden = !(
-    status.windowTrackingEnabled &&
+    captureRequested &&
     status.platform === 'macos' &&
     !status.screenRecordingGranted
   );
   // Wayland has no fix available, so this is informational only — no
   // "Grant Access"-style call to action, unlike the screen-recording banner.
-  waylandNotice.hidden = !(status.windowTrackingEnabled && status.waylandUnsupported);
+  waylandNotice.hidden = !(captureRequested && status.waylandUnsupported);
 
   return status;
 }

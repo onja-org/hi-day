@@ -37,4 +37,18 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsBoolean()
   windowTrackingEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  screenshotsEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  screenshotFrequencySeconds?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  screenshotRetentionDays?: number;
 }

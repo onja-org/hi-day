@@ -12,10 +12,12 @@ export function ActivityTabs({ organisationId }: ActivityTabsProps) {
   const pathname = usePathname();
   const notesHref = `/organisations/${organisationId}/activities`;
   const appsHref = `/organisations/${organisationId}/activities/apps`;
+  const screenshotsHref = `/organisations/${organisationId}/activities/screenshots`;
 
   const tabs = [
     { label: "Notes", href: notesHref },
     { label: "Apps", href: appsHref },
+    { label: "Screenshots", href: screenshotsHref },
   ];
 
   return (

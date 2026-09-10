@@ -13,6 +13,7 @@ import { Organisation } from './entities/organisation.entity';
 import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { Screenshot } from './entities/screenshot.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
 import { TeamMembership } from './entities/team-membership.entity';
@@ -44,6 +45,7 @@ import { User } from './entities/user.entity';
           TimeEntry,
           Activity,
           AppEvent,
+          Screenshot,
         ],
         synchronize: false,
       }),

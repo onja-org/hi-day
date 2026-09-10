@@ -28,6 +28,9 @@ import { CreateAppEventsBatchDto } from '../../app-events/dto/create-app-events-
 import type { CaptureSettings } from '../../organisations/capture-settings';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { CreateScreenshotDto } from '../../screenshots/dto/create-screenshot.dto';
+import { RequestScreenshotUploadUrlDto } from '../../screenshots/dto/request-screenshot-upload-url.dto';
+import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 
 /**
  * The desktop agent's own read/write surface for time tracking — mirrors
@@ -46,6 +49,7 @@ export class DeviceTrackingController {
     private readonly timeEntriesService: TimeEntriesService,
     private readonly organisationsService: OrganisationsService,
     private readonly appEventsService: AppEventsService,
+    private readonly screenshotsService: ScreenshotsService,
   ) {}
 
   @Get('idle-policy')
@@ -70,6 +74,32 @@ export class DeviceTrackingController {
       request.userId,
       request.deviceId,
       dto.events,
+    );
+  }
+
+  @Post('screenshots/upload-url')
+  requestScreenshotUploadUrl(
+    @Body() dto: RequestScreenshotUploadUrlDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<{ uploadUrl: string; storageKey: string }> {
+    return this.screenshotsService.requestUploadUrl(
+      request.organisationId,
+      request.deviceId,
+      dto.capturedAt,
+    );
+  }
+
+  @Post('screenshots')
+  async recordScreenshot(
+    @Body() dto: CreateScreenshotDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    await this.screenshotsService.recordScreenshot(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.storageKey,
+      dto.capturedAt,
     );
   }
 

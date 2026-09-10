@@ -11,6 +11,9 @@ export type OrganisationProfile = {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
   userId: string;
 };
 
@@ -25,6 +28,9 @@ export type UpdateOrganisationInput = {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  screenshotsEnabled?: boolean;
+  screenshotFrequencySeconds?: number;
+  screenshotRetentionDays?: number;
 };
 
 export type UpdateOrganisationResult =

@@ -18,6 +18,8 @@ import { CaptureSettingsGate } from './capture-settings-gate';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { isWaylandSession, toDevicePlatform } from './platform';
 import type { DesktopDevicePlatform } from './platform';
+import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
+import { ScreenshotUploader } from './screenshot-uploader';
 import { TimerStatusGate } from './timer-status-gate';
 import { WindowSampler } from './window-sampler';
 import type { UpdateCheckResult } from './update-checker';
@@ -43,6 +45,7 @@ interface StartPairingIpcResult {
 
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
@@ -106,15 +109,21 @@ function registerIpcHandlers(): void {
   const appEventUploader = new AppEventUploader(authStore, apiClient);
   appEventUploader.start();
   const windowSampler = new WindowSampler({ sink: appEventUploader.enqueue });
+  const screenshotUploader = new ScreenshotUploader(authStore, apiClient);
+  const screenshotSampler = new ScreenshotSampler({
+    sink: screenshotUploader.upload,
+  });
 
-  // Window tracking only runs while BOTH are true: the org has the setting
-  // on, AND a timer is actually running right now (Hubstaff-style — not
-  // merely "logged in"). Each signal is independently polled (server is
-  // authoritative for both — the setting can change from the web console,
-  // and the timer can be started/stopped from the web console or another
-  // device, see docs/adr/0006-...), and either one flipping recomputes
-  // whether the sampler should be running.
+  // Window tracking and screenshot capture each only run while BOTH are
+  // true: the org has that capture's setting on, AND a timer is actually
+  // running right now (Hubstaff-style — not merely "logged in"). All
+  // signals are independently polled (server is authoritative for each —
+  // settings can change from the web console, and the timer can be
+  // started/stopped from the web console or another device, see
+  // docs/adr/0006-...), and any one flipping recomputes both.
   let windowTrackingEnabled = false;
+  let screenshotsEnabled = false;
+  let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
   function recomputeSampling(): void {
     if (windowTrackingEnabled && timerRunning) {
@@ -126,12 +135,25 @@ function registerIpcHandlers(): void {
       // there's no reason to sit on a partial batch.
       void appEventUploader.flush();
     }
+
+    screenshotSampler.setIntervalMs(screenshotFrequencyMs);
+    if (screenshotsEnabled && timerRunning) {
+      screenshotSampler.start();
+    } else {
+      screenshotSampler.stop();
+    }
   }
 
-  const captureSettingsGate = new CaptureSettingsGate(authStore, apiClient, (enabled) => {
-    windowTrackingEnabled = enabled;
-    recomputeSampling();
-  });
+  const captureSettingsGate = new CaptureSettingsGate(
+    authStore,
+    apiClient,
+    (settings) => {
+      windowTrackingEnabled = settings.windowTrackingEnabled;
+      screenshotsEnabled = settings.screenshotsEnabled;
+      screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
+      recomputeSampling();
+    },
+  );
   const timerStatusGate = new TimerStatusGate(authStore, apiClient, (running) => {
     timerRunning = running;
     recomputeSampling();
@@ -289,6 +311,7 @@ function registerIpcHandlers(): void {
         ok: true,
         data: {
           windowTrackingEnabled,
+          screenshotsEnabled,
           platform,
           // Non-prompting status check (Electron's own API), not
           // @paymoapp/active-window's `requestPermissions()` — that one

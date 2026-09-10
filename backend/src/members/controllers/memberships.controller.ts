@@ -17,6 +17,8 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
+import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
@@ -32,6 +34,7 @@ export class MembershipsController {
     private readonly activitiesService: ActivitiesService,
     private readonly timeEntriesService: TimeEntriesService,
     private readonly appEventsService: AppEventsService,
+    private readonly screenshotsService: ScreenshotsService,
   ) {}
 
   @Get()
@@ -102,6 +105,25 @@ export class MembershipsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<AppTimeSummary> {
     return this.appEventsService.getSummaryForMembership(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+      date,
+    );
+  }
+
+  @Get(':membershipId/screenshots')
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
+  getScreenshots(
+    @Param('membershipId') membershipId: string,
+    @Query('date') date: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ScreenshotSummaryItem[]> {
+    return this.screenshotsService.getScreenshotsForMembership(
       request.organisationId!,
       request.userId,
       membershipId,

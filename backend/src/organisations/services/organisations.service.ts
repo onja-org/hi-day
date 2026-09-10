@@ -32,6 +32,9 @@ export interface OrganisationProfile {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
   userId: string;
 }
 
@@ -41,6 +44,9 @@ interface OrganisationSettings {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  screenshotsEnabled?: boolean;
+  screenshotFrequencySeconds?: number;
+  screenshotRetentionDays?: number;
 }
 
 @Injectable()
@@ -193,6 +199,15 @@ export class OrganisationsService {
       ...(dto.windowTrackingEnabled !== undefined
         ? { windowTrackingEnabled: dto.windowTrackingEnabled }
         : {}),
+      ...(dto.screenshotsEnabled !== undefined
+        ? { screenshotsEnabled: dto.screenshotsEnabled }
+        : {}),
+      ...(dto.screenshotFrequencySeconds !== undefined
+        ? { screenshotFrequencySeconds: dto.screenshotFrequencySeconds }
+        : {}),
+      ...(dto.screenshotRetentionDays !== undefined
+        ? { screenshotRetentionDays: dto.screenshotRetentionDays }
+        : {}),
     };
 
     await this.organisations.save(organisation);
@@ -234,6 +249,15 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      screenshotsEnabled:
+        settings.screenshotsEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotFrequencySeconds:
+        settings.screenshotFrequencySeconds ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+      screenshotRetentionDays:
+        settings.screenshotRetentionDays ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
     };
   }
 
@@ -256,6 +280,15 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      screenshotsEnabled:
+        settings.screenshotsEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotFrequencySeconds:
+        settings.screenshotFrequencySeconds ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+      screenshotRetentionDays:
+        settings.screenshotRetentionDays ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
       userId,
     };
   }

@@ -8,6 +8,7 @@ import { DeviceSessionGuard } from '../../devices/device-session.guard';
 import { DeviceProjectMemberGuard } from '../../devices/guards/device-project-member.guard';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { ProjectsModule } from '../../projects/modules/projects.module';
+import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
 import { TasksModule } from '../../tasks/modules/tasks.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { DeviceTrackingController } from '../controllers/device-tracking.controller';
@@ -20,6 +21,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     TimeEntriesModule,
     OrganisationsModule,
     AppEventsModule,
+    ScreenshotsModule,
   ],
   controllers: [DeviceTrackingController],
   providers: [DeviceSessionGuard, DeviceProjectMemberGuard],

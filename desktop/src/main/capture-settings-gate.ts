@@ -2,9 +2,22 @@ export interface CaptureSettingsSession {
   load(): { deviceToken: string } | null;
 }
 
+export interface CaptureSettingsValue {
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
+  screenshotFrequencySeconds: number;
+}
+
+const OFF_SETTINGS: CaptureSettingsValue = {
+  windowTrackingEnabled: false,
+  screenshotsEnabled: false,
+  screenshotFrequencySeconds: 0,
+};
+
 export interface CaptureSettingsResult {
   ok: boolean;
-  data?: { windowTrackingEnabled: boolean };
+  data?: CaptureSettingsValue;
 }
 
 export interface CaptureSettingsClient {
@@ -15,24 +28,27 @@ export const DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS = 30_000;
 
 /**
  * Polls `/device/capture-settings` from the main process and calls
- * `onChange` only when the effective on/off value actually changes — lets
- * WindowSampler.start()/stop() be driven idempotently. Also invoked
- * on-demand (via `pollOnce`) right after login/logout, so tracking follows
- * session state immediately rather than waiting for the next tick.
+ * `onChange` with the full settings object, but only when it actually
+ * differs from the last poll — lets WindowSampler.start()/stop() and
+ * ScreenshotSampler.start()/stop()/setIntervalMs() be driven idempotently
+ * off one shared poll, rather than each capture module polling the same
+ * endpoint independently (see docs/adr/0012-...). Also invoked on-demand
+ * (via `pollOnce`) right after login/logout, so tracking follows session
+ * state immediately rather than waiting for the next tick.
  *
  * Deliberately independent of the renderer's own status-poll interval
  * (STATUS_POLL_INTERVAL_MS in renderer.ts) — this is a main-process-only
- * concern, since starting/stopping the sampler has nothing to do with
- * what's rendered.
+ * concern, since starting/stopping a sampler has nothing to do with what's
+ * rendered.
  */
 export class CaptureSettingsGate {
   private handle: ReturnType<typeof setInterval> | null = null;
-  private lastEnabled = false;
+  private lastSettings: CaptureSettingsValue = OFF_SETTINGS;
 
   constructor(
     private readonly authStore: CaptureSettingsSession,
     private readonly apiClient: CaptureSettingsClient,
-    private readonly onChange: (enabled: boolean) => void,
+    private readonly onChange: (settings: CaptureSettingsValue) => void,
     private readonly pollIntervalMs = DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS,
   ) {}
 
@@ -49,18 +65,29 @@ export class CaptureSettingsGate {
 
   async pollOnce(): Promise<void> {
     const session = this.authStore.load();
-    const enabled = session ? await this.currentEnabled(session.deviceToken) : false;
-    this.applyIfChanged(enabled);
+    const settings = session
+      ? await this.currentSettings(session.deviceToken)
+      : OFF_SETTINGS;
+    this.applyIfChanged(settings);
   }
 
-  private async currentEnabled(deviceToken: string): Promise<boolean> {
+  private async currentSettings(
+    deviceToken: string,
+  ): Promise<CaptureSettingsValue> {
     const result = await this.apiClient.getCaptureSettings(deviceToken);
-    return result.ok ? (result.data?.windowTrackingEnabled ?? false) : false;
+    return result.ok && result.data ? result.data : OFF_SETTINGS;
   }
 
-  private applyIfChanged(enabled: boolean): void {
-    if (enabled === this.lastEnabled) return;
-    this.lastEnabled = enabled;
-    this.onChange(enabled);
+  private applyIfChanged(settings: CaptureSettingsValue): void {
+    if (
+      settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
+      settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
+      settings.screenshotFrequencySeconds ===
+        this.lastSettings.screenshotFrequencySeconds
+    ) {
+      return;
+    }
+    this.lastSettings = settings;
+    this.onChange(settings);
   }
 }

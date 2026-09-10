@@ -54,6 +54,7 @@ export type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
 
 export interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;

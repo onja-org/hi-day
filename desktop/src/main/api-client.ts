@@ -74,6 +74,9 @@ export interface IdlePolicy {
 
 export interface CaptureSettings {
   windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
 }
 
 /**
@@ -272,6 +275,51 @@ export class ApiClient {
     deviceToken: string,
   ): Promise<TrackingResult<CaptureSettings>> {
     return this.deviceRequest('GET', '/device/capture-settings', deviceToken);
+  }
+
+  requestScreenshotUploadUrl(
+    deviceToken: string,
+    capturedAt: string,
+  ): Promise<TrackingResult<{ uploadUrl: string; storageKey: string }>> {
+    return this.deviceRequest(
+      'POST',
+      '/device/screenshots/upload-url',
+      deviceToken,
+      { capturedAt },
+    );
+  }
+
+  recordScreenshot(
+    deviceToken: string,
+    storageKey: string,
+    capturedAt: string,
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/screenshots', deviceToken, {
+      storageKey,
+      capturedAt,
+    });
+  }
+
+  /**
+   * A raw PUT straight to the presigned Wasabi URL — deliberately not
+   * routed through `deviceRequest`, since this isn't a `/device/...` call
+   * (no bearer token, no JSON body, no backend involved at all once the
+   * URL has been issued — see docs/adr/0012-...).
+   */
+  async putScreenshot(uploadUrl: string, buffer: Buffer): Promise<boolean> {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        // A plain Uint8Array, not the Node `Buffer` subclass — TS's DOM
+        // `BodyInit` type doesn't resolve `Buffer<ArrayBufferLike>` against
+        // its overloads even though Buffer *is* structurally a Uint8Array.
+        body: new Uint8Array(buffer),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   private async deviceRequest<T>(

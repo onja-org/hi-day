@@ -2,13 +2,15 @@
 
 The downloadable desktop agent. It handles login, device registration,
 starting/stopping a timer against a Project (and optional Task), idle
-detection/handling, and — as of this pass — active window tracking (the
-foreground app's name and window title, sampled every 5s, gated by an
-org-level on/off setting **and** only while a timer is actually running —
-Hubstaff-style, tracking follows being clocked in, not merely being logged
-in). **Screenshots and activity level aren't built
-yet.** That's deliberate scope for this pass; see `docs/TECH_DESIGN.md` for
-where the rest of activity capture is headed.
+detection/handling, active window tracking (the foreground app's name and
+window title, sampled every 5s), and — as of this pass — screenshot
+capture (the primary display, captured at an org-configurable frequency
+and uploaded straight to object storage). Both window tracking and
+screenshot capture are gated by their own org-level on/off setting **and**
+only run while a timer is actually running — Hubstaff-style, tracking
+follows being clocked in, not merely being logged in. **Activity level
+isn't built yet.** That's deliberate scope for this pass; see
+`docs/TECH_DESIGN.md` for where the rest of activity capture is headed.
 
 Samples are batched and uploaded to the backend (`POST /device/app-events`,
 every 60s) via `AppEventUploader` — the web console's Activity → Apps tab
@@ -19,9 +21,19 @@ migration to `@paymoapp/active-window` (which also fixed the macOS title
 gap `0009` had deliberately accepted — the permission that actually gates
 window titles is Screen Recording, not Accessibility).
 
-**No offline queue yet** — a failed upload just drops that batch rather
-than retrying or persisting it (same as the rest of the agent's network
-calls today; see `docs/TECH_DESIGN.md`'s eventual offline-queue plan).
+Screenshots are captured via Electron's own `desktopCapturer`
+(`ScreenshotSampler`, `desktop/src/main/screenshot-sampler.ts` — no
+third-party package, unlike window tracking) at the org's configured
+`screenshotFrequencySeconds`, then taken straight through to object
+storage by `ScreenshotUploader`: request a presigned upload URL from the
+backend, PUT the JPEG bytes directly to Wasabi, then record the resulting
+storage key as metadata. The backend never sees the image bytes. See
+`docs/adr/0012-...` for the full design.
+
+**No offline queue yet**, for either window-tracking or screenshot
+uploads — a failed batch/upload just drops rather than retrying or
+persisting it (same as the rest of the agent's network calls today; see
+`docs/TECH_DESIGN.md`'s eventual offline-queue plan).
 
 **Login only ever happens in the web app** (`docs/adr/0009-...`) — the
 desktop app itself has no password form. Clicking "Log in" opens the web
@@ -152,6 +164,20 @@ using a UUID generated on first run and persisted under Electron's
     isn't a real version bump, just a way to trigger the "outdated" case
     locally, since your real dev build is normally the newest thing around.
 
+10. **Test screenshot capture**: toggle **Enable screenshots** in the web
+    console's org settings (same form as step 8's window-tracking toggle),
+    set a short frequency (e.g. 1 minute) to avoid a long wait, and
+    **Start timer** — both must be true, same Hubstaff-style rule as
+    window tracking. `CaptureSettingsGate`'s existing 30s poll picks up
+    the change automatically (no separate poll — see docs/adr/0012-...).
+    Like window tracking, nothing is logged to this app's own terminal;
+    confirm it worked via the web console's Activity → Screenshots tab
+    (`/organisations/:id/activities/screenshots`), which lists today's
+    captures for the signed-in member with a thumbnail per screenshot. On
+    macOS, granting Screen Recording via the same banner step 8 describes
+    is required for screenshots too (same permission, one banner covers
+    both — see docs/adr/0012-...).
+
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
 AppImage/`.deb` directly.
@@ -255,6 +281,20 @@ output — not just assumed from source-mode success):
   `POST /device/app-events` batch (network down, backend unreachable) is
   just dropped — not persisted, not retried. Wiring in the SQLite-backed
   offline queue described in `docs/TECH_DESIGN.md` is a follow-up ticket.
+- **Screenshot uploads have no offline queue or retry either.** Same
+  reasoning as window tracking above — a failed presigned-URL request,
+  failed PUT to Wasabi, or failed metadata POST just drops that one
+  screenshot (see `docs/adr/0012-...`).
+- **Lowering an org's screenshot retention isn't retroactive.** Each
+  screenshot's deletion date is fixed at capture time from whatever
+  `screenshotRetentionDays` was set then — shortening the setting later
+  only affects screenshots captured after the change, not existing ones.
+  See the `Screenshot` entity's own comment and `docs/adr/0012-...`.
+- **Screenshot capture is unverified on real macOS hardware and expected
+  to fail under Wayland**, same footing as window tracking's own
+  Screen-Recording and Wayland caveats below — nobody on this project has
+  a Mac, and `desktopCapturer` relies on the same underlying screen-access
+  APIs that don't work under Wayland.
 - **App-activity "time spent" is an approximation, not a measured
   duration.** Each sample is assumed to represent
   `DEFAULT_WINDOW_SAMPLE_INTERVAL_MS` (5s) of foreground time — see
