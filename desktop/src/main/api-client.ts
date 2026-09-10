@@ -1,4 +1,6 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { UrlSession } from './url-capture/session-types';
+import type { SyncResponseBody } from './url-capture/sync-contract';
 
 export interface LoginRequest {
   email: string;
@@ -200,6 +202,15 @@ export class ApiClient {
 
   resumeTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest('POST', '/device/time-entries/resume', deviceToken, {});
+  }
+
+  syncUrlSessions(
+    deviceToken: string,
+    sessions: UrlSession[],
+  ): Promise<TrackingResult<SyncResponseBody>> {
+    return this.deviceRequest('POST', '/device/url-sessions/sync', deviceToken, {
+      sessions,
+    });
   }
 
   getIdlePolicy(deviceToken: string): Promise<TrackingResult<IdlePolicy>> {

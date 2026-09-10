@@ -5,6 +5,10 @@ import { realClock } from './real-clock';
 import { SessionEngine } from './session-engine';
 import type { EngineEvent } from './session-types';
 import { UrlSessionStore } from './store';
+import { SyncQueue, type SyncQueueResult } from './sync-queue';
+import type { UploadFn } from './sync-contract';
+
+const NOOP_UPLOAD: UploadFn = () => Promise.resolve({ acked: [] });
 
 export interface UrlCaptureServiceOptions {
   deviceId: string;
@@ -15,6 +19,8 @@ export interface UrlCaptureServiceOptions {
   mergeWindowMs?: number;
   minSessionFloorMs?: number;
   logger?: (line: string) => void;
+  /** Defaults to a no-op that acks nothing — main.ts supplies a real ApiClient-backed uploader once a device is logged in. */
+  upload?: UploadFn;
 }
 
 /**
@@ -36,11 +42,13 @@ export class UrlCaptureService {
   private readonly store: UrlSessionStore;
   private readonly engine: SessionEngine;
   private readonly powerAdapter: PowerAdapter;
+  private readonly syncQueue: SyncQueue;
   private readonly logger: (line: string) => void;
 
   constructor(options: UrlCaptureServiceOptions) {
     this.logger = options.logger ?? ((): void => undefined);
     this.store = new UrlSessionStore(join(options.userDataDir, 'url-sessions.sqlite'));
+    this.syncQueue = new SyncQueue(this.store, options.upload ?? NOOP_UPLOAD);
     this.engine = new SessionEngine({
       deviceId: options.deviceId,
       generateId: randomUUID,
@@ -67,6 +75,11 @@ export class UrlCaptureService {
   /** The one signal this service can't get from powerMonitor — pushed by the renderer. */
   setTimerRunning(running: boolean): void {
     this.reportEvent({ type: 'timerStateChanged', running, ...realClock() });
+  }
+
+  /** Uploads one pending batch — main.ts calls this on its own periodic schedule. */
+  async runSync(): Promise<SyncQueueResult> {
+    return this.syncQueue.runOnce();
   }
 
   /**

@@ -19,6 +19,7 @@ import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/de
 import { ResolverHealthTracker } from './url-capture/resolver-health';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
+import type { UploadFn } from './url-capture/sync-contract';
 import { UrlCaptureService } from './url-capture/url-capture-service';
 
 /**
@@ -86,6 +87,7 @@ let mainWindow: BrowserWindow | null = null;
 let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let syncTimer: ReturnType<typeof setInterval> | null = null;
 
 // Well under the backend's DEVICE_HEARTBEAT_WINDOW_MINUTES (5 min default —
 // see backend/src/devices/device-status.ts) so a normal 60s scheduling
@@ -115,11 +117,61 @@ function stopHeartbeat(): void {
   }
 }
 
+// How often the pending URL-session queue uploads a batch — see
+// desktop/src/main/url-capture/sync-queue.ts and
+// docs/url-tracking-api.md. Nothing here is pinned to a specific
+// cadence; this just keeps the local SQLite queue from growing unbounded
+// between syncs without hammering the endpoint.
+const SYNC_INTERVAL_MS = 30_000;
+
+/**
+ * Builds the real network-backed `UploadFn` for a logged-in device —
+ * `UrlCaptureService` only knows how to call an injected `UploadFn` (see
+ * its own doc comment on why: testable without a real backend). A 401
+ * here means the same thing it means everywhere else — the backend has
+ * revoked this device's session — so it signs out locally exactly like
+ * `callDeviceApi` does, rather than leaving the queue to retry forever
+ * against a session that will never succeed again.
+ */
+function buildUrlSessionUploadFn(
+  apiClient: ApiClient,
+  authStore: AuthStore,
+  deviceToken: string,
+): UploadFn {
+  return async (batch) => {
+    const result = await apiClient.syncUrlSessions(deviceToken, batch);
+    if (result.ok) {
+      return result.data;
+    }
+    if (result.unauthorized) {
+      authStore.clear();
+      stopUrlCapture();
+      stopHeartbeat();
+      stopSync();
+    }
+    return { acked: [] };
+  };
+}
+
+function startSync(): void {
+  stopSync();
+  syncTimer = setInterval(() => {
+    void urlCaptureService?.runSync();
+  }, SYNC_INTERVAL_MS);
+}
+
+function stopSync(): void {
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+}
+
 // macOS and Windows: a real resolver side-car feeds focus/URL events in.
 // Linux (Stage D) has no resolver yet, and resolverSpawnConfigForPlatform
 // returns null there — this degrades to the same timer/idle/lock/suspend-
 // only tracking as before on any unsupported platform, never throwing.
-function startUrlCapture(deviceId: string): void {
+function startUrlCapture(deviceId: string, upload: UploadFn): void {
   urlCaptureService?.stop();
   resolverOrchestrator?.stop();
 
@@ -128,6 +180,7 @@ function startUrlCapture(deviceId: string): void {
     userDataDir: app.getPath('userData'),
     powerMonitor,
     logger: (line) => console.log(line),
+    upload,
   });
   urlCaptureService.start();
 
@@ -271,8 +324,12 @@ function registerIpcHandlers(): void {
         deviceId: result.deviceId,
         deviceToken: result.deviceToken,
       });
-      startUrlCapture(result.deviceId);
+      startUrlCapture(
+        result.deviceId,
+        buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
+      );
       startHeartbeat(apiClient, result.deviceToken);
+      startSync();
       return { loggedIn: true, email: credentials.email };
     },
   );
@@ -285,6 +342,7 @@ function registerIpcHandlers(): void {
     }
     stopUrlCapture();
     stopHeartbeat();
+    stopSync();
     return { loggedIn: false };
   });
 
@@ -310,6 +368,7 @@ function registerIpcHandlers(): void {
       authStore.clear();
       stopUrlCapture();
       stopHeartbeat();
+      stopSync();
     }
     return result;
   }
@@ -368,8 +427,12 @@ function registerIpcHandlers(): void {
   // fresh login.
   const existingSession = authStore.load();
   if (existingSession) {
-    startUrlCapture(existingSession.deviceId);
+    startUrlCapture(
+      existingSession.deviceId,
+      buildUrlSessionUploadFn(apiClient, authStore, existingSession.deviceToken),
+    );
     startHeartbeat(apiClient, existingSession.deviceToken);
+    startSync();
   }
 }
 
@@ -407,5 +470,6 @@ if (!gotSingleInstanceLock) {
   app.on('before-quit', () => {
     stopUrlCapture();
     stopHeartbeat();
+    stopSync();
   });
 }

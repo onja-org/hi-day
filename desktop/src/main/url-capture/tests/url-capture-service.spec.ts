@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MinimalPowerMonitor, PowerMonitorEventName } from '../power-adapter';
 import { UrlCaptureService } from '../url-capture-service';
 import { UrlSessionStore } from '../store';
@@ -112,6 +112,67 @@ describe('UrlCaptureService', () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({ url: 'example.com/a', activeMs: 5_000, deviceId: 'device-1' });
     store.close();
+  });
+
+  it('runSync uploads pending sessions through the injected upload fn and marks them synced', async () => {
+    const syncDir = mkdtempSync(join(tmpdir(), 'url-capture-service-sync-'));
+    const acked: string[] = [];
+    const upload = vi.fn((batch: { id: string }[]) => {
+      const ids = batch.map((session) => session.id);
+      acked.push(...ids);
+      return Promise.resolve({ acked: ids });
+    });
+    const syncingService = new UrlCaptureService({
+      deviceId: 'device-1',
+      userDataDir: syncDir,
+      powerMonitor,
+      idlePollIntervalMs: 3_600_000,
+      upload,
+    });
+    syncingService.start();
+    syncingService.setTimerRunning(true);
+    syncingService.reportEvent({
+      type: 'focusChanged',
+      monotonicMs: 0,
+      wallClockMs: Date.now(),
+      tzOffsetMin: 0,
+      target: { browser: 'chrome', pid: 1, hwnd: 1 },
+    });
+    syncingService.reportEvent({
+      type: 'urlResolved',
+      monotonicMs: 0,
+      wallClockMs: Date.now(),
+      tzOffsetMin: 0,
+      pid: 1,
+      hwnd: 1,
+      url: 'example.com/a',
+      host: 'example.com',
+      path: '/a',
+      title: 'A',
+      browser: 'chrome',
+      private: false,
+      source: 'uia',
+      confidence: 'displayed',
+    });
+    syncingService.reportEvent({
+      type: 'timerStateChanged',
+      running: false,
+      monotonicMs: 5_000,
+      wallClockMs: Date.now() + 5_000,
+      tzOffsetMin: 0,
+    });
+
+    const result = await syncingService.runSync();
+
+    expect(result).toEqual({ uploaded: 1, acked: 1 });
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(acked).toHaveLength(1);
+
+    const store = new UrlSessionStore(join(syncDir, 'url-sessions.sqlite'));
+    expect(store.getPendingSync(10)).toEqual([]);
+    store.close();
+    syncingService.stop();
+    rmSync(syncDir, { recursive: true, force: true });
   });
 
   it('translates powerMonitor lock/unlock into the engine without throwing', () => {
