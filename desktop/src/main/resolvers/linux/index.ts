@@ -9,7 +9,11 @@ import type {
 import { parseRequestLine } from '../../url-capture/protocol';
 import { loadBrowserRegistry, lookupBrowser } from '../../url-capture/browser-registry';
 import { AtspiClient, type AtspiWindow } from './atspi';
-import { accessibilityBusUnavailableReason, evaluateSupport } from './support-gate';
+import {
+  accessibilityBusUnavailableReason,
+  evaluateSupport,
+  readSessionEnvironment,
+} from './support-gate';
 
 /**
  * The Linux side-car: focus detection AND URL reading both come from
@@ -51,10 +55,7 @@ function writeLine(message: unknown): void {
 }
 
 async function main(): Promise<void> {
-  const support = evaluateSupport({
-    sessionType: process.env.XDG_SESSION_TYPE,
-    currentDesktop: process.env.XDG_CURRENT_DESKTOP,
-  });
+  const support = evaluateSupport(readSessionEnvironment());
 
   // Step 20: an unsupported session still runs and still answers pings — it
   // just never claims the `url` capability, so the coverage screen can

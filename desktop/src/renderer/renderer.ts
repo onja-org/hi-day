@@ -157,7 +157,13 @@ function tick(): void {
 }
 
 function setRunning(entry: TimeEntry | null): void {
-  const wasRunning = runningEntry !== null;
+  // "Accumulating", not merely "an entry exists": a PAUSED entry is still
+  // non-null (pause is a gap ledger — endedAt stays null so the
+  // one-running-timer invariant holds), so keying the url-capture gate on
+  // null-ness alone let capture keep accruing activeMs straight through a
+  // pause. The engine's own gate is `timerRunning`, and while paused the
+  // timer is by definition not running.
+  const wasAccumulating = runningEntry !== null && runningEntry.pausedAt == null;
   runningEntry = entry;
   const isPaused = entry?.pausedAt != null;
   startButton.hidden = entry !== null;
@@ -172,11 +178,13 @@ function setRunning(entry: TimeEntry | null): void {
     lastIdleSeconds = 0;
     hideIdleBanner();
   }
-  // The single place the renderer's own notion of "is a timer running"
-  // changes — mirror it to main so the url-capture session engine (which
-  // has no other way to know) can gate on it too.
-  if (wasRunning !== (entry !== null)) {
-    window.api.urlCapture.timerStateChanged(entry !== null);
+  // The single place the renderer's own notion of "is time actually being
+  // tracked" changes — mirror it to main so the url-capture session engine
+  // (which has no other way to know) can gate on it too. Pausing closes the
+  // open URL session; resuming lets the next reading open a fresh one.
+  const isAccumulating = entry !== null && !isPaused;
+  if (wasAccumulating !== isAccumulating) {
+    window.api.urlCapture.timerStateChanged(isAccumulating);
   }
   tick();
 }

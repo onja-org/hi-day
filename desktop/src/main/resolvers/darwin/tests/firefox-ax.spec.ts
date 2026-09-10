@@ -8,13 +8,6 @@ function makeResolver(timeoutMs?: number): FirefoxAxResolver {
   return new FirefoxAxResolver({ binaryPath: fakeBinaryPath, timeoutMs });
 }
 
-describe('FirefoxAxResolver — checkPermission', () => {
-  it('reports granted without prompting', async () => {
-    const resolver = makeResolver();
-    expect(await resolver.checkPermission()).toBe(true);
-  });
-});
-
 describe('FirefoxAxResolver — resolve', () => {
   it('resolves a normal (non-private) window', async () => {
     const resolver = makeResolver();

@@ -10,10 +10,7 @@ function printJSON(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-if (command === 'check-permission') {
-  printJSON({ granted: true });
-  process.exit(0);
-} else if (command === 'resolve') {
+if (command === 'resolve') {
   const scenario = Number(pidArg);
   switch (scenario) {
     case 1:

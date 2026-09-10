@@ -3,7 +3,7 @@ import { loadBrowserRegistry } from '../../../url-capture/browser-registry';
 import { ResolverHealthTracker } from '../../../url-capture/resolver-health';
 import { buildLinuxCoverageReport, detectInstalledLinuxBrowsers } from '../coverage';
 import { hwndFromPath, normalizeAppName } from '../index';
-import { evaluateSupport } from '../support-gate';
+import { evaluateSupport, readSessionEnvironment } from '../support-gate';
 
 const registry = loadBrowserRegistry();
 
@@ -41,6 +41,40 @@ describe('evaluateSupport — Step 20 support matrix', () => {
   it('matches GNOME case-insensitively inside a colon-separated desktop list', () => {
     expect(evaluateSupport({ sessionType: 'wayland', currentDesktop: 'pop:GNOME' }).supported).toBe(true);
     expect(evaluateSupport({ sessionType: 'WAYLAND', currentDesktop: 'gnome' }).supported).toBe(true);
+  });
+});
+
+describe('readSessionEnvironment — Electron rewrites XDG_CURRENT_DESKTOP', () => {
+  // These are the literal values observed in a running Electron main
+  // process on this machine (read from /proc/<pid>/environ) during a real
+  // ubuntu:GNOME Wayland session. Chromium overwrites XDG_CURRENT_DESKTOP
+  // with "Unity" and stashes the truth in ORIGINAL_XDG_CURRENT_DESKTOP.
+  const electronEnv = {
+    XDG_SESSION_TYPE: 'wayland',
+    XDG_CURRENT_DESKTOP: 'Unity',
+    ORIGINAL_XDG_CURRENT_DESKTOP: 'ubuntu:GNOME',
+  };
+
+  it('prefers ORIGINAL_XDG_CURRENT_DESKTOP over the value Chromium overwrote', () => {
+    expect(readSessionEnvironment(electronEnv).currentDesktop).toBe('ubuntu:GNOME');
+  });
+
+  it('keeps a real GNOME Wayland session SUPPORTED when read through Electron', () => {
+    // The regression this guards: reading the overwritten variable made a
+    // genuine GNOME box report "supported only on GNOME" and disable
+    // tracking entirely, in both the coverage screen and the resolver.
+    expect(evaluateSupport(readSessionEnvironment(electronEnv)).supported).toBe(true);
+  });
+
+  it('falls back to XDG_CURRENT_DESKTOP when nothing rewrote it', () => {
+    const plainEnv = { XDG_SESSION_TYPE: 'wayland', XDG_CURRENT_DESKTOP: 'ubuntu:GNOME' };
+    expect(readSessionEnvironment(plainEnv).currentDesktop).toBe('ubuntu:GNOME');
+    expect(evaluateSupport(readSessionEnvironment(plainEnv)).supported).toBe(true);
+  });
+
+  it('still rejects a genuinely non-GNOME Wayland session', () => {
+    const kde = { XDG_SESSION_TYPE: 'wayland', ORIGINAL_XDG_CURRENT_DESKTOP: 'KDE' };
+    expect(evaluateSupport(readSessionEnvironment(kde)).supported).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ that worked yesterday stopped working today. Implementation lives in
 | Gate | Needed for | Consent required? | How it's checked |
 |---|---|---|---|
 | **Automation** (per target app) | Apple Events to System Events (focus detection) and to each Chromium browser + Safari (URL resolution) | Yes — one grant per (this app, target app) pair | No dedicated check API exists. Inferred from real Apple Events attempts: a `consent-denied` (-1743) response means denied; any other response (success, or e.g. "no window") means granted, since the event reached the target at all |
-| **Accessibility** | The Firefox AX helper (Step 10); possibly full window-title fidelity via System Events GUI scripting (unconfirmed — flagged below) | Yes | `AXIsProcessTrusted()` — a real no-prompt check, built into the Swift helper's `check-permission` command |
+| **Accessibility** | The Firefox AX helper (Step 10); possibly full window-title fidelity via System Events GUI scripting (unconfirmed — flagged below) | Yes | `systemPreferences.isTrustedAccessibilityClient(false)` — Electron's own binding for `AXIsProcessTrusted()`, called from the main process (see `readDarwinPermissions()` in `main.ts`). A real no-prompt check, and no side-car needed |
 | **Screen Recording** | Window titles, in the *original* plan (which assumed `get-windows`) | N/A in this implementation | Modeled as `not-required` — see below |
 
 **Why Screen Recording is `not-required` here specifically**: the original plan assumed

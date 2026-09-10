@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadBrowserRegistry } from '../../../url-capture/browser-registry';
-import { buildCapabilityReport } from '../capability-report';
+import { buildCapabilityReport } from '../coverage';
 import { PermissionStateMachine } from '../permission-state';
 
 const registry = loadBrowserRegistry();

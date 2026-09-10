@@ -78,18 +78,6 @@ export class FirefoxAxResolver {
     this.privateMarkers = loadPrivateMarkers(options.privateMarkersPath ?? DEFAULT_MARKERS_PATH);
   }
 
-  /** No-prompt probe — lets the caller decide whether to offer Firefox support at all. */
-  async checkPermission(): Promise<boolean> {
-    const result = await spawnWithTimeout(this.binaryPath, ['check-permission'], this.timeoutMs);
-    if (result.spawnError || result.timedOut) return false;
-    try {
-      const parsed = JSON.parse(result.stdout) as { granted?: unknown };
-      return parsed.granted === true;
-    } catch {
-      return false;
-    }
-  }
-
   async resolve(pid: number): Promise<FirefoxAxResult> {
     const result = await spawnWithTimeout(this.binaryPath, ['resolve', String(pid)], this.timeoutMs);
 

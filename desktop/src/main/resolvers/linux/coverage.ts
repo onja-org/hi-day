@@ -11,17 +11,6 @@ import type { Confidence } from '../../url-capture/protocol';
 import type { ResolverHealthSnapshot } from '../../url-capture/resolver-health';
 import type { SupportVerdict } from './support-gate';
 
-/**
- * Resolves the Linux resolver's entry point. Same reasoning as darwin's:
- * this is compiled TypeScript living inside the app's own dist/main output
- * (not a separately-built native binary like win-resolver.exe), so
- * __dirname is correct in dev and packaged alike, with no
- * process.resourcesPath branch needed.
- */
-export function resolveLinuxResolverPath(): string {
-  return join(__dirname, 'index.js');
-}
-
 function statusFor(health: ResolverHealthSnapshot, support: SupportVerdict): CoverageStatus {
   if (!support.supported) return 'off';
   if (health.state === 'degraded') return 'off';

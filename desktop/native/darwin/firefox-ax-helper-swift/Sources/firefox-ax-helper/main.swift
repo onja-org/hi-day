@@ -10,6 +10,11 @@
 // window has not been observed. Verify against real hardware before relying
 // on this — see docs/url-tracking-plan.md Step 29's test matrix.
 //
+// There is deliberately no `check-permission` subcommand: Electron's
+// systemPreferences.isTrustedAccessibilityClient(false) answers exactly
+// what AXIsProcessTrusted() would, from the main process, with no
+// subprocess to spawn — see readDarwinPermissions() in main.ts.
+//
 // Deliberately dumb: this prints the raw toolbar field value and the raw
 // window title, nothing more. It does NOT decide private-mode (that's done
 // from the title on the TypeScript side, against a per-locale marker table
@@ -68,14 +73,6 @@ func findAddressField(in window: AXUIElement) -> AXUIElement? {
     return firstDescendant(of: toolbar, role: "AXTextField")
 }
 
-/// No-prompt permission check — AXIsProcessTrusted() (unlike
-/// AXIsProcessTrustedWithOptions with the prompt option) never shows a
-/// dialog, so the agent can decide whether to even offer Firefox support
-/// without surprising the user.
-func checkPermission() {
-    printJSON(["granted": AXIsProcessTrusted()])
-}
-
 func resolve(pid: pid_t) {
     guard AXIsProcessTrusted() else {
         fail("permission-denied", "Accessibility permission has not been granted.")
@@ -108,12 +105,10 @@ func resolve(pid: pid_t) {
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
-    fail("bad-invocation", "Usage: firefox-ax-helper check-permission | resolve <pid>")
+    fail("bad-invocation", "Usage: firefox-ax-helper resolve <pid>")
 }
 
 switch arguments[1] {
-case "check-permission":
-    checkPermission()
 case "resolve":
     guard arguments.count >= 3, let pid = pid_t(arguments[2]) else {
         fail("bad-invocation", "resolve requires a numeric pid argument.")

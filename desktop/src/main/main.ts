@@ -1,6 +1,6 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor, systemPreferences } from 'electron';
 import type { TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
@@ -8,17 +8,16 @@ import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
 import { buildDarwinCoverageReport } from './resolvers/darwin/coverage';
-import { resolveDarwinResolverPath } from './resolvers/darwin/resolver-path';
 import { PermissionStateMachine } from './resolvers/darwin/permission-state';
 import { buildWin32CoverageReport, detectInstalledWin32Browsers } from './resolvers/win32/coverage';
+import { buildLinuxCoverageReport, detectInstalledLinuxBrowsers } from './resolvers/linux/coverage';
 import {
-  buildLinuxCoverageReport,
-  detectInstalledLinuxBrowsers,
+  resolveDarwinResolverPath,
   resolveLinuxResolverPath,
-} from './resolvers/linux/coverage';
-import { evaluateSupport } from './resolvers/linux/support-gate';
+  resolveWinResolverPath,
+} from './resolvers/resolver-paths';
+import { evaluateSupport, readSessionEnvironment } from './resolvers/linux/support-gate';
 import { InstalledBrowserDetector as DarwinInstalledBrowserDetector } from './resolvers/darwin/installed-browsers';
-import { resolveWinResolverPath } from './resolvers/win32/resolver-path';
 import { loadBrowserRegistry } from './url-capture/browser-registry';
 import type { CoverageReport } from './url-capture/coverage-report';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
@@ -228,6 +227,45 @@ function buildDebugSink(): DebugSink {
   return new DebugHarness(join(app.getPath('userData'), 'url-capture-debug.jsonl'));
 }
 
+/**
+ * Reads whatever macOS permission state Electron can answer for directly,
+ * from the main process — no side-car, no Swift, no protocol change.
+ *
+ * This previously handed the coverage screen a FRESH, empty
+ * PermissionStateMachine on every call, so `accessibility` was always
+ * 'unknown' and every browser rendered as "permission not yet determined /
+ * Off" no matter what the user had actually granted.
+ *
+ * `isTrustedAccessibilityClient(false)` is exactly the `AXIsProcessTrusted()`
+ * call the Swift helper used to expose as a `check-permission` subcommand —
+ * that subcommand has been removed, since asking Electron is cheaper and one
+ * less thing that can fail to spawn. `false` for the prompt keeps this a
+ * silent probe — Prompt
+ * B.3's requirement that a capability check never surprises the user with a
+ * dialog.
+ *
+ * Deliberately NOT set here:
+ *  - Automation (per-browser Apple Events): Electron exposes no equivalent,
+ *    and it genuinely can only be learned by attempting an Apple Event —
+ *    which happens inside the resolver. Still honestly 'unknown' until the
+ *    pinned protocol grows a way to report it back.
+ *  - screenRecording: left at its 'not-required' default. This
+ *    implementation reads window titles via System Events rather than
+ *    get-windows, so Screen Recording is not believed to be needed at all
+ *    (see PermissionSnapshot's own note) — reporting a real 'denied' here
+ *    would raise a false alarm about a permission nothing asks for.
+ */
+function readDarwinPermissions(): PermissionStateMachine {
+  const permissions = new PermissionStateMachine();
+  // A `false` result means "not trusted", which covers both an explicit
+  // denial and never-having-been-asked. They are indistinguishable through
+  // this API, and the user-facing remedy ("allow it in System Settings") is
+  // identical for both, so they collapse to 'denied' rather than leaving
+  // the screen stuck on an unactionable "not yet determined".
+  permissions.setAccessibility(systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied');
+  return permissions;
+}
+
 // F.1 (Step 25): the coverage report the renderer's coverage screen
 // fetches on demand — never includes a URL or any reading content, only
 // browser install/status/confidence and resolver health (see
@@ -239,13 +277,7 @@ async function getCoverageReport(): Promise<CoverageReport | null> {
 
   if (process.platform === 'darwin') {
     const installedKeys = await new DarwinInstalledBrowserDetector().detectInstalled(registry);
-    // Darwin's actual per-browser Automation/Accessibility permission
-    // state lives inside the spawned resolver process — the pinned wire
-    // protocol has no message type to report it back to Electron yet, so
-    // this is honestly "not yet determined" rather than a guess. A future
-    // protocol addition (an unsolicited permission-state event) would
-    // replace this with the resolver's real, live state.
-    const permissions = new PermissionStateMachine().get();
+    const permissions = readDarwinPermissions().get();
     return buildDarwinCoverageReport({ installedKeys, registry, permissions, resolverHealth, now });
   }
 
@@ -259,10 +291,7 @@ async function getCoverageReport(): Promise<CoverageReport | null> {
       registry,
       installedKeys: detectInstalledLinuxBrowsers(registry),
       resolverHealth,
-      support: evaluateSupport({
-        sessionType: process.env.XDG_SESSION_TYPE,
-        currentDesktop: process.env.XDG_CURRENT_DESKTOP,
-      }),
+      support: evaluateSupport(readSessionEnvironment()),
       now,
     });
   }
