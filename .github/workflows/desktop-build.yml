@@ -61,21 +61,24 @@ jobs:
           if-no-files-found: error
 
   # Only runs for the `desktop-v*` tag push, once every platform in the
-  # matrix above has built successfully — attaches every installer to one
-  # GitHub Release for that tag. The landing page links to
-  # github.com/<repo>/releases/latest/download/<fixed filename>, which is
-  # why electron-builder's artifactName (see desktop/electron-builder.yml)
-  # is deliberately version-free: those links never need to change here.
+  # matrix above has built successfully — attaches every installer to a
+  # GitHub Release in the separate *public* onja-org/workfoce-monitoring-app-releases
+  # repo (this source repo is private, and GitHub never serves private-repo
+  # release assets to unauthenticated users, so a public download link has
+  # to point at a public repo). The landing page links to
+  # github.com/<releases-repo>/releases/latest/download/<fixed filename>,
+  # which is why electron-builder's artifactName (see
+  # desktop/electron-builder.yml) is deliberately version-free: those links
+  # never need to change here.
+  #
+  # RELEASES_REPO_TOKEN is a fine-grained PAT scoped to just that releases
+  # repo with Contents: Read and write — the default GITHUB_TOKEN can't be
+  # used here since it only ever has access to the repo the workflow runs in.
   publish:
     needs: build
     if: startsWith(github.ref, 'refs/tags/desktop-v')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Download all platform installers
         uses: actions/download-artifact@v4
         with:
@@ -85,8 +88,9 @@ jobs:
 
       - name: Create release and upload installers
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" installers/* \
+            --repo onja-org/workfoce-monitoring-app-releases \
             --title "Desktop ${{ github.ref_name }}" \
             --generate-notes

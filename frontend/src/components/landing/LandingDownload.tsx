@@ -2,12 +2,17 @@ import type { Icon } from "@phosphor-icons/react";
 import { AppleLogo, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/dist/ssr";
 import { ScrollReveal } from "../ScrollReveal";
 
+// Points at the separate *public* releases repo, not this app's (private)
+// source repo — GitHub never serves release assets from a private repo to
+// unauthenticated users, so public download links have to live somewhere
+// public. See .github/workflows/desktop-build.yml's publish job.
+//
 // electron-builder's artifactName (desktop/electron-builder.yml) is
 // deliberately version-free, so releases/latest/download/<filename>
 // always resolves to the newest release's matching asset — no landing
 // page change needed when a new version ships.
 const RELEASE_DOWNLOAD_BASE =
-  "https://github.com/onja-org/workfoce-monitoring-app/releases/latest/download";
+  "https://github.com/onja-org/workfoce-monitoring-app-releases/releases/latest/download";
 
 type Download = {
   label: string;
