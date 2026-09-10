@@ -11,6 +11,7 @@ import { Project } from '../../../database/entities/project.entity';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
 import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
+import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
 import { TimeEntriesService } from '../time-entries.service';
 
@@ -25,6 +26,22 @@ describe('TimeEntriesService', () => {
       ),
       ...overrides,
     } as unknown as Repository<TimeEntry>;
+  }
+
+  function makeTimeEntryPausesRepo(
+    overrides: Partial<Repository<TimeEntryPause>> = {},
+  ) {
+    return {
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn(
+        (input: Partial<TimeEntryPause>) => input as TimeEntryPause,
+      ),
+      save: jest.fn((input: Partial<TimeEntryPause>) =>
+        Promise.resolve({ id: 'pause-1', ...input } as TimeEntryPause),
+      ),
+      ...overrides,
+    } as unknown as Repository<TimeEntryPause>;
   }
 
   function makeMembershipsRepo(
@@ -63,12 +80,17 @@ describe('TimeEntriesService', () => {
 
   function makeDataSource() {
     const save = jest.fn().mockResolvedValue(undefined);
+    const pausesRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
     const manager = {
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
       ),
       create: jest.fn((_entity: unknown, input: Partial<TimeEntry>) => input),
       findOne: jest.fn().mockResolvedValue(null),
+      getRepository: jest.fn().mockReturnValue(pausesRepo),
     } as unknown as EntityManager;
     const transaction = jest.fn(
       (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
@@ -92,6 +114,7 @@ describe('TimeEntriesService', () => {
   function makeService(
     overrides: {
       timeEntriesRepo?: Repository<TimeEntry>;
+      timeEntryPausesRepo?: Repository<TimeEntryPause>;
       membershipsRepo?: Repository<Membership>;
       projectMembershipsRepo?: Repository<ProjectMembership>;
       projectsRepo?: Repository<Project>;
@@ -102,6 +125,7 @@ describe('TimeEntriesService', () => {
   ) {
     return new TimeEntriesService(
       overrides.timeEntriesRepo ?? makeTimeEntriesRepo(),
+      overrides.timeEntryPausesRepo ?? makeTimeEntryPausesRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       overrides.projectMembershipsRepo ?? makeProjectMembershipsRepo(),
       overrides.projectsRepo ?? makeProjectsRepo(),
@@ -689,6 +713,130 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  describe('pause', () => {
+    it('opens a pause span for the running entry and records an audit log entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+      });
+      const save = jest.fn().mockResolvedValue(undefined);
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        save,
+        // Simulates the row `save` just persisted, so the subsequent
+        // toSummary() read (a separate `find` call) sees it as open.
+        find: jest.fn().mockResolvedValue([
+          {
+            id: 'pause-1',
+            timeEntryId: 'entry-running',
+            pausedAt: new Date('2026-01-01T09:20:00Z'),
+            resumedAt: null,
+          } as TimeEntryPause,
+        ]),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        timeEntryPausesRepo,
+        auditLogService,
+      });
+
+      const result = await service.pause('org-1', 'user-1');
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeEntryId: 'entry-running',
+          resumedAt: null,
+        }),
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'time_entry.paused' }),
+      );
+      expect(result.pausedAt).toBeInstanceOf(Date);
+    });
+
+    it('rejects with 404 when no timer is running', async () => {
+      const service = makeService();
+
+      await expect(service.pause('org-1', 'user-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('rejects with 409 when already paused', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+      });
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'pause-open',
+          timeEntryId: 'entry-running',
+          pausedAt: new Date('2026-01-01T09:10:00Z'),
+          resumedAt: null,
+        }),
+      });
+      const service = makeService({ timeEntriesRepo, timeEntryPausesRepo });
+
+      await expect(service.pause('org-1', 'user-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('resume', () => {
+    it('closes the open pause span and records an audit log entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+      });
+      const openPause = {
+        id: 'pause-open',
+        timeEntryId: 'entry-running',
+        pausedAt: new Date('2026-01-01T09:10:00Z'),
+        resumedAt: null,
+      } as TimeEntryPause;
+      const save = jest.fn((input: Partial<TimeEntryPause>) =>
+        Promise.resolve(input as TimeEntryPause),
+      );
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        findOne: jest.fn().mockResolvedValue(openPause),
+        save,
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        timeEntryPausesRepo,
+        auditLogService,
+      });
+
+      await service.resume('org-1', 'user-1');
+
+      const savedPause = save.mock.calls[0][0] as TimeEntryPause;
+      expect(savedPause.resumedAt).toBeInstanceOf(Date);
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'time_entry.resumed' }),
+      );
+    });
+
+    it('rejects with 404 when no timer is running', async () => {
+      const service = makeService();
+
+      await expect(service.resume('org-1', 'user-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('rejects with 409 when not currently paused', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(service.resume('org-1', 'user-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
   describe('current', () => {
     it('returns null and the server clock when nothing is running', async () => {
       const service = makeService();
@@ -741,6 +889,40 @@ describe('TimeEntriesService', () => {
           durationSeconds: 1815,
         }),
       ]);
+    });
+
+    it('subtracts closed pause spans from durationSeconds', async () => {
+      const completedEntry = {
+        id: 'entry-done',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        startedAt: new Date('2026-01-01T09:00:00Z'),
+        endedAt: new Date('2026-01-01T09:30:00Z'),
+        source: TimeEntrySource.WEB,
+        deviceId: null,
+        project: { name: 'Website', colour: 'blue' },
+        task: { name: 'Design homepage' },
+      } as unknown as TimeEntry;
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([completedEntry]),
+      });
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            id: 'pause-1',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T09:10:00Z'),
+            resumedAt: new Date('2026-01-01T09:15:00Z'),
+          } as TimeEntryPause,
+        ]),
+      });
+      const service = makeService({ timeEntriesRepo, timeEntryPausesRepo });
+
+      const result = await service.list('org-1', 'user-1');
+
+      // 30 minutes total, minus a 5 minute pause span = 25 minutes.
+      expect(result[0].durationSeconds).toBe(25 * 60);
     });
 
     it('leaves durationSeconds null for a still-running entry', async () => {

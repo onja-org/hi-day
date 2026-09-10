@@ -125,4 +125,22 @@ export class DeviceTrackingController {
       request.userId,
     );
   }
+
+  @Post('time-entries/pause')
+  pause(@Req() request: DeviceAuthenticatedRequest): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.pause(
+      request.organisationId,
+      request.userId,
+    );
+  }
+
+  @Post('time-entries/resume')
+  resume(
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.resume(
+      request.organisationId,
+      request.userId,
+    );
+  }
 }

@@ -1,0 +1,26 @@
+---
+status: accepted
+---
+
+# Manual pause/resume is a separate gap-ledger table, not state on TimeEntry — amends ADR-0006
+
+Adds the ability to pause and resume the caller's own running Time entry, on both the web console and the desktop agent, without ending it. Requested directly by a person who wanted to see "how much time the timer was running" and be able to stop it from ticking temporarily rather than stopping it outright — a different action from anything ADR-0006 or ADR-0007 built. This is not the idle-discard flow: idle handling (`flag`/`auto_subtract`, see ADR-0007) always *terminates* the entry via `stop(endedAt)` when it decides tracked time should be discarded; a manual pause keeps the same entry alive and resumable, and is initiated by the person, not inferred from inactivity.
+
+## Considered options
+
+- **Add a `paused: boolean` (or a nullable `pausedAt`) column directly on `TimeEntry`.** Rejected. `TimeEntry.endedAt IS NULL` already means "running" everywhere in this codebase — the partial unique index (`UQ_time_entries_one_running_per_membership`), `current()`, `stop()`, and `switchTo()`'s `IsNull()` lookups all rely on exactly that one signal. Overloading the same row with a second piece of running-state would mean re-auditing every one of those call sites for a state they don't expect, for no real benefit. A pause also isn't a single instant the way start/stop are — it's a *span*, and a timer can be paused and resumed more than once before it ends.
+- **A new `TimeEntryPause` table — a gap ledger, one row per paused span (`timeEntryId`, `pausedAt`, `resumedAt` nullable — null means still paused).** Chosen. `TimeEntry` itself is untouched: `endedAt` still means exactly what it always has. A `TimeEntry` is "currently paused" exactly when it has a `TimeEntryPause` row with `resumedAt IS NULL`, and elapsed/duration is computed as `(endedAt ?? now) - startedAt - Σ(closed pause spans)`. Same reasoning as ADR-0006's own reason for a *table*, not a boolean, on the running-timer invariant: a partial unique index (`UQ_time_entry_pauses_one_open_per_entry`, `WHERE "resumedAt" IS NULL`) makes "at most one open pause per entry" structural, not just app-enforced — a double `pause()` race can't produce two open spans.
+- **What happens to an open pause span when the entry is stopped or switched.** A paused entry can be stopped or switched directly — nothing requires resuming first. `stop()` and `switchTo()` both auto-close any open pause span using the *same* timestamp as the entry's own `endedAt`, so a paused-then-stopped entry never has dangling open pause state and its last "paused" second is also its last tracked second's boundary. This was chosen over forcing the client to call `resume` before `stop`/`switch` — that would just be a second round-trip the caller has to remember to make, with no invariant it actually protects.
+- **Where the elapsed-time freeze lives.** The service, not the client. `TimeEntrySummary` gained `pausedAt: Date | null` (the instant the current open span began, or null) and `pausedSeconds: number` (total *closed*-span time so far). A client displaying elapsed time uses `pausedAt` to freeze the display at `pausedAt - startedAt - pausedSeconds` while paused, rather than each surface (web, desktop) re-implementing "is this thing currently paused" from raw pause rows.
+- **Availability: desktop-only vs. both web and desktop.** Both, per direct product decision — this isn't an agent-only affordance like idle detection is. Both `TimeEntriesController` (`organisations/:id/time-entries/pause`/`resume`, JWT) and `DeviceTrackingController` (`device/time-entries/pause`/`resume`, device bearer token) call through the same `TimeEntriesService.pause`/`resume`, mirroring how start/stop/switch/current are already mirrored 1:1 between the two surfaces.
+- **Request body for pause/resume.** None. Both act on "whatever the caller's own running timer is doing," the same shape as `current()` — there is no parameter to carry, so no new DTO was added.
+
+## Consequences
+
+Audit log gained two new actions, `time_entry.paused` and `time_entry.resumed` (the latter's metadata includes `pausedSeconds` for that specific span) — `AuditLogService.record`'s `action` field is already a plain `string`, so this needed no type change, just names consistent with the existing `time_entry.started`/`stopped` convention.
+
+`TimeEntriesService.list`'s per-row duration calculation now subtracts `pausedSeconds` from `(endedAt - startedAt)`, batched via one `TimeEntryPause` query per `list()` call (`timeEntryId IN (...)`) rather than one query per row.
+
+Idle detection (desktop) is suppressed while an entry is manually paused — pausing is a deliberate "I'm not idle, I just want this to stop counting" action, and idle detection re-flagging or auto-subtracting on top of a manual pause would be fighting the person's own explicit choice.
+
+Not built in this pass: an offline/queued pause (the desktop agent has no offline queue at all yet, same gap ADR-0006 already named); pausing a *manual* entry after the fact (manual entries are logged already-completed, via `createManual`, and never pass through `start`/`pause`/`stop` — pausing only ever applies to a live timer).
