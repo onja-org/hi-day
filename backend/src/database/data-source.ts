@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { Activity } from './entities/activity.entity';
+import { ActivitySample } from './entities/activity-sample.entity';
+import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
 import { DevicePairingRequest } from './entities/device-pairing-request.entity';
@@ -11,6 +13,7 @@ import { Organisation } from './entities/organisation.entity';
 import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { Screenshot } from './entities/screenshot.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
 import { TeamMembership } from './entities/team-membership.entity';
@@ -42,6 +45,9 @@ export default new DataSource({
     TimeEntry,
     TimeEntryPause,
     UrlSession,
+    AppEvent,
+    Screenshot,
+    ActivitySample,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });

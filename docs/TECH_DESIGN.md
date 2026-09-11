@@ -17,6 +17,9 @@ Two clients feed one backend. The desktop agent captures data — including webs
 | Job queue | BullMQ + Redis | Async work: screenshot thumbnails, activity rollups, report aggregation. |
 | Desktop agent | Electron + native helpers + native side-car resolvers | Time tracking, apps/windows, website/URL tracking, screenshots, activity, idle; offline queue; sync. |
 | Object storage | Cloudflare R2 (S3 API) | Screenshot blobs; cheap egress; direct uploads via presigned URLs. |
+| Desktop agent | Electron + native helpers | Time tracking, apps/windows, screenshots, activity, idle; offline queue; sync. |
+| Browser extension | Manifest V3 | Reports the active tab URL to the agent, event-driven. |
+| Object storage | Wasabi (S3 API) | Screenshot blobs; cheap egress; direct uploads via presigned URLs. |
 
 ## 3. Data model (core entities)
 
@@ -32,13 +35,13 @@ A generic *device* concept is kept from the start (desktop today, mobile later) 
 | app_event | device_id, app, title, ts | Foreground app/window samples. |
 | url_event | device_id, url, title, source, confidence, ts | From the native side-car resolver; see `docs/url-tracking-plan.md`. |
 | activity_sample | device_id, level, ts | Relative input volume, not keystrokes. |
-| screenshot | device_id, storage_key, ts, kept_until | Metadata only; blob lives in R2. |
+| screenshot | device_id, storage_key, ts, kept_until | Metadata only; blob lives in Wasabi. |
 | rollup | scope, period, metrics | Pre-aggregated for dashboards. |
 
 ## 4. Event ingestion & processing
 
 - **Batched ingest.** Agents accumulate events and POST them in batches (~every 60s), not per event — turning thousands of small requests into a light, steady stream.
-- **Direct-to-storage screenshots.** The agent requests a presigned URL and uploads the image straight to R2; only the metadata (storage key, timestamp) goes to the API. The API never carries image bytes.
+- **Direct-to-storage screenshots.** The agent requests a presigned URL and uploads the image straight to Wasabi; only the metadata (storage key, timestamp) goes to the API. The API never carries image bytes.
 - **Offline queue.** The agent persists unsent data locally (SQLite) and retries with backoff and jitter, so a dropped connection loses nothing and reconnects don't stampede the server.
 - **Async processing.** Thumbnailing and rollup aggregation run on BullMQ workers, keeping ingestion and dashboards fast.
 - **Pre-built rollups.** Dashboards read hourly/daily rollups rather than scanning raw events.
@@ -47,7 +50,7 @@ A generic *device* concept is kept from the start (desktop today, mobile later) 
 
 The agent is an Electron app whose first job is boring reliability; capture is layered on afterward, each module behind a feature flag.
 
-- **Capture modules:** get-windows (apps/windows), the OS screenshot tool (screenshots), uiohook-napi (activity level), Electron powerMonitor (idle).
+- **Capture modules:** @paymoapp/active-window (apps/windows), the OS screenshot tool (screenshots), uiohook-napi (activity level), Electron powerMonitor (idle).
 - **Always-on hygiene:** bounded memory, crash auto-restart, auto-launch on login, auto-update via electron-updater.
 - **Permissions:** macOS Screen Recording (screenshots) and Accessibility (window titles, input) are requested transparently.
 - **Native-module discipline:** pin versions, ship prebuilt binaries, re-test on real Windows/macOS after any OS or Electron update.
@@ -83,7 +86,7 @@ debugging, TLS interception, browser history DB reads, packet/DNS sniffing) and
 At 1,000 concurrent all-day users the system sits comfortably on one modest server, one Postgres instance, one Redis, and one storage bucket. The load is shaped by design, not by horsepower.
 
 - **Postgres.** Event tables partitioned by date; rollups pre-aggregated. TimescaleDB/partitioning only if raw-event volume later demands it.
-- **Object storage.** R2 for screenshots — the one cost that grows with use, controlled by frequency and retention settings.
+- **Object storage.** Wasabi for screenshots — the one cost that grows with use, controlled by frequency and retention settings.
 - **Redundancy.** Stateless API behind a load balancer (run 2+ instances); agents stagger sync with jitter to avoid thundering-herd spikes.
 
 ## 9. Security & privacy
@@ -103,6 +106,9 @@ At 1,000 concurrent all-day users the system sits comfortably on one modest serv
 | Object storage | Cloudflare R2 |
 | Desktop agent | Electron + get-windows, screenshot-desktop, uiohook-napi |
 | Website (URL) tracking | Native side-car resolvers — C#/.NET (Windows), osascript + Swift (macOS), Python (Linux); see `docs/url-tracking-plan.md` |
+| Object storage | Wasabi |
+| Desktop agent | Electron + @paymoapp/active-window, screenshot-desktop, uiohook-napi |
+| Browser extension | TypeScript, Manifest V3 |
 | Auth | WorkOS or Clerk |
 | Local agent store | SQLite (offline queue) |
 

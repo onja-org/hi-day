@@ -1,12 +1,32 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  powerMonitor,
+  shell,
+  systemPreferences,
+} from 'electron';
+import ActiveWindow from '@paymoapp/active-window';
 import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
+import { resolveActivityPeriodMs } from './activity-sample';
+import { ActivitySampler } from './activity-sampler';
+import { ActivitySampleUploader } from './activity-sample-uploader';
+import { AppEventUploader } from './app-event-uploader';
 import { AuthStore } from './auth-store';
+import { CaptureSettingsGate } from './capture-settings-gate';
 import { getOrCreateDeviceFingerprint } from './device-identity';
-import { toDevicePlatform } from './platform';
+import { OfflineQueue } from './offline-queue';
+import { OfflineQueueStore } from './offline-queue-store';
+import { isWaylandSession, toDevicePlatform } from './platform';
+import type { DesktopDevicePlatform } from './platform';
+import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
+import { ScreenshotUploader } from './screenshot-uploader';
+import { TimerStatusGate } from './timer-status-gate';
+import { WindowSampler } from './window-sampler';
 import { resolveLinuxResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
@@ -66,6 +86,14 @@ interface StartPairingIpcResult {
 interface LastProject {
   projectId: string;
   taskId: string | null;
+}
+
+interface CapturePermissionStatus {
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  platform: DesktopDevicePlatform;
+  screenRecordingGranted: boolean;
+  waylandUnsupported: boolean;
 }
 
 // Otherwise userData resolves from package.json's "name" ("desktop"),
@@ -250,9 +278,98 @@ function createWindow(): void {
 }
 
 
-function registerIpcHandlers(): void {
+async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath('userData'));
   const apiClient = new ApiClient(API_BASE_URL);
+
+  // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
+  // screenshot is persisted to SQLite before it's sent, and drained in
+  // batches on a periodic, jittered tick — a dropped connection holds data
+  // rather than losing it, and a failed batch retries with backoff instead
+  // of being dropped. One queue instance serves both capture kinds.
+  const offlineQueueStore = await OfflineQueueStore.create(
+    join(app.getPath('userData'), 'offline-queue.db'),
+  );
+  const offlineQueue = new OfflineQueue(offlineQueueStore);
+
+  const appEventUploader = new AppEventUploader(authStore, apiClient, offlineQueue);
+  offlineQueue.registerSender(appEventUploader);
+  const windowSampler = new WindowSampler({ sink: appEventUploader.enqueue });
+
+  const screenshotUploader = new ScreenshotUploader(authStore, apiClient, offlineQueue);
+  offlineQueue.registerSender(screenshotUploader);
+  const screenshotSampler = new ScreenshotSampler({
+    sink: screenshotUploader.upload,
+  });
+
+  const activitySampleUploader = new ActivitySampleUploader(
+    authStore,
+    apiClient,
+    offlineQueue,
+  );
+  offlineQueue.registerSender(activitySampleUploader);
+  const activitySampler = new ActivitySampler({
+    sink: activitySampleUploader.enqueue,
+    intervalMs: resolveActivityPeriodMs(),
+  });
+
+  offlineQueue.start();
+
+  // Window tracking and screenshot capture each only run while BOTH are
+  // true: the org has that capture's setting on, AND a timer is actually
+  // running right now (Hubstaff-style — not merely "logged in"). All
+  // signals are independently polled (server is authoritative for each —
+  // settings can change from the web console, and the timer can be
+  // started/stopped from the web console or another device, see
+  // docs/adr/0006-...), and any one flipping recomputes both.
+  let windowTrackingEnabled = false;
+  let screenshotsEnabled = false;
+  let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
+  let activityTrackingEnabled = false;
+  let timerRunning = false;
+  function recomputeSampling(): void {
+    if (windowTrackingEnabled && timerRunning) {
+      windowSampler.start();
+    } else {
+      windowSampler.stop();
+      // Push out whatever's buffered immediately rather than waiting up to
+      // DEFAULT_APP_EVENT_FLUSH_INTERVAL_MS — tracking just turned off, so
+      // there's no reason to sit on a partial batch.
+      void appEventUploader.flush();
+    }
+
+    screenshotSampler.setIntervalMs(screenshotFrequencyMs);
+    if (screenshotsEnabled && timerRunning) {
+      screenshotSampler.start();
+    } else {
+      screenshotSampler.stop();
+    }
+
+    if (activityTrackingEnabled && timerRunning) {
+      activitySampler.start();
+    } else {
+      activitySampler.stop();
+      void activitySampleUploader.flush();
+    }
+  }
+
+  const captureSettingsGate = new CaptureSettingsGate(
+    authStore,
+    apiClient,
+    (settings) => {
+      windowTrackingEnabled = settings.windowTrackingEnabled;
+      screenshotsEnabled = settings.screenshotsEnabled;
+      screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
+      activityTrackingEnabled = settings.activityTrackingEnabled;
+      recomputeSampling();
+    },
+  );
+  const timerStatusGate = new TimerStatusGate(authStore, apiClient, (running) => {
+    timerRunning = running;
+    recomputeSampling();
+  });
+  captureSettingsGate.start();
+  timerStatusGate.start();
 
   // Set once a pairing request is started, cleared once it's claimed or
   // expires — the renderer's poll doesn't need to pass the code back on
@@ -318,6 +435,12 @@ function registerIpcHandlers(): void {
         );
         startHeartbeat(apiClient, result.deviceToken);
         startSync();
+        // Re-check both gates immediately rather than waiting for their own
+        // poll intervals — a device that was logged out (and therefore not
+        // tracking) should pick this up as soon as it's logged back in,
+        // including resuming a timer that was already running server-side.
+        void captureSettingsGate.pollOnce();
+        void timerStatusGate.pollOnce();
       } else if (result.status === 'expired') {
         pendingPairingCode = null;
       }
@@ -339,6 +462,10 @@ function registerIpcHandlers(): void {
     stopUrlCapture();
     stopHeartbeat();
     stopSync();
+    // No session left to poll against — both gates resolve to "off",
+    // which stops the sampler if it was running.
+    void captureSettingsGate.pollOnce();
+    void timerStatusGate.pollOnce();
     return { loggedIn: false };
   });
 
@@ -386,12 +513,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle('tracking:start', async (_event, projectId: string, taskId: string | null) => {
     const result = await callDeviceApi((token) => apiClient.startTimer(token, projectId, taskId));
     if (result.ok) authStore.rememberProject(projectId, taskId);
+    // Instant local feedback for window tracking rather than waiting on
+    // TimerStatusGate's poll; the periodic poll still covers a timer
+    // started or stopped elsewhere.
+    void timerStatusGate.pollOnce();
     return result;
   });
 
   ipcMain.handle('tracking:switch', async (_event, projectId: string, taskId: string | null) => {
     const result = await callDeviceApi((token) => apiClient.switchTimer(token, projectId, taskId));
     if (result.ok) authStore.rememberProject(projectId, taskId);
+    void timerStatusGate.pollOnce();
     return result;
   });
 
@@ -401,9 +533,11 @@ function registerIpcHandlers(): void {
     return { projectId: session.lastProjectId, taskId: session.lastTaskId ?? null };
   });
 
-  ipcMain.handle('tracking:stop', (_event, endedAt?: string) =>
-    callDeviceApi((token) => apiClient.stopTimer(token, endedAt)),
-  );
+  ipcMain.handle('tracking:stop', async (_event, endedAt?: string) => {
+    const result = await callDeviceApi((token) => apiClient.stopTimer(token, endedAt));
+    void timerStatusGate.pollOnce();
+    return result;
+  });
 
   ipcMain.handle('tracking:status', () => callDeviceApi((token) => apiClient.getCurrentTimer(token)));
 
@@ -417,6 +551,63 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('tracking:idlePolicy', () =>
     callDeviceApi((token) => apiClient.getIdlePolicy(token)),
+  );
+
+  ipcMain.handle(
+    'tracking:permissionStatus',
+    (): TrackingResult<CapturePermissionStatus> => {
+      const session = authStore.load();
+      if (!session) return NOT_LOGGED_IN;
+
+      // Reads the value CaptureSettingsGate already polls and keeps current
+      // (see recomputeSampling above) rather than issuing a second, redundant
+      // GET /device/capture-settings on every renderer status check.
+      const platform = toDevicePlatform(process.platform);
+
+      return {
+        ok: true,
+        data: {
+          windowTrackingEnabled,
+          screenshotsEnabled,
+          platform,
+          // Non-prompting status check (Electron's own API), not
+          // @paymoapp/active-window's `requestPermissions()` — that one
+          // triggers macOS's native Screen Recording prompt on first call,
+          // which must only ever fire from an explicit "Grant Access"
+          // click below, never from a status poll like this one.
+          screenRecordingGranted:
+            platform === 'macos'
+              ? systemPreferences.getMediaAccessStatus('screen') === 'granted'
+              : true,
+          waylandUnsupported: isWaylandSession(),
+        },
+      };
+    },
+  );
+
+  // Triggers the native macOS Screen Recording prompt — never called
+  // except from this handler, itself only ever invoked by an explicit
+  // "Grant Access" click in the renderer. macOS won't re-show the prompt
+  // on repeat silent calls, so this must never be called automatically
+  // (e.g. on launch).
+  ipcMain.handle('tracking:requestScreenRecordingAccess', (): void => {
+    if (process.platform === 'darwin') {
+      ActiveWindow.requestPermissions();
+    }
+  });
+
+  // Fallback for when macOS won't re-show the native prompt (already
+  // asked/denied before) — opens the Screen Recording pane directly so the
+  // person can grant it themselves.
+  ipcMain.handle(
+    'tracking:openScreenRecordingSettings',
+    async (): Promise<void> => {
+      if (process.platform === 'darwin') {
+        await shell.openExternal(
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+        );
+      }
+    },
   );
 
   // Native, synchronous, and free of any network round-trip — the renderer
@@ -499,9 +690,9 @@ if (!gotSingleInstanceLock) {
     }
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
-    registerIpcHandlers();
+    await registerIpcHandlers();
     createWindow();
 
     app.on('activate', () => {

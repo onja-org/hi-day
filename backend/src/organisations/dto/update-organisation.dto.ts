@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -32,4 +33,26 @@ export class UpdateOrganisationDto {
   @IsInt()
   @Min(1)
   idleThresholdMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  windowTrackingEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  screenshotsEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  screenshotFrequencySeconds?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  screenshotRetentionDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  activityTrackingEnabled?: boolean;
 }

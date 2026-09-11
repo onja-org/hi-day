@@ -7,6 +7,7 @@ import {
   Clock,
   Desktop,
   Gauge,
+  Gear,
   Users,
   UsersThree,
 } from "@phosphor-icons/react";
@@ -28,7 +29,11 @@ type NavItem = {
   icon: Icon;
 };
 
-export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarProps) {
+export function Sidebar({
+  organisationId,
+  mobileOpen,
+  onCloseMobile,
+}: SidebarProps) {
   const pathname = usePathname();
   const organisationQuery = useCurrentOrganisation();
   const organisationName = organisationQuery.data?.name ?? "Workforce";
@@ -36,7 +41,11 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
   const items: NavItem[] = [
-    { label: "Dashboard", href: `/dashboard/${organisationId}/me`, icon: Gauge },
+    {
+      label: "Dashboard",
+      href: `/dashboard/${organisationId}/me`,
+      icon: Gauge,
+    },
     {
       label: "Timesheets",
       href: `/organisations/${organisationId}/time_entries`,
@@ -71,6 +80,15 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
           },
         ]
       : []),
+    ...(isAdmin
+      ? [
+          {
+            label: "Settings",
+            href: `/organisations/${organisationId}/settings`,
+            icon: Gear,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -96,7 +114,7 @@ export function Sidebar({ organisationId, mobileOpen, onCloseMobile }: SidebarPr
             Workforce
           </span>
         </div>
-       <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
+        <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
           {items.map((item) => {
             const isActive = pathname === item.href;
             return (

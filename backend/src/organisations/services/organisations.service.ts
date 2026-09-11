@@ -9,6 +9,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
 import { Team } from '../../database/entities/team.entity';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
+import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import { generateSlug } from '../slug.util';
 
@@ -30,6 +31,11 @@ export interface OrganisationProfile {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
+  activityTrackingEnabled: boolean;
   userId: string;
 }
 
@@ -38,6 +44,11 @@ interface OrganisationSettings {
   website?: string | null;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
+  windowTrackingEnabled?: boolean;
+  screenshotsEnabled?: boolean;
+  screenshotFrequencySeconds?: number;
+  screenshotRetentionDays?: number;
+  activityTrackingEnabled?: boolean;
 }
 
 @Injectable()
@@ -187,6 +198,21 @@ export class OrganisationsService {
       ...(dto.idleThresholdMinutes !== undefined
         ? { idleThresholdMinutes: dto.idleThresholdMinutes }
         : {}),
+      ...(dto.windowTrackingEnabled !== undefined
+        ? { windowTrackingEnabled: dto.windowTrackingEnabled }
+        : {}),
+      ...(dto.screenshotsEnabled !== undefined
+        ? { screenshotsEnabled: dto.screenshotsEnabled }
+        : {}),
+      ...(dto.screenshotFrequencySeconds !== undefined
+        ? { screenshotFrequencySeconds: dto.screenshotFrequencySeconds }
+        : {}),
+      ...(dto.screenshotRetentionDays !== undefined
+        ? { screenshotRetentionDays: dto.screenshotRetentionDays }
+        : {}),
+      ...(dto.activityTrackingEnabled !== undefined
+        ? { activityTrackingEnabled: dto.activityTrackingEnabled }
+        : {}),
     };
 
     await this.organisations.save(organisation);
@@ -212,6 +238,37 @@ export class OrganisationsService {
     };
   }
 
+  /**
+   * Read by the desktop agent (via DeviceTrackingController) to decide
+   * whether to run its local window-tracking sampling loop — kept as its
+   * own narrow method rather than making device routes depend on the full
+   * `OrganisationProfile` shape (same rationale as `getIdlePolicy`).
+   */
+  async getCaptureSettings(organisationId: string): Promise<CaptureSettings> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return {
+      windowTrackingEnabled:
+        settings.windowTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      screenshotsEnabled:
+        settings.screenshotsEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotFrequencySeconds:
+        settings.screenshotFrequencySeconds ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+      screenshotRetentionDays:
+        settings.screenshotRetentionDays ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
+      activityTrackingEnabled:
+        settings.activityTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled,
+    };
+  }
+
   private toProfile(
     organisation: Organisation,
     role: MembershipRole,
@@ -228,6 +285,21 @@ export class OrganisationsService {
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+      windowTrackingEnabled:
+        settings.windowTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      screenshotsEnabled:
+        settings.screenshotsEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotFrequencySeconds:
+        settings.screenshotFrequencySeconds ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+      screenshotRetentionDays:
+        settings.screenshotRetentionDays ??
+        DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
+      activityTrackingEnabled:
+        settings.activityTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled,
       userId,
     };
   }

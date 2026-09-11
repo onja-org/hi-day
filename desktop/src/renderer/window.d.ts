@@ -61,6 +61,16 @@ declare global {
     thresholdMinutes: number;
   }
 
+  type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
+
+  interface CapturePermissionStatus {
+    windowTrackingEnabled: boolean;
+    screenshotsEnabled: boolean;
+    platform: DesktopDevicePlatformName;
+    screenRecordingGranted: boolean;
+    waylandUnsupported: boolean;
+  }
+
   interface StartPairingResult {
     ok: boolean;
     message?: string;
@@ -101,6 +111,9 @@ declare global {
         lastProject: () => Promise<LastProject | null>;
         entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
+        permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
+        requestScreenRecordingAccess: () => Promise<void>;
+        openScreenRecordingSettings: () => Promise<void>;
       };
       idle: {
         seconds: () => Promise<number>;

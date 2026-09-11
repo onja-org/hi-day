@@ -3,9 +3,11 @@ packages:
   - "backend"
   - "desktop"
 allowBuilds:
+  '@paymoapp/active-window': true
   argon2: true
   better-sqlite3: true
   electron: true
+  uiohook-napi: true
   unrs-resolver: true
   # dbus-next's optional native dep, used only for ABSTRACT unix sockets.
   # The accessibility bus this app talks to is addressed by real path

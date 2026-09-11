@@ -65,6 +65,16 @@ export interface IdlePolicy {
   thresholdMinutes: number;
 }
 
+export type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
+
+export interface CapturePermissionStatus {
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  platform: DesktopDevicePlatformName;
+  screenRecordingGranted: boolean;
+  waylandUnsupported: boolean;
+}
+
 export type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
@@ -119,6 +129,14 @@ const api = {
       >,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke('tracking:idlePolicy') as Promise<TrackingResult<IdlePolicy>>,
+    permissionStatus: (): Promise<TrackingResult<CapturePermissionStatus>> =>
+      ipcRenderer.invoke('tracking:permissionStatus') as Promise<
+        TrackingResult<CapturePermissionStatus>
+      >,
+    requestScreenRecordingAccess: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:requestScreenRecordingAccess') as Promise<void>,
+    openScreenRecordingSettings: (): Promise<void> =>
+      ipcRenderer.invoke('tracking:openScreenRecordingSettings') as Promise<void>,
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,

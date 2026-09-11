@@ -10,6 +10,11 @@ export type OrganisationProfile = {
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
+  activityTrackingEnabled: boolean;
   userId: string;
 };
 
@@ -23,6 +28,11 @@ export type UpdateOrganisationInput = {
   website?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
+  windowTrackingEnabled?: boolean;
+  screenshotsEnabled?: boolean;
+  screenshotFrequencySeconds?: number;
+  screenshotRetentionDays?: number;
+  activityTrackingEnabled?: boolean;
 };
 
 export type UpdateOrganisationResult =
