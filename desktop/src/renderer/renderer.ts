@@ -10,12 +10,8 @@ const STATUS_POLL_INTERVAL_MS = 15_000;
 // How often the agent checks the OS's own idle-time counter while a timer
 // is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
-// How often — and for how long — the agent checks whether the pairing
-// code it just opened in the browser has been approved yet. Bounded
-// rather than indefinite so an abandoned pairing attempt (browser tab
-// closed, person distracted) doesn't poll forever; the pairing code
-// itself lives for longer than this on the backend, so clicking "Log in"
-// again after this gives up just starts a fresh one.
+// Bounded so an abandoned pairing attempt stops polling. The code outlives
+// this on the backend, so clicking "Log in" again starts a fresh one.
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 60;
 const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
@@ -206,21 +202,10 @@ function showTrackingError(message: string): void {
 }
 
 /**
- * Every tracking:* failure goes through this — `unauthorized` means the
- * backend has actually revoked this device's session (most commonly an
- * admin's remote sign-out from the Devices page), not a transient/network
- * failure, so this switches straight to the login screen instead of
- * showing an inline error the person would otherwise have to notice and
- * act on themselves. Without this, a remote sign-out had no visible effect
- * on the desktop app at all — it kept showing the logged-in UI
- * indefinitely, since every failure (including this one) was treated the
- * same as "server's briefly unreachable, try again next poll".
- */
-/**
  * Runs a tracking call and returns to the login view if the device session
- * is gone. `unauthorized` is this branch's name for the 401 signal main
- * carried as `signedOut` — one field, one meaning, so the two sides' 401
- * handling is a single helper rather than two that can drift.
+ * has been revoked. `unauthorized` is a real 401, not a transient failure,
+ * so a remote sign-out takes effect here rather than showing an inline
+ * error the person has to act on.
  */
 async function callTracking<T>(
   fn: () => Promise<TrackingResult<T>>,
@@ -272,22 +257,15 @@ function tick(): void {
 }
 
 function setRunning(entry: TimeEntry | null): void {
-  // "Accumulating", not merely "an entry exists": a PAUSED entry is still
-  // non-null (pause is a gap ledger — endedAt stays null so the
-  // one-running-timer invariant holds), so keying the url-capture gate on
-  // null-ness alone let capture keep accruing activeMs straight through a
-  // pause. The engine's own gate is `timerRunning`, and while paused the
-  // timer is by definition not running.
+  // "Accumulating", not just "an entry exists": a paused entry is still
+  // non-null (endedAt stays null so the one-running-timer rule holds), so
+  // keying on null-ness alone let capture accrue straight through a pause.
   const wasAccumulating = runningEntry !== null && runningEntry.pausedAt == null;
   runningEntry = entry;
   const isPaused = entry?.pausedAt != null;
   const isRunning = entry !== null && !isPaused;
-  // One control, two faces: pause while running, play while stopped or
-  // paused. Play both starts a fresh entry and resumes a paused one — from
-  // the person's point of view that is the same gesture.
-  // Same swap the project rows use: one path, re-pointed. Two stacked icons
-  // toggled by `hidden` relied on the attribute hiding an SVG, and left both
-  // glyphs sharing one button.
+  // One control, two faces: pause while running, play otherwise. One path
+  // re-pointed, the same swap the project rows use.
   timerTogglePath.setAttribute('d', isRunning ? PAUSE_PATH : PLAY_PATH);
   timerToggle.setAttribute(
     'aria-label',
@@ -299,12 +277,8 @@ function setRunning(entry: TimeEntry | null): void {
     lastIdleSeconds = 0;
     hideIdleBanner();
   }
-  // The single place the renderer's own notion of "is time actually being
-  // tracked" changes — mirror it to main so the url-capture session engine
-  // (which has no other way to know) can gate on it too. Pausing closes the
-  // open URL session; resuming lets the next reading open a fresh one.
-  // Same condition the pause/play icon uses: URL capture accrues exactly
-  // when the timer is visibly running.
+  // The only place "is time being tracked" changes — mirrored to main so
+  // the session engine can gate on it. Pausing closes the open URL session.
   if (wasAccumulating !== isRunning) {
     window.api.urlCapture.timerStateChanged(isRunning);
   }
@@ -539,19 +513,11 @@ function startOfToday(): number {
 }
 
 /**
- * Keeps the visible timer to TODAY only, per the daily-reset rule.
+ * Keeps the visible timer to today only. An entry started before midnight
+ * is switched to a fresh one if still running, or closed at the instant it
+ * was paused — never at "now", which would bill the intervening hours.
  *
- * An entry that began before local midnight is yesterday's work, and must
- * neither keep counting into today nor have today's time appended to it:
- *   - still running  -> switch to a fresh entry on the same Project, which
- *     is one atomic stop-then-start, so yesterday's total is closed at the
- *     boundary and today's time is recorded against a new entry.
- *   - already paused -> close it at the instant it was paused (never at
- *     "now", which would silently bill the intervening hours), and leave
- *     the screen with no running entry, i.e. 00:00:00.
- *
- * Returns true when it acted, so the caller skips the stale entry it was
- * about to render.
+ * Returns true when it acted, so the caller skips the stale entry.
  */
 async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
   if (new Date(entry.startedAt).getTime() >= startOfToday()) return false;
@@ -724,18 +690,14 @@ async function initTracking(): Promise<void> {
   );
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
 
-  // Settle the server's view BEFORE deciding whether to auto-start, so an
-  // entry that is already running — or paused, e.g. by the last quit — is
-  // respected rather than fought over with a duplicate start the backend
-  // would reject with a 409. Ordered ahead of startPolling() so the
-  // decision is made against a known state rather than racing its
-  // fire-and-forget first refresh.
+  // Settle the server's view before deciding whether to auto-start, so an
+  // already-running or paused entry is respected rather than met with a
+  // duplicate start the backend would 409. Ahead of startPolling() so the
+  // decision isn't racing its first refresh.
   await refreshStatus();
 
-  // Auto-start: signing in is itself the intent to begin tracking, so no
-  // click is required. Only fires when nothing is tracked yet — a paused
-  // entry stays paused, which is what makes "close the app, reopen it, see
-  // the same elapsed value, paused" work.
+  // Signing in is itself the intent to track, so no click is required.
+  // Only fires when nothing is tracked yet — a paused entry stays paused.
   if (!runningEntry) {
     await startTracking();
   }

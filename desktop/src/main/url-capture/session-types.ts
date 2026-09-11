@@ -63,14 +63,10 @@ export type SessionFlag = 'active-ms-exceeds-wall-clock';
 
 export interface EngineOutput {
   /**
-   * `checkpoint` is a still-running session published as a complete record
-   * *so far*, so long reads become visible without waiting for them to end.
-   * It carries a non-null `endedAt` (the checkpoint instant) precisely so
-   * the sync queue will pick it up — only ended sessions are ever uploaded.
-   * The session stays open and keeps accumulating; the next checkpoint, and
-   * the eventual real `closed`, re-upsert the SAME id with a larger
-   * `activeMs` and later `endedAt`. That is the last-write-wins upsert
-   * docs/url-tracking-api.md already specifies, not a new contract.
+   * `checkpoint` publishes a still-running session as a record so far, so a
+   * long read becomes visible before it ends. Its non-null `endedAt` is what
+   * makes the sync queue pick it up; the session stays open and later
+   * re-upserts the same id, which the API's last-write-wins already covers.
    */
   kind: 'opened' | 'extended' | 'closed' | 'checkpoint';
   session: UrlSession;
@@ -86,14 +82,9 @@ export interface SessionEngineOptions {
   /** Sessions whose final activeMs never reaches this are never emitted as `closed`. */
   minSessionFloorMs?: number;
   /**
-   * Step 23's policy for a browser whose private-mode state can't be
-   * detected at all (private resolves to null — Safari today): either
-   * suppress URL capture for it entirely, or capture normally (the
-   * existing `private: null` field on the stored session already serves
-   * as the "indistinguishable" flag downstream). Explicit config, never
-   * an implicit default baked into behavior — see
-   * URL_TRACKING_CONTEXT.md's "Decided: private === null policy" for why
-   * "capture-with-flag" is the default here, not "suppress".
+   * Policy for a browser whose private-mode state is undetectable (Safari).
+   * Explicit config rather than a default baked into behaviour — see
+   * URL_TRACKING_CONTEXT.md for why capture-with-flag wins.
    */
   nullPrivacyPolicy?: 'suppress' | 'capture-with-flag';
   /**

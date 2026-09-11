@@ -15,21 +15,15 @@ import { UrlSessionConfidence } from './url-session-confidence.enum';
 import { UrlSessionSource } from './url-session-source.enum';
 
 /**
- * One closed browsing session synced up from the desktop agent's local
- * queue (`desktop/src/main/url-capture/store.ts`) — see
- * `docs/url-tracking-api.md` for the full wire contract this mirrors.
- * `id` is CLIENT-generated (not `@PrimaryGeneratedColumn`) — it is the
- * idempotency key the sync endpoint upserts on: the same id can arrive
- * more than once over its lifetime (a session that closes, syncs, then
- * reopens within the engine's merge window re-syncs the same id with a
- * larger `activeMs`/later `endedAt`), and the contract requires "last
- * write wins", not insert-once.
+ * One closed browsing session synced from the desktop agent's local queue.
+ * See docs/url-tracking-api.md for the wire contract.
  *
- * `url`/`host` are empty strings (never null) for a private/incognito
- * session — `session-engine.ts` on the client strips them before this
- * ever leaves the device, and this table just persists whatever it
- * receives; querying/listing code filters on `url != ''` to keep private
- * sessions out of any user-facing display.
+ * `id` is client-generated: it is the idempotency key the sync endpoint
+ * upserts on, since a reopened session re-syncs the same id with a larger
+ * activeMs ("last write wins", not insert-once).
+ *
+ * `url`/`host` are empty strings for a private session — the client strips
+ * them before they leave the device, and listing code filters `url != ''`.
  */
 @Entity({ name: 'url_sessions' })
 export class UrlSession {

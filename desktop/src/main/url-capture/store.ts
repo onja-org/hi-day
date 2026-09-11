@@ -56,14 +56,10 @@ function toRow(raw: UrlSessionRawRow): UrlSessionRow {
 }
 
 /**
- * The durable local queue for UrlSessions — the offline store described in
- * docs/url-tracking-plan.md Step 5. Every engine output (opened/extended/
- * closed) upserts here, not just closed ones: that gives a queryable "what's
- * happening right now" table, and it means a session that closes, gets
- * synced, then reopens via the session engine's merge window is correctly
- * marked pending again for free (upsert always resets synced_at to NULL;
- * getPendingSync's `ended_at IS NOT NULL` filter keeps an open session out
- * of any sync attempt regardless of that flag).
+ * The durable local queue for UrlSessions. Every engine output upserts here,
+ * not just closed ones, so a reopened session is marked pending again for
+ * free — upsert resets synced_at, and getPendingSync's `ended_at IS NOT
+ * NULL` filter keeps open sessions out of any sync.
  */
 export class UrlSessionStore {
   private readonly db: Database.Database;
@@ -75,14 +71,9 @@ export class UrlSessionStore {
   }
 
   /**
-   * Defense in depth for Step 23's core privacy guarantee — session-engine.ts
-   * already strips url/host/path before a private session ever reaches here
-   * (see its toUrlSession), but this assertion means a regression in that
-   * logic fails loudly (an exception, caught nowhere, surfacing immediately)
-   * rather than silently persisting a real private-window URL to disk.
-   * Deliberately checks the RAW field values, not just "was private true" —
-   * a future refactor could set private:true while accidentally leaving
-   * url/host populated from an earlier assignment, and this must catch that.
+   * Defence in depth: the engine already strips private sessions, but a
+   * regression there must fail loudly rather than persist a real
+   * private-window URL. Checks the raw field values, not just the flag.
    */
   private assertPrivacyInvariant(session: UrlSession): void {
     if (session.private === true && (session.url !== '' || session.host !== '')) {

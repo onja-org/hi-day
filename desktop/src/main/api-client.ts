@@ -193,13 +193,9 @@ export class ApiClient {
   }
 
   /**
-   * Keeps this device's `lastSeenAt` fresh so the Devices page's
-   * active/offline status (computed purely from how recently this was
-   * last called — see backend's computeDeviceStatus) reflects reality
-   * while the app is actually running, not just at login. Best-effort,
-   * same reasoning as logout(): a missed heartbeat due to a transient
-   * network blip just means this device shows offline until the next
-   * one succeeds, not something worth surfacing to the user.
+   * Keeps `lastSeenAt` fresh so the Devices page's active/offline status
+   * reflects a running app, not just a login. Best-effort: a missed
+   * heartbeat shows this device offline until the next one lands.
    */
   async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
     try {

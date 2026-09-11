@@ -1,15 +1,7 @@
-// Shared ambient declarations for every renderer entry point —
-// tsconfig.renderer.json compiles them all
-// together, so each entry point's own `declare global` block merges into
-// the SAME global scope. TypeScript requires every declaration of `api`
-// across that merge to agree on the exact same type, so there can only be
-// one definition of the full Window.api shape, not one partial
-// declaration per file that only mentions what that file uses. Everything
-// here — not just Window — lives inside `declare global` (rather than as
-// plain top-level interfaces) because this file ends in `export {}`,
-// which makes it a module; a plain top-level interface in a module is
-// scoped to that module, not visible as a bare global name the way the
-// original single-entry-point renderer.ts relied on.
+// Shared ambient declarations for every renderer entry point. They compile
+// together into one global scope, so Window.api needs a single full
+// definition rather than a partial one per file. `export {}` makes this a
+// module, which is why everything sits inside `declare global`.
 
 export {};
 

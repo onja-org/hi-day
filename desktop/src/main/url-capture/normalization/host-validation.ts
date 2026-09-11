@@ -46,16 +46,12 @@ export interface HostValidation {
 }
 
 /**
- * Step 21 rule 3: valid public suffix (tldts), an IP literal, localhost
- * (with or without a port — tldts already normalizes that away), or a
- * known internal scheme. tldts alone does NOT recognize chrome://,
- * edge://, about:, or file: URLs as anything meaningful — it just treats
- * whatever follows the scheme as an arbitrary (invalid) hostname — so
- * those are special-cased by scheme prefix before ever calling tldts.
- * This is deliberately the single rule that "kills most search-query
- * garbage" (Step 21's own framing): a typed phrase essentially never
- * happens to have a registered public suffix, be a valid IP, or be
- * "localhost".
+ * Accepts a valid public suffix, an IP literal, localhost, or an internal
+ * scheme. Internal schemes are matched first because tldts treats whatever
+ * follows them as an invalid hostname.
+ *
+ * This is the rule that kills most typed-search garbage: a phrase rarely
+ * has a registered public suffix.
  */
 export function validateHost(raw: string): HostValidation {
   const internalScheme = matchInternalScheme(raw);

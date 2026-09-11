@@ -16,17 +16,10 @@ import {
 } from './support-gate';
 
 /**
- * The Linux side-car: focus detection AND URL reading both come from
- * AT-SPI2 over D-Bus.
- *
- * docs/url-tracking-plan.md Step 18 originally specified
- * `org.gnome.Shell.Introspect.GetWindows` for focus on Wayland. That is not
- * usable: on a stock, fully-current GNOME 46 session it returns
- * `AccessDenied: GetWindows is not allowed` to an ordinary user process,
- * and so does its sibling `GetRunningApplications` — measured, not assumed
- * (see native/linux/spike/RESULTS.md). AT-SPI's own `window:activate`
- * events carry the same information and are already reachable, so this
- * resolver uses one mechanism for both halves instead of two.
+ * The Linux side-car: focus detection and URL reading both come from AT-SPI2
+ * over D-Bus. Step 18's `org.gnome.Shell.Introspect.GetWindows` is unusable
+ * — it returns `AccessDenied` to an ordinary process on GNOME 46 — and
+ * `window:activate` carries the same information.
  */
 
 /**

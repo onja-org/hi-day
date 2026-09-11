@@ -135,15 +135,11 @@ export class SessionEngine {
 
   /**
    * Publishes a still-running session as a complete-so-far record once it
-   * has accrued `segmentFlushMs` of active time since the last one.
+   * has accrued `segmentFlushMs` of active time.
    *
-   * Deliberately does NOT close and reopen the session, which was the
-   * obvious alternative: reopening resets `lastAccountedMonotonicMs`, so
-   * every flush would silently discard the gap until the next reading
-   * arrived — up to one heartbeat interval each time, which over a full day
-   * of five-minute segments adds up to minutes of real tracked time thrown
-   * away. Emitting a snapshot leaves the in-memory session untouched, so no
-   * accounting is lost at all.
+   * Emits a snapshot rather than closing and reopening: reopening resets
+   * `lastAccountedMonotonicMs`, discarding up to a heartbeat interval per
+   * flush — minutes of real time over a day.
    */
   private checkpointIfDue(clock: EngineClock, outputs: EngineOutput[]): void {
     if (!this.open || this.segmentFlushMs <= 0) return;
@@ -198,15 +194,9 @@ export class SessionEngine {
     }
 
     if (event.private === null && this.nullPrivacyPolicy === 'suppress') {
-      // Step 23: this browser's private-mode state can't be detected at
-      // all, and the configured policy is to suppress capture for it
-      // entirely — treated exactly as if no reading arrived, not merely
-      // as a reading to withhold from an otherwise-open session. If a
-      // session is already open for this window (e.g. the policy changed
-      // mid-session, or a differently-configured resolver briefly
-      // reported non-null earlier), it is left to close via the normal
-      // focus-loss/idle/etc. paths rather than force-closed here — this
-      // is solely a gate on OPENING/EXTENDING from this reading.
+      // Private-mode state is undetectable and the policy is to suppress,
+      // so this is treated as if no reading arrived. An already-open session
+      // closes via the normal paths; this only gates opening and extending.
       return;
     }
 
@@ -308,15 +298,10 @@ export class SessionEngine {
   }
 
   /**
-   * Strips url/host/path for a private/incognito session before it ever
-   * leaves the engine — per docs/url-tracking-plan.md Step 23's policy
-   * ("record the session with the host and path stripped") and the
-   * anti-goal pinned in URL_TRACKING_CONTEXT.md ("do not store
-   * private-window URLs where private === true"). Only the external
-   * UrlSession is stripped; `open` (internal engine state) keeps the real
-   * values so merge-window matching in openOrMergeSession still compares
-   * real URLs — otherwise every private session would spuriously "match"
-   * every other stripped one.
+   * Strips url/host/path for a private session before it leaves the engine.
+   * Only the external UrlSession is stripped — internal state keeps the real
+   * values, or every private session would "match" every other stripped one
+   * in the merge window.
    */
   private toUrlSession(open: OpenSessionState, endedAt: number | null): UrlSession {
     const isPrivate = open.private === true;

@@ -48,24 +48,13 @@ export class UrlSessionsService {
   ) {}
 
   /**
-   * Ingests a batch from the desktop agent's sync queue — see
-   * docs/url-tracking-api.md for the full contract. `id` is the client's
-   * idempotency key: upserting by it (rather than inserting once) is what
-   * lets the same session re-sync with a larger `activeMs`/later `endedAt`
-   * after the engine's merge window reopens it, and lets a retried batch
-   * (after a crash between persist and local ack) land as a no-op.
+   * Ingests a batch from the desktop agent's sync queue (see
+   * docs/url-tracking-api.md). `id` is the client's idempotency key, so a
+   * reopened session re-syncs with a larger activeMs and a retried batch is
+   * a no-op. `deviceId` comes from the authenticated session, never the DTO.
    *
-   * `deviceId` always comes from the caller's authenticated device
-   * session, never from the DTO — a session's own `deviceId` field exists
-   * for the client's local bookkeeping, not as something this endpoint
-   * trusts for attribution.
-   *
-   * Deliberately NOT clamping each session's range to a matching running
-   * TimeEntry window yet — docs/url-tracking-api.md flags that join as an
-   * explicit open decision ("needs a decision from the backend team
-   * before reporting queries are built against it"), not a settled part
-   * of the contract. Stored as received for now; revisit once a reporting
-   * query actually needs the join.
+   * Sessions are stored as received, not clamped to a TimeEntry window —
+   * that join is still an open decision in the API doc.
    */
   async sync(
     organisationId: string,
@@ -154,21 +143,13 @@ export class UrlSessionsService {
   }
 
   /**
-   * Deletes every tracked session for one URL, for one member — the
-   * member-detail page's per-row delete action. Admin/manager only (see
-   * `@RequireRole` on the controller route); logged since this permanently
-   * removes another person's tracked browsing history.
+   * Deletes every tracked session for one URL, for one member. Admin/manager
+   * only, and logged, since it permanently removes another person's history.
    *
-   * **Nobody can delete their own tracked activity, whatever their role —
-   * not even an admin.** This is a tamper-resistance control, and it is
-   * deliberately stricter than the Time entry rule in ADR-0007 (where an
-   * admin *may* edit their own hours). The difference: a Time entry is a
-   * claim the person makes and may legitimately need to correct, whereas
-   * tracked browsing is evidence recorded *about* them. Letting anyone
-   * quietly erase their own record would make the whole feature
-   * unfalsifiable for the one person most motivated to edit it, and the
-   * top role is exactly where that matters most. Removing your own history
-   * is an organisation-level retention decision, not a per-row button.
+   * Nobody may delete their OWN tracked activity, whatever their role —
+   * stricter than ADR-0007's Time entry rule, because a Time entry is a
+   * claim the person makes while tracked browsing is evidence about them.
+   * Erasing your own record is a retention policy, not a per-row button.
    */
   async deleteByUrl(
     organisationId: string,

@@ -7,15 +7,10 @@ export interface HeartbeatSchedulerOptions {
 const DEFAULT_INTERVAL_MS = 5_000;
 
 /**
- * Drives "re-resolve every N seconds while a browser is frontmost, paused
- * otherwise" — this lives on the Electron side, not inside any platform
- * resolver side-car, because the pinned protocol (CLAUDE.md) has no
- * mechanism for a side-car to push a fresh URL unprompted: only `resolve`/
- * `ping` requests and `focus`/`ready`/`error` events exist. So "heartbeat"
- * has to mean "the consumer of ResolverManager's `focus` events calls
- * resolve() on a timer" — this class is that timer, decoupled from any one
- * platform so a future Windows/Linux resolver needs no new heartbeat logic
- * of its own.
+ * Re-resolves every N seconds while a browser is frontmost, paused
+ * otherwise. Lives here rather than in a side-car because the pinned
+ * protocol has no way for one to push a URL unprompted, and is
+ * platform-agnostic so no resolver needs its own copy.
  */
 export class HeartbeatScheduler {
   private readonly intervalMs: number;

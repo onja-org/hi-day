@@ -314,17 +314,12 @@ export class TimeEntriesService {
   }
 
   /**
-   * A timesheet: every Time entry logged by the caller (default) or, for
-   * an admin/manager, by another `targetMembershipId` — most recent first,
-   * with Project/Task names resolved so the page doesn't need a second
-   * round-trip per row. A plain member/finance can only ever reach their
-   * own (passing someone else's id 403s), matching who's allowed to edit
-   * (see `canEditEntry`) — viewing and editing use the same role gate.
+   * A timesheet: the caller's entries, or another member's for an
+   * admin/manager, most recent first with Project/Task names resolved.
+   * Viewing uses the same role gate as editing (`canEditEntry`).
    *
-   * `from`/`to` filter on `startedAt` (both inclusive) when given — the
-   * caller (the frontend) resolves what "today"/"this week" etc. mean in
-   * the viewer's own timezone and sends absolute instants, so this method
-   * itself stays timezone-naive.
+   * `from`/`to` filter `startedAt` inclusively. The frontend resolves what
+   * "today" means in the viewer's timezone, so this stays timezone-naive.
    */
   async list(
     organisationId: string,
@@ -432,17 +427,13 @@ export class TimeEntriesService {
   }
 
   /**
-   * Edits a completed Time entry. Only an admin (anyone's, including their
-   * own) or a manager (anyone's *except their own*) can edit — a plain
-   * member/finance can't edit any entry, not even one they logged
-   * themselves; see `canEditEntry`. A manager being unable to correct
-   * their own hours is deliberate: the same role that can edit other
-   * people's time shouldn't also be able to quietly pad or trim its own,
-   * without needing anyone else to sign off. Rejects editing a
-   * still-running entry (409, points at stop/switch instead): letting
-   * `endedAt` be set through here would silently stop a timer without
-   * going through `time_entry.stopped`, and changing `projectId` on a
-   * live entry has no clean "when did the attribution change" boundary.
+   * Edits a completed Time entry. Admins may edit anyone's including their
+   * own; managers anyone's except their own, so the role that can edit
+   * others cannot quietly adjust its own hours. See `canEditEntry`.
+   *
+   * Rejects a still-running entry (409): setting `endedAt` here would stop
+   * a timer without emitting `time_entry.stopped`, and re-attributing a
+   * live entry has no clean boundary.
    */
   async update(
     organisationId: string,

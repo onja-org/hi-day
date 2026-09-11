@@ -1,34 +1,10 @@
 /**
- * Stage H.1's automated failure-drill suite (docs/url-tracking-plan.md
- * Steps 29-31). Most of Step 29's scripted scenarios are ALREADY covered
- * by existing tests written during earlier stages — this file adds only
- * what's genuinely missing, rather than duplicating coverage:
+ * The failure drills not already covered elsewhere: alt-tab storms, clock
+ * jumps backward, sleep/wake, offline replay and side-car crashes live in
+ * session-engine, power-adapter, sync-queue and resolver-manager specs.
  *
- *   - Alt-tab storms (50 switches/30s)        → session-engine.spec.ts
- *     "50 rapid alt-tabs away and back..."
- *   - 20 identical heartbeat readings          → session-engine.spec.ts
- *     "a resolver returning the same URL on 20 consecutive heartbeats..."
- *   - Clock jumped backward                    → session-engine.spec.ts
- *     "flags a session whose activeMs exceeds..."
- *   - Sleep/wake, lock/unlock                   → power-adapter.spec.ts +
- *     session-engine.spec.ts's powerStateChanged/screenLockChanged tests
- *   - Timer stopped mid-session                 → session-engine.spec.ts
- *     "closes on timer stop..."
- *   - Day boundary                              → session-engine.spec.ts
- *     "closes on a day boundary..."
- *   - Offline for an hour then reconnect,
- *     no duplicates/loss                        → sync-queue.spec.ts
- *     "retry after a partial ack..." / "survives a simulated crash..."
- *   - Side-car killed mid-request               → resolver-manager.spec.ts
- *     "settles a pending request immediately when the child crashes..."
- *   - Resolver degraded terminal state           → resolver-manager.spec.ts
- *     "stops retrying and emits degraded..."
- *
- * What's added here: SPA navigation through many URLs in a tight window,
- * an explicit clock-jump-FORWARD case (only backward was covered), and a
- * resolver that starts failing mid-session (permission revoked /
- * "the resolver went from working to erroring" — the same observable
- * shape regardless of the real-world cause).
+ * Added here: SPA navigation through many URLs quickly, a clock jump
+ * forward, and a resolver that starts failing mid-session.
  */
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';

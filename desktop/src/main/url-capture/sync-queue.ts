@@ -39,19 +39,12 @@ export class SyncQueue {
 }
 
 /**
- * Strips local-only bookkeeping before a row goes on the wire.
+ * Strips local-only bookkeeping before a row goes on the wire. `syncedAt`
+ * is structurally assignable to `UrlSession`, so it compiled fine and the
+ * server rejected the batch at runtime (`forbidNonWhitelisted`).
  *
- * `getPendingSync` returns `UrlSessionRow`, which is a `UrlSession` PLUS
- * `syncedAt` — a column that exists purely to track upload state on this
- * device. TypeScript happily passes the wider type where `UrlSession[]` is
- * expected (extra properties are allowed structurally), so nothing failed
- * at compile time; the server rejected the whole batch at runtime with
- * `property syncedAt should not exist`, because the sync DTO validates
- * with `forbidNonWhitelisted`.
- *
- * Enumerating the fields explicitly — rather than deleting one key — means
- * any future local-only column added to the store cannot silently leak
- * into the request the same way.
+ * Fields are listed explicitly so a future local-only column cannot leak
+ * the same way.
  */
 function toWireSession(row: UrlSessionRow): UrlSession {
   return {

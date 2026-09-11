@@ -25,20 +25,11 @@ export interface ResolverOrchestratorOptions {
 
 /**
  * Owns a ResolverManager for one platform's side-car and turns its output
- * into EngineEvents — the piece that was deliberately left unbuilt when
- * UrlCaptureService and the darwin/win32 resolvers were each written (see
- * their own "not wired in yet" comments). Not platform-specific itself:
- * main.ts picks the right ResolverSpawnConfig (darwin vs. win32; Linux
- * has no resolver yet) and this class doesn't need to know which.
+ * into EngineEvents. Not platform-specific: main.ts picks the spawn config.
  *
- * Every `focus` event unconditionally starts the heartbeat and attempts a
- * resolve() — there is no "is this actually a browser" gate here. The
- * resolver's own per-browser registry already decides that (Stage C.2's
- * generic fallback, or a typed no-address-bar error for a non-browser
- * window); duplicating that decision here would just be a second,
- * possibly-inconsistent copy of the same logic. A resolve() failure for a
- * non-browser window is cheap and simply produces no urlResolved event —
- * not a problem to route around.
+ * Every `focus` event starts the heartbeat and attempts a resolve, with no
+ * "is this a browser" gate — the resolver already decides that, and a
+ * failed resolve simply produces no event.
  */
 export class ResolverOrchestrator {
   private readonly manager: ResolverManager;

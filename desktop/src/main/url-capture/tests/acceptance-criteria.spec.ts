@@ -1,19 +1,10 @@
 /**
- * Step 31's acceptance criteria, made measurable rather than a matter of
- * opinion (Prompt H.1's own framing) — but "measurable" here means
- * honestly computed from what the automated suite can actually produce,
- * never a fabricated number standing in for real hardware data we don't
- * have. Each criterion below is either:
+ * Step 31's acceptance criteria. Each is either computed for real from a
+ * deterministic drill and asserted against its threshold, or reported as
+ * NOT MEASURED with the reason — never a fabricated number.
  *
- *   (a) computed for real from a synthetic-but-deterministic drill, with
- *       a real assertion against the threshold, or
- *   (b) reported plainly as NOT MEASURED, with the reason, when it
- *       genuinely requires real hardware (real browsers, a real resolver's
- *       real UIA/AX timing) that this environment doesn't have.
- *
- * Run via `pnpm --filter desktop drills` (see package.json) for the
- * printed report; `vitest run` alone also runs it as part of the normal
- * suite, since the (a)-category checks are real assertions, not just logging.
+ * `pnpm --filter desktop drills` prints the report; `vitest run` also runs
+ * it, since the computed checks are real assertions.
  */
 import { describe, expect, it } from 'vitest';
 import { normalizeAddressBarReading } from '../normalization/normalize';

@@ -1,15 +1,10 @@
 const CODE_PREFIX = /^\[([a-z0-9-]+)\]/i;
 
 /**
- * Extracts the leading `[code]` tag both platform resolvers embed in a
- * resolve() failure's message (see win-resolver's ResolveFailure.
- * ToWireMessage and resolvers/darwin/index.ts's resolveViaAppleEvents/
- * resolveViaFirefoxAx) — the pinned wire protocol's ErrorResponse has no
- * dedicated code field, so this is the only way to bucket failures by
- * type across platforms. Falls back to "unknown" for a message that
- * doesn't follow the convention (e.g. the generic "Resolver is not
- * running." produced by ResolverManager itself, not a resolver's own
- * typed failure) rather than throwing or silently dropping it.
+ * Extracts the leading `[code]` tag resolvers embed in a failure message.
+ * The wire protocol's ErrorResponse has no code field, so this is the only
+ * way to bucket failures by type. Returns "unknown" for messages that don't
+ * follow the convention.
  */
 export function extractResolverErrorCode(message: string): string {
   const match = CODE_PREFIX.exec(message);
