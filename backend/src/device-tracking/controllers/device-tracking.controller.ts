@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { StopTimeEntryDto } from '../../time-entries/dto/stop-time-entry.dto';
 import { SwitchTimeEntryDto } from '../../time-entries/dto/switch-time-entry.dto';
 import type {
   CurrentTimeEntry,
+  TimeEntryListItem,
   TimeEntrySummary,
 } from '../../time-entries/services/time-entries.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
@@ -145,6 +147,34 @@ export class DeviceTrackingController {
     return this.timeEntriesService.resume(
       request.organisationId,
       request.userId,
+    );
+  }
+
+  /**
+   * The agent's own entries in a window, used to show how much has already
+   * been tracked against each Project today. Mirrors the web console's
+   * `organisations/:id/time-entries` exactly (same service, same role
+   * gating) — the agent needs it because switching Projects necessarily
+   * ENDS the previous entry: only one entry per person may be open at a
+   * time (the partial unique index in CreateTimeEntries). Without today's
+   * running totals the timer would appear to reset to zero every time the
+   * person came back to a Project they had already worked on.
+   *
+   * `from`/`to` are ISO instants resolved by the caller, so "today" means
+   * the machine's own local day rather than the server's.
+   */
+  @Get('time-entries')
+  list(
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntryListItem[]> {
+    return this.timeEntriesService.list(
+      request.organisationId,
+      request.userId,
+      undefined,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
     );
   }
 

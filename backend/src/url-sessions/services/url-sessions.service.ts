@@ -158,6 +158,17 @@ export class UrlSessionsService {
    * member-detail page's per-row delete action. Admin/manager only (see
    * `@RequireRole` on the controller route); logged since this permanently
    * removes another person's tracked browsing history.
+   *
+   * **Nobody can delete their own tracked activity, whatever their role —
+   * not even an admin.** This is a tamper-resistance control, and it is
+   * deliberately stricter than the Time entry rule in ADR-0007 (where an
+   * admin *may* edit their own hours). The difference: a Time entry is a
+   * claim the person makes and may legitimately need to correct, whereas
+   * tracked browsing is evidence recorded *about* them. Letting anyone
+   * quietly erase their own record would make the whole feature
+   * unfalsifiable for the one person most motivated to edit it, and the
+   * top role is exactly where that matters most. Removing your own history
+   * is an organisation-level retention decision, not a per-row button.
    */
   async deleteByUrl(
     organisationId: string,
@@ -174,6 +185,13 @@ export class UrlSessionsService {
     });
     if (!target) {
       throw new NotFoundException('Member not found.');
+    }
+
+    const caller = await this.getActiveMembership(organisationId, userId);
+    if (caller.id === target.id) {
+      throw new ForbiddenException(
+        'You cannot delete your own tracked website activity.',
+      );
     }
 
     const result = await this.urlSessions.delete({

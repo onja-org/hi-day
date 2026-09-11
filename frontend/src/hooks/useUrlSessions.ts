@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { getUrlSessions } from "@/lib/getUrlSessions";
 
+// Matched to the desktop agent's own upload cadence (SYNC_INTERVAL_MS in
+// desktop/src/main/main.ts) — polling faster than new data can possibly
+// arrive just adds requests without adding freshness. Without this the
+// page only refetched on mount or window-focus, so it sat visibly stale
+// while a timer ran and only caught up when you navigated away and back.
+const URL_SESSIONS_POLL_INTERVAL_MS = 30_000;
+
 // The membership segment defaults to "self" rather than being omitted, so
 // "my own tracked URLs" and "membershipId=my own id" (which an admin/
 // manager can also pass) share one cache entry instead of quietly
@@ -20,5 +27,6 @@ export function useUrlSessions(organisationId: string, membershipId?: string) {
       }
       return result.groups;
     },
+    refetchInterval: URL_SESSIONS_POLL_INTERVAL_MS,
   });
 }

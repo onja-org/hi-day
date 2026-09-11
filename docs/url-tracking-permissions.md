@@ -2,7 +2,11 @@
 
 *For anyone debugging "why does this user have no URL data" or wondering why permissions
 that worked yesterday stopped working today. Implementation lives in
-`desktop/src/main/resolvers/darwin/permission-state.ts` and `capability-report.ts`.*
+`desktop/src/main/resolvers/darwin/permission-state.ts` and `coverage.ts`.*
+
+*macOS only. For the cross-platform picture — what has to be true on a Windows, macOS or
+Linux machine before tracking produces data, and what IT can push centrally to a managed
+fleet — see [`url-tracking-machine-requirements.md`](./url-tracking-machine-requirements.md).*
 
 ## The gates
 
@@ -73,7 +77,7 @@ automatically. Deep links used for recovery (see the onboarding/permissions UI):
 
 ## The capability report
 
-`capability-report.ts` builds a snapshot combining installed-browser detection with current
+`buildCapabilityReport` (in `resolvers/darwin/coverage.ts`) builds a snapshot combining installed-browser detection with current
 permission state, into exactly what Step 25 asks for: "for each installed browser, whether
 URL tracking is active, degraded, or off, and why, in one sentence." This is what should
 eventually be attached to the device's heartbeat/registration payload (see the open

@@ -207,7 +207,15 @@ describe('UrlSessionsService', () => {
       const deleteFn = jest.fn().mockResolvedValue({ affected: 3 });
       const urlSessionsRepo = makeUrlSessionsRepo({ delete: deleteFn });
       const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue({ id: 'target-membership' }),
+        // First lookup resolves the TARGET, second resolves the CALLER —
+        // they must differ, since deleting your own activity is refused.
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'target-membership' })
+          .mockResolvedValueOnce({
+            id: 'admin-membership',
+            role: MembershipRole.ADMIN,
+          }),
       });
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({
@@ -235,6 +243,31 @@ describe('UrlSessionsService', () => {
       const recordedInput = calls[0][1];
       expect(recordedInput.action).toBe('url_session.deleted_by_url');
       expect(recordedInput.metadata.deletedCount).toBe(3);
+    });
+
+    it('refuses to let anyone delete their OWN activity, including an admin', async () => {
+      // Tamper-resistance: tracked browsing is evidence recorded about a
+      // person, not a claim they make, so nobody gets to quietly erase
+      // their own — deliberately stricter than ADR-0007's Time entry rule,
+      // where an admin may edit their own hours.
+      const ownMembership = { id: 'm-admin', role: MembershipRole.ADMIN };
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(ownMembership),
+      });
+      const deleteFn = jest.fn().mockResolvedValue({ affected: 3 });
+      const urlSessionsRepo = makeUrlSessionsRepo({ delete: deleteFn });
+      const service = makeService({ membershipsRepo, urlSessionsRepo });
+
+      await expect(
+        service.deleteByUrl(
+          'org-1',
+          'admin-user',
+          'm-admin',
+          'https://example.com',
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      // And nothing was removed before the check.
+      expect(deleteFn).not.toHaveBeenCalled();
     });
 
     it('rejects when membershipId or url is missing', async () => {

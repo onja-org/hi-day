@@ -1,5 +1,9 @@
 # URL tracking — native resolver toolchain requirements
 
+*This file is about BUILDING and TESTING the resolvers. For what has to be true on an
+end user's machine at runtime, see
+[`url-tracking-machine-requirements.md`](./url-tracking-machine-requirements.md).*
+
 What each platform's native resolver (`native/win/`, `desktop/native/darwin/`, `native/linux/`)
 actually needs, split by who needs it and for what — building it from source, testing that it
 really captures a URL on that platform, and running the finished, packaged app. These are three
