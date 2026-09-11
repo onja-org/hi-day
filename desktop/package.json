@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs",
-    "dev": "pnpm build && electron .",
+    "dev": "pnpm build && electron . --no-sandbox",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

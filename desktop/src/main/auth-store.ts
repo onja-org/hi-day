@@ -4,6 +4,7 @@ import { safeStorage } from 'electron';
 
 export interface StoredSession {
   email: string;
+  organisationName: string;
   deviceId: string;
   deviceToken: string;
 }

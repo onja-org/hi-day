@@ -1,15 +1,21 @@
 # Workforce Monitor Desktop
 
-The downloadable desktop agent. **It handles login, device registration,
+The downloadable desktop agent. **It handles device registration,
 starting/stopping a timer against a Project (and optional Task), and idle
 detection/handling — activity capture (apps/windows, screenshots, activity
 level) isn't built yet.** That's deliberate scope for this pass; see
 `docs/TECH_DESIGN.md` for where activity capture is headed.
 
-On first successful login, the app registers itself as a Device against
-your account (see the backend's auto-registration flow in
-`backend/src/devices/`) using a UUID generated on first run and persisted
-under Electron's `userData` directory — not a hardware fingerprint.
+**Login only ever happens in the web app** (`docs/adr/0009-...`) — the
+desktop app itself has no password form. Clicking "Log in" opens the web
+app in your system browser to approve the device; logging out of the web
+app also signs this device out automatically, next time it talks to the
+backend. See "Logging in" below.
+
+On approval, the app registers itself as a Device against your account
+(see the backend's auto-registration flow in `backend/src/devices/`)
+using a UUID generated on first run and persisted under Electron's
+`userData` directory — not a hardware fingerprint.
 
 ## Running locally
 
@@ -31,7 +37,7 @@ under Electron's `userData` directory — not a hardware fingerprint.
    ```
 
    This runs `pnpm build` then `electron .`. A window should open showing
-   the login form.
+   a "Log in" button.
 
    Electron needs a display to run — it won't launch headless in a
    container with no X server. If you're developing inside one, run the
@@ -39,10 +45,17 @@ under Electron's `userData` directory — not a hardware fingerprint.
    desktop test`) to verify, and defer launching the actual window to a
    machine with a desktop session.
 
-3. **Log in** with any real account on that backend — either an existing
-   one, or a fresh signup via the web console (`pnpm --filter frontend dev`,
-   then `http://localhost:3000/signup`). On success the app registers
-   itself as a Device on that account.
+3. **Log in.** You'll also need the web console running
+   (`pnpm --filter frontend dev`, `http://localhost:3000`) with an account
+   to approve against — either an existing one, or a fresh signup at
+   `http://localhost:3000/signup`.
+
+   Click **Log in** in the desktop app. It opens `/link-device?code=...` in
+   your system browser (logging you in first if you weren't already), and
+   the desktop app shows "Waiting for you to approve in your browser…"
+   while it polls. Approve the device on that page — the desktop app picks
+   it up within a few seconds and shows the logged-in screen. This
+   registers the app as a Device on that account.
 
 4. **Verify registration** in the web console's org **Devices** page
    (sidebar): a new row should appear with platform `Linux`/`macOS`/
@@ -54,11 +67,18 @@ under Electron's `userData` directory — not a hardware fingerprint.
    background heartbeat yet, so this only surfaces on the next explicit
    request, not live.
 
-6. **Test session persistence**: quit and re-run `pnpm --filter desktop
-   dev` — it should skip straight to the logged-in screen instead of
-   showing the login form again.
+6. **Test that logging out of the web app signs the desktop out too**
+   (ADR-0009): while the desktop app is logged in and its status poll is
+   running (every 15s), log out of the web console. Within ~15s the
+   desktop app should drop back to the "Log in" view on its own, with
+   "You've been signed out — please log in to continue." — no restart or
+   manual action needed.
 
-7. **Test time tracking**: once logged in, pick a Project (and optionally
+7. **Test session persistence**: quit and re-run `pnpm --filter desktop
+   dev` — it should skip straight to the logged-in screen instead of
+   showing the login view again.
+
+8. **Test time tracking**: once logged in, pick a Project (and optionally
    a Task) from the dropdowns and click **Start timer** — the elapsed time
    should start ticking, polling `GET /device/time-entries/current` every
    15s to stay in sync with whatever's actually running server-side.

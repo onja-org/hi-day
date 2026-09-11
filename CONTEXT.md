@@ -95,5 +95,5 @@ _Avoid_: treating "idle detection" as reliably working everywhere it's deployed 
 ### Capture
 
 **Device**:
-A paired installation of the desktop agent (or, later, the browser extension or a mobile app) belonging to a User within an Organisation. Marked "managed" when company-controlled versus personal.
+A paired installation of the desktop agent (or, later, the browser extension or a mobile app) belonging to a User within an Organisation. Marked "managed" when company-controlled versus personal. Pairing itself only ever happens by approving the device from an already-authenticated web session (see docs/adr/0009) — the agent never collects a password directly. Logging out of the web app (or resetting a password) revokes every DeviceSession for that user, not just the browser's own session; a device discovers this the next time it happens to call the backend (there's no push channel), and any timer it had running gets stopped server-side at that moment rather than left open forever.
 _Avoid_: Agent (the Agent is the software; a Device is the paired installation/record it produces)

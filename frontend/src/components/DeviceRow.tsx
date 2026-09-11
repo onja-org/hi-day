@@ -2,21 +2,14 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DEVICES_QUERY_KEY } from "@/hooks/useDevices";
+import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { signOutDevice } from "@/lib/signOutDevice";
-import type { Device, DevicePlatform } from "@/types/device";
+import type { Device } from "@/types/device";
 import { DeviceStatusBadge } from "./DeviceStatusBadge";
 
 type DeviceRowProps = {
   organisationId: string;
   device: Device;
-};
-
-const PLATFORM_LABELS: Record<DevicePlatform, string> = {
-  windows: "Windows",
-  macos: "macOS",
-  linux: "Linux",
-  ios: "iOS",
-  android: "Android",
 };
 
 function formatLastSeen(lastSeenAt: string | null): string {
@@ -49,7 +42,7 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
         <DeviceStatusBadge status={device.status} />
       </td>
       <td className="px-3 py-2 text-slate-900">
-        {PLATFORM_LABELS[device.platform]}
+        {devicePlatformLabel(device.platform)}
         {device.osVersion ? ` (${device.osVersion})` : ""}
       </td>
       <td className="px-3 py-2 text-slate-900">{device.appVersion ?? "—"}</td>

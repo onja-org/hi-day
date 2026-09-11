@@ -17,7 +17,12 @@ import { SuccessMessage } from "./SuccessMessage";
 const REDIRECT_DELAY_MS = 900;
 const RESET_EMAIL_SENT_MESSAGE = "Email sent with password reset instructions.";
 
-export function LoginForm() {
+type LoginFormProps = {
+  /** Where to go after a successful login — defaults to the dashboard. */
+  next?: string;
+};
+
+export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
   const router = useRouter();
   const [resetEmailSent, setResetEmailSent] = useState(() =>
     consumeResetEmailSent(),
@@ -33,12 +38,9 @@ export function LoginForm() {
   useEffect(() => {
     if (!mutation.data?.ok) return;
 
-    const timeout = setTimeout(
-      () => router.push("/dashboard"),
-      REDIRECT_DELAY_MS,
-    );
+    const timeout = setTimeout(() => router.push(next), REDIRECT_DELAY_MS);
     return () => clearTimeout(timeout);
-  }, [mutation.data, router]);
+  }, [mutation.data, next, router]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

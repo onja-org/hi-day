@@ -1,7 +1,7 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
-import type { TrackingResult } from './api-client';
+import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron';
+import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
@@ -15,14 +15,14 @@ const NOT_LOGGED_IN: TrackingResult<never> = {
 
 const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
 
-interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
 interface AuthStatus {
   loggedIn: boolean;
   email?: string;
+  organisationName?: string;
+}
+
+interface StartPairingIpcResult {
+  ok: boolean;
   message?: string;
 }
 
@@ -39,7 +39,6 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 420,
     height: 560,
-    resizable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -53,22 +52,58 @@ function createWindow(): void {
   });
 }
 
+/**
+ * Runs an authenticated tracking call and, if the backend reports the
+ * device session itself is gone (a 401, not just a transient failure —
+ * see ApiClient's `signedOut`), clears the stored session so the *next*
+ * `auth:status` check — and this response's own `signedOut` flag, which
+ * the renderer acts on immediately — reflect being logged out. This is
+ * how logging out from the web app (ADR-0009) reaches the desktop: there's
+ * no push channel, so it's discovered the next time this device happens
+ * to call the backend, same as the renderer's existing 15s status poll.
+ */
+async function withSignOutDetection<T>(
+  authStore: AuthStore,
+  run: (deviceToken: string) => Promise<TrackingResult<T>>,
+): Promise<TrackingResult<T>> {
+  const session = authStore.load();
+  if (!session) {
+    return NOT_LOGGED_IN;
+  }
+
+  const result = await run(session.deviceToken);
+  if (!result.ok && result.signedOut) {
+    authStore.clear();
+  }
+  return result;
+}
+
 function registerIpcHandlers(): void {
   const authStore = new AuthStore(app.getPath('userData'));
   const apiClient = new ApiClient(API_BASE_URL);
 
+  // Set once a pairing request is started, cleared once it's claimed or
+  // expires — the renderer's poll doesn't need to pass the code back on
+  // every call, matching how it already doesn't pass the device token
+  // back for tracking calls.
+  let pendingPairingCode: string | null = null;
+
   ipcMain.handle('auth:status', (): AuthStatus => {
     const session = authStore.load();
-    return session ? { loggedIn: true, email: session.email } : { loggedIn: false };
+    return session
+      ? {
+          loggedIn: true,
+          email: session.email,
+          organisationName: session.organisationName,
+        }
+      : { loggedIn: false };
   });
 
   ipcMain.handle(
-    'auth:login',
-    async (_event, credentials: LoginCredentials): Promise<AuthStatus> => {
+    'auth:startPairing',
+    async (): Promise<StartPairingIpcResult> => {
       const fingerprint = getOrCreateDeviceFingerprint(app.getPath('userData'));
-      const result = await apiClient.login({
-        email: credentials.email,
-        password: credentials.password,
+      const result = await apiClient.startPairing({
         deviceFingerprint: fingerprint,
         platform: toDevicePlatform(process.platform),
         osVersion: osRelease(),
@@ -77,15 +112,37 @@ function registerIpcHandlers(): void {
       });
 
       if (!result.ok) {
-        return { loggedIn: false, message: result.message };
+        return { ok: false, message: result.message };
       }
 
-      authStore.save({
-        email: credentials.email,
-        deviceId: result.deviceId,
-        deviceToken: result.deviceToken,
-      });
-      return { loggedIn: true, email: credentials.email };
+      pendingPairingCode = result.code;
+      await shell.openExternal(result.approvalUrl);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    'auth:pairingStatus',
+    async (): Promise<PairingPollResult> => {
+      if (!pendingPairingCode) {
+        return { status: 'expired' };
+      }
+
+      const result = await apiClient.pollPairing(pendingPairingCode);
+
+      if (result.status === 'approved') {
+        pendingPairingCode = null;
+        authStore.save({
+          email: result.email,
+          organisationName: result.organisationName,
+          deviceId: result.deviceId,
+          deviceToken: result.deviceToken,
+        });
+      } else if (result.status === 'expired') {
+        pendingPairingCode = null;
+      }
+
+      return result;
     },
   );
 
@@ -98,58 +155,43 @@ function registerIpcHandlers(): void {
     return { loggedIn: false };
   });
 
-  ipcMain.handle('tracking:listProjects', () => {
-    const session = authStore.load();
-    return session ? apiClient.listProjects(session.deviceToken) : NOT_LOGGED_IN;
-  });
+  ipcMain.handle('tracking:listProjects', () =>
+    withSignOutDetection(authStore, (token) => apiClient.listProjects(token)),
+  );
 
-  ipcMain.handle('tracking:listTasks', (_event, projectId: string) => {
-    const session = authStore.load();
-    return session
-      ? apiClient.listTasks(session.deviceToken, projectId)
-      : NOT_LOGGED_IN;
-  });
+  ipcMain.handle('tracking:listTasks', (_event, projectId: string) =>
+    withSignOutDetection(authStore, (token) =>
+      apiClient.listTasks(token, projectId),
+    ),
+  );
 
   ipcMain.handle(
     'tracking:start',
-    (_event, projectId: string, taskId: string | null) => {
-      const session = authStore.load();
-      return session
-        ? apiClient.startTimer(session.deviceToken, projectId, taskId)
-        : NOT_LOGGED_IN;
-    },
+    (_event, projectId: string, taskId: string | null) =>
+      withSignOutDetection(authStore, (token) =>
+        apiClient.startTimer(token, projectId, taskId),
+      ),
   );
 
   ipcMain.handle(
     'tracking:switch',
-    (_event, projectId: string, taskId: string | null) => {
-      const session = authStore.load();
-      return session
-        ? apiClient.switchTimer(session.deviceToken, projectId, taskId)
-        : NOT_LOGGED_IN;
-    },
+    (_event, projectId: string, taskId: string | null) =>
+      withSignOutDetection(authStore, (token) =>
+        apiClient.switchTimer(token, projectId, taskId),
+      ),
   );
 
-  ipcMain.handle('tracking:stop', (_event, endedAt?: string) => {
-    const session = authStore.load();
-    return session
-      ? apiClient.stopTimer(session.deviceToken, endedAt)
-      : NOT_LOGGED_IN;
-  });
+  ipcMain.handle('tracking:stop', (_event, endedAt?: string) =>
+    withSignOutDetection(authStore, (token) => apiClient.stopTimer(token, endedAt)),
+  );
 
-  ipcMain.handle('tracking:status', () => {
-    const session = authStore.load();
-    return session
-      ? apiClient.getCurrentTimer(session.deviceToken)
-      : NOT_LOGGED_IN;
-  });
+  ipcMain.handle('tracking:status', () =>
+    withSignOutDetection(authStore, (token) => apiClient.getCurrentTimer(token)),
+  );
 
-  ipcMain.handle('tracking:idlePolicy', () => {
-    const session = authStore.load();
-    return session
-      ? apiClient.getIdlePolicy(session.deviceToken)
-      : NOT_LOGGED_IN;
-  });
+  ipcMain.handle('tracking:idlePolicy', () =>
+    withSignOutDetection(authStore, (token) => apiClient.getIdlePolicy(token)),
+  );
 
   // Native, synchronous, and free of any network round-trip — the renderer
   // polls this on its own short interval while a timer is running.

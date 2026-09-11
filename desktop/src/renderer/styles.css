@@ -19,6 +19,12 @@ h1 {
   margin: 0 0 24px;
 }
 
+.organisation-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin: -16px 0 20px;
+}
+
 label {
   display: block;
   font-size: 13px;

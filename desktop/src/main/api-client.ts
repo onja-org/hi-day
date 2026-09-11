@@ -1,8 +1,6 @@
 import type { DesktopDevicePlatform } from './platform';
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface StartPairingRequest {
   deviceFingerprint: string;
   platform: DesktopDevicePlatform;
   osVersion: string;
@@ -10,14 +8,34 @@ export interface LoginRequest {
   appVersion: string;
 }
 
-export type LoginResult =
-  | { ok: true; deviceId: string; deviceToken: string }
+export type StartPairingResult =
+  | { ok: true; code: string; approvalUrl: string }
   | { ok: false; message: string };
 
-interface LoginResponseBody {
+export type PairingPollResult =
+  | { status: 'pending' }
+  | {
+      status: 'approved';
+      deviceId: string;
+      deviceToken: string;
+      email: string;
+      organisationName: string;
+    }
+  | { status: 'expired' }
+  | { status: 'error'; message: string };
+
+interface StartPairingResponseBody {
   message?: string;
+  code?: string;
+  approvalUrl?: string;
+}
+
+interface PairingPollResponseBody {
+  status?: 'pending' | 'approved' | 'expired';
   deviceId?: string;
   deviceToken?: string;
+  email?: string;
+  organisationName?: string;
 }
 
 export interface TrackedProject {
@@ -55,7 +73,19 @@ export interface IdlePolicy {
 
 export type TrackingResult<T> =
   | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry };
+  | {
+      ok: false;
+      message: string;
+      runningEntry?: TimeEntry;
+      /**
+       * True specifically for a 401 from an expired/revoked device
+       * session — as opposed to a network error or any other failure —
+       * so the caller knows to drop the locally stored session and show
+       * the login view again, rather than just displaying the message
+       * and leaving the UI thinking it's still logged in.
+       */
+      signedOut?: boolean;
+    };
 
 interface ErrorResponseBody {
   message?: string[] | string;
@@ -71,10 +101,15 @@ interface ErrorResponseBody {
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
-  async login(request: LoginRequest): Promise<LoginResult> {
+  /**
+   * Starts the "log in via the web app" pairing flow (ADR-0009) — the
+   * desktop never handles a password itself. The caller opens `approvalUrl`
+   * in the system browser and polls `pollPairing` with the returned code.
+   */
+  async startPairing(request: StartPairingRequest): Promise<StartPairingResult> {
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/auth/login`, {
+      response = await fetch(`${this.baseUrl}/device-pairing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
@@ -83,13 +118,50 @@ export class ApiClient {
       return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
     }
 
-    const body = (await response.json().catch(() => ({}))) as LoginResponseBody;
+    const body = (await response.json().catch(() => ({}))) as StartPairingResponseBody;
 
-    if (!response.ok || !body.deviceId || !body.deviceToken) {
-      return { ok: false, message: body.message ?? 'Login failed.' };
+    if (!response.ok || !body.code || !body.approvalUrl) {
+      return { ok: false, message: body.message ?? 'Could not start login.' };
     }
 
-    return { ok: true, deviceId: body.deviceId, deviceToken: body.deviceToken };
+    return { ok: true, code: body.code, approvalUrl: body.approvalUrl };
+  }
+
+  async pollPairing(code: string): Promise<PairingPollResult> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseUrl}/device-pairing/${encodeURIComponent(code)}/status`,
+      );
+    } catch {
+      return { status: 'error', message: `Could not reach the server at ${this.baseUrl}.` };
+    }
+
+    const body = (await response.json().catch(() => ({}))) as PairingPollResponseBody;
+
+    if (!response.ok || !body.status) {
+      return { status: 'error', message: 'Could not check login status.' };
+    }
+
+    if (body.status === 'approved') {
+      if (
+        !body.deviceId ||
+        !body.deviceToken ||
+        !body.email ||
+        !body.organisationName
+      ) {
+        return { status: 'error', message: 'Could not finish logging in.' };
+      }
+      return {
+        status: 'approved',
+        deviceId: body.deviceId,
+        deviceToken: body.deviceToken,
+        email: body.email,
+        organisationName: body.organisationName,
+      };
+    }
+
+    return { status: body.status };
   }
 
   async logout(deviceToken: string): Promise<void> {
@@ -202,6 +274,7 @@ export class ApiClient {
       ok: false,
       message: message ?? 'Something went wrong. Please try again.',
       runningEntry: errorBody.runningEntry,
+      signedOut: response.status === 401,
     };
   }
 }

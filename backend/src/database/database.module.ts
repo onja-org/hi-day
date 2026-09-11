@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Activity } from './entities/activity.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
+import { DevicePairingRequest } from './entities/device-pairing-request.entity';
 import { DeviceSession } from './entities/device-session.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
@@ -37,6 +38,7 @@ import { User } from './entities/user.entity';
           AuditLog,
           RefreshToken,
           Device,
+          DevicePairingRequest,
           DeviceSession,
           TimeEntry,
           Activity,
