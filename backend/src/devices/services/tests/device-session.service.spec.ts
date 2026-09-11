@@ -208,4 +208,43 @@ describe('DeviceSessionService', () => {
       );
     });
   });
+
+  describe('revokeAllForUser', () => {
+    it("revokes every one of the user's active sessions and returns the distinct organisations", async () => {
+      const find = jest.fn().mockResolvedValue([
+        { id: 'session-1', organisationId: 'org-1' },
+        { id: 'session-2', organisationId: 'org-1' },
+        { id: 'session-3', organisationId: 'org-2' },
+      ]);
+      const update = jest.fn().mockResolvedValue(undefined);
+      const deviceSessionsRepo = {
+        find,
+        update,
+      } as unknown as Repository<DeviceSession>;
+      const service = makeService({ deviceSessionsRepo });
+
+      const organisationIds = await service.revokeAllForUser('user-1');
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1' }),
+        expect.objectContaining({ revokedAt: expect.any(Date) as unknown }),
+      );
+      expect(organisationIds.sort()).toEqual(['org-1', 'org-2']);
+    });
+
+    it('does nothing and returns an empty list when the user has no active sessions', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const update = jest.fn().mockResolvedValue(undefined);
+      const deviceSessionsRepo = {
+        find,
+        update,
+      } as unknown as Repository<DeviceSession>;
+      const service = makeService({ deviceSessionsRepo });
+
+      const organisationIds = await service.revokeAllForUser('user-1');
+
+      expect(update).not.toHaveBeenCalled();
+      expect(organisationIds).toEqual([]);
+    });
+  });
 });

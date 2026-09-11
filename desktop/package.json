@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Workforce Monitor desktop agent (login, device registration, and start/stop time tracking)",
   "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && node scripts/copy-assets.mjs",
-    "dev": "pnpm build && pnpm rebuild:electron && electron .",
+    "dev": "pnpm build && pnpm rebuild:electron && electron . --no-sandbox",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

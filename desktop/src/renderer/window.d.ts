@@ -17,6 +17,7 @@ declare global {
   interface AuthStatus {
     loggedIn: boolean;
     email?: string;
+    organisationName?: string;
     message?: string;
   }
 
@@ -68,6 +69,22 @@ declare global {
     thresholdMinutes: number;
   }
 
+  interface StartPairingResult {
+    ok: boolean;
+    message?: string;
+  }
+
+  type PairingPollResult =
+    | { status: 'pending' }
+    | { status: 'approved'; email: string; organisationName: string }
+    | { status: 'expired' }
+    | { status: 'error'; message: string };
+
+  interface UpdateCheckResult {
+    updateAvailable: boolean;
+    latestVersion?: string;
+  }
+
   type TrackingResult<T> =
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
@@ -75,7 +92,10 @@ declare global {
   interface Window {
     api: {
       getStatus: () => Promise<AuthStatus>;
-      login: (email: string, password: string) => Promise<AuthStatus>;
+      auth: {
+        startPairing: () => Promise<StartPairingResult>;
+        pairingStatus: () => Promise<PairingPollResult>;
+      };
       logout: () => Promise<AuthStatus>;
       tracking: {
         listProjects: () => Promise<TrackingResult<TrackedProject[]>>;
@@ -95,6 +115,10 @@ declare global {
       };
       urlCapture: {
         timerStateChanged: (running: boolean) => void;
+      };
+      update: {
+        status: () => Promise<UpdateCheckResult>;
+        openReleasesPage: () => Promise<void>;
       };
     };
   }

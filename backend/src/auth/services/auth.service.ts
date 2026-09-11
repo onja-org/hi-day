@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { User } from '../../database/entities/user.entity';
 import { EmailService } from '../../email/services/email.service';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { CreateAccountDto } from '../dto/create-account.dto';
 import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { LoginDto } from '../dto/login.dto';
@@ -76,6 +78,7 @@ export class AuthService {
     private readonly loginAttemptTracker: LoginAttemptTracker,
     private readonly captchaService: CaptchaService,
     private readonly deviceSessionService: DeviceSessionService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   async signUp(dto: CreateAccountDto): Promise<{ message: string }> {
@@ -382,6 +385,8 @@ export class AuthService {
       });
     });
 
+    await this.signOutAllDevices(user.id);
+
     const accessToken = this.tokenService.signAccessToken(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
     recordAnalyticsEvent('password_reset_completed', { userId: user.id });
@@ -416,10 +421,13 @@ export class AuthService {
     const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
 
     if (refreshToken) {
-      await this.refreshTokenService.revokeByValue(
+      const userId = await this.refreshTokenService.revokeByValue(
         this.dataSource.manager,
         refreshToken,
       );
+      if (userId) {
+        await this.signOutAllDevices(userId);
+      }
     }
 
     response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
@@ -480,6 +488,29 @@ export class AuthService {
     });
 
     return membership!.organisation.name;
+  }
+
+  /**
+   * Logging out (or resetting a password) is a sign-out-*everywhere* action
+   * (ADR-0009, "only log in/out from the web app") — every device the user
+   * was paired on gets signed out too. A revoked device can no longer stop
+   * its own running timer, so this stops whatever's running in each
+   * affected organisation, the same way idle auto-discard does, rather
+   * than leaving it open forever (ADR-0006's one-running-timer rule).
+   */
+  private async signOutAllDevices(userId: string): Promise<void> {
+    const organisationIds =
+      await this.deviceSessionService.revokeAllForUser(userId);
+
+    for (const organisationId of organisationIds) {
+      try {
+        await this.timeEntriesService.stop(organisationId, userId);
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) {
+          throw error;
+        }
+      }
+    }
   }
 
   private isUniqueViolation(error: unknown): boolean {

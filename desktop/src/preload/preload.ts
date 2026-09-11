@@ -3,8 +3,19 @@ import { contextBridge, ipcRenderer } from 'electron';
 export interface AuthStatus {
   loggedIn: boolean;
   email?: string;
+  organisationName?: string;
+}
+
+export interface StartPairingResult {
+  ok: boolean;
   message?: string;
 }
+
+export type PairingPollResult =
+  | { status: 'pending' }
+  | { status: 'approved'; email: string; organisationName: string }
+  | { status: 'expired' }
+  | { status: 'error'; message: string };
 
 export interface TrackedProject {
   id: string;
@@ -58,10 +69,19 @@ export type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  latestVersion?: string;
+}
+
 const api = {
   getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:status') as Promise<AuthStatus>,
-  login: (email: string, password: string): Promise<AuthStatus> =>
-    ipcRenderer.invoke('auth:login', { email, password }) as Promise<AuthStatus>,
+  auth: {
+    startPairing: (): Promise<StartPairingResult> =>
+      ipcRenderer.invoke('auth:startPairing') as Promise<StartPairingResult>,
+    pairingStatus: (): Promise<PairingPollResult> =>
+      ipcRenderer.invoke('auth:pairingStatus') as Promise<PairingPollResult>,
+  },
   logout: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:logout') as Promise<AuthStatus>,
   tracking: {
     listProjects: (): Promise<TrackingResult<TrackedProject[]>> =>
@@ -109,6 +129,12 @@ const api = {
     timerStateChanged: (running: boolean): void => {
       ipcRenderer.send('urlCapture:timerStateChanged', running);
     },
+  },
+  update: {
+    status: (): Promise<UpdateCheckResult> =>
+      ipcRenderer.invoke('update:status') as Promise<UpdateCheckResult>,
+    openReleasesPage: (): Promise<void> =>
+      ipcRenderer.invoke('update:openReleasesPage') as Promise<void>,
   },
 };
 

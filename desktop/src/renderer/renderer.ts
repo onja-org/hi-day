@@ -10,6 +10,15 @@ const STATUS_POLL_INTERVAL_MS = 15_000;
 // How often the agent checks the OS's own idle-time counter while a timer
 // is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
+// How often — and for how long — the agent checks whether the pairing
+// code it just opened in the browser has been approved yet. Bounded
+// rather than indefinite so an abandoned pairing attempt (browser tab
+// closed, person distracted) doesn't poll forever; the pairing code
+// itself lives for longer than this on the backend, so clicking "Log in"
+// again after this gives up just starts a fresh one.
+const PAIRING_POLL_INTERVAL_MS = 3_000;
+const PAIRING_POLL_MAX_ATTEMPTS = 60;
+const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
@@ -19,46 +28,113 @@ function show(viewId: string): void {
   }
 }
 
-function showLoggedIn(email: string): void {
-  document.getElementById('status-email')!.textContent = email;
+function showLoggedIn(organisationName: string): void {
+  document.getElementById('organisation-name')!.textContent = organisationName;
   show('status-view');
   void initTracking();
 }
 
-function showLoginForm(message?: string): void {
-  const errorEl = document.getElementById('login-error')!;
-  errorEl.hidden = !message;
-  errorEl.textContent = message ?? '';
-  show('login-view');
-  stopPolling();
+const pairingStatusEl = document.getElementById('pairing-status')!;
+const pairingErrorEl = document.getElementById('pairing-error')!;
+const loginButton = document.getElementById('login-button') as HTMLButtonElement;
+
+let pairingPollHandle: ReturnType<typeof setInterval> | null = null;
+let pairingPollAttempts = 0;
+
+function stopPairingPoll(): void {
+  if (pairingPollHandle) clearInterval(pairingPollHandle);
+  pairingPollHandle = null;
+  pairingPollAttempts = 0;
 }
 
+function showLoginView(errorMessage?: string): void {
+  pairingErrorEl.hidden = !errorMessage;
+  pairingErrorEl.textContent = errorMessage ?? '';
+  pairingStatusEl.textContent = DEFAULT_PAIRING_MESSAGE;
+  loginButton.disabled = false;
+  loginButton.textContent = 'Log in';
+  show('login-view');
+  stopPolling();
+  stopPairingPoll();
+}
+
+const updateBannerEl = document.getElementById('update-banner')!;
+const updateMessageEl = document.getElementById('update-message')!;
+
+async function checkForUpdate(): Promise<void> {
+  const result = await window.api.update.status();
+  if (!result.updateAvailable) return;
+
+  updateMessageEl.textContent = result.latestVersion
+    ? `Version ${result.latestVersion} is available.`
+    : 'A new version is available.';
+  updateBannerEl.hidden = false;
+}
+
+document.getElementById('update-button')!.addEventListener('click', () => {
+  void window.api.update.openReleasesPage();
+});
+
+document.getElementById('update-dismiss')!.addEventListener('click', () => {
+  updateBannerEl.hidden = true;
+});
+
 async function init(): Promise<void> {
+  void checkForUpdate();
+
   const status = await window.api.getStatus();
-  if (status.loggedIn && status.email) {
-    showLoggedIn(status.email);
+  if (status.loggedIn && status.organisationName) {
+    showLoggedIn(status.organisationName);
   } else {
-    showLoginForm();
+    showLoginView();
   }
 }
 
-document.getElementById('login-form')!.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const form = event.currentTarget as HTMLFormElement;
-  const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-  const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+async function pollPairing(): Promise<void> {
+  pairingPollAttempts += 1;
+  const result = await window.api.auth.pairingStatus();
 
-  void window.api.login(email, password).then((result) => {
-    if (result.loggedIn && result.email) {
-      showLoggedIn(result.email);
-    } else {
-      showLoginForm(result.message ?? 'Login failed.');
+  if (result.status === 'approved') {
+    stopPairingPoll();
+    showLoggedIn(result.organisationName);
+    return;
+  }
+
+  if (result.status === 'error') {
+    stopPairingPoll();
+    showLoginView(result.message);
+    return;
+  }
+
+  if (result.status === 'expired' || pairingPollAttempts >= PAIRING_POLL_MAX_ATTEMPTS) {
+    stopPairingPoll();
+    showLoginView('That login link expired. Click "Log in" to try again.');
+    return;
+  }
+
+  // status === 'pending' — keep waiting.
+}
+
+loginButton.addEventListener('click', () => {
+  void (async () => {
+    loginButton.disabled = true;
+    pairingErrorEl.hidden = true;
+    pairingStatusEl.textContent = 'Opening your browser…';
+
+    const result = await window.api.auth.startPairing();
+    if (!result.ok) {
+      showLoginView(result.message ?? 'Could not start login.');
+      return;
     }
-  });
+
+    pairingStatusEl.textContent = 'Waiting for you to approve in your browser…';
+    stopPairingPoll();
+    pairingPollHandle = setInterval(() => void pollPairing(), PAIRING_POLL_INTERVAL_MS);
+  })();
 });
 
 document.getElementById('logout-button')!.addEventListener('click', () => {
-  void window.api.logout().then(() => showLoginForm());
+  void window.api.logout().then(() => showLoginView());
 });
 
 // --- Time tracking -----------------------------------------------------
@@ -130,9 +206,25 @@ function showTrackingError(message: string): void {
  * indefinitely, since every failure (including this one) was treated the
  * same as "server's briefly unreachable, try again next poll".
  */
+/**
+ * Runs a tracking call and returns to the login view if the device session
+ * is gone. `unauthorized` is this branch's name for the 401 signal main
+ * carried as `signedOut` — one field, one meaning, so the two sides' 401
+ * handling is a single helper rather than two that can drift.
+ */
+async function callTracking<T>(
+  fn: () => Promise<TrackingResult<T>>,
+): Promise<TrackingResult<T>> {
+  const result = await fn();
+  if (!result.ok && result.unauthorized) {
+    showLoginView("You've been signed out — please log in to continue.");
+  }
+  return result;
+}
+
 function handleTrackingFailure(result: { message: string; unauthorized?: boolean }): void {
   if (result.unauthorized) {
-    showLoginForm(result.message);
+    showLoginView(result.message);
     return;
   }
   showTrackingError(result.message);
@@ -255,7 +347,9 @@ async function checkIdle(): Promise<void> {
   ).toISOString();
 
   if (idlePolicy.handling === 'auto_subtract') {
-    const result = await window.api.tracking.stop(idleStartedAtIso);
+    const result = await callTracking(() =>
+      window.api.tracking.stop(idleStartedAtIso),
+    );
     if (result.ok) {
       setRunning(null);
       showIdleNotice(`Timer stopped automatically after ${idleMinutes} min idle.`);
@@ -410,7 +504,9 @@ async function loadProjects(): Promise<boolean> {
 }
 
 async function loadTasks(projectId: string): Promise<void> {
-  const result = await window.api.tracking.listTasks(projectId);
+  const result = await callTracking(() =>
+    window.api.tracking.listTasks(projectId),
+  );
   taskSelect.innerHTML = '<option value="">No task</option>';
   if (!result.ok) {
     handleTrackingFailure(result);
@@ -462,14 +558,14 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
 }
 
 async function refreshStatus(): Promise<void> {
-  const result = await window.api.tracking.status();
+  const result = await callTracking(() => window.api.tracking.status());
   if (!result.ok) {
     if (result.unauthorized) {
       // Not a transient/offline blip — the backend has actually revoked
       // this session (e.g. an admin's remote sign-out). Every future poll
       // would fail identically, so switch to the login screen right away
       // instead of silently retrying forever.
-      showLoginForm(result.message);
+      showLoginView(result.message);
       return;
     }
     // A genuinely transient/offline failure shouldn't wipe the
@@ -577,7 +673,9 @@ switchButton.addEventListener('click', () => {
   void (async () => {
     if (!pendingSwitch) return;
     const { projectId, taskId } = pendingSwitch;
-    const result = await window.api.tracking.switchTo(projectId, taskId);
+    const result = await callTracking(() =>
+      window.api.tracking.switchTo(projectId, taskId),
+    );
     if (result.ok) {
       clearTrackingError();
       setRunning(result.data);
@@ -597,7 +695,7 @@ idleDiscardButton.addEventListener('click', () => {
     const discardAt = pendingIdleDiscardAt;
     hideIdleBanner();
 
-    const result = await window.api.tracking.stop(discardAt);
+    const result = await callTracking(() => window.api.tracking.stop(discardAt));
     if (result.ok) {
       setRunning(null);
     } else {
@@ -611,7 +709,9 @@ async function initTracking(): Promise<void> {
   const stillSignedIn = await loadProjects();
   if (!stillSignedIn) return; // loadProjects already switched to the login screen
 
-  const idlePolicyResult = await window.api.tracking.idlePolicy();
+  const idlePolicyResult = await callTracking(() =>
+    window.api.tracking.idlePolicy(),
+  );
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
 
   // Settle the server's view BEFORE deciding whether to auto-start, so an

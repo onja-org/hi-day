@@ -2,10 +2,18 @@ import { redirect } from "next/navigation";
 import { AuthAside } from "@/components/AuthAside";
 import { LoginForm } from "@/components/LoginForm";
 import { isAuthenticated } from "@/lib/isAuthenticated";
+import { safeRedirectPath } from "@/lib/safeRedirectPath";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{ next?: string }>;
+};
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const { next } = await searchParams;
+  const target = safeRedirectPath(next);
+
   if (await isAuthenticated()) {
-    redirect("/dashboard");
+    redirect(target);
   }
 
   return (
@@ -19,7 +27,7 @@ export default async function LoginPage() {
           </p>
         </div>
         <div className="animate-fade-in-up-delay md:px-20 lg:px-0">
-          <LoginForm />
+          <LoginForm next={target} />
         </div>
       </div>
 

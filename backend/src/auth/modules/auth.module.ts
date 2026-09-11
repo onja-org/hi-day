@@ -9,6 +9,7 @@ import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
+import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { AuthController } from '../controllers/auth.controller';
 import { AuthService } from '../services/auth.service';
 import { CaptchaService } from '../services/captcha.service';
@@ -33,6 +34,7 @@ function emailTracker(req: Request): string {
     AuditLogModule,
     JwtAuthModule,
     DevicesModule,
+    TimeEntriesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 5 },
       {

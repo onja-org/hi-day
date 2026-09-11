@@ -19,6 +19,43 @@ h1 {
   margin: 0 0 24px;
 }
 
+.organisation-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin: -16px 0 20px;
+}
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -16px 0 20px;
+  padding: 10px 12px;
+  border: 1px solid #b2ddf7;
+  border-radius: 6px;
+  background: #eaf6fd;
+}
+
+.update-banner p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: #003673;
+}
+
+.update-banner button {
+  margin-top: 0;
+  width: auto;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+#update-dismiss {
+  padding: 6px 10px;
+  background: transparent;
+  color: #003673;
+}
+
 label {
   display: block;
   font-size: 13px;

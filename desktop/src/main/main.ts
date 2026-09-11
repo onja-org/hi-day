@@ -1,7 +1,7 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
-import type { TrackingResult } from './api-client';
+import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron';
+import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
@@ -64,6 +64,8 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
 
   return null;
 }
+import type { UpdateCheckResult } from './update-checker';
+import { RELEASES_PAGE_URL, checkForUpdate } from './update-checker';
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -72,14 +74,14 @@ const NOT_LOGGED_IN: TrackingResult<never> = {
 
 const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
 
-interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
 interface AuthStatus {
   loggedIn: boolean;
   email?: string;
+  organisationName?: string;
+}
+
+interface StartPairingIpcResult {
+  ok: boolean;
   message?: string;
 }
 
@@ -272,7 +274,6 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 420,
     height: 560,
-    resizable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -286,22 +287,33 @@ function createWindow(): void {
   });
 }
 
+
 function registerIpcHandlers(): void {
   const authStore = new AuthStore(app.getPath('userData'));
   const apiClient = new ApiClient(API_BASE_URL);
 
+  // Set once a pairing request is started, cleared once it's claimed or
+  // expires — the renderer's poll doesn't need to pass the code back on
+  // every call, matching how it already doesn't pass the device token
+  // back for tracking calls.
+  let pendingPairingCode: string | null = null;
+
   ipcMain.handle('auth:status', (): AuthStatus => {
     const session = authStore.load();
-    return session ? { loggedIn: true, email: session.email } : { loggedIn: false };
+    return session
+      ? {
+          loggedIn: true,
+          email: session.email,
+          organisationName: session.organisationName,
+        }
+      : { loggedIn: false };
   });
 
   ipcMain.handle(
-    'auth:login',
-    async (_event, credentials: LoginCredentials): Promise<AuthStatus> => {
+    'auth:startPairing',
+    async (): Promise<StartPairingIpcResult> => {
       const fingerprint = getOrCreateDeviceFingerprint(app.getPath('userData'));
-      const result = await apiClient.login({
-        email: credentials.email,
-        password: credentials.password,
+      const result = await apiClient.startPairing({
         deviceFingerprint: fingerprint,
         platform: toDevicePlatform(process.platform),
         osVersion: osRelease(),
@@ -310,21 +322,45 @@ function registerIpcHandlers(): void {
       });
 
       if (!result.ok) {
-        return { loggedIn: false, message: result.message };
+        return { ok: false, message: result.message };
       }
 
-      authStore.save({
-        email: credentials.email,
-        deviceId: result.deviceId,
-        deviceToken: result.deviceToken,
-      });
-      startUrlCapture(
-        result.deviceId,
-        buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
-      );
-      startHeartbeat(apiClient, result.deviceToken);
-      startSync();
-      return { loggedIn: true, email: credentials.email };
+      pendingPairingCode = result.code;
+      await shell.openExternal(result.approvalUrl);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    'auth:pairingStatus',
+    async (): Promise<PairingPollResult> => {
+      if (!pendingPairingCode) {
+        return { status: 'expired' };
+      }
+
+      const result = await apiClient.pollPairing(pendingPairingCode);
+
+      if (result.status === 'approved') {
+        pendingPairingCode = null;
+        authStore.save({
+          email: result.email,
+          organisationName: result.organisationName,
+          deviceId: result.deviceId,
+          deviceToken: result.deviceToken,
+        });
+        // Approval is the new "just logged in" moment — the password
+        // handler these hung off no longer exists.
+        startUrlCapture(
+          result.deviceId,
+          buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
+        );
+        startHeartbeat(apiClient, result.deviceToken);
+        startSync();
+      } else if (result.status === 'expired') {
+        pendingPairingCode = null;
+      }
+
+      return result;
     },
   );
 
@@ -453,6 +489,18 @@ function registerIpcHandlers(): void {
     startHeartbeat(apiClient, existingSession.deviceToken);
     startSync();
   }
+  // No auto-download/install — this app isn't code-signed yet, and
+  // electron-updater's silent update flow requires a valid signature on
+  // macOS to work at all. So this just checks GitHub and lets the person
+  // open the releases page themselves when there's something newer.
+  ipcMain.handle(
+    'update:status',
+    (): Promise<UpdateCheckResult> => checkForUpdate(app.getVersion()),
+  );
+
+  ipcMain.handle('update:openReleasesPage', async (): Promise<void> => {
+    await shell.openExternal(RELEASES_PAGE_URL);
+  });
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

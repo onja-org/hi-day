@@ -135,19 +135,36 @@ describe('RefreshTokenService', () => {
     expect(result).toEqual({ userId: 'user-1', token: 'token-1' });
   });
 
-  it('revokeByValue revokes only the row matching the presented token', async () => {
+  it('revokeByValue revokes the matching row and returns its userId', async () => {
+    const existing = { id: 'rt-1', userId: 'user-1' };
+    const { manager, update } = makeManager({
+      findOne: jest.fn().mockResolvedValue(existing),
+    });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    const userId = await service.revokeByValue(manager, 'some-token');
+
+    expect(update).toHaveBeenCalledWith(
+      RefreshToken,
+      'rt-1',
+      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
+    );
+    expect(userId).toBe('user-1');
+  });
+
+  it('revokeByValue returns null and revokes nothing for an unknown token', async () => {
     const { manager, update } = makeManager();
     const service = new RefreshTokenService(
       makeConfigService(),
       makeTokenService(),
     );
 
-    await service.revokeByValue(manager, 'some-token');
+    const userId = await service.revokeByValue(manager, 'unknown-token');
 
-    expect(update).toHaveBeenCalledWith(
-      RefreshToken,
-      expect.objectContaining({ tokenHash: expect.any(String) as string }),
-      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
-    );
+    expect(update).not.toHaveBeenCalled();
+    expect(userId).toBeNull();
   });
 });

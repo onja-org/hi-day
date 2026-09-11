@@ -77,14 +77,25 @@ export class RefreshTokenService {
     );
   }
 
+  /**
+   * Returns the userId the revoked token belonged to (or null if it didn't
+   * match anything), so callers that need to cascade the sign-out further
+   * (e.g. AuthService.logout revoking device sessions too) don't have to
+   * look the token up a second time.
+   */
   async revokeByValue(
     manager: EntityManager,
     presentedToken: string,
-  ): Promise<void> {
-    await manager.update(
-      RefreshToken,
-      { tokenHash: hashToken(presentedToken) },
-      { revokedAt: new Date() },
-    );
+  ): Promise<string | null> {
+    const existing = await manager.findOne(RefreshToken, {
+      where: { tokenHash: hashToken(presentedToken) },
+    });
+
+    if (!existing) {
+      return null;
+    }
+
+    await manager.update(RefreshToken, existing.id, { revokedAt: new Date() });
+    return existing.userId;
   }
 }

@@ -2,9 +2,7 @@ import type { DesktopDevicePlatform } from './platform';
 import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface StartPairingRequest {
   deviceFingerprint: string;
   platform: DesktopDevicePlatform;
   osVersion: string;
@@ -12,14 +10,34 @@ export interface LoginRequest {
   appVersion: string;
 }
 
-export type LoginResult =
-  | { ok: true; deviceId: string; deviceToken: string }
+export type StartPairingResult =
+  | { ok: true; code: string; approvalUrl: string }
   | { ok: false; message: string };
 
-interface LoginResponseBody {
+export type PairingPollResult =
+  | { status: 'pending' }
+  | {
+      status: 'approved';
+      deviceId: string;
+      deviceToken: string;
+      email: string;
+      organisationName: string;
+    }
+  | { status: 'expired' }
+  | { status: 'error'; message: string };
+
+interface StartPairingResponseBody {
   message?: string;
+  code?: string;
+  approvalUrl?: string;
+}
+
+interface PairingPollResponseBody {
+  status?: 'pending' | 'approved' | 'expired';
   deviceId?: string;
   deviceToken?: string;
+  email?: string;
+  organisationName?: string;
 }
 
 export interface TrackedProject {
@@ -98,10 +116,15 @@ interface ErrorResponseBody {
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
-  async login(request: LoginRequest): Promise<LoginResult> {
+  /**
+   * Starts the "log in via the web app" pairing flow (ADR-0009) — the
+   * desktop never handles a password itself. The caller opens `approvalUrl`
+   * in the system browser and polls `pollPairing` with the returned code.
+   */
+  async startPairing(request: StartPairingRequest): Promise<StartPairingResult> {
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/auth/login`, {
+      response = await fetch(`${this.baseUrl}/device-pairing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
@@ -110,13 +133,50 @@ export class ApiClient {
       return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
     }
 
-    const body = (await response.json().catch(() => ({}))) as LoginResponseBody;
+    const body = (await response.json().catch(() => ({}))) as StartPairingResponseBody;
 
-    if (!response.ok || !body.deviceId || !body.deviceToken) {
-      return { ok: false, message: body.message ?? 'Login failed.' };
+    if (!response.ok || !body.code || !body.approvalUrl) {
+      return { ok: false, message: body.message ?? 'Could not start login.' };
     }
 
-    return { ok: true, deviceId: body.deviceId, deviceToken: body.deviceToken };
+    return { ok: true, code: body.code, approvalUrl: body.approvalUrl };
+  }
+
+  async pollPairing(code: string): Promise<PairingPollResult> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseUrl}/device-pairing/${encodeURIComponent(code)}/status`,
+      );
+    } catch {
+      return { status: 'error', message: `Could not reach the server at ${this.baseUrl}.` };
+    }
+
+    const body = (await response.json().catch(() => ({}))) as PairingPollResponseBody;
+
+    if (!response.ok || !body.status) {
+      return { status: 'error', message: 'Could not check login status.' };
+    }
+
+    if (body.status === 'approved') {
+      if (
+        !body.deviceId ||
+        !body.deviceToken ||
+        !body.email ||
+        !body.organisationName
+      ) {
+        return { status: 'error', message: 'Could not finish logging in.' };
+      }
+      return {
+        status: 'approved',
+        deviceId: body.deviceId,
+        deviceToken: body.deviceToken,
+        email: body.email,
+        organisationName: body.organisationName,
+      };
+    }
+
+    return { status: body.status };
   }
 
   async logout(deviceToken: string): Promise<void> {

@@ -127,6 +127,31 @@ export class DeviceSessionService {
     });
   }
 
+  /**
+   * Called from AuthService on an explicit sign-out-everywhere action
+   * (logout, password reset) — see ADR-0009. Returns the distinct
+   * organisations any revoked session belonged to, so the caller can also
+   * stop whatever running timer each one left behind.
+   */
+  async revokeAllForUser(userId: string): Promise<string[]> {
+    const activeSessions = await this.deviceSessions.find({
+      where: { userId, revokedAt: IsNull() },
+    });
+
+    if (activeSessions.length === 0) {
+      return [];
+    }
+
+    await this.deviceSessions.update(
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+
+    return [
+      ...new Set(activeSessions.map((session) => session.organisationId)),
+    ];
+  }
+
   private async revokeAllSessions(
     manager: EntityManager,
     deviceId: string,
