@@ -60,36 +60,6 @@ jobs:
             desktop/release/*.zip
           if-no-files-found: error
 
-  # Permanent (not workflow_dispatch-only) because Windows CI needs to
-  # build whatever lives under native/win/resolver/ for every release, same
-  # as the Electron installer above. The throwaway FlaUI-vs-CsWin32
-  # comparison itself lives in the separate windows-native-spike.yml —
-  # workflow_dispatch only, since it's a one-time decision, not something
-  # every push needs. native/win/fixture-capture/ (a standalone
-  # data-collection tool predating the real resolver) was removed once
-  # win-resolver.exe's own --capture-fixtures mode made it redundant — see
-  # native/win/README.md.
-  windows-native:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Test win-resolver (Stage C)
-        run: dotnet test native/win/resolver/WinResolver.Tests/WinResolver.Tests.csproj -c Release
-
-      - name: Build win-resolver (Stage C)
-        # Build only, not publish — packaging (self-contained single-file,
-        # electron-builder wiring, code signing) is Stage C.3's job, not
-        # C.1's. This just proves the P/Invoke-heavy console app project
-        # actually compiles for real, since it can't be verified locally.
-        run: dotnet build native/win/resolver/WinResolver/WinResolver.csproj -c Release
-
   # Only runs for the `desktop-v*` tag push, once every platform in the
   # matrix above has built successfully — attaches every installer to a
   # GitHub Release in the separate *public* onja-org/workfoce-monitoring-app-releases

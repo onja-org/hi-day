@@ -31,14 +31,6 @@ copyInto(
   ['browser-registry.json'],
 );
 
-// Same reason — the per-locale Firefox private-window marker table (Prompt
-// B.2) is data FirefoxAxResolver reads at its own __dirname-relative path.
-copyInto(
-  join(rootDir, 'src', 'main', 'resolvers', 'darwin'),
-  join(rootDir, 'dist', 'main', 'resolvers', 'darwin'),
-  ['firefox-private-markers.json'],
-);
-
 // Stage E.1's normalization config — placeholder strings and the
 // sensitive-path denylist are data (edited without a rebuild), read at
 // their own __dirname-relative paths, same reason as the two copies above.

@@ -7,11 +7,7 @@ import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
-import {
-  resolveDarwinResolverPath,
-  resolveLinuxResolverPath,
-  resolveWinResolverPath,
-} from './resolvers/resolver-paths';
+import { resolveLinuxResolverPath } from './resolvers/resolver-paths';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
@@ -19,45 +15,21 @@ import type { UploadFn } from './url-capture/sync-contract';
 import { UrlCaptureService } from './url-capture/url-capture-service';
 
 /**
- * All three platforms now have a resolver. Returns null only on a platform
- * with none, so startUrlCapture degrades to timer/idle tracking rather
+ * Linux is the only platform with a resolver on this branch — macOS and
+ * Windows live on sandy/feat/url-tracking-on-remaining-os. Returning null
+ * elsewhere makes startUrlCapture degrade to timer/idle tracking rather
  * than throwing or spawning nothing usable.
  */
 function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
-  if (process.platform === 'darwin') {
-    return {
-      command: process.execPath,
-      args: [resolveDarwinResolverPath()],
-      env: {
-        // Runs the darwin resolver (a plain compiled JS file, not a
-        // separately-built native binary) via Electron's own executable
-        // acting as a plain Node process — avoids depending on a system
-        // Node install existing on the user's machine.
-        ELECTRON_RUN_AS_NODE: '1',
-        // That same plain-Node-process consequence means the resolver
-        // can't call app.isPackaged/process.resourcesPath itself to find
-        // firefox-ax-helper (a separate native binary it spawns as its
-        // own child) — see firefox-ax-helper-path.ts.
-        RESOLVER_IS_PACKAGED: app.isPackaged ? '1' : '0',
-        RESOLVER_RESOURCES_PATH: process.resourcesPath,
-      },
-    };
-  }
-
-  if (process.platform === 'win32') {
-    return {
-      command: resolveWinResolverPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath }),
-    };
-  }
-
   if (process.platform === 'linux') {
     return {
       command: process.execPath,
       args: [resolveLinuxResolverPath()],
-      // Same plain-Node-process trick as darwin: this resolver is compiled
-      // TypeScript inside the app's own dist/, not a separate binary. It
-      // needs no resourcesPath hints — it spawns no child of its own,
-      // talking to the accessibility bus directly over D-Bus.
+      // The resolver is compiled TypeScript inside the app's own dist/, not
+      // a separate binary, so it runs on Electron's executable acting as a
+      // plain Node process — no system Node install required. It needs no
+      // resourcesPath hints: it spawns no child of its own, talking to the
+      // accessibility bus directly over D-Bus.
       env: { ELECTRON_RUN_AS_NODE: '1' },
     };
   }
