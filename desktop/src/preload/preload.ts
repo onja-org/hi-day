@@ -54,6 +54,11 @@ export type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; signedOut?: boolean };
 
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  latestVersion?: string;
+}
+
 const api = {
   getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:status') as Promise<AuthStatus>,
   auth: {
@@ -92,6 +97,12 @@ const api = {
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,
+  },
+  update: {
+    status: (): Promise<UpdateCheckResult> =>
+      ipcRenderer.invoke('update:status') as Promise<UpdateCheckResult>,
+    openReleasesPage: (): Promise<void> =>
+      ipcRenderer.invoke('update:openReleasesPage') as Promise<void>,
   },
 };
 

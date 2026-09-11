@@ -7,6 +7,8 @@ import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
+import type { UpdateCheckResult } from './update-checker';
+import { RELEASES_PAGE_URL, checkForUpdate } from './update-checker';
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -199,6 +201,19 @@ function registerIpcHandlers(): void {
   // extension only), matching the desktop app's existing "Linux
   // best-effort" support level.
   ipcMain.handle('idle:seconds', () => powerMonitor.getSystemIdleTime());
+
+  // No auto-download/install — this app isn't code-signed yet, and
+  // electron-updater's silent update flow requires a valid signature on
+  // macOS to work at all. So this just checks GitHub and lets the person
+  // open the releases page themselves when there's something newer.
+  ipcMain.handle(
+    'update:status',
+    (): Promise<UpdateCheckResult> => checkForUpdate(app.getVersion()),
+  );
+
+  ipcMain.handle('update:openReleasesPage', async (): Promise<void> => {
+    await shell.openExternal(RELEASES_PAGE_URL);
+  });
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();

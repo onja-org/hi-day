@@ -54,6 +54,11 @@ type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; signedOut?: boolean };
 
+interface UpdateCheckResult {
+  updateAvailable: boolean;
+  latestVersion?: string;
+}
+
 declare global {
   interface Window {
     api: {
@@ -77,6 +82,10 @@ declare global {
       };
       idle: {
         seconds: () => Promise<number>;
+      };
+      update: {
+        status: () => Promise<UpdateCheckResult>;
+        openReleasesPage: () => Promise<void>;
       };
     };
   }
@@ -137,7 +146,30 @@ function showLoginView(errorMessage?: string): void {
   stopPairingPoll();
 }
 
+const updateBannerEl = document.getElementById('update-banner')!;
+const updateMessageEl = document.getElementById('update-message')!;
+
+async function checkForUpdate(): Promise<void> {
+  const result = await window.api.update.status();
+  if (!result.updateAvailable) return;
+
+  updateMessageEl.textContent = result.latestVersion
+    ? `Version ${result.latestVersion} is available.`
+    : 'A new version is available.';
+  updateBannerEl.hidden = false;
+}
+
+document.getElementById('update-button')!.addEventListener('click', () => {
+  void window.api.update.openReleasesPage();
+});
+
+document.getElementById('update-dismiss')!.addEventListener('click', () => {
+  updateBannerEl.hidden = true;
+});
+
 async function init(): Promise<void> {
+  void checkForUpdate();
+
   const status = await window.api.getStatus();
   if (status.loggedIn && status.organisationName) {
     showLoggedIn(status.organisationName);

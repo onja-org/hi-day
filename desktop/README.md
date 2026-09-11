@@ -91,6 +91,15 @@ using a UUID generated on first run and persisted under Electron's
    (`GET /device/projects` — org admin/manager sees every active Project;
    anyone else needs their own Project membership).
 
+9. **Test the update notice**: temporarily lower the `version` in
+   `desktop/package.json` (e.g. to `0.0.1`), then `pnpm --filter desktop
+   dev` — since that's older than the latest `desktop-v*` release on
+   GitHub, a banner should appear under the title reading "Version X.Y.Z
+   is available." with a **View update** button (opens the releases page)
+   and a dismiss (**×**). Revert the version change afterward — this
+   isn't a real version bump, just a way to trigger the "outdated" case
+   locally, since your real dev build is normally the newest thing around.
+
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
 AppImage/`.deb` directly.
@@ -136,9 +145,13 @@ from the run's artifacts.
   yet, so macOS Gatekeeper and Windows SmartScreen will both warn on
   install. Signing is deferred, matching the earlier device-management
   ticket's scope-down — see `docs/TECH_DESIGN.md` §5 for the eventual plan.
-- **No auto-update.** `electron-updater` needs a publish target (S3, GitHub
-  Releases, etc.) that isn't set up. Every new version means a fresh
-  manual download for now.
+- **No silent auto-update.** The app checks GitHub on launch
+  (`src/main/update-checker.ts`) and shows a banner with a link to the
+  releases page when a newer `desktop-v*` tag exists, but doesn't download
+  or install anything itself — every update is still a manual reinstall.
+  A full `electron-updater` silent-download flow needs code signing first
+  (it requires a valid signature to work at all on macOS), which isn't
+  set up yet — see the **Unsigned** note above.
 - **`package.json`'s `author`/`homepage` are placeholders** (electron-builder
   requires both to produce a `.deb`). Replace with a real product contact
   before shipping this outside the team.

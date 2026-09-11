@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Workforce Monitor desktop agent (login, device registration, and start/stop time tracking)",
   "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
