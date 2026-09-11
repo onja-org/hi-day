@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ActivitySamplesModule } from '../../activity-samples/modules/activity-samples.module';
 import { AppEventsModule } from '../../app-events/modules/app-events.module';
 import { DeviceSession } from '../../database/entities/device-session.entity';
 import { Membership } from '../../database/entities/membership.entity';
@@ -22,6 +23,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     OrganisationsModule,
     AppEventsModule,
     ScreenshotsModule,
+    ActivitySamplesModule,
   ],
   controllers: [DeviceTrackingController],
   providers: [DeviceSessionGuard, DeviceProjectMemberGuard],

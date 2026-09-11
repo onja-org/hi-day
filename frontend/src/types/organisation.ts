@@ -14,6 +14,7 @@ export type OrganisationProfile = {
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
+  activityTrackingEnabled: boolean;
   userId: string;
 };
 
@@ -31,6 +32,7 @@ export type UpdateOrganisationInput = {
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
+  activityTrackingEnabled?: boolean;
 };
 
 export type UpdateOrganisationResult =

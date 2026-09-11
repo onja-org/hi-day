@@ -6,6 +6,7 @@ allowBuilds:
   '@paymoapp/active-window': true
   argon2: true
   electron: true
+  uiohook-napi: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@next/env@16.3.2'

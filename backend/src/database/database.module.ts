@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Activity } from './entities/activity.entity';
+import { ActivitySample } from './entities/activity-sample.entity';
 import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
@@ -46,6 +47,7 @@ import { User } from './entities/user.entity';
           Activity,
           AppEvent,
           Screenshot,
+          ActivitySample,
         ],
         synchronize: false,
       }),

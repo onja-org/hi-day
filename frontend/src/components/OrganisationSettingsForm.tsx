@@ -9,6 +9,7 @@ import {
 } from "@/hooks/useCurrentOrganisation";
 import { updateOrganisation } from "@/lib/updateOrganisation";
 import type { IdleHandling, UpdateOrganisationInput } from "@/types/organisation";
+import { CaptureSettingsFields } from "./CaptureSettingsFields";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
@@ -67,6 +68,8 @@ export function OrganisationSettingsForm({
         : undefined,
       windowTrackingEnabled: formData.get("windowTrackingEnabled") === "on",
       screenshotsEnabled: formData.get("screenshotsEnabled") === "on",
+      activityTrackingEnabled:
+        formData.get("activityTrackingEnabled") === "on",
       screenshotFrequencySeconds: Number.isFinite(screenshotFrequencyMinutes)
         ? screenshotFrequencyMinutes * 60
         : undefined,
@@ -173,53 +176,7 @@ export function OrganisationSettingsForm({
         </label>
       </div>
 
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          name="windowTrackingEnabled"
-          defaultChecked={organisation.windowTrackingEnabled}
-          className="h-4 w-4 rounded border-input-border"
-        />
-        Track window titles (desktop agent)
-      </label>
-
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          name="screenshotsEnabled"
-          defaultChecked={organisation.screenshotsEnabled}
-          className="h-4 w-4 rounded border-input-border"
-        />
-        Enable screenshots (desktop agent)
-      </label>
-
-      <div className="flex flex-col gap-5 sm:flex-row">
-        <label className="flex flex-1 flex-col gap-1.5">
-          Screenshot frequency (minutes)
-          <input
-            name="screenshotFrequencyMinutes"
-            type="number"
-            min="1"
-            step="1"
-            defaultValue={Math.round(
-              organisation.screenshotFrequencySeconds / 60,
-            )}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
-
-        <label className="flex flex-1 flex-col gap-1.5">
-          Screenshot retention (days)
-          <input
-            name="screenshotRetentionDays"
-            type="number"
-            min="1"
-            step="1"
-            defaultValue={organisation.screenshotRetentionDays}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
-      </div>
+      <CaptureSettingsFields organisation={organisation} />
 
       <button
         type="submit"

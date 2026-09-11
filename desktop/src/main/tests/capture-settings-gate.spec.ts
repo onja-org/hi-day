@@ -14,6 +14,7 @@ describe('CaptureSettingsGate', () => {
       windowTrackingEnabled: false,
       screenshotsEnabled: false,
       screenshotFrequencySeconds: 0,
+      activityTrackingEnabled: false,
       ...overrides,
     };
   }
@@ -142,6 +143,32 @@ describe('CaptureSettingsGate', () => {
     expect(onChange).toHaveBeenCalledWith(settings());
 
     expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('calls onChange again on an activityTrackingEnabled transition', async () => {
+    const onChange = vi.fn();
+    let enabled = false;
+    const client: CaptureSettingsClient = {
+      getCaptureSettings: vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve({
+            ok: true,
+            data: settings({ activityTrackingEnabled: enabled }),
+          }),
+        ),
+    };
+    const gate = new CaptureSettingsGate(makeSession('token-1'), client, onChange);
+
+    await gate.pollOnce();
+    expect(onChange).not.toHaveBeenCalled();
+
+    enabled = true;
+    await gate.pollOnce();
+    expect(onChange).toHaveBeenCalledWith(
+      settings({ activityTrackingEnabled: true }),
+    );
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it('treats a failed request as all-off', async () => {

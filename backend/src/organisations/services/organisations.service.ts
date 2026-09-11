@@ -35,6 +35,7 @@ export interface OrganisationProfile {
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
+  activityTrackingEnabled: boolean;
   userId: string;
 }
 
@@ -47,6 +48,7 @@ interface OrganisationSettings {
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
+  activityTrackingEnabled?: boolean;
 }
 
 @Injectable()
@@ -208,6 +210,9 @@ export class OrganisationsService {
       ...(dto.screenshotRetentionDays !== undefined
         ? { screenshotRetentionDays: dto.screenshotRetentionDays }
         : {}),
+      ...(dto.activityTrackingEnabled !== undefined
+        ? { activityTrackingEnabled: dto.activityTrackingEnabled }
+        : {}),
     };
 
     await this.organisations.save(organisation);
@@ -258,6 +263,9 @@ export class OrganisationsService {
       screenshotRetentionDays:
         settings.screenshotRetentionDays ??
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
+      activityTrackingEnabled:
+        settings.activityTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled,
     };
   }
 
@@ -289,6 +297,9 @@ export class OrganisationsService {
       screenshotRetentionDays:
         settings.screenshotRetentionDays ??
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
+      activityTrackingEnabled:
+        settings.activityTrackingEnabled ??
+        DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled,
       userId,
     };
   }

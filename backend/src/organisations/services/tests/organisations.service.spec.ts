@@ -180,6 +180,7 @@ describe('OrganisationsService', () => {
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
+        activityTrackingEnabled: false,
         userId: 'user-1',
       });
     });
@@ -431,6 +432,30 @@ describe('OrganisationsService', () => {
       expect(profile.screenshotFrequencySeconds).toBe(120);
       expect(profile.screenshotRetentionDays).toBe(7);
     });
+
+    it('updates the activityTrackingEnabled field', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        activityTrackingEnabled: true,
+      });
+
+      expect(profile.activityTrackingEnabled).toBe(true);
+    });
   });
 
   describe('getIdlePolicy', () => {
@@ -492,6 +517,7 @@ describe('OrganisationsService', () => {
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
+        activityTrackingEnabled: false,
       });
     });
 
@@ -505,6 +531,7 @@ describe('OrganisationsService', () => {
               screenshotsEnabled: true,
               screenshotFrequencySeconds: 120,
               screenshotRetentionDays: 7,
+              activityTrackingEnabled: true,
             },
           }),
         }),
@@ -518,6 +545,7 @@ describe('OrganisationsService', () => {
         screenshotsEnabled: true,
         screenshotFrequencySeconds: 120,
         screenshotRetentionDays: 7,
+        activityTrackingEnabled: true,
       });
     });
   });

@@ -25,6 +25,8 @@ import type { ProjectTasksList } from '../../tasks/services/tasks.service';
 import { TasksService } from '../../tasks/services/tasks.service';
 import { AppEventsService } from '../../app-events/services/app-events.service';
 import { CreateAppEventsBatchDto } from '../../app-events/dto/create-app-events-batch.dto';
+import { ActivitySamplesService } from '../../activity-samples/services/activity-samples.service';
+import { CreateActivitySamplesBatchDto } from '../../activity-samples/dto/create-activity-samples-batch.dto';
 import type { CaptureSettings } from '../../organisations/capture-settings';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
@@ -50,6 +52,7 @@ export class DeviceTrackingController {
     private readonly organisationsService: OrganisationsService,
     private readonly appEventsService: AppEventsService,
     private readonly screenshotsService: ScreenshotsService,
+    private readonly activitySamplesService: ActivitySamplesService,
   ) {}
 
   @Get('idle-policy')
@@ -74,6 +77,19 @@ export class DeviceTrackingController {
       request.userId,
       request.deviceId,
       dto.events,
+    );
+  }
+
+  @Post('activity-samples')
+  async recordActivitySamples(
+    @Body() dto: CreateActivitySamplesBatchDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    await this.activitySamplesService.recordBatch(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.samples,
     );
   }
 

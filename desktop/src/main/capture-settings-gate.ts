@@ -7,12 +7,14 @@ export interface CaptureSettingsValue {
   screenshotsEnabled: boolean;
   /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
   screenshotFrequencySeconds: number;
+  activityTrackingEnabled: boolean;
 }
 
 const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
+  activityTrackingEnabled: false,
 };
 
 export interface CaptureSettingsResult {
@@ -83,7 +85,8 @@ export class CaptureSettingsGate {
       settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
-        this.lastSettings.screenshotFrequencySeconds
+        this.lastSettings.screenshotFrequencySeconds &&
+      settings.activityTrackingEnabled === this.lastSettings.activityTrackingEnabled
     ) {
       return;
     }

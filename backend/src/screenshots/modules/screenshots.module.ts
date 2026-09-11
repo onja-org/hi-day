@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Screenshot } from '../../database/entities/screenshot.entity';
@@ -12,7 +13,12 @@ import { ScreenshotsService } from '../services/screenshots.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Screenshot, Membership, Organisation]),
+    TypeOrmModule.forFeature([
+      Screenshot,
+      ActivitySample,
+      Membership,
+      Organisation,
+    ]),
     OrganisationsModule,
     JwtAuthModule,
   ],

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { Activity } from './entities/activity.entity';
+import { ActivitySample } from './entities/activity-sample.entity';
 import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Device } from './entities/device.entity';
@@ -41,6 +42,7 @@ export default new DataSource({
     Activity,
     AppEvent,
     Screenshot,
+    ActivitySample,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });
