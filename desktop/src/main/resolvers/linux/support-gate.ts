@@ -16,17 +16,10 @@ export interface SessionEnvironment {
 }
 
 /**
- * Reads the session identity from the environment, correcting for a
- * Chromium behaviour that silently broke this gate on a real GNOME box:
- * **Electron/Chromium overwrites `XDG_CURRENT_DESKTOP` with `Unity`** and
- * preserves the true value in `ORIGINAL_XDG_CURRENT_DESKTOP`. Reading the
- * former made a genuine `ubuntu:GNOME` Wayland session report as an
- * unsupported desktop, so URL tracking disabled itself and reported that
- * the user should switch to Xorg, for no reason.
- *
- * This matters in two processes, which is why it lives here rather than at
- * either call site: Electron's main process and the resolver side-car,
- * which inherits Electron's already-modified environment when spawned.
+ * Electron overwrites `XDG_CURRENT_DESKTOP` with `Unity` and keeps the real
+ * value in `ORIGINAL_XDG_CURRENT_DESKTOP`, which made a genuine GNOME
+ * session report as unsupported. Shared by the main process and the
+ * side-car, which inherits the modified environment.
  */
 export function readSessionEnvironment(
   env: NodeJS.ProcessEnv = process.env,
@@ -93,17 +86,20 @@ export function evaluateSupport(environment: SessionEnvironment): SupportVerdict
 }
 
 /**
- * The accessibility bus can be reachable while GTK apps still expose no
- * tree at all, because `toolkit-accessibility` gates whether they build
- * one. Surfaced separately from `evaluateSupport` because the fix is a
- * command the user runs, not a platform limitation they're stuck with.
+ * Surfaced separately from `evaluateSupport` because this is a machine
+ * setup problem, not a platform limitation the user is stuck with.
+ *
+ * Deliberately no longer tells anyone to run
+ * `gsettings set org.gnome.desktop.interface toolkit-accessibility true`.
+ * That instruction was wrong twice over: it is not what makes a browser
+ * expose its address bar (the launcher overrides in browser-activation.ts
+ * are — verified with that setting false), and it is a switch the person
+ * being tracked can turn back off, so nothing may depend on it.
  */
-export const ENABLE_TOOLKIT_ACCESSIBILITY_COMMAND =
-  'gsettings set org.gnome.desktop.interface toolkit-accessibility true';
-
 export function accessibilityBusUnavailableReason(): string {
   return (
     'The accessibility service is not running, so website tracking is off. ' +
-    `Enable it with: ${ENABLE_TOOLKIT_ACCESSIBILITY_COMMAND} — then restart your browser.`
+    'Install and start at-spi2-core (Debian/Ubuntu: `sudo apt install at-spi2-core`), ' +
+    'then sign out and back in.'
   );
 }

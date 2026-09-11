@@ -43,36 +43,65 @@ This is the part that isn't in the app's control.
 |---|---|---|---|
 | **Windows** | Nothing | **No** | N/A — works out of the box |
 | **macOS** | Automation permission per browser; Accessibility permission (Firefox only) | **Yes** — one prompt per (app, browser) pair | Yes, via MDM PPPC profile |
-| **Linux** | `at-spi2-core` running; `toolkit-accessibility` = true; **browser restarted after enabling it** | No | Yes, via dconf system database |
+| **Linux** | `at-spi2-core` present (default on GNOME). The agent activates browsers itself at startup | **No** | Nothing to push — but see the fleet note on `/usr/local/share/applications` |
 
 Windows needs nothing because UI Automation requires no consent. macOS is the most intrusive:
 Automation is granted per *pair*, so a person with five browsers sees five separate prompts.
 
-### Linux — the setting, and the restart that catches people out
+### Linux — the agent activates browsers itself
 
-```bash
-gsettings set org.gnome.desktop.interface toolkit-accessibility true
-```
+**There is nothing for the employee to do, and nothing for them to switch off.** This
+matters more than convenience: any setting a tracked person can toggle is a setting
+tracking cannot depend on.
 
-**It is off by default, and browsers only read it at launch.** A browser already open when the
-setting is flipped never joins the accessibility bus, and is invisible to tracking until it
-restarts — with no error anywhere, because from the app's side that browser simply does not
-exist.
+A Linux browser builds the accessibility tree this agent reads **only if accessibility was
+already active when the browser process started**. Nothing done at runtime populates an
+already-running browser. So activation happens at *agent startup* (`activateBrowsersOnLinux`
+in `main.ts`), not when a timer starts: every browser opened from then on is tracked.
 
-This was confirmed directly rather than assumed: on a GNOME 46 session with a Firefox that had
-been running for four days, Firefox was absent from the accessibility bus entirely. A freshly
-launched Firefox appeared immediately and read back its URL correctly.
-
-For a fleet, set it in the dconf **system** database so it applies to every user and survives
-re-imaging, rather than relying on a per-user `gsettings` call:
+`browser-activation.ts` finds every `.desktop` launcher declaring itself an `http` handler —
+the freedesktop-standard way of saying "I am a web browser", which is why an unknown or
+newly released browser needs no code change — and writes a shadowing copy with:
 
 ```
-# /etc/dconf/db/local.d/00-accessibility
-[org/gnome/desktop/interface]
-toolkit-accessibility=true
+Exec=env GNOME_ACCESSIBILITY=1 <original> --force-renderer-accessibility=basic %U
 ```
-then `sudo dconf update`. Deploy it before or with the agent, so the first browser launch after
-rollout already has it.
+
+One universal rewrite, no browser list, no family detection. Verified on this machine:
+
+| Browser | Packaging | Nodes in tree | Address bar |
+|---|---|---|---|
+| Brave | snap | 2 → **295** | `example.com/search?q=full+path+test&page=2` |
+| Chrome, Edge, Opera | deb / snap | stub → full | address bar readable |
+| Firefox | snap | absent from bus → full | address bar readable |
+
+Three findings worth recording, because each contradicts something that looked obvious:
+
+- **No browser works without this.** Chrome appeared to self-activate, but that instance had
+  inherited a live accessibility session from earlier in the day. A freshly launched Chrome
+  with accessibility off is a stub like the rest. There is no exception to special-case.
+- **`GNOME_ACCESSIBILITY=1` on everything, `=basic` for the flag.** Firefox tolerates the
+  unknown Chromium flag rather than rejecting it, which collapses two family-specific rules
+  into one line. `=basic` exposes the browser UI tree without the expensive web-content
+  tree — 273 nodes vs 274, same address bar, far less overhead per employee machine.
+- **Snap confinement was never the blocker.** Brave is a snap and reaches the accessibility
+  bus fine; it was only ever missing the flag.
+
+**`toolkit-accessibility` is not required and is no longer requested.** Every result above
+was measured with it `false`. The only machine prerequisite is `at-spi2-core`, which ships
+by default on GNOME.
+
+#### What this does not cover
+
+- **Browsers already open when the agent starts** keep their empty tree until next launched,
+  since the tree is built at process start. Unavoidable; it resolves itself the next time the
+  person opens their browser.
+- **The agent writes to `~/.local/share/applications`**, which a determined user could shadow
+  back. For a fleet, deploy the same files to `/usr/local/share/applications` at install
+  time — it precedes both `/usr/share` and `/var/lib/snapd/desktop` in `XDG_DATA_DIRS`, so it
+  covers snaps too.
+- **Uninstall** should call `removeBrowserActivation`, which removes only files carrying the
+  agent's marker comment — a vendor entry sharing a filename is left alone.
 
 ### macOS — pre-granting so nobody sees a prompt
 
@@ -106,14 +135,18 @@ Firefox" advice. For managed fleets it can be pinned via Firefox's enterprise `p
 That removes the hard part. Everything above is centrally deployable:
 
 - **Windows** — nothing to do.
-- **Linux** — ship the dconf system-database key with the image.
+- **Linux** — nothing required; the agent activates browsers itself. Optionally copy its
+  launcher overrides to `/usr/local/share/applications` at install time so a user cannot
+  shadow them from their home directory.
 - **macOS** — ship a PPPC profile keyed to the signing identity.
 - **Firefox** — pin `accessibility.force_disabled = 0` via enterprise policy if you have any
   chance of it having been set.
 
-One rollout-order point worth planning around: on Linux, deploy the dconf key **before or with**
-the agent. If it lands afterwards, every browser already running stays invisible until its next
-restart — which for a long-lived browser can be days.
+One rollout-order point worth planning around: on Linux, browsers already running when the
+agent first starts keep their empty accessibility tree until they are next launched, because
+that tree is built at process start. It resolves itself the first time the person reopens
+their browser, so it costs a day at most — but a rollout that ends with "no data yet" on a
+machine someone never closed their browser on is expected, not a fault.
 
 ## How each failure looks
 
@@ -121,8 +154,9 @@ Worth knowing, because most of these fail quietly rather than loudly.
 
 | Symptom | Cause |
 |---|---|
-| No data at all, coverage screen says the helper is off | `toolkit-accessibility` off, or the accessibility bus is not running |
+| No data at all on Linux | `at-spi2-core` missing, so the accessibility bus is not running |
 | Some browsers tracked, one is not, coverage says "Active" | That browser was started before accessibility was enabled — restart it |
+| A browser is tracked by name/title but never by URL | It was already running when the agent started — it picks up tracking when next launched |
 | macOS: one browser tracked, another not | Automation denied for that specific browser |
 | Firefox specifically never tracked, others fine | `accessibility.force_disabled = 1` |
 

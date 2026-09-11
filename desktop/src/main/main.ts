@@ -8,6 +8,7 @@ import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
 import { resolveLinuxResolverPath } from './resolvers/resolver-paths';
+import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
@@ -94,12 +95,9 @@ let quitPauseComplete = false;
 // "offline" on the Devices page.
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
-// Without this, POST /devices/heartbeat is never called at all — Device.
-// lastSeenAt is set once at login and never refreshed, so every device
-// shows "active" for exactly 5 minutes after login and then permanently
-// flips to "offline" regardless of whether the app is still running. Started
-// on login (and for an already-logged-in user at launch) and stopped on
-// logout/quit, mirroring startUrlCapture/stopUrlCapture's own lifecycle.
+// Refreshes Device.lastSeenAt, which is otherwise set once at login — every
+// device would flip to "offline" five minutes later while still running.
+// Same lifecycle as startUrlCapture/stopUrlCapture.
 function startHeartbeat(apiClient: ApiClient, deviceToken: string): void {
   stopHeartbeat();
   const beat = (): void => {
@@ -124,13 +122,9 @@ function stopHeartbeat(): void {
 const SYNC_INTERVAL_MS = 30_000;
 
 /**
- * Builds the real network-backed `UploadFn` for a logged-in device —
- * `UrlCaptureService` only knows how to call an injected `UploadFn` (see
- * its own doc comment on why: testable without a real backend). A 401
- * here means the same thing it means everywhere else — the backend has
- * revoked this device's session — so it signs out locally exactly like
- * `callDeviceApi` does, rather than leaving the queue to retry forever
- * against a session that will never succeed again.
+ * The real network-backed `UploadFn` for a logged-in device. A 401 signs
+ * out locally like callDeviceApi does, rather than leaving the queue
+ * retrying against a revoked session.
  */
 function buildUrlSessionUploadFn(
   apiClient: ApiClient,
@@ -151,18 +145,10 @@ function buildUrlSessionUploadFn(
       return { acked: [] };
     }
 
-    // A 4xx other than 401 means the server understood the request and
-    // refused it — retrying the same payload will fail identically, so this
-    // is a bug to surface, not a blip to ride out. This was learned the hard
-    // way: a fractional `activeMs` tripped the sync DTO's @IsInt, every batch
-    // 400'd, and because a rejected batch is indistinguishable from an
-    // offline one at the queue level, capture appeared broken for days while
-    // actually working perfectly. Logged loudly so the next one is obvious
-    // from the console instead of needing a database dig.
-    //
-    // Never logs a URL — batch size and status only, per
-    // URL_TRACKING_CONTEXT.md's rule that URLs appear in the opt-in debug
-    // log and nowhere else.
+    // A 4xx other than 401 means the payload itself is wrong, so retrying
+    // fails identically — a bug to surface, not a blip. A rejected batch is
+    // indistinguishable from an offline one at the queue level, so without
+    // this it fails silently. Logs batch size and status only, never a URL.
     const status = result.status;
     if (status !== undefined && status >= 400 && status < 500) {
       console.error(
@@ -357,15 +343,10 @@ function registerIpcHandlers(): void {
   });
 
   /**
-   * Every tracking:* call goes through this: if the backend responds
-   * unauthorized (DeviceSessionGuard returns exactly this for a missing,
-   * expired, or — the case this exists for — admin-revoked session), the
-   * local session is cleared and url-capture/heartbeat stopped right away,
-   * not left to linger until the user notices and tries to interact.
-   * Without this, an admin's remote sign-out (Devices page) had no effect
-   * on the desktop app at all until it happened to restart: the local
-   * session file still had a token, so every subsequent poll kept
-   * silently failing against a session the backend had already revoked.
+   * Every tracking:* call goes through this. On an unauthorized response
+   * (missing, expired, or admin-revoked session) the local session is
+   * cleared and capture stopped immediately, so a remote sign-out takes
+   * effect on the next poll rather than at the next restart.
    */
   async function callDeviceApi<T>(
     call: (deviceToken: string) => Promise<TrackingResult<T>>,
@@ -479,6 +460,31 @@ function registerIpcHandlers(): void {
   });
 }
 
+/**
+ * Launcher overrides are written at app startup, not at timer start, so
+ * every browser opened afterwards is tracked with no user step.
+ *
+ * Best-effort: an already-open browser keeps its empty tree until next
+ * launched, and a failed write is logged rather than thrown — losing URL
+ * capture must never stop time tracking.
+ */
+function activateBrowsersOnLinux(): void {
+  if (process.platform !== 'linux') return;
+
+  try {
+    const report = applyBrowserActivation({ scope: 'user' });
+    const activated = report.outcomes.filter((outcome) => outcome.activated);
+    console.log(
+      `[activation] ${activated.length}/${report.outcomes.length} browser launchers activated in ${report.targetDirectory}`,
+    );
+    for (const failed of report.outcomes.filter((outcome) => !outcome.activated)) {
+      console.log(`[activation] could not activate ${failed.fileName}: ${failed.reason}`);
+    }
+  } catch (error) {
+    console.log(`[activation] skipped: ${String(error)}`);
+  }
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
@@ -494,6 +500,7 @@ if (!gotSingleInstanceLock) {
   });
 
   void app.whenReady().then(() => {
+    activateBrowsersOnLinux();
     registerIpcHandlers();
     createWindow();
 
