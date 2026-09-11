@@ -1,30 +1,14 @@
 import dbus from 'dbus-next';
 
 /**
- * A minimal AT-SPI2 client speaking raw D-Bus, with no `pyatspi` (and
- * therefore no Python) anywhere in the chain.
+ * A minimal AT-SPI2 client over raw D-Bus. No pyatspi, so `at-spi2-core`
+ * (already on any GNOME install) is the only machine dependency and the
+ * resolver stays inside this TypeScript build.
  *
- * Why not the Python side-car docs/url-tracking-plan.md Step 19 originally
- * proposed: pyatspi is only a GObject-introspection wrapper over these same
- * D-Bus calls, and depending on it would have made `python3-pyatspi` (plus
- * `python3-gi`, `gir1.2-atspi-2.0`, `libatk-adaptor`) a hard runtime
- * dependency of the shipped .deb — see docs/url-tracking-toolchain.md's
- * Linux row. Talking to the same bus from Node keeps the entire resolver
- * inside the app's own TypeScript build (like darwin's, unlike win32's
- * separately-compiled .exe) and leaves `at-spi2-core` — already present on
- * any GNOME install — as the only thing that has to exist on the machine.
- *
- * Every call here is a hand-built `Message` rather than dbus-next's
- * `getProxyObject`: a proxy performs an `Introspect` round-trip per object,
- * and the address-bar search touches dozens of nodes per resolve. Raw
- * messages skip that entirely, and AT-SPI's introspection data is
- * incomplete for some nodes anyway (reading an application's `Name` through
- * a proxy returned empty where the direct property call returns the real
- * value — observed on GNOME 46).
- *
- * Verified against a real GNOME 46 / Wayland session: focus events arrive,
- * and Chrome's address bar reads back its real URL. See
- * native/linux/spike/RESULTS.md.
+ * Hand-built Messages rather than getProxyObject: a proxy costs an
+ * Introspect round-trip per object, and the address-bar search touches
+ * dozens of nodes. AT-SPI's introspection data is also incomplete for some
+ * nodes on GNOME 46.
  */
 
 const A11Y_BUS_NAME = 'org.a11y.Bus';
@@ -37,29 +21,20 @@ const PROPERTIES_IFACE = 'org.freedesktop.DBus.Properties';
 const WINDOW_EVENT_IFACE = 'org.a11y.atspi.Event.Window';
 const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
 
-/** Bounds the address-bar search — a browser's toolbar sits far above this depth. */
-const MAX_SEARCH_DEPTH = 8;
+/**
+ * Chrome, Brave, Edge and Firefox put the address bar around depth 4;
+ * Opera nests its at 13, with the readable field at 15. The cost of the
+ * deeper bound is held down by stopping at the first readable candidate.
+ */
+export const MAX_SEARCH_DEPTH = 18;
 
 /**
- * Roles a browser may use for its address bar. Chromium exposes an `entry`;
- * **Firefox exposes a `combo box`** (its awesomebar is a combobox that also
- * offers suggestions), which is why matching only `entry` silently captured
- * nothing at all from Firefox while working fine in Chrome — observed
- * directly on a real GNOME session.
- *
- * Still matched by ROLE and toolbar position only, never by the element's
- * name: Firefox labels this one "Search with Google or enter address",
- * which is localized and would break on any non-English build.
+ * Chromium exposes an `entry`, Firefox a `combo box`. Matched by role and
+ * toolbar position only — the element's name is localized.
  */
 export const ADDRESS_BAR_ROLES = new Set(['entry', 'combo box']);
 
-/**
- * `AtspiStateType.FOCUSED` is bit 12 of the low word of the state bitfield.
- * Not 11 — that's `FOCUSABLE`, which an address bar always sets whether or
- * not it currently holds focus, so keying on it rejected every reading.
- * Verified on a real GNOME 46 Chrome window with the omnibox unfocused:
- * bit 11 set, bit 12 clear.
- */
+/** FOCUSED is bit 12. Bit 11 is FOCUSABLE, which an address bar always sets. */
 const STATE_FOCUSED_BIT = 12;
 
 export interface AtspiWindow {
@@ -103,6 +78,16 @@ async function callOn<T>(
   return (reply?.body ?? []) as T;
 }
 
+/**
+ * U+FFFC stands in for an embedded child object, so a value of only those
+ * carries no URL. This tells a real address bar from its decoys: Opera
+ * wraps its field in an outer `entry`, Firefox puts a search-engine picker
+ * in the same toolbar. Both have the right role and are wrong.
+ */
+export function hasReadableAddressBarText(text: string): boolean {
+  return text.replace(/\uFFFC/g, '').trim().length > 0;
+}
+
 export class AtspiClient {
   private bus: dbus.MessageBus | null = null;
   private readonly logger: (line: string) => void;
@@ -112,10 +97,8 @@ export class AtspiClient {
   }
 
   /**
-   * Resolves the a11y bus address off the session bus, connects to it, and
-   * subscribes to window:activate. Throws if the accessibility bus isn't
-   * reachable at all — the caller reports that as a missing capability
-   * rather than crashing (see index.ts's support gate).
+   * Connects to the a11y bus and subscribes to window:activate. Throws if
+   * the bus is unreachable; the caller reports that as a missing capability.
    */
   async start(): Promise<void> {
     const sessionBus = dbus.sessionBus();
@@ -126,10 +109,8 @@ export class AtspiClient {
     const bus = dbus.sessionBus({ busAddress: address });
     this.bus = bus;
 
-    // AT-SPI only emits an event to clients that have registered for it —
-    // an AddMatch alone silently receives nothing. The third argument
-    // (app bus name) is required by this interface version even though it
-    // is empty for a global listener.
+    // AddMatch alone receives nothing — AT-SPI only emits to registered
+    // clients. The empty third argument is required by this interface.
     await callOn(bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'RegisterEvent', 'sass', [
       'window:activate',
       [],
@@ -175,8 +156,13 @@ export class AtspiClient {
    * with no such node, which is the normal answer for any non-browser
    * application.
    */
-  findAddressBarPath(bus: string, path: string): Promise<string | null> {
-    return this.searchForAddressBar(bus, path, 0, false);
+  async findAddressBarPath(bus: string, path: string): Promise<string | null> {
+    // "First node of the right role" picks a decoy in Opera and Firefox,
+    // so prefer the first candidate with readable text. The first match is
+    // kept as a fallback for a genuinely empty bar.
+    const fallback: { path: string | null } = { path: null };
+    const readable = await this.searchForAddressBar(bus, path, 0, false, fallback);
+    return readable ?? fallback.path;
   }
 
   private async searchForAddressBar(
@@ -184,6 +170,7 @@ export class AtspiClient {
     path: string,
     depth: number,
     insideToolbar: boolean,
+    fallback: { path: string | null },
   ): Promise<string | null> {
     if (depth > MAX_SEARCH_DEPTH) return null;
 
@@ -196,7 +183,11 @@ export class AtspiClient {
       return null;
     }
 
-    if (insideToolbar && ADDRESS_BAR_ROLES.has(role)) return path;
+    if (insideToolbar && ADDRESS_BAR_ROLES.has(role)) {
+      if (await this.hasReadableText(bus, path)) return path;
+      // Carry on: the real node may be nested inside this one or beside it.
+      fallback.path ??= path;
+    }
 
     let children: [string, string][];
     try {
@@ -207,10 +198,24 @@ export class AtspiClient {
 
     const nextInsideToolbar = insideToolbar || role === 'tool bar';
     for (const [childBus, childPath] of children) {
-      const found = await this.searchForAddressBar(childBus, childPath, depth + 1, nextInsideToolbar);
+      const found = await this.searchForAddressBar(
+        childBus,
+        childPath,
+        depth + 1,
+        nextInsideToolbar,
+        fallback,
+      );
       if (found) return found;
     }
     return null;
+  }
+
+  private async hasReadableText(bus: string, path: string): Promise<boolean> {
+    try {
+      return hasReadableAddressBarText(await this.readAddressBarText(bus, path));
+    } catch {
+      return false;
+    }
   }
 
   async readAddressBarText(bus: string, path: string): Promise<string> {

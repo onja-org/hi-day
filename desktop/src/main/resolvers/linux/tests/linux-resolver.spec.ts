@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADDRESS_BAR_ROLES } from '../atspi';
+import { ADDRESS_BAR_ROLES, MAX_SEARCH_DEPTH, hasReadableAddressBarText } from '../atspi';
 import { hwndFromPath, normalizeAppName } from '../index';
 import { evaluateSupport, readSessionEnvironment } from '../support-gate';
 
@@ -107,5 +107,43 @@ describe('hwndFromPath', () => {
 
   it('falls back to 0 for a path with no trailing id rather than producing NaN', () => {
     expect(hwndFromPath('/org/a11y/atspi/accessible/root')).toBe(0);
+  });
+});
+
+describe('hasReadableAddressBarText — telling the address bar from its decoys', () => {
+  it('accepts a real URL reading', () => {
+    expect(hasReadableAddressBarText('https://example.com/deep/path?q=1')).toBe(true);
+    // Chromium elides the scheme; still readable.
+    expect(hasReadableAddressBarText('example.com/search?q=full+path')).toBe(true);
+  });
+
+  it("rejects Opera's wrapper entry, which reads as embedded objects only", () => {
+    // Captured from Opera 121: the outer `entry` named "Address bar", whose
+    // real field sits two levels below it.
+    expect(hasReadableAddressBarText('￼￼')).toBe(false);
+  });
+
+  it("rejects Firefox's search-engine picker sitting in the same toolbar", () => {
+    // Captured from Firefox 155: a `combo box` beside the real one.
+    expect(hasReadableAddressBarText('￼')).toBe(false);
+  });
+
+  it('rejects an empty or whitespace-only bar rather than treating it as a URL', () => {
+    expect(hasReadableAddressBarText('')).toBe(false);
+    expect(hasReadableAddressBarText('   ')).toBe(false);
+  });
+
+  it('keeps text that merely contains an embedded object alongside real content', () => {
+    expect(hasReadableAddressBarText('￼example.com/page')).toBe(true);
+  });
+});
+
+describe('MAX_SEARCH_DEPTH', () => {
+  it("reaches Opera's address bar, which is far deeper than the other browsers'", () => {
+    // Measured on Opera 121: the bar is at depth 13 and the field actually
+    // holding the URL at depth 15. Chrome/Brave/Edge/Firefox sit around 4.
+    // At the previous bound of 8, Opera produced no URLs at all and nothing
+    // reported an error, so this guards the bound rather than the symptom.
+    expect(MAX_SEARCH_DEPTH).toBeGreaterThanOrEqual(15);
   });
 });
