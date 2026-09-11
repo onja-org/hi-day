@@ -21,13 +21,12 @@ export interface SessionEnvironment {
  * **Electron/Chromium overwrites `XDG_CURRENT_DESKTOP` with `Unity`** and
  * preserves the true value in `ORIGINAL_XDG_CURRENT_DESKTOP`. Reading the
  * former made a genuine `ubuntu:GNOME` Wayland session report as an
- * unsupported desktop, so URL tracking disabled itself and the coverage
- * screen told the user to switch to Xorg for no reason.
+ * unsupported desktop, so URL tracking disabled itself and reported that
+ * the user should switch to Xorg, for no reason.
  *
  * This matters in two processes, which is why it lives here rather than at
- * either call site: Electron's main process (for the coverage report) and
- * the resolver side-car, which inherits Electron's already-modified
- * environment when spawned.
+ * either call site: Electron's main process and the resolver side-car,
+ * which inherits Electron's already-modified environment when spawned.
  */
 export function readSessionEnvironment(
   env: NodeJS.ProcessEnv = process.env,
@@ -41,7 +40,7 @@ export function readSessionEnvironment(
 export interface SupportVerdict {
   supported: boolean;
   sessionType: SessionType;
-  /** User-facing explanation, surfaced through the coverage screen. */
+  /** User-facing explanation, reported as the resolver's `unsupported-session` detail. */
   reason: string;
 }
 

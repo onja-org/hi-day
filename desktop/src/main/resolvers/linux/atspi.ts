@@ -41,6 +41,19 @@ const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
 const MAX_SEARCH_DEPTH = 8;
 
 /**
+ * Roles a browser may use for its address bar. Chromium exposes an `entry`;
+ * **Firefox exposes a `combo box`** (its awesomebar is a combobox that also
+ * offers suggestions), which is why matching only `entry` silently captured
+ * nothing at all from Firefox while working fine in Chrome — observed
+ * directly on a real GNOME session.
+ *
+ * Still matched by ROLE and toolbar position only, never by the element's
+ * name: Firefox labels this one "Search with Google or enter address",
+ * which is localized and would break on any non-English build.
+ */
+export const ADDRESS_BAR_ROLES = new Set(['entry', 'combo box']);
+
+/**
  * `AtspiStateType.FOCUSED` is bit 12 of the low word of the state bitfield.
  * Not 11 — that's `FOCUSABLE`, which an address bar always sets whether or
  * not it currently holds focus, so keying on it rejected every reading.
@@ -155,11 +168,12 @@ export class AtspiClient {
   }
 
   /**
-   * Walks down from a window to the first ENTRY-role node that sits inside
-   * a TOOL BAR — matched by role and structural position only, never by the
-   * element's accessible name, which is localized (Step 19's explicit
-   * requirement). Returns null for a window with no such node, which is the
-   * normal answer for any non-browser application.
+   * Walks down from a window to the first address-bar-shaped node (see
+   * ADDRESS_BAR_ROLES) that sits inside a TOOL BAR — matched by role and
+   * structural position only, never by the element's accessible name, which
+   * is localized (Step 19's explicit requirement). Returns null for a window
+   * with no such node, which is the normal answer for any non-browser
+   * application.
    */
   findAddressBarPath(bus: string, path: string): Promise<string | null> {
     return this.searchForAddressBar(bus, path, 0, false);
@@ -182,7 +196,7 @@ export class AtspiClient {
       return null;
     }
 
-    if (insideToolbar && role === 'entry') return path;
+    if (insideToolbar && ADDRESS_BAR_ROLES.has(role)) return path;
 
     let children: [string, string][];
     try {

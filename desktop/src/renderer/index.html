@@ -47,27 +47,25 @@
           </div>
           <p id="idle-notice" class="idle-notice" hidden></p>
 
-          <label for="project-select">Project</label>
-          <select id="project-select"></select>
+          <p id="timer-display" class="timer-display" hidden>00:00:00</p>
+
+          <button id="timer-toggle" type="button" class="timer-toggle" aria-label="Start timer">
+            <svg viewBox="0 0 256 256" width="32" height="32" aria-hidden="true">
+              <path id="timer-toggle-path" d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z" fill="currentColor" />
+            </svg>
+          </button>
+
+          <ul id="project-list" class="project-list"></ul>
 
           <label for="task-select">Task (optional)</label>
           <select id="task-select">
             <option value="">No task</option>
           </select>
-
-          <p id="timer-display" class="timer-display" hidden>00:00:00</p>
-          <p id="paused-notice" hidden>Paused</p>
-
-          <button id="start-button" type="button">Start timer</button>
-          <button id="pause-button" type="button" hidden>Pause</button>
-          <button id="resume-button" type="button" hidden>Resume</button>
-          <button id="stop-button" type="button" hidden>Stop timer</button>
           <button id="switch-button" type="button" hidden>
             Stop the other timer and start this one
           </button>
         </div>
 
-        <button id="coverage-button" type="button">Website tracking status</button>
         <button id="logout-button" type="button">Log out</button>
       </section>
     </main>

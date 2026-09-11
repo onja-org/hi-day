@@ -47,6 +47,13 @@ export interface TimeEntry {
   pausedSeconds: number;
 }
 
+/** One completed/running entry as the agent needs it — just enough to total by Project. */
+export interface TrackedEntry {
+  id: string;
+  projectId: string;
+  durationSeconds: number | null;
+}
+
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
@@ -61,7 +68,21 @@ export interface IdlePolicy {
 
 export type TrackingResult<T> =
   | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
+  | {
+      ok: false;
+      message: string;
+      runningEntry?: TimeEntry;
+      unauthorized?: boolean;
+      /**
+       * The HTTP status, when the request actually reached the server.
+       * Absent for a transport failure (server unreachable, DNS, TLS).
+       * Lets a caller tell "the server rejected this and always will"
+       * (4xx) apart from "try again later" — a distinction that matters
+       * for anything on a retry loop, since a permanently-rejected
+       * payload otherwise retries silently forever.
+       */
+      status?: number;
+    };
 
 interface ErrorResponseBody {
   message?: string[] | string;
@@ -213,6 +234,15 @@ export class ApiClient {
     });
   }
 
+  listEntriesBetween(
+    deviceToken: string,
+    from: string,
+    to: string,
+  ): Promise<TrackingResult<TrackedEntry[]>> {
+    const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.deviceRequest('GET', `/device/time-entries${query}`, deviceToken);
+  }
+
   getIdlePolicy(deviceToken: string): Promise<TrackingResult<IdlePolicy>> {
     return this.deviceRequest('GET', '/device/idle-policy', deviceToken);
   }
@@ -234,6 +264,8 @@ export class ApiClient {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
+      // No `status`: the request never reached the server, so there is no
+      // HTTP result to classify — always worth retrying.
       return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
     }
 
@@ -257,6 +289,7 @@ export class ApiClient {
       // rather than "retry next poll". Distinct from checking the message
       // string, which is just human-readable text, not a contract.
       unauthorized: response.status === 401,
+      status: response.status,
     };
   }
 }

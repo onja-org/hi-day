@@ -484,3 +484,72 @@ describe('SessionEngine — nullPrivacyPolicy for private === null (Step 23)', (
     expect(closed[closed.length - 1].session.url).toBe('example.com/a'); // never updated by the suppressed reading
   });
 });
+
+describe('segment checkpoints — long reads become visible before they end', () => {
+  it('publishes a syncable snapshot once enough ACTIVE time accrues, without closing the session', () => {
+    const { engine, ids } = makeEngine({ segmentFlushMs: 10_000, minSessionFloorMs: 0 });
+    openBaseline(engine);
+
+    // Not yet due.
+    expect(kinds(engine.processEvent(heartbeat(5_000)))).not.toContain('checkpoint');
+
+    const due = engine.processEvent(heartbeat(10_000));
+    expect(kinds(due)).toContain('checkpoint');
+
+    const checkpoint = due.find((o) => o.kind === 'checkpoint');
+    // A non-null endedAt is what makes it eligible for upload at all —
+    // getPendingSync only ever selects ended sessions.
+    expect(checkpoint?.session.endedAt).not.toBeNull();
+    expect(checkpoint?.session.id).toBe(ids[0]);
+
+    // Crucially the session is still open: more time keeps accruing on the
+    // SAME id rather than starting a new one.
+    const later = engine.processEvent(heartbeat(15_000));
+    expect(kinds(later)).toContain('extended');
+    expect(later[0].session.id).toBe(ids[0]);
+    expect(ids).toHaveLength(1);
+  });
+
+  it('loses no accounted time across a checkpoint', () => {
+    const { engine } = makeEngine({ segmentFlushMs: 10_000, minSessionFloorMs: 0 });
+    openBaseline(engine);
+
+    engine.processEvent(heartbeat(10_000)); // checkpoints here
+    const after = engine.processEvent(heartbeat(20_000));
+
+    // 20s of wall time elapsed under holding conditions, so 20s must be
+    // accounted — a close-and-reopen implementation would have dropped the
+    // gap between the flush and the next reading.
+    expect(after[0].session.activeMs).toBe(20_000);
+  });
+
+  it('re-checkpoints on each further segment, carrying a larger activeMs each time', () => {
+    const { engine } = makeEngine({ segmentFlushMs: 10_000, minSessionFloorMs: 0 });
+    openBaseline(engine);
+
+    const first = engine.processEvent(heartbeat(10_000)).find((o) => o.kind === 'checkpoint');
+    const second = engine.processEvent(heartbeat(20_000)).find((o) => o.kind === 'checkpoint');
+
+    expect(first?.session.activeMs).toBe(10_000);
+    expect(second?.session.activeMs).toBe(20_000);
+    // Same id both times — the server upserts, last write wins.
+    expect(second?.session.id).toBe(first?.session.id);
+  });
+
+  it('never checkpoints a session that is not accumulating', () => {
+    const { engine } = makeEngine({ segmentFlushMs: 10_000, minSessionFloorMs: 0 });
+    openBaseline(engine);
+    // Timer off: no active time accrues, so there is nothing new to publish
+    // however long the wall clock runs.
+    engine.processEvent(timerStateChanged(1_000, false));
+
+    const outputs = engine.processEvent(heartbeat(600_000));
+    expect(kinds(outputs)).not.toContain('checkpoint');
+  });
+
+  it('can be disabled with segmentFlushMs: 0', () => {
+    const { engine } = makeEngine({ segmentFlushMs: 0, minSessionFloorMs: 0 });
+    openBaseline(engine);
+    expect(kinds(engine.processEvent(heartbeat(600_000)))).not.toContain('checkpoint');
+  });
+});

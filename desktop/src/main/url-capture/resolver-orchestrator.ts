@@ -99,7 +99,7 @@ export class ResolverOrchestrator {
     this.manager.stop();
   }
 
-  /** F.1: platform-agnostic resolver health for the coverage screen — never includes a URL or any reading content. */
+  /** Platform-agnostic resolver health — never includes a URL or any reading content. */
   healthSnapshot(): ResolverHealthSnapshot {
     return this.health.snapshot();
   }

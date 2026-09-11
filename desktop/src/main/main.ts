@@ -1,27 +1,18 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, powerMonitor, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
 import type { TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
 import { AuthStore } from './auth-store';
 import { getOrCreateDeviceFingerprint } from './device-identity';
 import { toDevicePlatform } from './platform';
-import { buildDarwinCoverageReport } from './resolvers/darwin/coverage';
-import { PermissionStateMachine } from './resolvers/darwin/permission-state';
-import { buildWin32CoverageReport, detectInstalledWin32Browsers } from './resolvers/win32/coverage';
-import { buildLinuxCoverageReport, detectInstalledLinuxBrowsers } from './resolvers/linux/coverage';
 import {
   resolveDarwinResolverPath,
   resolveLinuxResolverPath,
   resolveWinResolverPath,
 } from './resolvers/resolver-paths';
-import { evaluateSupport, readSessionEnvironment } from './resolvers/linux/support-gate';
-import { InstalledBrowserDetector as DarwinInstalledBrowserDetector } from './resolvers/darwin/installed-browsers';
-import { loadBrowserRegistry } from './url-capture/browser-registry';
-import type { CoverageReport } from './url-capture/coverage-report';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
-import { ResolverHealthTracker } from './url-capture/resolver-health';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
 import type { UploadFn } from './url-capture/sync-contract';
@@ -92,6 +83,12 @@ interface AuthStatus {
   message?: string;
 }
 
+/** The Project the timer last ran against — see AuthStore.rememberProject. */
+interface LastProject {
+  projectId: string;
+  taskId: string | null;
+}
+
 // Otherwise userData resolves from package.json's "name" ("desktop"),
 // producing a generic ~/.config/desktop directory — set explicitly now,
 // before any installs exist, since changing it later orphans the stored
@@ -104,6 +101,14 @@ let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Set once IPC handlers are registered, so the app-lifecycle hooks below
+ * (which are wired outside that function) can pause the running timer.
+ */
+let pauseRunningTimer: (() => Promise<void>) | null = null;
+/** Guards the async pause during before-quit, which must not re-enter. */
+let quitPauseComplete = false;
 
 // Well under the backend's DEVICE_HEARTBEAT_WINDOW_MINUTES (5 min default —
 // see backend/src/devices/device-status.ts) so a normal 60s scheduling
@@ -159,11 +164,40 @@ function buildUrlSessionUploadFn(
     if (result.ok) {
       return result.data;
     }
+
     if (result.unauthorized) {
       authStore.clear();
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
+      return { acked: [] };
+    }
+
+    // A 4xx other than 401 means the server understood the request and
+    // refused it — retrying the same payload will fail identically, so this
+    // is a bug to surface, not a blip to ride out. This was learned the hard
+    // way: a fractional `activeMs` tripped the sync DTO's @IsInt, every batch
+    // 400'd, and because a rejected batch is indistinguishable from an
+    // offline one at the queue level, capture appeared broken for days while
+    // actually working perfectly. Logged loudly so the next one is obvious
+    // from the console instead of needing a database dig.
+    //
+    // Never logs a URL — batch size and status only, per
+    // URL_TRACKING_CONTEXT.md's rule that URLs appear in the opt-in debug
+    // log and nowhere else.
+    const status = result.status;
+    if (status !== undefined && status >= 400 && status < 500) {
+      console.error(
+        `[url-sync] Server REJECTED a batch of ${batch.length} session(s) with HTTP ${status}: ` +
+          `${result.message} — this will not succeed on retry; the payload or the endpoint contract is wrong.`,
+      );
+    } else {
+      // 5xx or a transport failure: genuinely worth retrying, so keep it
+      // quiet enough not to spam a console during an ordinary outage.
+      console.warn(
+        `[url-sync] Batch of ${batch.length} session(s) did not sync` +
+          `${status === undefined ? ' (server unreachable)' : ` (HTTP ${status})`}: ${result.message} — will retry.`,
+      );
     }
     return { acked: [] };
   };
@@ -227,110 +261,11 @@ function buildDebugSink(): DebugSink {
   return new DebugHarness(join(app.getPath('userData'), 'url-capture-debug.jsonl'));
 }
 
-/**
- * Reads whatever macOS permission state Electron can answer for directly,
- * from the main process — no side-car, no Swift, no protocol change.
- *
- * This previously handed the coverage screen a FRESH, empty
- * PermissionStateMachine on every call, so `accessibility` was always
- * 'unknown' and every browser rendered as "permission not yet determined /
- * Off" no matter what the user had actually granted.
- *
- * `isTrustedAccessibilityClient(false)` is exactly the `AXIsProcessTrusted()`
- * call the Swift helper used to expose as a `check-permission` subcommand —
- * that subcommand has been removed, since asking Electron is cheaper and one
- * less thing that can fail to spawn. `false` for the prompt keeps this a
- * silent probe — Prompt
- * B.3's requirement that a capability check never surprises the user with a
- * dialog.
- *
- * Deliberately NOT set here:
- *  - Automation (per-browser Apple Events): Electron exposes no equivalent,
- *    and it genuinely can only be learned by attempting an Apple Event —
- *    which happens inside the resolver. Still honestly 'unknown' until the
- *    pinned protocol grows a way to report it back.
- *  - screenRecording: left at its 'not-required' default. This
- *    implementation reads window titles via System Events rather than
- *    get-windows, so Screen Recording is not believed to be needed at all
- *    (see PermissionSnapshot's own note) — reporting a real 'denied' here
- *    would raise a false alarm about a permission nothing asks for.
- */
-function readDarwinPermissions(): PermissionStateMachine {
-  const permissions = new PermissionStateMachine();
-  // A `false` result means "not trusted", which covers both an explicit
-  // denial and never-having-been-asked. They are indistinguishable through
-  // this API, and the user-facing remedy ("allow it in System Settings") is
-  // identical for both, so they collapse to 'denied' rather than leaving
-  // the screen stuck on an unactionable "not yet determined".
-  permissions.setAccessibility(systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied');
-  return permissions;
-}
-
-// F.1 (Step 25): the coverage report the renderer's coverage screen
-// fetches on demand — never includes a URL or any reading content, only
-// browser install/status/confidence and resolver health (see
-// ResolverHealthTracker's own doc comment).
-async function getCoverageReport(): Promise<CoverageReport | null> {
-  const registry = loadBrowserRegistry();
-  const resolverHealth = resolverOrchestrator?.healthSnapshot() ?? new ResolverHealthTracker().snapshot();
-  const now = Date.now();
-
-  if (process.platform === 'darwin') {
-    const installedKeys = await new DarwinInstalledBrowserDetector().detectInstalled(registry);
-    const permissions = readDarwinPermissions().get();
-    return buildDarwinCoverageReport({ installedKeys, registry, permissions, resolverHealth, now });
-  }
-
-  if (process.platform === 'win32') {
-    const installedKeys = await detectInstalledWin32Browsers(registry);
-    return buildWin32CoverageReport({ registry, installedKeys, resolverHealth, now });
-  }
-
-  if (process.platform === 'linux') {
-    return buildLinuxCoverageReport({
-      registry,
-      installedKeys: detectInstalledLinuxBrowsers(registry),
-      resolverHealth,
-      support: evaluateSupport(readSessionEnvironment()),
-      now,
-    });
-  }
-
-  return null; // no resolver for this platform
-}
-
 function stopUrlCapture(): void {
   resolverOrchestrator?.stop();
   resolverOrchestrator = null;
   urlCaptureService?.stop();
   urlCaptureService = null;
-}
-
-let coverageWindow: BrowserWindow | null = null;
-
-// A separate small window rather than a view inside the main status
-// window — keeps the existing view-switching flow (login/status)
-// completely untouched, and this is an occasional diagnostic screen, not
-// part of the everyday timer flow.
-function openCoverageWindow(): void {
-  if (coverageWindow) {
-    coverageWindow.focus();
-    return;
-  }
-  coverageWindow = new BrowserWindow({
-    width: 480,
-    height: 640,
-    webPreferences: {
-      preload: join(__dirname, '../preload/preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  void coverageWindow.loadFile(join(__dirname, '../renderer/coverage.html'));
-  coverageWindow.on('closed', () => {
-    coverageWindow = null;
-  });
 }
 
 function createWindow(): void {
@@ -396,6 +331,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('auth:logout', async (): Promise<AuthStatus> => {
     const session = authStore.load();
     if (session) {
+      // Pause BEFORE revoking the session — afterwards the token is dead
+      // and the running entry could never be paused, leaving it to run
+      // unattended until the next login noticed it.
+      await apiClient.pauseTimer(session.deviceToken);
       await apiClient.logout(session.deviceToken);
       authStore.clear();
     }
@@ -432,19 +371,42 @@ function registerIpcHandlers(): void {
     return result;
   }
 
+  // Exposed to the app-lifecycle hooks (quit/suspend/shutdown) so they can
+  // pause rather than abandon a running timer. Pausing an entry that is
+  // already paused, or when none is running, is a no-op the backend rejects
+  // harmlessly — so callers never need to check first.
+  pauseRunningTimer = async (): Promise<void> => {
+    const session = authStore.load();
+    if (!session) return;
+    await apiClient.pauseTimer(session.deviceToken);
+  };
+
   ipcMain.handle('tracking:listProjects', () => callDeviceApi((token) => apiClient.listProjects(token)));
 
   ipcMain.handle('tracking:listTasks', (_event, projectId: string) =>
     callDeviceApi((token) => apiClient.listTasks(token, projectId)),
   );
 
-  ipcMain.handle('tracking:start', (_event, projectId: string, taskId: string | null) =>
-    callDeviceApi((token) => apiClient.startTimer(token, projectId, taskId)),
-  );
+  // Remembering the Project on the way through means the renderer never has
+  // to manage it: whatever the timer last actually started against is what a
+  // later auto-start or play resumes to.
+  ipcMain.handle('tracking:start', async (_event, projectId: string, taskId: string | null) => {
+    const result = await callDeviceApi((token) => apiClient.startTimer(token, projectId, taskId));
+    if (result.ok) authStore.rememberProject(projectId, taskId);
+    return result;
+  });
 
-  ipcMain.handle('tracking:switch', (_event, projectId: string, taskId: string | null) =>
-    callDeviceApi((token) => apiClient.switchTimer(token, projectId, taskId)),
-  );
+  ipcMain.handle('tracking:switch', async (_event, projectId: string, taskId: string | null) => {
+    const result = await callDeviceApi((token) => apiClient.switchTimer(token, projectId, taskId));
+    if (result.ok) authStore.rememberProject(projectId, taskId);
+    return result;
+  });
+
+  ipcMain.handle('tracking:lastProject', (): LastProject | null => {
+    const session = authStore.load();
+    if (!session?.lastProjectId) return null;
+    return { projectId: session.lastProjectId, taskId: session.lastTaskId ?? null };
+  });
 
   ipcMain.handle('tracking:stop', (_event, endedAt?: string) =>
     callDeviceApi((token) => apiClient.stopTimer(token, endedAt)),
@@ -456,6 +418,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('tracking:resume', () => callDeviceApi((token) => apiClient.resumeTimer(token)));
 
+  ipcMain.handle('tracking:entriesBetween', (_event, from: string, to: string) =>
+    callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+  );
+
   ipcMain.handle('tracking:idlePolicy', () =>
     callDeviceApi((token) => apiClient.getIdlePolicy(token)),
   );
@@ -466,12 +432,6 @@ function registerIpcHandlers(): void {
   // extension only), matching the desktop app's existing "Linux
   // best-effort" support level.
   ipcMain.handle('idle:seconds', () => powerMonitor.getSystemIdleTime());
-
-  // F.1's coverage screen — invoked on demand (the screen's own refresh
-  // button), not polled, since installed-browser detection spawns a real
-  // OS query tool per platform and isn't cheap enough to run continuously.
-  ipcMain.handle('coverage:get', () => getCoverageReport());
-  ipcMain.on('coverage:openWindow', () => openCoverageWindow());
 
   // Fire-and-forget push, not invoke/handle — this is the only signal the
   // main process needs about timer state that it can't get from powerMonitor
@@ -526,9 +486,39 @@ if (!gotSingleInstanceLock) {
     }
   });
 
-  app.on('before-quit', () => {
+  // Quitting must PAUSE the running timer, never stop or discard it — the
+  // elapsed value has to survive to the next launch. The pause is a network
+  // call, so the first quit is deferred until it settles and then re-issued.
+  // `quitPauseComplete` makes that re-issue a plain quit instead of looping.
+  app.on('before-quit', (event) => {
+    if (!quitPauseComplete && pauseRunningTimer) {
+      event.preventDefault();
+      void pauseRunningTimer()
+        .catch((error: unknown) => console.error('[timer] pause on quit failed:', error))
+        .finally(() => {
+          quitPauseComplete = true;
+          stopUrlCapture();
+          stopHeartbeat();
+          stopSync();
+          app.quit();
+        });
+      return;
+    }
     stopUrlCapture();
     stopHeartbeat();
     stopSync();
   });
+
+  // Suspend and shutdown get the same treatment. There is no way to hold
+  // the OS back while an HTTP call completes, so this is best-effort: it
+  // usually lands, and when it does not the entry simply stays running and
+  // the next launch reconciles it. Never stop() here — that would end the
+  // entry and lose the ability to resume it.
+  const pauseForPowerEvent = (label: string): void => {
+    void pauseRunningTimer?.().catch((error: unknown) =>
+      console.error(`[timer] pause on ${label} failed:`, error),
+    );
+  };
+  powerMonitor.on('suspend', () => pauseForPowerEvent('suspend'));
+  powerMonitor.on('shutdown', () => pauseForPowerEvent('shutdown'));
 }

@@ -38,6 +38,8 @@ interface OpenSessionState {
   activeMs: number;
   lastAccountedMonotonicMs: number;
   tzOffsetMin: number;
+  /** `activeMs` as of the last published checkpoint — drives the next one. */
+  activeMsAtLastCheckpoint: number;
 }
 
 interface MergeCandidate {
@@ -45,6 +47,12 @@ interface MergeCandidate {
   closedAtWallClockMs: number;
 }
 
+// Five minutes of ACTIVE time. Hubstaff's published model buckets activity
+// into fixed 10-minute segments; this is deliberately tighter, since the
+// complaint that prompted it was precisely that a long read stayed
+// invisible for too long. Worst-case staleness becomes this plus one sync
+// interval, instead of unbounded.
+const DEFAULT_SEGMENT_FLUSH_MS = 5 * 60_000;
 const DEFAULT_MERGE_WINDOW_MS = 30_000;
 const DEFAULT_MIN_SESSION_FLOOR_MS = 2_000;
 
@@ -57,6 +65,7 @@ export class SessionEngine {
   private readonly mergeWindowMs: number;
   private readonly minSessionFloorMs: number;
   private readonly nullPrivacyPolicy: 'suppress' | 'capture-with-flag';
+  private readonly segmentFlushMs: number;
 
   private timerRunning = false;
   private idle = false;
@@ -70,6 +79,7 @@ export class SessionEngine {
     this.mergeWindowMs = options.mergeWindowMs ?? DEFAULT_MERGE_WINDOW_MS;
     this.minSessionFloorMs = options.minSessionFloorMs ?? DEFAULT_MIN_SESSION_FLOOR_MS;
     this.nullPrivacyPolicy = options.nullPrivacyPolicy ?? 'capture-with-flag';
+    this.segmentFlushMs = options.segmentFlushMs ?? DEFAULT_SEGMENT_FLUSH_MS;
   }
 
   processEvent(event: EngineEvent): EngineOutput[] {
@@ -116,7 +126,35 @@ export class SessionEngine {
         break; // accounting above is heartbeat's entire job
     }
 
+    // Last, so the event's own semantics settle first: if this event already
+    // closed the session there is nothing left to checkpoint.
+    this.checkpointIfDue(event, outputs);
+
     return outputs;
+  }
+
+  /**
+   * Publishes a still-running session as a complete-so-far record once it
+   * has accrued `segmentFlushMs` of active time since the last one.
+   *
+   * Deliberately does NOT close and reopen the session, which was the
+   * obvious alternative: reopening resets `lastAccountedMonotonicMs`, so
+   * every flush would silently discard the gap until the next reading
+   * arrived — up to one heartbeat interval each time, which over a full day
+   * of five-minute segments adds up to minutes of real tracked time thrown
+   * away. Emitting a snapshot leaves the in-memory session untouched, so no
+   * accounting is lost at all.
+   */
+  private checkpointIfDue(clock: EngineClock, outputs: EngineOutput[]): void {
+    if (!this.open || this.segmentFlushMs <= 0) return;
+    if (this.open.activeMs - this.open.activeMsAtLastCheckpoint < this.segmentFlushMs) return;
+
+    this.open.activeMsAtLastCheckpoint = this.open.activeMs;
+    outputs.push({
+      kind: 'checkpoint',
+      session: this.toUrlSession(this.open, clock.wallClockMs),
+      flags: this.computeFlags(this.open, clock.wallClockMs),
+    });
   }
 
   private gatingConditionsHold(): boolean {
@@ -242,6 +280,7 @@ export class SessionEngine {
       activeMs: 0,
       lastAccountedMonotonicMs: event.monotonicMs,
       tzOffsetMin: event.tzOffsetMin,
+      activeMsAtLastCheckpoint: 0,
     };
     this.open = fresh;
     outputs.push({ kind: 'opened', session: this.toUrlSession(fresh, null), flags: [] });
@@ -292,7 +331,14 @@ export class SessionEngine {
       deviceId: this.options.deviceId,
       startedAt: open.startedAt,
       endedAt,
-      activeMs: open.activeMs,
+      // Rounded on the way out, not while accumulating: deltas come from a
+      // monotonic clock and are fractional, so a raw sum carries meaningless
+      // sub-millisecond precision (2104.5833219999986). The pinned model, the
+      // sync DTO's @IsInt, and the backend's `integer` column all treat
+      // activeMs as whole milliseconds — leaving it fractional made every
+      // sync request fail validation with a 400, so nothing ever uploaded
+      // even though capture itself was working.
+      activeMs: Math.round(open.activeMs),
       tzOffsetMin: open.tzOffsetMin,
       source: open.source,
       confidence: open.confidence,

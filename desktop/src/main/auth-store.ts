@@ -6,6 +6,14 @@ export interface StoredSession {
   email: string;
   deviceId: string;
   deviceToken: string;
+  /**
+   * The Project the timer last tracked against, so a later auto-start or
+   * play never re-prompts for it. Optional: absent on a first-ever run,
+   * and on a session saved before this field existed.
+   */
+  lastProjectId?: string;
+  /** The Task alongside `lastProjectId`, when one was chosen. */
+  lastTaskId?: string | null;
 }
 
 const SESSION_FILE_NAME = 'session.dat';
@@ -46,6 +54,17 @@ export class AuthStore {
       ? safeStorage.encryptString(json)
       : Buffer.from(json, 'utf-8');
     writeFileSync(this.filePath, data);
+  }
+
+  /**
+   * Records the Project the timer is now tracking against. A no-op when
+   * nothing is stored, so this can be called freely without first checking
+   * whether a session exists.
+   */
+  rememberProject(projectId: string, taskId: string | null): void {
+    const session = this.load();
+    if (!session) return;
+    this.save({ ...session, lastProjectId: projectId, lastTaskId: taskId });
   }
 
   clear(): void {

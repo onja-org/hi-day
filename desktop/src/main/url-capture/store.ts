@@ -44,7 +44,10 @@ function toRow(raw: UrlSessionRawRow): UrlSessionRow {
     deviceId: raw.device_id,
     startedAt: raw.started_at,
     endedAt: raw.ended_at,
-    activeMs: raw.active_ms,
+    // Also rounded here, not just at emit time: rows persisted before
+    // activeMs was rounded still hold fractional values, and they must not
+    // keep failing sync forever once the emit-side fix is in.
+    activeMs: Math.round(raw.active_ms),
     tzOffsetMin: raw.tz_offset_min,
     source: raw.source as UrlSession['source'],
     confidence: raw.confidence as UrlSession['confidence'],

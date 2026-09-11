@@ -58,8 +58,8 @@ async function main(): Promise<void> {
   const support = evaluateSupport(readSessionEnvironment());
 
   // Step 20: an unsupported session still runs and still answers pings — it
-  // just never claims the `url` capability, so the coverage screen can
-  // explain the gap instead of the agent looking silently broken.
+  // just never claims the `url` capability, and reports why, instead of
+  // the agent looking silently broken.
   if (!support.supported) {
     const ready: ReadyEvent = { ev: 'ready', platform: 'linux', caps: ['focus'] };
     writeLine(ready);

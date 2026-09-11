@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { loadBrowserRegistry } from '../../../url-capture/browser-registry';
-import { ResolverHealthTracker } from '../../../url-capture/resolver-health';
-import { buildLinuxCoverageReport, detectInstalledLinuxBrowsers } from '../coverage';
+import { ADDRESS_BAR_ROLES } from '../atspi';
 import { hwndFromPath, normalizeAppName } from '../index';
 import { evaluateSupport, readSessionEnvironment } from '../support-gate';
-
-const registry = loadBrowserRegistry();
-
-function healthyResolver(): ReturnType<ResolverHealthTracker['snapshot']> {
-  const tracker = new ResolverHealthTracker();
-  tracker.onReady(1_700_000_000_000);
-  return tracker.snapshot();
-}
 
 describe('evaluateSupport — Step 20 support matrix', () => {
   it('enables GNOME on Wayland', () => {
@@ -78,6 +68,27 @@ describe('readSessionEnvironment — Electron rewrites XDG_CURRENT_DESKTOP', () 
   });
 });
 
+describe('ADDRESS_BAR_ROLES — the roles real browsers actually use', () => {
+  // Both observed directly on a live GNOME session, not assumed:
+  //   Chrome  -> entry     :: "Address and search bar"
+  //   Firefox -> combo box :: "Search with Google or enter address"
+  // Matching only `entry` meant Firefox captured NOTHING while Chrome
+  // worked perfectly, which is exactly the kind of silent gap this pins.
+  it('covers the Chromium address bar role', () => {
+    expect(ADDRESS_BAR_ROLES.has('entry')).toBe(true);
+  });
+
+  it('covers the Firefox address bar role, which is a combo box, not an entry', () => {
+    expect(ADDRESS_BAR_ROLES.has('combo box')).toBe(true);
+  });
+
+  it('does not match generic container roles that would produce false positives', () => {
+    for (const role of ['panel', 'section', 'tool bar', 'push button', 'menu']) {
+      expect(ADDRESS_BAR_ROLES.has(role)).toBe(false);
+    }
+  });
+});
+
 describe('normalizeAppName', () => {
   it("maps AT-SPI's display name onto the registry's linux process name", () => {
     expect(normalizeAppName('Google Chrome')).toBe('google-chrome');
@@ -96,66 +107,5 @@ describe('hwndFromPath', () => {
 
   it('falls back to 0 for a path with no trailing id rather than producing NaN', () => {
     expect(hwndFromPath('/org/a11y/atspi/accessible/root')).toBe(0);
-  });
-});
-
-describe('buildLinuxCoverageReport', () => {
-  it('reports an installed browser as active on a supported session', () => {
-    const report = buildLinuxCoverageReport({
-      registry,
-      installedKeys: ['chrome'],
-      resolverHealth: healthyResolver(),
-      support: evaluateSupport({ sessionType: 'wayland', currentDesktop: 'ubuntu:GNOME' }),
-      now: 1_700_000_000_000,
-    });
-
-    expect(report.platform).toBe('linux');
-    const chrome = report.browsers.find((b) => b.key === 'chrome');
-    expect(chrome).toMatchObject({ installed: true, status: 'active', confidence: 'displayed' });
-  });
-
-  it('reports every installed browser as off on an unsupported session, explaining why', () => {
-    const report = buildLinuxCoverageReport({
-      registry,
-      installedKeys: ['chrome'],
-      resolverHealth: healthyResolver(),
-      support: evaluateSupport({ sessionType: 'wayland', currentDesktop: 'KDE' }),
-      now: 1_700_000_000_000,
-    });
-
-    const chrome = report.browsers.find((b) => b.key === 'chrome');
-    expect(chrome?.status).toBe('off');
-    expect(chrome?.reason).toContain('GNOME');
-    // No confidence rating when nothing is being captured.
-    expect(chrome?.confidence).toBeUndefined();
-  });
-
-  it('omits browsers with no Linux presence entirely', () => {
-    const report = buildLinuxCoverageReport({
-      registry,
-      installedKeys: [],
-      resolverHealth: healthyResolver(),
-      support: evaluateSupport({ sessionType: 'x11', currentDesktop: 'i3' }),
-      now: 1_700_000_000_000,
-    });
-
-    // Safari has no `match.linux`, so it must not appear as a Linux row.
-    expect(report.browsers.find((b) => b.key === 'safari')).toBeUndefined();
-  });
-});
-
-describe('detectInstalledLinuxBrowsers', () => {
-  it('finds nothing when PATH contains no browser executables', () => {
-    const originalPath = process.env.PATH;
-    process.env.PATH = '/nonexistent-directory-for-this-test';
-    try {
-      expect(detectInstalledLinuxBrowsers(registry)).toEqual([]);
-    } finally {
-      process.env.PATH = originalPath;
-    }
-  });
-
-  it('never reports the chromium-generic fallback as an installed browser', () => {
-    expect(detectInstalledLinuxBrowsers(registry)).not.toContain('chromium-generic');
   });
 });

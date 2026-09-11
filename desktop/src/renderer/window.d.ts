@@ -1,5 +1,5 @@
-// Shared ambient declarations for every renderer entry point (renderer.ts,
-// coverage-renderer.ts) — tsconfig.renderer.json compiles them all
+// Shared ambient declarations for every renderer entry point —
+// tsconfig.renderer.json compiles them all
 // together, so each entry point's own `declare global` block merges into
 // the SAME global scope. TypeScript requires every declaration of `api`
 // across that merge to agree on the exact same type, so there can only be
@@ -45,6 +45,17 @@ declare global {
     pausedSeconds: number;
   }
 
+  interface LastProject {
+    projectId: string;
+    taskId: string | null;
+  }
+
+  interface TrackedEntry {
+    id: string;
+    projectId: string;
+    durationSeconds: number | null;
+  }
+
   interface CurrentTimer {
     entry: TimeEntry | null;
     now: string;
@@ -61,29 +72,6 @@ declare global {
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
-  type CoverageStatus = 'active' | 'degraded' | 'off';
-
-  interface BrowserCoverageRow {
-    key: string;
-    installed: boolean;
-    status: CoverageStatus;
-    reason: string;
-    confidence?: 'exact' | 'displayed' | 'guess';
-    approximateNote?: string;
-  }
-
-  interface CoverageReport {
-    platform: string;
-    generatedAt: number;
-    resolverHealth: {
-      state: 'starting' | 'ready' | 'restarting' | 'degraded';
-      lastReadyAt: number | null;
-      lastSuccessfulResolveAt: number | null;
-      recentErrorCounts: Record<string, number>;
-    };
-    browsers: BrowserCoverageRow[];
-  }
-
   interface Window {
     api: {
       getStatus: () => Promise<AuthStatus>;
@@ -98,6 +86,8 @@ declare global {
         status: () => Promise<TrackingResult<CurrentTimer>>;
         pause: () => Promise<TrackingResult<TimeEntry>>;
         resume: () => Promise<TrackingResult<TimeEntry>>;
+        lastProject: () => Promise<LastProject | null>;
+        entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
       };
       idle: {
@@ -105,10 +95,6 @@ declare global {
       };
       urlCapture: {
         timerStateChanged: (running: boolean) => void;
-      };
-      coverage: {
-        get: () => Promise<CoverageReport | null>;
-        openWindow: () => void;
       };
     };
   }

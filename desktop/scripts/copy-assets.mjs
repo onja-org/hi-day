@@ -19,7 +19,7 @@ function copyInto(srcDir, outDir, files) {
 copyInto(
   join(rootDir, 'src', 'renderer'),
   join(rootDir, 'dist', 'renderer'),
-  ['index.html', 'coverage.html', 'styles.css'],
+  ['index.html', 'styles.css'],
 );
 
 // The browser registry (docs/url-tracking-plan.md Step 2) is data, not code —

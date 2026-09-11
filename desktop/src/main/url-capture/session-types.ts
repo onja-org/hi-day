@@ -62,7 +62,17 @@ export type EngineEvent =
 export type SessionFlag = 'active-ms-exceeds-wall-clock';
 
 export interface EngineOutput {
-  kind: 'opened' | 'extended' | 'closed';
+  /**
+   * `checkpoint` is a still-running session published as a complete record
+   * *so far*, so long reads become visible without waiting for them to end.
+   * It carries a non-null `endedAt` (the checkpoint instant) precisely so
+   * the sync queue will pick it up — only ended sessions are ever uploaded.
+   * The session stays open and keeps accumulating; the next checkpoint, and
+   * the eventual real `closed`, re-upsert the SAME id with a larger
+   * `activeMs` and later `endedAt`. That is the last-write-wins upsert
+   * docs/url-tracking-api.md already specifies, not a new contract.
+   */
+  kind: 'opened' | 'extended' | 'closed' | 'checkpoint';
   session: UrlSession;
   flags: SessionFlag[];
 }
@@ -86,4 +96,11 @@ export interface SessionEngineOptions {
    * "capture-with-flag" is the default here, not "suppress".
    */
   nullPrivacyPolicy?: 'suppress' | 'capture-with-flag';
+  /**
+   * How much ACTIVE time may accrue on one open session before it is
+   * published as a checkpoint. Measured in active ms, not wall clock, so a
+   * session sitting idle never emits a checkpoint that says nothing new.
+   * Set to 0 to disable checkpointing entirely.
+   */
+  segmentFlushMs?: number;
 }

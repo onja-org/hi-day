@@ -31,6 +31,17 @@ export interface TimeEntry {
   pausedSeconds: number;
 }
 
+export interface LastProject {
+  projectId: string;
+  taskId: string | null;
+}
+
+export interface TrackedEntry {
+  id: string;
+  projectId: string;
+  durationSeconds: number | null;
+}
+
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
@@ -46,28 +57,6 @@ export interface IdlePolicy {
 export type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
-
-export type CoverageStatus = 'active' | 'degraded' | 'off';
-
-export interface BrowserCoverageRow {
-  key: string;
-  installed: boolean;
-  status: CoverageStatus;
-  reason: string;
-  confidence?: 'exact' | 'displayed' | 'guess';
-}
-
-export interface CoverageReport {
-  platform: string;
-  generatedAt: number;
-  resolverHealth: {
-    state: 'starting' | 'ready' | 'restarting' | 'degraded';
-    lastReadyAt: number | null;
-    lastSuccessfulResolveAt: number | null;
-    recentErrorCounts: Record<string, number>;
-  };
-  browsers: BrowserCoverageRow[];
-}
 
 const api = {
   getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:status') as Promise<AuthStatus>,
@@ -102,6 +91,12 @@ const api = {
       ipcRenderer.invoke('tracking:pause') as Promise<TrackingResult<TimeEntry>>,
     resume: (): Promise<TrackingResult<TimeEntry>> =>
       ipcRenderer.invoke('tracking:resume') as Promise<TrackingResult<TimeEntry>>,
+    lastProject: (): Promise<LastProject | null> =>
+      ipcRenderer.invoke('tracking:lastProject') as Promise<LastProject | null>,
+    entriesBetween: (from: string, to: string): Promise<TrackingResult<TrackedEntry[]>> =>
+      ipcRenderer.invoke('tracking:entriesBetween', from, to) as Promise<
+        TrackingResult<TrackedEntry[]>
+      >,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke('tracking:idlePolicy') as Promise<TrackingResult<IdlePolicy>>,
   },
@@ -113,12 +108,6 @@ const api = {
     // renderer stays the authoritative source of "is a timer running".
     timerStateChanged: (running: boolean): void => {
       ipcRenderer.send('urlCapture:timerStateChanged', running);
-    },
-  },
-  coverage: {
-    get: (): Promise<CoverageReport | null> => ipcRenderer.invoke('coverage:get') as Promise<CoverageReport | null>,
-    openWindow: (): void => {
-      ipcRenderer.send('coverage:openWindow');
     },
   },
 };
