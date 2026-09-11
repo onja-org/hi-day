@@ -170,3 +170,43 @@ describe('normalizeAddressBarReading — rejected readings', () => {
     expect(normalize('example.com/email/unsubscribe?u=123')).toEqual({ ok: false, reason: 'sensitive-path' });
   });
 });
+
+describe('full-URL capture — fragments', () => {
+  it('keeps the fragment, because for a single-page app it IS the location', () => {
+    // Gmail's inbox and sent view differ only by fragment; dropping it
+    // collapses two different screens into one indistinguishable row.
+    const inbox = normalizeAddressBarReading('mail.google.com/mail/u/0/#inbox');
+    const sent = normalizeAddressBarReading('mail.google.com/mail/u/0/#sent');
+
+    expect(inbox.ok && inbox.url).toBe('https://mail.google.com/mail/u/0/#inbox');
+    expect(sent.ok && sent.url).toBe('https://mail.google.com/mail/u/0/#sent');
+  });
+
+  it('keeps path, query and fragment together', () => {
+    const result = normalizeAddressBarReading('example.com/search?q=full+path&n=2#results');
+    expect(result.ok && result.url).toBe('https://example.com/search?q=full+path&n=2#results');
+  });
+
+  it('rejects a credential carried in the fragment, not just in the query', () => {
+    // OAuth/OIDC implicit flows return the token after `#`, so the denylist
+    // has to treat `#` as a key delimiter alongside `?` and `&`. Before
+    // fragments were kept this could not bite; now it is the main way a
+    // live token could reach the database.
+    for (const reading of [
+      'example.com/callback#access_token=SECRET&token_type=bearer',
+      'example.com/login#id_token=eyJhbGciOi',
+      'example.com/cb#refresh_token=abc',
+    ]) {
+      const result = normalizeAddressBarReading(reading);
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toBe('sensitive-path');
+    }
+  });
+
+  it('drops the fragment when an org opts into the stricter policy', () => {
+    const result = normalizeAddressBarReading('mail.google.com/mail/u/0/#inbox', {
+      queryStringPolicy: 'strip',
+    });
+    expect(result.ok && result.url).toBe('https://mail.google.com/mail/u/0/');
+  });
+});

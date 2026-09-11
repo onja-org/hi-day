@@ -15,7 +15,11 @@ export type RejectedReading = { ok: false; reason: RejectionReason };
 export type NormalizationResult = NormalizedReading | RejectedReading;
 
 export interface NormalizePipelineOptions {
-  /** Decision D1 — org-configurable; strip is the safer default. */
+  /**
+   * Decision D1. Defaults to `keep` — the product needs the full URL,
+   * search queries included. The sensitive-path rule above it in this
+   * pipeline is what makes that safe; orgs wanting less set `strip`.
+   */
   queryStringPolicy?: 'strip' | 'keep';
   /** Overridable for tests; defaults to loading placeholder-strings.json. */
   placeholders?: string[];
@@ -26,25 +30,17 @@ export interface NormalizePipelineOptions {
 const SCHEME_PREFIX = /^[a-z][a-z0-9+.-]*:/i;
 
 /**
- * Steps 2-9 of docs/url-tracking-plan.md Step 21's normalization pipeline.
- * Step 1 (reject if the address bar has keyboard focus) is enforced
- * resolver-side instead — the pinned wire protocol carries no field for
- * that state to Electron, so a rejected-for-focus reading never reaches
- * this pipeline as a candidate at all (see e.g. win-resolver's
- * AddressBarSelector). Step 10 (compare with the previous reading —
- * identical extends the session, different opens a new one) is
- * session-engine.ts's existing job, downstream of this pipeline's output,
- * not reimplemented here.
+ * Step 21's normalization pipeline. Focus rejection happens resolver-side
+ * (the wire protocol carries no focus field); comparing against the
+ * previous reading is session-engine.ts's job.
  *
- * Pure: no clock, no network, no side effects. The only I/O is the
- * (lazily loaded, cacheable) config file reads for placeholders/
- * sensitive-path patterns, which callers can override entirely for tests.
- * Drops the reading at the first failing rule, per Step 21.
+ * Pure apart from lazily reading the two config files, which tests can
+ * override. Drops the reading at the first failing rule.
  */
 export function normalizeAddressBarReading(raw: string, options: NormalizePipelineOptions = {}): NormalizationResult {
   const placeholders = options.placeholders ?? loadPlaceholders();
   const sensitivePatterns = options.sensitivePathPatterns ?? loadSensitivePathPatterns();
-  const queryStringPolicy = options.queryStringPolicy ?? 'strip';
+  const queryStringPolicy = options.queryStringPolicy ?? 'keep';
 
   if (hostCandidateHasSpace(raw)) {
     return { ok: false, reason: 'contains-space' };
@@ -69,7 +65,9 @@ export function normalizeAddressBarReading(raw: string, options: NormalizePipeli
   let pathAndQuery: string;
   try {
     const preview = new URL(withScheme);
-    pathAndQuery = preview.pathname + preview.search;
+    // Fragment included: implicit-flow tokens arrive as `#access_token=...`,
+    // and fragments are now kept rather than discarded.
+    pathAndQuery = preview.pathname + preview.search + preview.hash;
   } catch {
     return { ok: false, reason: 'unparseable' };
   }

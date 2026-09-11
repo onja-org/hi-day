@@ -2,14 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Step 21's two config-file-backed rejection rules — rule 4 (known
- * placeholder strings) and rule 9 (credential/token-bearing paths).
- *
- * One module rather than two: both are "load a JSON denylist, then test a
- * string against it", both are consumed only by `normalize.ts`, and
- * neither carries enough logic to be worth its own file or its own test —
- * they are exercised together through `normalize.spec.ts`, which loads
- * these real shipped config files rather than fixtures.
+ * The two config-file-backed rejection rules: placeholder strings and
+ * credential-bearing paths. One module because both are "load a JSON
+ * denylist, test a string against it", and both are tested through
+ * normalize.spec.ts against the real shipped files.
  */
 
 const DEFAULT_PLACEHOLDERS_PATH = join(__dirname, 'placeholder-strings.json');
@@ -24,12 +20,8 @@ export function loadPlaceholders(filePath: string = DEFAULT_PLACEHOLDERS_PATH): 
 }
 
 /**
- * Step 21 rule 4: reject known placeholder strings (a blank/fresh tab)
- * and their localizations. Exact match, case-insensitive, against the
- * trimmed raw reading — these are fixed known-bad strings, not a pattern
- * to search for within a longer string (unlike the Firefox private-window
- * title marker, which does need substring matching against a full window
- * title).
+ * Rejects a blank/fresh tab. Exact case-insensitive match, not substring:
+ * these are whole known-bad readings.
  */
 export function isPlaceholder(raw: string, placeholders: readonly string[]): boolean {
   const normalized = raw.trim().toLowerCase();
@@ -67,5 +59,9 @@ export function matchesSensitivePathDenylist(pathAndQuery: string, patterns: Sen
   if (patterns.pathPatterns.some((p) => normalized.includes(p.toLowerCase()))) {
     return true;
   }
-  return patterns.queryKeyPatterns.some((key) => new RegExp(`[?&]${key.toLowerCase()}=`).test(normalized));
+  // `#` is a delimiter too: implicit-flow credentials arrive in the
+  // fragment, which is now kept rather than discarded.
+  return patterns.queryKeyPatterns.some((key) =>
+    new RegExp(`[?&#]${key.toLowerCase()}=`).test(normalized),
+  );
 }
