@@ -13,11 +13,13 @@ export function ActivityTabs({ organisationId }: ActivityTabsProps) {
   const notesHref = `/organisations/${organisationId}/activities`;
   const appsHref = `/organisations/${organisationId}/activities/apps`;
   const screenshotsHref = `/organisations/${organisationId}/activities/screenshots`;
+  const urlsHref = `/organisations/${organisationId}/activities/urls`;
 
   const tabs = [
     { label: "Notes", href: notesHref },
     { label: "Apps", href: appsHref },
     { label: "Screenshots", href: screenshotsHref },
+    { label: "URLs", href: urlsHref },
   ];
 
   return (

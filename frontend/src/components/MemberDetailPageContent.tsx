@@ -8,6 +8,7 @@ import { ErrorMessage } from "./ErrorMessage";
 import { MemberTimeEntriesList } from "./MemberTimeEntriesList";
 import { RequireRole } from "./RequireRole";
 import { Spinner } from "./Spinner";
+import { MemberActivityList } from "./MemberActivityList";
 import { UrlSessionList } from "./UrlSessionList";
 
 type MemberDetailPageContentProps = {
@@ -117,7 +118,15 @@ function MemberDetail({
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
+          <h2 className="text-lg font-semibold text-primary-dark">Notes</h2>
+          <MemberActivityList
+            organisationId={organisationId}
+            membershipId={member.id}
+          />
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-primary-dark">Websites</h2>
           <UrlSessionList
             organisationId={organisationId}
             membershipId={member.id}
