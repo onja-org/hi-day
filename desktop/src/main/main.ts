@@ -70,6 +70,10 @@ import { RELEASES_PAGE_URL, checkForUpdate } from './update-checker';
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
   message: "You've been signed out — please log in to continue.",
+  // Carries the same signal a 401 does. Without it the renderer treats this
+  // as an ordinary error and leaves the timer and project list on screen —
+  // the local session is already gone, so no retry can ever succeed.
+  unauthorized: true,
 };
 
 const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);

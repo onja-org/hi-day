@@ -48,6 +48,16 @@ function stopPairingPoll(): void {
 }
 
 function showLoginView(errorMessage?: string): void {
+  // Signing out is more than a view swap. Cleared first so the re-render
+  // below empties the list rather than redrawing the old user's projects.
+  projects = [];
+  todaySecondsByProject = new Map();
+  // Stops the clock, tells main to stop url-capture, and clears the row
+  // highlight — otherwise the timer keeps counting behind the login screen.
+  setRunning(null);
+  clearTrackingError();
+  timerDisplay.hidden = true;
+
   pairingErrorEl.hidden = !errorMessage;
   pairingErrorEl.textContent = errorMessage ?? '';
   pairingStatusEl.textContent = DEFAULT_PAIRING_MESSAGE;
