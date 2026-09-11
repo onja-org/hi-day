@@ -21,6 +21,13 @@ afterPack: scripts/afterPack.mjs
 files:
   - dist/**/*
   - package.json
+# Native addons can't be require()'d from inside an asar archive.
+asarUnpack:
+  - node_modules/@paymoapp/active-window/**/*
+  - node_modules/uiohook-napi/**/*
+# Both ship prebuilt native binaries — rebuilding against Electron's headers
+# is unnecessary and fails without system X11 dev headers here.
+npmRebuild: false
 
 win:
   target:

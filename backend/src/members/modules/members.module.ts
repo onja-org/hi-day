@@ -3,6 +3,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { ActivitiesModule } from '../../activities/modules/activities.module';
+import { AppEventsModule } from '../../app-events/modules/app-events.module';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { AuthModule } from '../../auth/modules/auth.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
@@ -14,6 +15,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
+import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
 import { InvitationAcceptController } from '../controllers/invitation-accept.controller';
 import { InvitationsController } from '../controllers/invitations.controller';
 import { MembershipsController } from '../controllers/memberships.controller';
@@ -35,6 +37,8 @@ function inviteCreateTracker(req: Request): string {
     AuthModule,
     DevicesModule,
     ActivitiesModule,
+    AppEventsModule,
+    ScreenshotsModule,
     TimeEntriesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 10 },

@@ -9,6 +9,7 @@ import {
 } from "@/hooks/useCurrentOrganisation";
 import { updateOrganisation } from "@/lib/updateOrganisation";
 import type { IdleHandling, UpdateOrganisationInput } from "@/types/organisation";
+import { CaptureSettingsFields } from "./CaptureSettingsFields";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
@@ -50,6 +51,12 @@ export function OrganisationSettingsForm({
     const formData = new FormData(event.currentTarget);
     const website = formData.get("website");
     const idleThresholdMinutes = Number(formData.get("idleThresholdMinutes"));
+    const screenshotFrequencyMinutes = Number(
+      formData.get("screenshotFrequencyMinutes"),
+    );
+    const screenshotRetentionDays = Number(
+      formData.get("screenshotRetentionDays"),
+    );
 
     updateMutation.mutate({
       name: String(formData.get("name") ?? ""),
@@ -58,6 +65,16 @@ export function OrganisationSettingsForm({
       idleHandling: formData.get("idleHandling") as IdleHandling,
       idleThresholdMinutes: Number.isFinite(idleThresholdMinutes)
         ? idleThresholdMinutes
+        : undefined,
+      windowTrackingEnabled: formData.get("windowTrackingEnabled") === "on",
+      screenshotsEnabled: formData.get("screenshotsEnabled") === "on",
+      activityTrackingEnabled:
+        formData.get("activityTrackingEnabled") === "on",
+      screenshotFrequencySeconds: Number.isFinite(screenshotFrequencyMinutes)
+        ? screenshotFrequencyMinutes * 60
+        : undefined,
+      screenshotRetentionDays: Number.isFinite(screenshotRetentionDays)
+        ? screenshotRetentionDays
         : undefined,
     });
   }
@@ -158,6 +175,8 @@ export function OrganisationSettingsForm({
           />
         </label>
       </div>
+
+      <CaptureSettingsFields organisation={organisation} />
 
       <button
         type="submit"

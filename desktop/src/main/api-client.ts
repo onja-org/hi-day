@@ -1,4 +1,5 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { TitleUnavailableReason } from './window-sample';
 
 export interface StartPairingRequest {
   deviceFingerprint: string;
@@ -69,6 +70,34 @@ export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
+}
+
+export interface CaptureSettings {
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  screenshotFrequencySeconds: number;
+  screenshotRetentionDays: number;
+  activityTrackingEnabled: boolean;
+}
+
+/**
+ * The wire shape for `POST /device/app-events` — deliberately omits
+ * `title`/`titleUnavailableReason` when absent (`undefined`) rather than
+ * sending an explicit `null`, matching the backend DTO's `@IsOptional()`
+ * fields.
+ */
+export interface AppEventPayload {
+  appName: string;
+  title?: string;
+  titleUnavailableReason?: TitleUnavailableReason;
+  sampledAt: string;
+}
+
+/** The wire shape for `POST /device/activity-samples` — one row per 10-minute period. */
+export interface ActivitySamplePayload {
+  activePercentage: number;
+  periodStart: string;
+  periodEnd: string;
 }
 
 export type TrackingResult<T> =
@@ -237,8 +266,77 @@ export class ApiClient {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
   }
 
+  postAppEvents(
+    deviceToken: string,
+    events: AppEventPayload[],
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/app-events', deviceToken, {
+      events,
+    });
+  }
+
+  postActivitySamples(
+    deviceToken: string,
+    samples: ActivitySamplePayload[],
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/activity-samples', deviceToken, {
+      samples,
+    });
+  }
+
   getIdlePolicy(deviceToken: string): Promise<TrackingResult<IdlePolicy>> {
     return this.deviceRequest('GET', '/device/idle-policy', deviceToken);
+  }
+
+  getCaptureSettings(
+    deviceToken: string,
+  ): Promise<TrackingResult<CaptureSettings>> {
+    return this.deviceRequest('GET', '/device/capture-settings', deviceToken);
+  }
+
+  requestScreenshotUploadUrl(
+    deviceToken: string,
+    capturedAt: string,
+  ): Promise<TrackingResult<{ uploadUrl: string; storageKey: string }>> {
+    return this.deviceRequest(
+      'POST',
+      '/device/screenshots/upload-url',
+      deviceToken,
+      { capturedAt },
+    );
+  }
+
+  recordScreenshot(
+    deviceToken: string,
+    storageKey: string,
+    capturedAt: string,
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/screenshots', deviceToken, {
+      storageKey,
+      capturedAt,
+    });
+  }
+
+  /**
+   * A raw PUT straight to the presigned Wasabi URL — deliberately not
+   * routed through `deviceRequest`, since this isn't a `/device/...` call
+   * (no bearer token, no JSON body, no backend involved at all once the
+   * URL has been issued — see docs/adr/0012-...).
+   */
+  async putScreenshot(uploadUrl: string, buffer: Buffer): Promise<boolean> {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        // A plain Uint8Array, not the Node `Buffer` subclass — TS's DOM
+        // `BodyInit` type doesn't resolve `Buffer<ArrayBufferLike>` against
+        // its overloads even though Buffer *is* structurally a Uint8Array.
+        body: new Uint8Array(buffer),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   private async deviceRequest<T>(

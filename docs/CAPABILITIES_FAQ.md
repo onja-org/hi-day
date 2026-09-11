@@ -66,7 +66,7 @@ And because the desktop app runs all day, it needs the basics of any long-runnin
 | --- | --- | --- | --- |
 | Time, reports, payroll | NestJS + Next.js | Very high | None — it's ordinary web-app code. |
 | Idle detection | Electron (built in) | Very high | Nothing extra needed. |
-| Apps & windows | Electron + get-windows | High | The helper must match the app's Electron version. |
+| Apps & windows | Electron + @paymoapp/active-window | High | The helper must match the app's Electron version. |
 | Screenshots | Electron + the OS screenshot tool | High | Needs the macOS screen-recording permission. |
 | Website (URL) tracking | Browser extension (JS) | High | Browser sleeps the extension when idle — must be event-driven. |
 | Activity level | Electron + uiohook-napi | Medium | Most fragile helper; can trip antivirus; sensitive to OS updates. |

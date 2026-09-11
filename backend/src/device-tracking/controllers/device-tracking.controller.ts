@@ -23,8 +23,16 @@ import type {
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { ProjectTasksList } from '../../tasks/services/tasks.service';
 import { TasksService } from '../../tasks/services/tasks.service';
+import { AppEventsService } from '../../app-events/services/app-events.service';
+import { CreateAppEventsBatchDto } from '../../app-events/dto/create-app-events-batch.dto';
+import { ActivitySamplesService } from '../../activity-samples/services/activity-samples.service';
+import { CreateActivitySamplesBatchDto } from '../../activity-samples/dto/create-activity-samples-batch.dto';
+import type { CaptureSettings } from '../../organisations/capture-settings';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { CreateScreenshotDto } from '../../screenshots/dto/create-screenshot.dto';
+import { RequestScreenshotUploadUrlDto } from '../../screenshots/dto/request-screenshot-upload-url.dto';
+import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 
 /**
  * The desktop agent's own read/write surface for time tracking — mirrors
@@ -42,11 +50,73 @@ export class DeviceTrackingController {
     private readonly tasksService: TasksService,
     private readonly timeEntriesService: TimeEntriesService,
     private readonly organisationsService: OrganisationsService,
+    private readonly appEventsService: AppEventsService,
+    private readonly screenshotsService: ScreenshotsService,
+    private readonly activitySamplesService: ActivitySamplesService,
   ) {}
 
   @Get('idle-policy')
   idlePolicy(@Req() request: DeviceAuthenticatedRequest): Promise<IdlePolicy> {
     return this.organisationsService.getIdlePolicy(request.organisationId);
+  }
+
+  @Get('capture-settings')
+  captureSettings(
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<CaptureSettings> {
+    return this.organisationsService.getCaptureSettings(request.organisationId);
+  }
+
+  @Post('app-events')
+  async recordAppEvents(
+    @Body() dto: CreateAppEventsBatchDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    await this.appEventsService.recordBatch(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.events,
+    );
+  }
+
+  @Post('activity-samples')
+  async recordActivitySamples(
+    @Body() dto: CreateActivitySamplesBatchDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    await this.activitySamplesService.recordBatch(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.samples,
+    );
+  }
+
+  @Post('screenshots/upload-url')
+  requestScreenshotUploadUrl(
+    @Body() dto: RequestScreenshotUploadUrlDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<{ uploadUrl: string; storageKey: string }> {
+    return this.screenshotsService.requestUploadUrl(
+      request.organisationId,
+      request.deviceId,
+      dto.capturedAt,
+    );
+  }
+
+  @Post('screenshots')
+  async recordScreenshot(
+    @Body() dto: CreateScreenshotDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    await this.screenshotsService.recordScreenshot(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.storageKey,
+      dto.capturedAt,
+    );
   }
 
   @Get('projects')

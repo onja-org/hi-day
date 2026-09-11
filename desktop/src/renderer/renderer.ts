@@ -50,6 +50,16 @@ interface IdlePolicy {
   thresholdMinutes: number;
 }
 
+type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
+
+interface CapturePermissionStatus {
+  windowTrackingEnabled: boolean;
+  screenshotsEnabled: boolean;
+  platform: DesktopDevicePlatformName;
+  screenRecordingGranted: boolean;
+  waylandUnsupported: boolean;
+}
+
 type TrackingResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string; runningEntry?: TimeEntry; signedOut?: boolean };
@@ -79,6 +89,9 @@ declare global {
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
         status: () => Promise<TrackingResult<CurrentTimer>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
+        permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
+        requestScreenRecordingAccess: () => Promise<void>;
+        openScreenRecordingSettings: () => Promise<void>;
       };
       idle: {
         seconds: () => Promise<number>;
@@ -107,6 +120,11 @@ const IDLE_POLL_INTERVAL_MS = 10_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 60;
 const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
+// After "Grant Access" is clicked, macOS gives no callback for when the
+// person actually flips the switch in System Settings — poll a few times
+// a second for a short window to detect it and auto-dismiss the banner.
+const SCREEN_RECORDING_POLL_INTERVAL_MS = 2_500;
+const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
@@ -258,10 +276,19 @@ const idleBannerMessage = document.getElementById('idle-banner-message')!;
 const idleKeepButton = document.getElementById('idle-keep-button') as HTMLButtonElement;
 const idleDiscardButton = document.getElementById('idle-discard-button') as HTMLButtonElement;
 const idleNotice = document.getElementById('idle-notice')!;
+const screenRecordingBanner = document.getElementById('screen-recording-banner')!;
+const screenRecordingGrantButton = document.getElementById(
+  'screen-recording-grant-button',
+) as HTMLButtonElement;
+const screenRecordingSettingsButton = document.getElementById(
+  'screen-recording-settings-button',
+) as HTMLButtonElement;
+const waylandNotice = document.getElementById('wayland-notice')!;
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 let idlePollHandle: ReturnType<typeof setInterval> | null = null;
+let screenRecordingPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
 // Server clock minus local clock, at the moment of the last successful
 // poll — lets the 1s tick compute elapsed time from the server's own
@@ -376,6 +403,57 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleMinutes, idleStartedAtIso);
 }
 
+// --- Window-tracking permission banner ----------------------------------
+
+async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus | null> {
+  const result = await window.api.tracking.permissionStatus();
+  if (!result.ok) return null;
+  const status = result.data;
+
+  // Window titles and screenshots are gated by the same macOS permission
+  // (see docs/adr/0011-..., docs/adr/0012-...) — one banner covers both,
+  // shown whenever either capture feature is on and access isn't granted
+  // yet.
+  const captureRequested = status.windowTrackingEnabled || status.screenshotsEnabled;
+  screenRecordingBanner.hidden = !(
+    captureRequested &&
+    status.platform === 'macos' &&
+    !status.screenRecordingGranted
+  );
+  // Wayland has no fix available, so this is informational only — no
+  // "Grant Access"-style call to action, unlike the screen-recording banner.
+  waylandNotice.hidden = !(captureRequested && status.waylandUnsupported);
+
+  return status;
+}
+
+function stopScreenRecordingGrantPolling(): void {
+  if (screenRecordingPollHandle) clearInterval(screenRecordingPollHandle);
+  screenRecordingPollHandle = null;
+}
+
+screenRecordingGrantButton.addEventListener('click', () => {
+  void window.api.tracking.requestScreenRecordingAccess().then(() => {
+    // macOS won't re-show its native prompt on repeat calls, so grant
+    // detection has to be polled rather than awaited — stop as soon as
+    // access is detected, or after a bounded timeout either way.
+    stopScreenRecordingGrantPolling();
+    const deadline = Date.now() + SCREEN_RECORDING_POLL_TIMEOUT_MS;
+    screenRecordingPollHandle = setInterval(() => {
+      void (async () => {
+        const status = await refreshCapturePermissionBanner();
+        if (status?.screenRecordingGranted || Date.now() > deadline) {
+          stopScreenRecordingGrantPolling();
+        }
+      })();
+    }, SCREEN_RECORDING_POLL_INTERVAL_MS);
+  });
+});
+
+screenRecordingSettingsButton.addEventListener('click', () => {
+  void window.api.tracking.openScreenRecordingSettings();
+});
+
 async function loadProjects(): Promise<void> {
   const result = await callTracking(() => window.api.tracking.listProjects());
   if (!result.ok) {
@@ -435,7 +513,10 @@ async function refreshStatus(): Promise<void> {
 function startPolling(): void {
   stopPolling();
   void refreshStatus();
-  pollHandle = setInterval(() => void refreshStatus(), STATUS_POLL_INTERVAL_MS);
+  pollHandle = setInterval(() => {
+    void refreshStatus();
+    void refreshCapturePermissionBanner();
+  }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
   idlePollHandle = setInterval(() => void checkIdle(), IDLE_POLL_INTERVAL_MS);
 }
@@ -447,6 +528,7 @@ function stopPolling(): void {
   pollHandle = null;
   tickHandle = null;
   idlePollHandle = null;
+  stopScreenRecordingGrantPolling();
 }
 
 startButton.addEventListener('click', () => {
@@ -528,6 +610,7 @@ async function initTracking(): Promise<void> {
   );
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
 
+  void refreshCapturePermissionBanner();
   startPolling();
 }
 
