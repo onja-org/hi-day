@@ -552,4 +552,12 @@ if (!gotSingleInstanceLock) {
   };
   powerMonitor.on('suspend', () => pauseForPowerEvent('suspend'));
   powerMonitor.on('shutdown', () => pauseForPowerEvent('shutdown'));
+
+  // Logging out, and most graceful shutdowns, send SIGTERM rather than
+  // anything Electron reports as a quit — without this the process dies with
+  // the timer still running. Routed through app.quit() so it takes the same
+  // pause-then-exit path as closing the window.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => app.quit());
+  }
 }
