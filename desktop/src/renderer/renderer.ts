@@ -10,10 +10,17 @@ const STATUS_POLL_INTERVAL_MS = 15_000;
 // How often the agent checks the OS's own idle-time counter while a timer
 // is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
-// Bounded so an abandoned pairing attempt stops polling. The code outlives
-// this on the backend, so clicking "Log in" again starts a fresh one.
+// Bounded so an abandoned pairing attempt stops polling, not so this races
+// the backend's own expiry. Must stay comfortably ABOVE the 10-minute
+// PAIRING_TTL_MS in backend/src/devices/services/device-pairing.service.ts —
+// this used to be a 3-minute ceiling (60 attempts), which cut off well
+// before a normal first-time login (open the browser, type credentials,
+// click through) reliably finishes, always showing "link expired" even
+// though the code was still good server-side. 210 attempts (10.5 minutes)
+// gives a small buffer past the real TTL so "expired" only ever reflects
+// the server's own answer, never this client guessing early.
 const PAIRING_POLL_INTERVAL_MS = 3_000;
-const PAIRING_POLL_MAX_ATTEMPTS = 60;
+const PAIRING_POLL_MAX_ATTEMPTS = 210;
 const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
 // After "Grant Access" is clicked, macOS gives no callback for when the
 // person actually flips the switch in System Settings — poll a few times
