@@ -1,6 +1,7 @@
 "use client";
 
-import { StopIcon } from "@phosphor-icons/react";
+import { PauseIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import clsx from "clsx";
 import { useRunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
@@ -34,7 +35,12 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary" />
+              <span
+                className={clsx(
+                  "h-2.5 w-2.5 rounded-full bg-primary",
+                  !timer.isPaused && "animate-pulse",
+                )}
+              />
             </span>
             <div className="flex flex-col">
               <span className="flex items-center gap-2 font-medium text-primary-dark">
@@ -42,21 +48,47 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
                   <ProjectColourBadge colour={timer.activeProject.colour} />
                 )}
                 {timer.activeProject?.name ?? "Tracking time"}
+                {timer.isPaused && (
+                  <span className="text-xs font-normal text-secondary">Paused</span>
+                )}
               </span>
               <span className="text-3xl font-semibold tabular-nums text-primary-dark">
                 {formatElapsed(timer.elapsedMs)}
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={timer.onStop}
-            disabled={timer.isStopping}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary-dark px-5 py-2.5 text-white transition-colors duration-150 hover:bg-primary-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <StopIcon size={18} weight="fill" aria-hidden="true" />
-            Stop timer
-          </button>
+          <div className="flex items-center gap-2">
+            {timer.isPaused ? (
+              <button
+                type="button"
+                onClick={timer.onResume}
+                disabled={timer.isResuming}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PlayIcon size={18} weight="fill" aria-hidden="true" />
+                Resume
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={timer.onPause}
+                disabled={timer.isPausing}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary-dark/20 px-4 py-2.5 text-primary-dark transition-colors duration-150 hover:bg-primary-dark/5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PauseIcon size={18} weight="fill" aria-hidden="true" />
+                Pause
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={timer.onStop}
+              disabled={timer.isStopping}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary-dark px-5 py-2.5 text-white transition-colors duration-150 hover:bg-primary-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <StopIcon size={18} weight="fill" aria-hidden="true" />
+              Stop
+            </button>
+          </div>
         </div>
       ) : (
         <TimerPicker

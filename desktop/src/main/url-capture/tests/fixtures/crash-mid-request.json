@@ -1,0 +1,3 @@
+{
+  "rules": [{ "op": "resolve", "action": "crash" }]
+}

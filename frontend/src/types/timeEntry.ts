@@ -11,6 +11,14 @@ export type TimeEntry = {
   endedAt: string | null;
   source: TimeEntrySource;
   deviceId: string | null;
+  /**
+   * Non-null while the entry has an open pause span — the instant that
+   * pause began. The elapsed-time display freezes at that instant rather
+   * than continuing to tick.
+   */
+  pausedAt: string | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
 };
 
 export type TimeEntryListItem = TimeEntry & {

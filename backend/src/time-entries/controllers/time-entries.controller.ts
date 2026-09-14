@@ -100,4 +100,20 @@ export class TimeEntriesController {
       null,
     );
   }
+
+  @Post('pause')
+  pause(@Req() request: AuthenticatedRequest): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.pause(
+      request.organisationId!,
+      request.userId,
+    );
+  }
+
+  @Post('resume')
+  resume(@Req() request: AuthenticatedRequest): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.resume(
+      request.organisationId!,
+      request.userId,
+    );
+  }
 }

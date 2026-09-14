@@ -16,6 +16,7 @@ import { ScreenshotsModule } from './screenshots/modules/screenshots.module';
 import { TasksModule } from './tasks/modules/tasks.module';
 import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
 import { TeamsModule } from './teams/modules/teams.module';
+import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TeamsModule } from './teams/modules/teams.module';
     AppEventsModule,
     ScreenshotsModule,
     TeamsModule,
+    UrlSessionsModule,
   ],
   controllers: [AppController],
   providers: [

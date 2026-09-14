@@ -1,0 +1,36 @@
+{
+  "_comment": "Step 21's sensitive-path denylist \u2014 path segments/query keys strongly associated with a one-time, credential-bearing link (password reset, email verification, magic-link login, unsubscribe tokens). Matched case-insensitively against path+query+FRAGMENT before the query-string policy applies, since the credential often lives in the query and, for OAuth/OIDC implicit flows, in the fragment \u2014 which is now kept rather than discarded, so the fragment keys here are load-bearing, not theoretical. This list is a starting point, not exhaustive \u2014 expand it as real captures surface more patterns; it is deliberately conservative (biased toward over-matching, since dropping a normal reading is far cheaper than storing a live token).",
+  "pathPatterns": [
+    "reset-password",
+    "resetpassword",
+    "password-reset",
+    "forgot-password",
+    "reset_token",
+    "verify-email",
+    "email-verification",
+    "confirm-email",
+    "magic-link",
+    "unsubscribe",
+    "auth/callback",
+    "oauth/callback",
+    "sso/callback"
+  ],
+  "queryKeyPatterns": [
+    "token",
+    "reset_token",
+    "access_token",
+    "auth_token",
+    "otp",
+    "code",
+    "confirmation_token",
+    "verification_token",
+    "id_token",
+    "refresh_token",
+    "session_token",
+    "client_secret",
+    "api_key",
+    "apikey",
+    "password",
+    "passwd"
+  ]
+}

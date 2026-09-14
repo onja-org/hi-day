@@ -8,6 +8,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
   DataSource,
+  In,
   IsNull,
   LessThanOrEqual,
   MoreThanOrEqual,
@@ -22,6 +23,7 @@ import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
+import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
@@ -42,6 +44,14 @@ export interface TimeEntrySummary {
   endedAt: Date | null;
   source: TimeEntrySource;
   deviceId: string | null;
+  /**
+   * Non-null while the entry has an open `TimeEntryPause` span — the instant
+   * that pause began. Clients freeze the elapsed-time display at
+   * `pausedAt - startedAt - pausedSeconds` rather than continuing to tick.
+   */
+  pausedAt: Date | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
 }
 
 export interface TimeEntryListItem extends TimeEntrySummary {
@@ -76,11 +86,20 @@ interface ValidatedStart {
   task: Task | null;
 }
 
+interface PauseState {
+  pausedAt: Date | null;
+  pausedSeconds: number;
+}
+
+const NO_PAUSE_STATE: PauseState = { pausedAt: null, pausedSeconds: 0 };
+
 @Injectable()
 export class TimeEntriesService {
   constructor(
     @InjectRepository(TimeEntry)
     private readonly timeEntries: Repository<TimeEntry>,
+    @InjectRepository(TimeEntryPause)
+    private readonly timeEntryPauses: Repository<TimeEntryPause>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
     @InjectRepository(ProjectMembership)
@@ -123,7 +142,7 @@ export class TimeEntriesService {
       throw new ConflictException({
         message:
           'A timer is already running — stop it first, or use switch to move to this one.',
-        runningEntry: this.toSummary(running),
+        runningEntry: await this.toSummary(running),
       });
     }
 
@@ -152,7 +171,7 @@ export class TimeEntriesService {
       });
     });
 
-    return this.toSummary(saved);
+    return await this.toSummary(saved);
   }
 
   /**
@@ -179,6 +198,10 @@ export class TimeEntriesService {
 
     running.endedAt = resolvedEndedAt;
     const saved = await this.timeEntries.save(running);
+    // Never leave a dangling open pause span on a stopped entry — close it
+    // at the same instant the entry itself ends, rather than requiring the
+    // caller to resume first.
+    await this.closeOpenPause(this.timeEntryPauses, saved.id, resolvedEndedAt);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -199,7 +222,7 @@ export class TimeEntriesService {
       });
     });
 
-    return this.toSummary(saved);
+    return await this.toSummary(saved);
   }
 
   /**
@@ -229,8 +252,14 @@ export class TimeEntriesService {
       });
 
       if (running) {
-        running.endedAt = new Date();
+        const stoppedAt = new Date();
+        running.endedAt = stoppedAt;
         await manager.save(running);
+        await this.closeOpenPause(
+          manager.getRepository(TimeEntryPause),
+          running.id,
+          stoppedAt,
+        );
         await this.auditLogService.record(manager, {
           action: 'time_entry.stopped',
           organisationId,
@@ -266,7 +295,7 @@ export class TimeEntriesService {
       return savedEntry;
     });
 
-    return this.toSummary(saved);
+    return await this.toSummary(saved);
   }
 
   async current(
@@ -279,23 +308,18 @@ export class TimeEntriesService {
     });
 
     return {
-      entry: running ? this.toSummary(running) : null,
+      entry: running ? await this.toSummary(running) : null,
       now: new Date(),
     };
   }
 
   /**
-   * A timesheet: every Time entry logged by the caller (default) or, for
-   * an admin/manager, by another `targetMembershipId` — most recent first,
-   * with Project/Task names resolved so the page doesn't need a second
-   * round-trip per row. A plain member/finance can only ever reach their
-   * own (passing someone else's id 403s), matching who's allowed to edit
-   * (see `canEditEntry`) — viewing and editing use the same role gate.
+   * A timesheet: the caller's entries, or another member's for an
+   * admin/manager, most recent first with Project/Task names resolved.
+   * Viewing uses the same role gate as editing (`canEditEntry`).
    *
-   * `from`/`to` filter on `startedAt` (both inclusive) when given — the
-   * caller (the frontend) resolves what "today"/"this week" etc. mean in
-   * the viewer's own timezone and sends absolute instants, so this method
-   * itself stays timezone-naive.
+   * `from`/`to` filter `startedAt` inclusively. The frontend resolves what
+   * "today" means in the viewer's timezone, so this stays timezone-naive.
    */
   async list(
     organisationId: string,
@@ -338,7 +362,16 @@ export class TimeEntriesService {
       take: LIST_LIMIT,
     });
 
-    return entries.map((entry) => this.toListItem(entry, membership));
+    const pauseStates = await this.getPauseStatesFor(
+      entries.map((entry) => entry.id),
+    );
+    return entries.map((entry) =>
+      this.toListItem(
+        entry,
+        membership,
+        pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
+      ),
+    );
   }
 
   /**
@@ -390,21 +423,17 @@ export class TimeEntriesService {
       });
     });
 
-    return this.toSummary(saved);
+    return await this.toSummary(saved);
   }
 
   /**
-   * Edits a completed Time entry. Only an admin (anyone's, including their
-   * own) or a manager (anyone's *except their own*) can edit — a plain
-   * member/finance can't edit any entry, not even one they logged
-   * themselves; see `canEditEntry`. A manager being unable to correct
-   * their own hours is deliberate: the same role that can edit other
-   * people's time shouldn't also be able to quietly pad or trim its own,
-   * without needing anyone else to sign off. Rejects editing a
-   * still-running entry (409, points at stop/switch instead): letting
-   * `endedAt` be set through here would silently stop a timer without
-   * going through `time_entry.stopped`, and changing `projectId` on a
-   * live entry has no clean "when did the attribution change" boundary.
+   * Edits a completed Time entry. Admins may edit anyone's including their
+   * own; managers anyone's except their own, so the role that can edit
+   * others cannot quietly adjust its own hours. See `canEditEntry`.
+   *
+   * Rejects a still-running entry (409): setting `endedAt` here would stop
+   * a timer without emitting `time_entry.stopped`, and re-attributing a
+   * live entry has no clean boundary.
    */
   async update(
     organisationId: string,
@@ -488,7 +517,100 @@ export class TimeEntriesService {
       });
     }
 
-    return this.toSummary(saved);
+    return await this.toSummary(saved);
+  }
+
+  /**
+   * Pauses the caller's running timer — the same entry keeps its `id` and
+   * `endedAt` stays null (it is still "running" in every existing sense:
+   * `current`, the single-running-timer index, `switchTo`'s lookups), it
+   * just temporarily stops accumulating tracked time. Rejects with 409 if
+   * there's no running entry, or if it's already paused.
+   */
+  async pause(
+    organisationId: string,
+    userId: string,
+  ): Promise<TimeEntrySummary> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const running = await this.timeEntries.findOne({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    if (!running) {
+      throw new NotFoundException('No timer is currently running.');
+    }
+
+    const openPause = await this.timeEntryPauses.findOne({
+      where: { timeEntryId: running.id, resumedAt: IsNull() },
+    });
+    if (openPause) {
+      throw new ConflictException('This timer is already paused.');
+    }
+
+    const pause = this.timeEntryPauses.create({
+      organisationId,
+      timeEntryId: running.id,
+      pausedAt: new Date(),
+      resumedAt: null,
+    });
+    await this.timeEntryPauses.save(pause);
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.paused',
+        organisationId,
+        actorUserId: userId,
+        metadata: { timeEntryId: running.id },
+      });
+    });
+
+    return await this.toSummary(running);
+  }
+
+  /**
+   * Resumes a paused timer by closing its open pause span — reuses
+   * `assertValidRange` (a resume can never land before its own pause, or in
+   * the future) for the same reason `stop`'s backdating does. Rejects with
+   * 409 if there's no running entry, or if it isn't currently paused.
+   */
+  async resume(
+    organisationId: string,
+    userId: string,
+  ): Promise<TimeEntrySummary> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const running = await this.timeEntries.findOne({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    if (!running) {
+      throw new NotFoundException('No timer is currently running.');
+    }
+
+    const openPause = await this.timeEntryPauses.findOne({
+      where: { timeEntryId: running.id, resumedAt: IsNull() },
+    });
+    if (!openPause) {
+      throw new ConflictException('This timer is not paused.');
+    }
+
+    const resumedAt = new Date();
+    this.assertValidRange(openPause.pausedAt, resumedAt);
+    openPause.resumedAt = resumedAt;
+    await this.timeEntryPauses.save(openPause);
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.resumed',
+        organisationId,
+        actorUserId: userId,
+        metadata: {
+          timeEntryId: running.id,
+          pausedSeconds: Math.round(
+            (resumedAt.getTime() - openPause.pausedAt.getTime()) / 1000,
+          ),
+        },
+      });
+    });
+
+    return await this.toSummary(running);
   }
 
   /**
@@ -594,7 +716,76 @@ export class TimeEntriesService {
     }
   }
 
-  private toSummary(entry: TimeEntry): TimeEntrySummary {
+  /**
+   * Closes whatever open pause span exists for a Time entry, if any — used
+   * by both `stop` and `switchTo` so ending an entry never leaves a
+   * dangling open span behind. A no-op when the entry isn't paused. Takes
+   * an explicit repository (rather than always `this.timeEntryPauses`) so
+   * `switchTo` can pass a transaction-scoped one and keep the close in the
+   * same transaction as the entry's own stop.
+   */
+  private async closeOpenPause(
+    repo: Repository<TimeEntryPause>,
+    timeEntryId: string,
+    at: Date,
+  ): Promise<void> {
+    const openPause = await repo.findOne({
+      where: { timeEntryId, resumedAt: IsNull() },
+    });
+    if (!openPause) {
+      return;
+    }
+    openPause.resumedAt = at;
+    await repo.save(openPause);
+  }
+
+  /**
+   * Batches pause-span lookups for a set of Time entries into one query
+   * (used by `list`) rather than one query per row — the single-entry call
+   * sites (`toSummary`) go through this too, just with a one-element array,
+   * so there's only one place that turns pause rows into a `PauseState`.
+   */
+  private async getPauseStatesFor(
+    timeEntryIds: string[],
+  ): Promise<Map<string, PauseState>> {
+    if (timeEntryIds.length === 0) {
+      return new Map();
+    }
+
+    const pauses = await this.timeEntryPauses.find({
+      where: { timeEntryId: In(timeEntryIds) },
+    });
+
+    const byEntry = new Map<string, TimeEntryPause[]>();
+    for (const pause of pauses) {
+      const forEntry = byEntry.get(pause.timeEntryId) ?? [];
+      forEntry.push(pause);
+      byEntry.set(pause.timeEntryId, forEntry);
+    }
+
+    const states = new Map<string, PauseState>();
+    for (const [timeEntryId, spans] of byEntry) {
+      const open = spans.find((span) => span.resumedAt === null);
+      const closedSeconds = spans
+        .filter((span) => span.resumedAt !== null)
+        .reduce(
+          (total, span) =>
+            total +
+            (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
+          0,
+        );
+      states.set(timeEntryId, {
+        pausedAt: open?.pausedAt ?? null,
+        pausedSeconds: Math.round(closedSeconds),
+      });
+    }
+    return states;
+  }
+
+  private async toSummary(entry: TimeEntry): Promise<TimeEntrySummary> {
+    const pauseState =
+      (await this.getPauseStatesFor([entry.id])).get(entry.id) ??
+      NO_PAUSE_STATE;
     return {
       id: entry.id,
       membershipId: entry.membershipId,
@@ -604,22 +795,34 @@ export class TimeEntriesService {
       endedAt: entry.endedAt,
       source: entry.source,
       deviceId: entry.deviceId,
+      pausedAt: pauseState.pausedAt,
+      pausedSeconds: pauseState.pausedSeconds,
     };
   }
 
   private toListItem(
     entry: TimeEntry,
     viewerMembership: Membership,
+    pauseState: PauseState,
   ): TimeEntryListItem {
     return {
-      ...this.toSummary(entry),
+      id: entry.id,
+      membershipId: entry.membershipId,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      startedAt: entry.startedAt,
+      endedAt: entry.endedAt,
+      source: entry.source,
+      deviceId: entry.deviceId,
+      pausedAt: pauseState.pausedAt,
+      pausedSeconds: pauseState.pausedSeconds,
       projectName: entry.project.name,
       projectColour: entry.project.colour,
       taskName: entry.task?.name ?? null,
       durationSeconds: entry.endedAt
         ? Math.round(
             (entry.endedAt.getTime() - entry.startedAt.getTime()) / 1000,
-          )
+          ) - pauseState.pausedSeconds
         : null,
       canEdit: this.canEditEntry(viewerMembership, entry.membershipId),
     };

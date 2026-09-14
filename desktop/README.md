@@ -102,11 +102,11 @@ using a UUID generated on first run and persisted under Electron's
    (sidebar): a new row should appear with platform `Linux`/`macOS`/
    `Windows`, this machine's hostname, and status `Active`.
 
-5. **Test remote sign-out**: click **Sign out** on that device's row, then
-   trigger any action in the desktop app that hits `/devices/*` (e.g. the
-   Log out button, or restart the app). It should be rejected — there's no
-   background heartbeat yet, so this only surfaces on the next explicit
-   request, not live.
+5. **Test remote sign-out**: click **Sign out** on that device's row. The
+   app sends a heartbeat (`POST /devices/heartbeat`) every 60s while
+   logged in, so this takes effect live — within about a minute the app
+   switches back to the login screen on its own, without needing you to
+   trigger any action by hand.
 
 6. **Test that logging out of the web app signs the desktop out too**
    (ADR-0009): while the desktop app is logged in and its status poll is
@@ -123,7 +123,9 @@ using a UUID generated on first run and persisted under Electron's
    a Task) from the dropdowns and click **Start timer** — the elapsed time
    should start ticking, polling `GET /device/time-entries/current` every
    15s to stay in sync with whatever's actually running server-side.
-   **Stop timer** ends it. Starting a *second* timer while one is already
+   **Pause** stops it from accumulating without ending it — the display
+   freezes and a **Resume** button takes its place; **Stop timer** ends it
+   from either state. Starting a *second* timer while one is already
    running (e.g. from the web console's own start action, on the
    `organisations/:id/projects/:projectId/time-entries/start` route) shows
    the conflict and a **Stop the other timer and start this one** button
@@ -286,6 +288,19 @@ output — not just assumed from source-mode success):
   so a device stays "active" (per `computeDeviceStatus`) only as long as
   something else updates `lastSeenAt` — starting/stopping a timer doesn't
   touch it either; this is still open.
+- **No offline queue.** Timer start/stop calls hit the backend directly and
+  fail (with an on-screen error) if it's unreachable — the SQLite-backed
+  offline queue described in `docs/TECH_DESIGN.md` isn't built yet.
+- **`better-sqlite3` (used by url-capture's local store) is a native addon,
+  and `pnpm test` and `pnpm dev`/packaging need it built for two *different*
+  Node ABIs** — plain Node for vitest, Electron's own bundled Node for the
+  app. `pnpm install` leaves it built for plain Node (so `pnpm test` works
+  out of the box); `pnpm dev` rebuilds it for Electron automatically as
+  part of the script (`rebuild:electron`) before launching. If you run
+  `pnpm test` again right after `pnpm dev` and it fails with a
+  `NODE_MODULE_VERSION` mismatch, run `pnpm --filter desktop rebuild:node`
+  to flip it back. `dist:*` isn't affected — electron-builder rebuilds
+  native deps for Electron itself as part of packaging.
 - **Timer start/stop calls still aren't queued offline.** They hit the
   backend directly and fail (with an on-screen error) if it's unreachable —
   only captured *data* (app-events, screenshots) goes through the offline

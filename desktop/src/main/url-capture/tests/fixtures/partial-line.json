@@ -1,0 +1,11 @@
+{
+  "rules": [
+    {
+      "op": "resolve",
+      "action": "partial",
+      "firstChunk": "{\"id\":1,\"ok\":true,\"url\":\"example.com\",\"title\":\"t\",\"browser\":\"chrome\",\"private\":false,\"source\":\"uia\",\"confidence\":\"displayed\",\"ms\":3",
+      "restChunk": "}\n",
+      "gapMs": 40
+    }
+  ]
+}

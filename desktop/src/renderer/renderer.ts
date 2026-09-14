@@ -1,108 +1,7 @@
 export {};
 
-interface AuthStatus {
-  loggedIn: boolean;
-  email?: string;
-  organisationName?: string;
-}
-
-interface StartPairingResult {
-  ok: boolean;
-  message?: string;
-}
-
-type PairingPollResult =
-  | { status: 'pending' }
-  | { status: 'approved'; email: string; organisationName: string }
-  | { status: 'expired' }
-  | { status: 'error'; message: string };
-
-interface TrackedProject {
-  id: string;
-  name: string;
-  colour: string;
-  client: string | null;
-}
-
-interface TrackedTask {
-  id: string;
-  name: string;
-  status: 'open' | 'closed';
-}
-
-interface TimeEntry {
-  id: string;
-  projectId: string;
-  taskId: string | null;
-  startedAt: string;
-  endedAt: string | null;
-}
-
-interface CurrentTimer {
-  entry: TimeEntry | null;
-  now: string;
-}
-
-type IdleHandling = 'off' | 'flag' | 'auto_subtract';
-
-interface IdlePolicy {
-  handling: IdleHandling;
-  thresholdMinutes: number;
-}
-
-type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
-
-interface CapturePermissionStatus {
-  windowTrackingEnabled: boolean;
-  screenshotsEnabled: boolean;
-  platform: DesktopDevicePlatformName;
-  screenRecordingGranted: boolean;
-  waylandUnsupported: boolean;
-}
-
-type TrackingResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry; signedOut?: boolean };
-
-interface UpdateCheckResult {
-  updateAvailable: boolean;
-  latestVersion?: string;
-}
-
-declare global {
-  interface Window {
-    api: {
-      getStatus: () => Promise<AuthStatus>;
-      auth: {
-        startPairing: () => Promise<StartPairingResult>;
-        pairingStatus: () => Promise<PairingPollResult>;
-      };
-      logout: () => Promise<AuthStatus>;
-      tracking: {
-        listProjects: () => Promise<TrackingResult<TrackedProject[]>>;
-        listTasks: (projectId: string) => Promise<TrackingResult<{ tasks: TrackedTask[] }>>;
-        start: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
-        switchTo: (
-          projectId: string,
-          taskId: string | null,
-        ) => Promise<TrackingResult<TimeEntry>>;
-        stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
-        status: () => Promise<TrackingResult<CurrentTimer>>;
-        idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
-        permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
-        requestScreenRecordingAccess: () => Promise<void>;
-        openScreenRecordingSettings: () => Promise<void>;
-      };
-      idle: {
-        seconds: () => Promise<number>;
-      };
-      update: {
-        status: () => Promise<UpdateCheckResult>;
-        openReleasesPage: () => Promise<void>;
-      };
-    };
-  }
-}
+// AuthStatus/TrackedProject/.../Window.api are declared once, ambiently,
+// in window.d.ts — shared across every renderer entry point.
 
 // How often the agent re-syncs with the server's own idea of what's
 // running — catches a timer started/stopped from the web console, and
@@ -111,12 +10,8 @@ const STATUS_POLL_INTERVAL_MS = 15_000;
 // How often the agent checks the OS's own idle-time counter while a timer
 // is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
-// How often — and for how long — the agent checks whether the pairing
-// code it just opened in the browser has been approved yet. Bounded
-// rather than indefinite so an abandoned pairing attempt (browser tab
-// closed, person distracted) doesn't poll forever; the pairing code
-// itself lives for longer than this on the backend, so clicking "Log in"
-// again after this gives up just starts a fresh one.
+// Bounded so an abandoned pairing attempt stops polling. The code outlives
+// this on the backend, so clicking "Log in" again starts a fresh one.
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 60;
 const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
@@ -154,6 +49,16 @@ function stopPairingPoll(): void {
 }
 
 function showLoginView(errorMessage?: string): void {
+  // Signing out is more than a view swap. Cleared first so the re-render
+  // below empties the list rather than redrawing the old user's projects.
+  projects = [];
+  todaySecondsByProject = new Map();
+  // Stops the clock, tells main to stop url-capture, and clears the row
+  // highlight — otherwise the timer keeps counting behind the login screen.
+  setRunning(null);
+  clearTrackingError();
+  timerDisplay.hidden = true;
+
   pairingErrorEl.hidden = !errorMessage;
   pairingErrorEl.textContent = errorMessage ?? '';
   pairingStatusEl.textContent = DEFAULT_PAIRING_MESSAGE;
@@ -245,31 +150,14 @@ document.getElementById('logout-button')!.addEventListener('click', () => {
 
 // --- Time tracking -----------------------------------------------------
 
-/**
- * Runs a tracking call and, if the response says the device itself has
- * been signed out (see api-client.ts's `signedOut` — set specifically for
- * a 401, not any other failure), drops back to the login view instead of
- * just surfacing the error message and leaving the UI thinking it's still
- * logged in. This is how "log out from the web app" (ADR-0009) reaches
- * the desktop — there's no push channel, so it's discovered the next time
- * this device happens to call the backend.
- */
-async function callTracking<T>(
-  fn: () => Promise<TrackingResult<T>>,
-): Promise<TrackingResult<T>> {
-  const result = await fn();
-  if (!result.ok && result.signedOut) {
-    showLoginView("You've been signed out — please log in to continue.");
-  }
-  return result;
-}
-
-const projectSelect = document.getElementById('project-select') as HTMLSelectElement;
+const projectList = document.getElementById('project-list') as HTMLUListElement;
 const taskSelect = document.getElementById('task-select') as HTMLSelectElement;
 const timerDisplay = document.getElementById('timer-display')!;
 const trackingError = document.getElementById('tracking-error')!;
-const startButton = document.getElementById('start-button') as HTMLButtonElement;
-const stopButton = document.getElementById('stop-button') as HTMLButtonElement;
+const timerToggle = document.getElementById('timer-toggle') as HTMLButtonElement;
+// Typed as Element, not HTMLElement: these are SVG nodes, which do not
+// carry the HTML-only `hidden` property — toggleAttribute works on both.
+const timerTogglePath = document.getElementById('timer-toggle-path') as unknown as Element;
 const switchButton = document.getElementById('switch-button') as HTMLButtonElement;
 const idleBanner = document.getElementById('idle-banner')!;
 const idleBannerMessage = document.getElementById('idle-banner-message')!;
@@ -295,6 +183,23 @@ let runningEntry: TimeEntry | null = null;
 // notion of "now" instead of trusting this device's clock.
 let serverOffsetMs = 0;
 let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
+let projects: TrackedProject[] = [];
+/**
+ * Seconds already recorded against each Project TODAY, from entries that
+ * have ended. Switching Projects necessarily ends the previous entry — only
+ * one may be open at a time — so without this the timer would read zero
+ * every time someone returned to a Project they had already worked on.
+ * Excludes the running entry, whose time is added live by `tick()`.
+ */
+let todaySecondsByProject = new Map<string, number>();
+// Phosphor Play/Pause (regular), the same glyphs the web console uses.
+const PLAY_PATH =
+  'M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z';
+const PAUSE_PATH =
+  'M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z';
+
+/** Per-Project total elements, so the 1s tick updates text instead of rebuilding rows. */
+const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
 // The OS idle-time counter only ever decreases when real input happens —
@@ -308,6 +213,30 @@ let pendingIdleDiscardAt: string | null = null;
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
   trackingError.hidden = false;
+}
+
+/**
+ * Runs a tracking call and returns to the login view if the device session
+ * has been revoked. `unauthorized` is a real 401, not a transient failure,
+ * so a remote sign-out takes effect here rather than showing an inline
+ * error the person has to act on.
+ */
+async function callTracking<T>(
+  fn: () => Promise<TrackingResult<T>>,
+): Promise<TrackingResult<T>> {
+  const result = await fn();
+  if (!result.ok && result.unauthorized) {
+    showLoginView("You've been signed out — please log in to continue.");
+  }
+  return result;
+}
+
+function handleTrackingFailure(result: { message: string; unauthorized?: boolean }): void {
+  if (result.unauthorized) {
+    showLoginView(result.message);
+    return;
+  }
+  showTrackingError(result.message);
 }
 
 function clearTrackingError(): void {
@@ -329,22 +258,43 @@ function tick(): void {
     timerDisplay.hidden = true;
     return;
   }
-  const startedAtMs = new Date(runningEntry.startedAt).getTime();
-  const elapsed = Date.now() + serverOffsetMs - startedAtMs;
+
+  // Shows the Project's whole day, not just this entry: switching away and
+  // back ends one entry and opens another, and the person tracking time
+  // thinks of that as one continuous total, not two.
+  const seconds = displayedSecondsFor(runningEntry.projectId);
   timerDisplay.hidden = false;
-  timerDisplay.textContent = formatElapsed(elapsed);
+  timerDisplay.textContent = formatElapsed(seconds * 1000);
+
+  const activeTotal = projectTotalElements.get(runningEntry.projectId);
+  if (activeTotal) activeTotal.textContent = formatElapsed(seconds * 1000);
 }
 
 function setRunning(entry: TimeEntry | null): void {
+  // "Accumulating", not just "an entry exists": a paused entry is still
+  // non-null (endedAt stays null so the one-running-timer rule holds), so
+  // keying on null-ness alone let capture accrue straight through a pause.
+  const wasAccumulating = runningEntry !== null && runningEntry.pausedAt == null;
   runningEntry = entry;
-  startButton.hidden = entry !== null;
-  stopButton.hidden = entry === null;
-  projectSelect.disabled = entry !== null;
-  taskSelect.disabled = entry !== null;
+  const isPaused = entry?.pausedAt != null;
+  const isRunning = entry !== null && !isPaused;
+  // One control, two faces: pause while running, play otherwise. One path
+  // re-pointed, the same swap the project rows use.
+  timerTogglePath.setAttribute('d', isRunning ? PAUSE_PATH : PLAY_PATH);
+  timerToggle.setAttribute(
+    'aria-label',
+    isRunning ? 'Pause timer' : entry ? 'Resume timer' : 'Start timer',
+  );
+  renderProjects();
   if (!entry) {
     idleHandled = false;
     lastIdleSeconds = 0;
     hideIdleBanner();
+  }
+  // The only place "is time being tracked" changes — mirrored to main so
+  // the session engine can gate on it. Pausing closes the open URL session.
+  if (wasAccumulating !== isRunning) {
+    window.api.urlCapture.timerStateChanged(isRunning);
   }
   tick();
 }
@@ -369,7 +319,12 @@ function showIdleNotice(message: string): void {
 }
 
 async function checkIdle(): Promise<void> {
-  if (!runningEntry || !idlePolicy || idlePolicy.handling === 'off') return;
+  // A manual pause is the person explicitly saying "not tracking right
+  // now" — idle detection re-flagging or auto-subtracting on top of that
+  // would just be fighting their own choice.
+  if (!runningEntry || runningEntry.pausedAt || !idlePolicy || idlePolicy.handling === 'off') {
+    return;
+  }
 
   const idleSeconds = await window.api.idle.seconds();
   const thresholdSeconds = idlePolicy.thresholdMinutes * 60;
@@ -401,6 +356,131 @@ async function checkIdle(): Promise<void> {
   }
 
   showIdleBanner(idleMinutes, idleStartedAtIso);
+}
+
+/** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
+function displayedSecondsFor(projectId: string): number {
+  const recorded = todaySecondsByProject.get(projectId) ?? 0;
+  if (!runningEntry || runningEntry.projectId !== projectId) return recorded;
+  return recorded + Math.max(0, Math.floor(liveElapsedMs() / 1000));
+}
+
+/**
+ * Elapsed time of the CURRENT entry only. Frozen at the pause instant while
+ * paused, so a paused timer stops climbing without losing what it had.
+ */
+function liveElapsedMs(): number {
+  if (!runningEntry) return 0;
+  const startedAtMs = new Date(runningEntry.startedAt).getTime();
+  const pausedMs = runningEntry.pausedSeconds * 1000;
+  return runningEntry.pausedAt
+    ? new Date(runningEntry.pausedAt).getTime() - startedAtMs - pausedMs
+    : Date.now() + serverOffsetMs - startedAtMs - pausedMs;
+}
+
+/** Re-reads today's per-Project totals from completed entries. */
+async function refreshTodayTotals(): Promise<void> {
+  const from = new Date(startOfToday()).toISOString();
+  const to = new Date().toISOString();
+  const result = await window.api.tracking.entriesBetween(from, to);
+  if (!result.ok) return; // transient — keep whatever totals we already had
+
+  const totals = new Map<string, number>();
+  for (const entry of result.data) {
+    // A null duration is the still-running entry; tick() adds its time
+    // live, so counting it here too would double it.
+    if (entry.durationSeconds === null) continue;
+    totals.set(entry.projectId, (totals.get(entry.projectId) ?? 0) + entry.durationSeconds);
+  }
+  todaySecondsByProject = totals;
+}
+
+/**
+ * Renders one row per Project, each showing today's tracked total and
+ * whether the timer is currently on it. Clicking a row moves the timer
+ * there: the previous Project's entry is ended (its time is kept, and
+ * shown in its row) and a new entry opens for the chosen one — the closest
+ * thing to "pause the other project" the single-open-entry rule allows.
+ */
+function renderProjects(): void {
+  projectList.innerHTML = '';
+  projectTotalElements.clear();
+
+  for (const project of projects) {
+    const isActive = runningEntry?.projectId === project.id;
+    // Only the project actually accruing time counts as running — the
+    // active-but-paused one still offers play, because that is what
+    // clicking it does.
+    const isRunningHere = isActive && runningEntry?.pausedAt == null;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('aria-current', String(isActive));
+    button.classList.toggle('is-running', isRunningHere);
+
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 256 256');
+    icon.setAttribute('width', '32');
+    icon.setAttribute('height', '32');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('class', 'project-play');
+    const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    // The icon states what the click will do: pause the one that is
+    // running, play anything else.
+    iconPath.setAttribute('d', isRunningHere ? PAUSE_PATH : PLAY_PATH);
+    iconPath.setAttribute('fill', 'currentColor');
+    icon.appendChild(iconPath);
+
+    const label = document.createElement('span');
+    label.className = 'project-name';
+    label.textContent = project.client ? `${project.name} (${project.client})` : project.name;
+
+    const total = document.createElement('span');
+    total.className = 'project-total';
+    total.textContent = formatElapsed(displayedSecondsFor(project.id) * 1000);
+
+    projectTotalElements.set(project.id, total);
+    button.append(icon, label, total);
+    button.addEventListener('click', () => void selectProject(project.id));
+
+    const item = document.createElement('li');
+    item.appendChild(button);
+    projectList.appendChild(item);
+  }
+}
+
+/**
+ * Moves the timer onto a Project. Switching while something is running uses
+ * the atomic switch (one stop-then-start in a single transaction) so no
+ * moment is double-counted or lost between the two.
+ */
+async function selectProject(projectId: string): Promise<void> {
+  clearTrackingError();
+
+  // Clicking the row that is currently running pauses it — the row shows a
+  // pause icon, so doing nothing would make that icon a lie.
+  if (runningEntry?.projectId === projectId && !runningEntry.pausedAt) {
+    const paused = await window.api.tracking.pause();
+    if (paused.ok) setRunning(paused.data);
+    else handleTrackingFailure(paused);
+    return;
+  }
+
+  await loadTasks(projectId);
+  const taskId = taskSelect.value || null;
+
+  const result = runningEntry
+    ? await window.api.tracking.switchTo(projectId, taskId)
+    : await window.api.tracking.start(projectId, taskId);
+
+  if (!result.ok) {
+    handleTrackingFailure(result);
+    return;
+  }
+  // The previous entry just ended, so its time moved from "live" into the
+  // recorded totals — re-read before rendering or its row briefly shows 0.
+  await refreshTodayTotals();
+  setRunning(result.data);
 }
 
 // --- Window-tracking permission banner ----------------------------------
@@ -454,24 +534,22 @@ screenRecordingSettingsButton.addEventListener('click', () => {
   void window.api.tracking.openScreenRecordingSettings();
 });
 
-async function loadProjects(): Promise<void> {
-  const result = await callTracking(() => window.api.tracking.listProjects());
+/** Returns false when the session turned out to be signed out — callers chaining further tracking setup should stop rather than continue. */
+async function loadProjects(): Promise<boolean> {
+  const result = await window.api.tracking.listProjects();
   if (!result.ok) {
-    showTrackingError(result.message);
-    return;
+    handleTrackingFailure(result);
+    return !result.unauthorized;
   }
 
-  projectSelect.innerHTML = '';
-  for (const project of result.data) {
-    const option = document.createElement('option');
-    option.value = project.id;
-    option.textContent = project.client ? `${project.name} (${project.client})` : project.name;
-    projectSelect.appendChild(option);
-  }
+  projects = result.data;
+  await refreshTodayTotals();
+  renderProjects();
 
-  if (result.data.length > 0) {
-    await loadTasks(result.data[0].id);
+  if (projects.length > 0) {
+    await loadTasks(projects[0].id);
   }
+  return true;
 }
 
 async function loadTasks(projectId: string): Promise<void> {
@@ -480,7 +558,7 @@ async function loadTasks(projectId: string): Promise<void> {
   );
   taskSelect.innerHTML = '<option value="">No task</option>';
   if (!result.ok) {
-    showTrackingError(result.message);
+    handleTrackingFailure(result);
     return;
   }
 
@@ -493,21 +571,60 @@ async function loadTasks(projectId: string): Promise<void> {
   }
 }
 
-projectSelect.addEventListener('change', () => {
-  if (projectSelect.value) {
-    void loadTasks(projectSelect.value);
+/** Local midnight that starts the current calendar day, in the machine's own timezone. */
+function startOfToday(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+/**
+ * Keeps the visible timer to today only. An entry started before midnight
+ * is switched to a fresh one if still running, or closed at the instant it
+ * was paused — never at "now", which would bill the intervening hours.
+ *
+ * Returns true when it acted, so the caller skips the stale entry.
+ */
+async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
+  if (new Date(entry.startedAt).getTime() >= startOfToday()) return false;
+
+  if (entry.pausedAt) {
+    const result = await window.api.tracking.stop(entry.pausedAt);
+    if (result.ok) setRunning(null);
+    return result.ok;
   }
-});
+
+  const result = await window.api.tracking.switchTo(entry.projectId, entry.taskId);
+  if (result.ok) setRunning(result.data);
+  return result.ok;
+}
 
 async function refreshStatus(): Promise<void> {
   const result = await callTracking(() => window.api.tracking.status());
   if (!result.ok) {
-    // A transient/offline failure shouldn't wipe the currently-displayed
-    // timer — just skip this poll and try again next interval.
+    if (result.unauthorized) {
+      // Not a transient/offline blip — the backend has actually revoked
+      // this session (e.g. an admin's remote sign-out). Every future poll
+      // would fail identically, so switch to the login screen right away
+      // instead of silently retrying forever.
+      showLoginView(result.message);
+      return;
+    }
+    // A genuinely transient/offline failure shouldn't wipe the
+    // currently-displayed timer — just skip this poll and try again next
+    // interval.
     return;
   }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
-  setRunning(result.data.entry);
+
+  const entry = result.data.entry;
+  if (entry && (await reconcileDayBoundary(entry))) {
+    return; // reconcile already applied the correct state
+  }
+  // Re-read recorded totals on the same 15s cadence: an entry may have been
+  // ended elsewhere (the web console, a midnight split) and its time needs
+  // to move into the per-Project rows.
+  await refreshTodayTotals();
+  setRunning(entry);
 }
 
 function startPolling(): void {
@@ -531,37 +648,68 @@ function stopPolling(): void {
   stopScreenRecordingGrantPolling();
 }
 
-startButton.addEventListener('click', () => {
+/**
+ * Resolves which Project a start should track against, so neither
+ * auto-start nor the play icon ever has to prompt:
+ *   1. whatever the timer last ran against, if it is still available, else
+ *   2. the first Project in the list.
+ * Returns null only when the account has no Projects at all.
+ */
+async function resolveProjectToTrack(): Promise<{ projectId: string; taskId: string | null } | null> {
+  if (projects.length === 0) return null;
+
+  const remembered = await window.api.tracking.lastProject();
+  if (remembered && projects.some((project) => project.id === remembered.projectId)) {
+    return remembered;
+  }
+  return { projectId: projects[0].id, taskId: null };
+}
+
+/** Starts a new entry against the resolved Project. Shared by auto-start and play. */
+async function startTracking(): Promise<void> {
+  clearTrackingError();
+  const target = await resolveProjectToTrack();
+  if (!target) {
+    showTrackingError('No projects are available to track time against.');
+    return;
+  }
+
+  await loadTasks(target.projectId);
+  if (target.taskId) taskSelect.value = target.taskId;
+
+  const result = await window.api.tracking.start(target.projectId, target.taskId);
+  if (result.ok) {
+    setRunning(result.data);
+    return;
+  }
+
+  handleTrackingFailure(result);
+  if (result.runningEntry && !result.unauthorized) {
+    pendingSwitch = { projectId: target.projectId, taskId: target.taskId };
+    switchButton.hidden = false;
+  }
+}
+
+timerToggle.addEventListener('click', () => {
   void (async () => {
-    clearTrackingError();
-    const projectId = projectSelect.value;
-    if (!projectId) return;
-    const taskId = taskSelect.value || null;
+    timerToggle.disabled = true;
+    try {
+      if (!runningEntry) {
+        await startTracking();
+        return;
+      }
 
-    const result = await callTracking(() =>
-      window.api.tracking.start(projectId, taskId),
-    );
-    if (result.ok) {
-      setRunning(result.data);
-      return;
-    }
-
-    showTrackingError(result.message);
-    if (result.runningEntry) {
-      pendingSwitch = { projectId, taskId };
-      switchButton.hidden = false;
-    }
-  })();
-});
-
-stopButton.addEventListener('click', () => {
-  void (async () => {
-    clearTrackingError();
-    const result = await callTracking(() => window.api.tracking.stop());
-    if (result.ok) {
-      setRunning(null);
-    } else {
-      showTrackingError(result.message);
+      clearTrackingError();
+      const result = runningEntry.pausedAt
+        ? await window.api.tracking.resume()
+        : await window.api.tracking.pause();
+      if (result.ok) {
+        setRunning(result.data);
+      } else {
+        handleTrackingFailure(result);
+      }
+    } finally {
+      timerToggle.disabled = false;
     }
   })();
 });
@@ -577,7 +725,7 @@ switchButton.addEventListener('click', () => {
       clearTrackingError();
       setRunning(result.data);
     } else {
-      showTrackingError(result.message);
+      handleTrackingFailure(result);
     }
   })();
 });
@@ -596,19 +744,32 @@ idleDiscardButton.addEventListener('click', () => {
     if (result.ok) {
       setRunning(null);
     } else {
-      showTrackingError(result.message);
+      handleTrackingFailure(result);
     }
   })();
 });
 
 async function initTracking(): Promise<void> {
   clearTrackingError();
-  await loadProjects();
+  const stillSignedIn = await loadProjects();
+  if (!stillSignedIn) return; // loadProjects already switched to the login screen
 
   const idlePolicyResult = await callTracking(() =>
     window.api.tracking.idlePolicy(),
   );
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
+
+  // Settle the server's view before deciding whether to auto-start, so an
+  // already-running or paused entry is respected rather than met with a
+  // duplicate start the backend would 409. Ahead of startPolling() so the
+  // decision isn't racing its first refresh.
+  await refreshStatus();
+
+  // Signing in is itself the intent to track, so no click is required.
+  // Only fires when nothing is tracked yet — a paused entry stays paused.
+  if (!runningEntry) {
+    await startTracking();
+  }
 
   void refreshCapturePermissionBanner();
   startPolling();

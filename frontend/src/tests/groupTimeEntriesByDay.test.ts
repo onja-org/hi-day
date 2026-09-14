@@ -15,6 +15,8 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
     endedAt: "2026-01-05T10:00:00.000Z",
     source: "web",
     deviceId: null,
+    pausedAt: null,
+    pausedSeconds: 0,
     durationSeconds: 3600,
     canEdit: true,
     ...overrides,

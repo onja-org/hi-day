@@ -1,4 +1,6 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { UrlSession } from './url-capture/session-types';
+import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
 
 export interface StartPairingRequest {
@@ -58,6 +60,17 @@ export interface TimeEntry {
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
+  /** Non-null while the entry has an open pause span — see the pause/resume ADR. */
+  pausedAt: string | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
+}
+
+/** One completed/running entry as the agent needs it — just enough to total by Project. */
+export interface TrackedEntry {
+  id: string;
+  projectId: string;
+  durationSeconds: number | null;
 }
 
 export interface CurrentTimer {
@@ -106,14 +119,16 @@ export type TrackingResult<T> =
       ok: false;
       message: string;
       runningEntry?: TimeEntry;
+      unauthorized?: boolean;
       /**
-       * True specifically for a 401 from an expired/revoked device
-       * session — as opposed to a network error or any other failure —
-       * so the caller knows to drop the locally stored session and show
-       * the login view again, rather than just displaying the message
-       * and leaving the UI thinking it's still logged in.
+       * The HTTP status, when the request actually reached the server.
+       * Absent for a transport failure (server unreachable, DNS, TLS).
+       * Lets a caller tell "the server rejected this and always will"
+       * (4xx) apart from "try again later" — a distinction that matters
+       * for anything on a retry loop, since a permanently-rejected
+       * payload otherwise retries silently forever.
        */
-      signedOut?: boolean;
+      status?: number;
     };
 
 interface ErrorResponseBody {
@@ -206,6 +221,27 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Keeps `lastSeenAt` fresh so the Devices page's active/offline status
+   * reflects a running app, not just a login. Best-effort: a missed
+   * heartbeat shows this device offline until the next one lands.
+   */
+  async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${deviceToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ appVersion }),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   listProjects(deviceToken: string): Promise<TrackingResult<TrackedProject[]>> {
     return this.deviceRequest('GET', '/device/projects', deviceToken);
   }
@@ -264,6 +300,32 @@ export class ApiClient {
 
   getCurrentTimer(deviceToken: string): Promise<TrackingResult<CurrentTimer>> {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
+  }
+
+  pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
+    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {});
+  }
+
+  resumeTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
+    return this.deviceRequest('POST', '/device/time-entries/resume', deviceToken, {});
+  }
+
+  syncUrlSessions(
+    deviceToken: string,
+    sessions: UrlSession[],
+  ): Promise<TrackingResult<SyncResponseBody>> {
+    return this.deviceRequest('POST', '/device/url-sessions/sync', deviceToken, {
+      sessions,
+    });
+  }
+
+  listEntriesBetween(
+    deviceToken: string,
+    from: string,
+    to: string,
+  ): Promise<TrackingResult<TrackedEntry[]>> {
+    const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.deviceRequest('GET', `/device/time-entries${query}`, deviceToken);
   }
 
   postAppEvents(
@@ -356,6 +418,8 @@ export class ApiClient {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
+      // No `status`: the request never reached the server, so there is no
+      // HTTP result to classify — always worth retrying.
       return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
     }
 
@@ -372,7 +436,14 @@ export class ApiClient {
       ok: false,
       message: message ?? 'Something went wrong. Please try again.',
       runningEntry: errorBody.runningEntry,
-      signedOut: response.status === 401,
+      // DeviceSessionGuard returns exactly this status for a missing,
+      // expired, or (the case this exists for) admin-revoked session —
+      // never for a validation error or a genuinely transient failure, so
+      // callers can safely treat this as "sign out locally right now"
+      // rather than "retry next poll". Distinct from checking the message
+      // string, which is just human-readable text, not a contract.
+      unauthorized: response.status === 401,
+      status: response.status,
     };
   }
 }

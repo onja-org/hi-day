@@ -8,6 +8,7 @@ import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
+import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { ProjectMemberGuard } from '../../projects/guards/project-member.guard';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { ProjectTimeEntriesController } from '../controllers/project-time-entries.controller';
@@ -18,6 +19,7 @@ import { TimeEntriesService } from '../services/time-entries.service';
   imports: [
     TypeOrmModule.forFeature([
       TimeEntry,
+      TimeEntryPause,
       Membership,
       Organisation,
       Project,

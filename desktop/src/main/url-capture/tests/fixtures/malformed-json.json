@@ -1,0 +1,18 @@
+{
+  "rules": [
+    { "op": "resolve", "action": "raw", "raw": "not json at all\n" },
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "example.com",
+        "title": "t",
+        "browser": "chrome",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 3
+      }
+    }
+  ]
+}

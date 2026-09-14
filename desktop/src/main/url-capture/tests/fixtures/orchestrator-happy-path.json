@@ -1,0 +1,34 @@
+{
+  "ready": { "platform": "mock", "caps": ["focus", "url", "private"] },
+  "events": [
+    { "afterMs": 10, "event": { "ev": "focus", "pid": 111, "hwnd": 222, "app": "chrome.exe", "title": "Example Domain" } }
+  ],
+  "rules": [
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "example.com/a",
+        "title": "Example Domain",
+        "browser": "chrome.exe",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 4
+      }
+    },
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "how do I center a div",
+        "title": "how do I center a div - Search",
+        "browser": "chrome.exe",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 4
+      }
+    }
+  ]
+}

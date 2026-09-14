@@ -36,6 +36,21 @@ export interface TimeEntry {
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
+  /** Non-null while the entry has an open pause span. */
+  pausedAt: string | null;
+  /** Total seconds paused so far, across every *closed* pause span. */
+  pausedSeconds: number;
+}
+
+export interface LastProject {
+  projectId: string;
+  taskId: string | null;
+}
+
+export interface TrackedEntry {
+  id: string;
+  projectId: string;
+  durationSeconds: number | null;
 }
 
 export interface CurrentTimer {
@@ -62,7 +77,7 @@ export interface CapturePermissionStatus {
 
 export type TrackingResult<T> =
   | { ok: true; data: T }
-  | { ok: false; message: string; runningEntry?: TimeEntry; signedOut?: boolean };
+  | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
 export interface UpdateCheckResult {
   updateAvailable: boolean;
@@ -102,6 +117,16 @@ const api = {
       ipcRenderer.invoke('tracking:stop', endedAt) as Promise<TrackingResult<TimeEntry>>,
     status: (): Promise<TrackingResult<CurrentTimer>> =>
       ipcRenderer.invoke('tracking:status') as Promise<TrackingResult<CurrentTimer>>,
+    pause: (): Promise<TrackingResult<TimeEntry>> =>
+      ipcRenderer.invoke('tracking:pause') as Promise<TrackingResult<TimeEntry>>,
+    resume: (): Promise<TrackingResult<TimeEntry>> =>
+      ipcRenderer.invoke('tracking:resume') as Promise<TrackingResult<TimeEntry>>,
+    lastProject: (): Promise<LastProject | null> =>
+      ipcRenderer.invoke('tracking:lastProject') as Promise<LastProject | null>,
+    entriesBetween: (from: string, to: string): Promise<TrackingResult<TrackedEntry[]>> =>
+      ipcRenderer.invoke('tracking:entriesBetween', from, to) as Promise<
+        TrackingResult<TrackedEntry[]>
+      >,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke('tracking:idlePolicy') as Promise<TrackingResult<IdlePolicy>>,
     permissionStatus: (): Promise<TrackingResult<CapturePermissionStatus>> =>
@@ -115,6 +140,13 @@ const api = {
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,
+  },
+  urlCapture: {
+    // Fire-and-forget push, not invoke — main has nothing to return, and the
+    // renderer stays the authoritative source of "is a timer running".
+    timerStateChanged: (running: boolean): void => {
+      ipcRenderer.send('urlCapture:timerStateChanged', running);
+    },
   },
   update: {
     status: (): Promise<UpdateCheckResult> =>

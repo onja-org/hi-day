@@ -1,0 +1,23 @@
+{
+  "ready": { "platform": "mock", "caps": ["focus", "url"] },
+  "rules": [
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "example.com/a",
+        "title": "Example",
+        "browser": "chrome",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 4
+      }
+    },
+    {
+      "op": "resolve",
+      "action": "error",
+      "message": "[permission-denied] Accessibility permission was revoked."
+    }
+  ]
+}

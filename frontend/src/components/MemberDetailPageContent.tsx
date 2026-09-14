@@ -3,11 +3,13 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import { ErrorMessage } from "./ErrorMessage";
-import { MemberActivityList } from "./MemberActivityList";
 import { MemberTimeEntriesList } from "./MemberTimeEntriesList";
 import { RequireRole } from "./RequireRole";
 import { Spinner } from "./Spinner";
+import { MemberActivityList } from "./MemberActivityList";
+import { UrlSessionList } from "./UrlSessionList";
 
 type MemberDetailPageContentProps = {
   organisationId: string;
@@ -42,6 +44,7 @@ function MemberDetail({
   memberId,
 }: MemberDetailPageContentProps) {
   const membersQuery = useActiveMembers(organisationId);
+  const profileQuery = useMyProfile();
 
   if (membersQuery.isLoading) {
     return (
@@ -115,10 +118,27 @@ function MemberDetail({
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
+          <h2 className="text-lg font-semibold text-primary-dark">Notes</h2>
           <MemberActivityList
             organisationId={organisationId}
             membershipId={member.id}
+          />
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold text-primary-dark">Websites</h2>
+          <UrlSessionList
+            organisationId={organisationId}
+            membershipId={member.id}
+            // Nobody may delete their OWN tracked activity, whatever their
+            // role — the backend refuses it outright (see
+            // UrlSessionsService.deleteByUrl), so an admin viewing their own
+            // page must not be shown a button that can only ever fail.
+            // Defaults to hidden until the profile loads, so the button is
+            // never shown speculatively and then withdrawn.
+            showDelete={
+              profileQuery.data ? profileQuery.data.email !== member.email : false
+            }
           />
         </section>
       </div>

@@ -1,10 +1,10 @@
 "use client";
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { ActivityFeed } from "./ActivityFeed";
 import { ErrorMessage } from "./ErrorMessage";
 import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
+import { UrlSessionList } from "./UrlSessionList";
 
 export function DashboardSections() {
   const organisationQuery = useCurrentOrganisation();
@@ -41,10 +41,7 @@ export function DashboardSections() {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
-        <ActivityFeed
-          organisationId={String(organisationQuery.data.id)}
-          maxEntries={3}
-        />
+        <UrlSessionList organisationId={organisationId} maxEntries={3} />
       </section>
 
       <section className="flex flex-col gap-2">

@@ -78,6 +78,7 @@ select {
   border-top: 1px solid #eaecf0;
 }
 
+
 .timer-display {
   margin: 16px 0 0;
   font-size: 28px;
@@ -171,4 +172,122 @@ button:hover {
 .hint {
   color: #667085;
   font-size: 13px;
+}
+
+/* The single run/pause control — a round icon button, since it is now the
+   primary action on the timer screen rather than one of three text buttons. */
+/* Borderless, like the project rows' icon — the glyph itself carries the
+   control, so there is no filled disc behind it. */
+.timer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Explicitly square. A block-level flex button with no width fills the
+     row, and border-radius:50% then draws an ellipse rather than a disc. */
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #003673;
+  background: none;
+}
+
+.timer-toggle:hover {
+  background: #f6f7f9;
+}
+
+.timer-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Project picker: borderless rows separated by hairlines, with the play
+   affordance revealed on hover so the resting list stays quiet. */
+.project-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-list li + li {
+  border-top: 1px solid #ececf0;
+}
+
+.project-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.project-list button:hover {
+  background: #f6f7f9;
+}
+
+.project-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* The project currently accruing time gets a tinted row so it is findable
+   at a glance in a long list, without needing to read the timers. Kept
+   distinct from :hover, which uses a neutral grey — otherwise hovering
+   another row would look like it had become the active one. */
+.project-list button.is-running {
+  background: #fff6d6;
+}
+
+.project-list button.is-running:hover {
+  background: #ffefb8;
+}
+
+/* Hidden until hover (or keyboard focus, so it is not mouse-only), but it
+   always occupies its slot — revealing it must not shift the row. */
+.project-play {
+  flex: 0 0 auto;
+  color: #003673;
+  visibility: hidden;
+}
+
+.project-list button:hover .project-play,
+.project-list button:focus-visible .project-play,
+.project-list button[aria-current='true'] .project-play {
+  visibility: visible;
+}
+
+/* The running row's pause icon is a status indicator, not just an
+   affordance, so it stays visible even when nothing is hovered. */
+.project-list button.is-running .project-play {
+  visibility: visible;
+}
+
+.project-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list button[aria-current='true'] .project-name {
+  font-weight: 600;
+  color: #003673;
+}
+
+.project-total {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: #003673;
 }

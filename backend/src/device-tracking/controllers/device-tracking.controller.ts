@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { StopTimeEntryDto } from '../../time-entries/dto/stop-time-entry.dto';
 import { SwitchTimeEntryDto } from '../../time-entries/dto/switch-time-entry.dto';
 import type {
   CurrentTimeEntry,
+  TimeEntryListItem,
   TimeEntrySummary,
 } from '../../time-entries/services/time-entries.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
@@ -30,6 +32,9 @@ import { CreateActivitySamplesBatchDto } from '../../activity-samples/dto/create
 import type { CaptureSettings } from '../../organisations/capture-settings';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { SyncUrlSessionsDto } from '../../url-sessions/dto/sync-url-sessions.dto';
+import type { SyncResult } from '../../url-sessions/services/url-sessions.service';
+import { UrlSessionsService } from '../../url-sessions/services/url-sessions.service';
 import { CreateScreenshotDto } from '../../screenshots/dto/create-screenshot.dto';
 import { RequestScreenshotUploadUrlDto } from '../../screenshots/dto/request-screenshot-upload-url.dto';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
@@ -50,6 +55,7 @@ export class DeviceTrackingController {
     private readonly tasksService: TasksService,
     private readonly timeEntriesService: TimeEntriesService,
     private readonly organisationsService: OrganisationsService,
+    private readonly urlSessionsService: UrlSessionsService,
     private readonly appEventsService: AppEventsService,
     private readonly screenshotsService: ScreenshotsService,
     private readonly activitySamplesService: ActivitySamplesService,
@@ -193,6 +199,61 @@ export class DeviceTrackingController {
     return this.timeEntriesService.current(
       request.organisationId,
       request.userId,
+    );
+  }
+
+  @Post('time-entries/pause')
+  pause(@Req() request: DeviceAuthenticatedRequest): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.pause(
+      request.organisationId,
+      request.userId,
+    );
+  }
+
+  @Post('time-entries/resume')
+  resume(
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.resume(
+      request.organisationId,
+      request.userId,
+    );
+  }
+
+  /**
+   * The agent's entries in a window, for today's per-Project totals.
+   * Switching Projects ends the previous entry (only one may be open at a
+   * time), so without these totals the timer would appear to reset whenever
+   * someone returned to a Project.
+   *
+   * `from`/`to` are caller-resolved instants, so "today" is the machine's
+   * local day, not the server's.
+   */
+  @Get('time-entries')
+  list(
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntryListItem[]> {
+    return this.timeEntriesService.list(
+      request.organisationId,
+      request.userId,
+      undefined,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+  }
+
+  @Post('url-sessions/sync')
+  syncUrlSessions(
+    @Body() dto: SyncUrlSessionsDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<SyncResult> {
+    return this.urlSessionsService.sync(
+      request.organisationId,
+      request.userId,
+      request.deviceId,
+      dto.sessions,
     );
   }
 }

@@ -1,0 +1,31 @@
+{
+  "ready": { "platform": "mock", "caps": ["focus", "url"] },
+  "rules": [
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "github.com/onja/agent/issues/42",
+        "title": "Issue #42",
+        "browser": "chrome",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 5
+      }
+    },
+    {
+      "op": "resolve",
+      "action": "respond",
+      "response": {
+        "url": "example.com",
+        "title": "Example",
+        "browser": "chrome",
+        "private": false,
+        "source": "uia",
+        "confidence": "displayed",
+        "ms": 4
+      }
+    }
+  ]
+}

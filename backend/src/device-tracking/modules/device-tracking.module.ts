@@ -12,6 +12,7 @@ import { ProjectsModule } from '../../projects/modules/projects.module';
 import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
 import { TasksModule } from '../../tasks/modules/tasks.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
+import { UrlSessionsModule } from '../../url-sessions/modules/url-sessions.module';
 import { DeviceTrackingController } from '../controllers/device-tracking.controller';
 
 @Module({
@@ -21,6 +22,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     TasksModule,
     TimeEntriesModule,
     OrganisationsModule,
+    UrlSessionsModule,
     AppEventsModule,
     ScreenshotsModule,
     ActivitySamplesModule,
