@@ -8,7 +8,6 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
-import ActiveWindow from '@paymoapp/active-window';
 import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
@@ -26,7 +25,7 @@ import type { DesktopDevicePlatform } from './platform';
 import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
 import { ScreenshotUploader } from './screenshot-uploader';
 import { TimerStatusGate } from './timer-status-gate';
-import { WindowSampler } from './window-sampler';
+import { loadActiveWindowModule, WindowSampler } from './window-sampler';
 import { resolveLinuxResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
@@ -592,7 +591,7 @@ async function registerIpcHandlers(): Promise<void> {
   // (e.g. on launch).
   ipcMain.handle('tracking:requestScreenRecordingAccess', (): void => {
     if (process.platform === 'darwin') {
-      ActiveWindow.requestPermissions();
+      loadActiveWindowModule()?.requestPermissions();
     }
   });
 

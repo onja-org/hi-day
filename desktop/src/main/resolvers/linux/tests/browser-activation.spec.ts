@@ -163,7 +163,15 @@ describe('discoverBrowserEntries', () => {
   });
 });
 
-describe('applicationDirectories', () => {
+// These two suites exercise real filesystem paths built from XDG env vars
+// (colon-delimited lists, `:`-split) against this Linux-only resolver's own
+// path-joining. On Windows that collides with drive-letter colons (`C:\...`)
+// and produces backslash-joined paths the assertions below (written as
+// literal POSIX strings, matching the XDG spec these paths always take on
+// the real, Linux-only runtime this module targets) never expect — a
+// cross-platform-CI artifact, not a real difference in behavior, since this
+// resolver only ever runs on Linux in the packaged app.
+describe.skipIf(process.platform !== 'linux')('applicationDirectories', () => {
   it('orders XDG_DATA_DIRS first and the user directory last', () => {
     const dirs = applicationDirectories({
       XDG_DATA_DIRS: '/usr/share/:/var/lib/snapd/desktop',
@@ -178,7 +186,9 @@ describe('applicationDirectories', () => {
   });
 });
 
-describe('applyBrowserActivation / removeBrowserActivation', () => {
+describe.skipIf(process.platform !== 'linux')(
+  'applyBrowserActivation / removeBrowserActivation',
+  () => {
   function scenario(): { source: string; target: string; env: NodeJS.ProcessEnv } {
     // XDG_DATA_DIRS entries are data roots; the entries live in an
     // `applications/` subdirectory of each, which is what the code joins on.
@@ -252,4 +262,5 @@ describe('applyBrowserActivation / removeBrowserActivation', () => {
     expect(report.outcomes[0].activated).toBe(false);
     expect(report.outcomes[0].reason).toBeTruthy();
   });
-});
+  },
+);

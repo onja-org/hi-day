@@ -1,5 +1,4 @@
 import { systemPreferences } from 'electron';
-import ActiveWindow from '@paymoapp/active-window';
 import type { DesktopDevicePlatform } from './platform';
 import { isWaylandSession, toDevicePlatform } from './platform';
 import type { WindowSampleSink } from './window-sample';
@@ -17,16 +16,53 @@ interface ActiveWindowResult {
 
 type GetActiveWindowFn = () => ActiveWindowResult;
 
+interface ActiveWindowModule {
+  initialize(): void;
+  getActiveWindow(): ActiveWindowResult;
+  requestPermissions(): void;
+}
+
+let activeWindowModule: ActiveWindowModule | null = null;
+let attemptedLoad = false;
 let initialized = false;
 
 /**
- * @paymoapp/active-window (unlike get-windows) is published as a genuine
- * dual ESM/CommonJS package — its "require" export condition resolves to a
- * real CJS build, so a plain `require()` (what tsc's `module: "commonjs"`
- * downlevels a static `import` to) works fine here. No `ERR_REQUIRE_ESM`,
- * so none of get-windows' `new Function('specifier', 'return
- * import(specifier)')` dance is needed anymore — see docs/adr/0011-....
+ * Lazily `require()`s @paymoapp/active-window rather than a static `import`
+ * — merely *loading* this native addon opens an X11 connection on Linux,
+ * and when none is reachable (headless CI, or a Wayland session with no
+ * XWayland) it aborts the whole process with an uncatchable native
+ * exception (`std::terminate`), not a JS error a `try`/`catch` here can
+ * stop. A static import ran this at module-load time unconditionally,
+ * which is what crashed every vitest worker that so much as imported this
+ * file (none of them call the real getActiveWindow — they all inject a
+ * fake — but the import alone was enough). Deferring the `require()` to
+ * first actual use means it only ever runs from real app code paths that
+ * are already gated to platforms with a display (see `tick()`'s Wayland
+ * guard below), never from a test file merely importing this module.
  *
+ * (@paymoapp/active-window is a genuine dual ESM/CommonJS package — its
+ * "require" export condition resolves to a real CJS build, so a plain
+ * `require()` works fine here, same as the static import it replaces. See
+ * docs/adr/0011-... for why get-windows needed a dynamic `import()` dance
+ * that this library doesn't.)
+ */
+export function loadActiveWindowModule(): ActiveWindowModule | null {
+  if (attemptedLoad) return activeWindowModule;
+  attemptedLoad = true;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const loaded = require('@paymoapp/active-window') as { default: ActiveWindowModule };
+    activeWindowModule = loaded.default;
+  } catch (error) {
+    console.error(
+      '[window-sampler] @paymoapp/active-window unavailable, window tracking disabled:',
+      error,
+    );
+  }
+  return activeWindowModule;
+}
+
+/**
  * The library also needs a one-time `initialize()` call before any
  * `getActiveWindow()`, regardless of platform (its own docs: harmless,
  * but required, on every OS). Electron's main process already runs an
@@ -35,8 +71,11 @@ let initialized = false;
  * pumping needed.
  */
 function readActiveWindow(): ActiveWindowResult {
+  const activeWindow = loadActiveWindowModule();
+  if (!activeWindow) throw new Error('@paymoapp/active-window unavailable');
+
   if (!initialized) {
-    ActiveWindow.initialize();
+    activeWindow.initialize();
     initialized = true;
   }
   // Synchronous, and throws (rather than resolving undefined, like
@@ -44,7 +83,7 @@ function readActiveWindow(): ActiveWindowResult {
   // everything minimized, or the desktop itself is focused. Left to
   // propagate here; `tick()` below is what normalizes any throw to
   // `undefined` so callers only have one "nothing to report" shape.
-  return ActiveWindow.getActiveWindow();
+  return activeWindow.getActiveWindow();
 }
 
 export interface WindowSamplerDeps {
@@ -64,7 +103,10 @@ export interface WindowSamplerDeps {
  *
  * All OS-touching calls are injectable so this is unit-testable with zero
  * Electron mocking: tests always pass explicit fakes, so the real
- * Electron-backed defaults are never invoked under vitest.
+ * Electron-backed defaults are never invoked under vitest. `readActiveWindow`
+ * itself lazily requires @paymoapp/active-window (see `loadActiveWindowModule`
+ * above) so merely importing this file — as every test here does — never
+ * touches the native module either.
  */
 export class WindowSampler {
   private readonly intervalMs: number;
