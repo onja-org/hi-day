@@ -36,6 +36,13 @@ h1 {
   background: #eaf6fd;
 }
 
+/* Author `display: flex` above beats the UA stylesheet's `[hidden] { display: none }`
+   at equal specificity, so `hidden` alone can't hide this element — unlike the other
+   banners here, which don't set `display` and so never fight the attribute. */
+.update-banner[hidden] {
+  display: none;
+}
+
 .update-banner p {
   flex: 1;
   margin: 0;
