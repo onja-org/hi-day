@@ -4,9 +4,11 @@ import { Activity } from './entities/activity.entity';
 import { ActivitySample } from './entities/activity-sample.entity';
 import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
+import { ConsentRecord } from './entities/consent-record.entity';
 import { Device } from './entities/device.entity';
 import { DevicePairingRequest } from './entities/device-pairing-request.entity';
 import { DeviceSession } from './entities/device-session.entity';
+import { DisclosureVersion } from './entities/disclosure-version.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
 import { Organisation } from './entities/organisation.entity';
@@ -48,6 +50,8 @@ export default new DataSource({
     AppEvent,
     Screenshot,
     ActivitySample,
+    DisclosureVersion,
+    ConsentRecord,
   ],
   migrations: [__dirname + '/migrations/*.ts'],
 });
