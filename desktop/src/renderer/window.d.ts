@@ -91,6 +91,20 @@ declare global {
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
+  /** See docs/adr/0014-.... */
+  type ConsentDecision = 'granted' | 'declined';
+
+  interface ConsentStatus {
+    required: boolean;
+    /** `null` when there's nothing to show (no capture enabled, or none published yet). */
+    disclosureVersionId: string | null;
+    text: string | null;
+  }
+
+  interface TrackingIndicatorStatus {
+    active: boolean;
+  }
+
   interface Window {
     api: {
       getStatus: () => Promise<AuthStatus>;
@@ -114,6 +128,14 @@ declare global {
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;
         openScreenRecordingSettings: () => Promise<void>;
+        indicatorStatus: () => Promise<TrackingIndicatorStatus>;
+      };
+      consent: {
+        get: () => Promise<TrackingResult<ConsentStatus>>;
+        submit: (
+          disclosureVersionId: string,
+          decision: ConsentDecision,
+        ) => Promise<TrackingResult<void>>;
       };
       idle: {
         seconds: () => Promise<number>;

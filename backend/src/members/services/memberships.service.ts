@@ -23,6 +23,7 @@ export interface ActiveMemberSummary {
   teamIds: string[];
   status: MembershipStatus;
   joinedAt: Date;
+  disclosureRegion: string | null;
 }
 
 @Injectable()
@@ -137,13 +138,23 @@ export class MembershipsService {
       throw new NotFoundException('Membership not found.');
     }
 
-    if (
-      caller.id === membership.id &&
-      (dto.role !== undefined || dto.deactivate)
-    ) {
-      throw new ForbiddenException(
-        'You cannot change your own role or deactivate your own membership.',
-      );
+    if (caller.id === membership.id) {
+      if (dto.role !== undefined || dto.deactivate) {
+        throw new ForbiddenException(
+          'You cannot change your own role or deactivate your own membership.',
+        );
+      }
+      // Beyond the universal role/deactivate self-block above, a manager
+      // can never modify their own Membership at all (see CONTEXT.md's
+      // MembershipRole entry) — this covers every other editable field
+      // (currently just disclosureRegion), not just role/deactivate. An
+      // admin editing their own disclosureRegion is fine: there's no
+      // self-demotion-style footgun in it, unlike role/deactivate.
+      if (caller.role === MembershipRole.MANAGER) {
+        throw new ForbiddenException(
+          'Managers cannot modify their own membership.',
+        );
+      }
     }
 
     if (caller.role === MembershipRole.MANAGER) {
@@ -163,6 +174,10 @@ export class MembershipsService {
       membership.role = dto.role;
     }
 
+    if (dto.disclosureRegion !== undefined) {
+      membership.disclosureRegion = dto.disclosureRegion;
+    }
+
     if (dto.deactivate) {
       membership.status = MembershipStatus.DEACTIVATED;
       membership.deactivatedAt = new Date();
@@ -178,6 +193,7 @@ export class MembershipsService {
         metadata: {
           membershipId,
           role: dto.role,
+          disclosureRegion: dto.disclosureRegion,
           deactivated: dto.deactivate ?? false,
         },
       });
@@ -263,6 +279,7 @@ export class MembershipsService {
       ),
       status: membership.status,
       joinedAt: membership.createdAt,
+      disclosureRegion: membership.disclosureRegion,
     };
   }
 }

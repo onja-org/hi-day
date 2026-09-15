@@ -30,14 +30,29 @@ const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
-    '#loading-view, #login-view, #status-view',
+    '#loading-view, #login-view, #consent-view, #status-view',
   )) {
     el.hidden = el.id !== viewId;
   }
 }
 
-function showLoggedIn(organisationName: string): void {
+/**
+ * The consent gate (see docs/adr/0014-...) sits between "the device session
+ * is valid" and "show the normal tracking screen" — every path that used to
+ * go straight to the status view (a fresh login, an already-logged-in
+ * relaunch) now checks here first. This is UX only, not the actual
+ * enforcement: the backend rejects unconsented capture regardless of
+ * whether this check ever runs (e.g. an old/patched client).
+ */
+async function showLoggedIn(organisationName: string): Promise<void> {
   document.getElementById('organisation-name')!.textContent = organisationName;
+
+  const consent = await window.api.consent.get();
+  if (consent.ok && consent.data.required) {
+    showConsentView(consent.data);
+    return;
+  }
+
   show('status-view');
   void initTracking();
 }
@@ -102,7 +117,7 @@ async function init(): Promise<void> {
 
   const status = await window.api.getStatus();
   if (status.loggedIn && status.organisationName) {
-    showLoggedIn(status.organisationName);
+    void showLoggedIn(status.organisationName);
   } else {
     showLoginView();
   }
@@ -114,7 +129,7 @@ async function pollPairing(): Promise<void> {
 
   if (result.status === 'approved') {
     stopPairingPoll();
-    showLoggedIn(result.organisationName);
+    void showLoggedIn(result.organisationName);
     return;
   }
 
@@ -179,6 +194,106 @@ const screenRecordingSettingsButton = document.getElementById(
   'screen-recording-settings-button',
 ) as HTMLButtonElement;
 const waylandNotice = document.getElementById('wayland-notice')!;
+const trackingIndicator = document.getElementById('tracking-indicator')!;
+
+// --- Consent gate (see docs/adr/0014-...) -------------------------------
+
+const consentTextEl = document.getElementById('consent-text')!;
+const consentErrorEl = document.getElementById('consent-error')!;
+const consentActionsEl = document.getElementById('consent-actions')!;
+const consentAcceptButton = document.getElementById(
+  'consent-accept-button',
+) as HTMLButtonElement;
+const consentDeclineButton = document.getElementById(
+  'consent-decline-button',
+) as HTMLButtonElement;
+const consentBlockedMessageEl = document.getElementById('consent-blocked-message')!;
+const consentLogoutButton = document.getElementById(
+  'consent-logout-button',
+) as HTMLButtonElement;
+
+/** The version the currently-displayed text belongs to — submitted back verbatim on accept/decline. */
+let pendingConsentVersionId: string | null = null;
+
+function showConsentView(status: ConsentStatus): void {
+  pendingConsentVersionId = status.disclosureVersionId;
+  consentTextEl.textContent = status.text ?? '';
+  consentErrorEl.hidden = true;
+  consentBlockedMessageEl.hidden = true;
+  consentActionsEl.hidden = false;
+  consentAcceptButton.disabled = false;
+  consentDeclineButton.disabled = false;
+  show('consent-view');
+  // Same banners the status view uses — consolidated into this first-run
+  // flow rather than only ever surfacing once already tracking (see
+  // docs/adr/0014-...'s OS-permission-guidance note).
+  void refreshCapturePermissionBanner();
+}
+
+async function submitConsentDecision(decision: ConsentDecision): Promise<void> {
+  if (!pendingConsentVersionId) return;
+  consentAcceptButton.disabled = true;
+  consentDeclineButton.disabled = true;
+  consentErrorEl.hidden = true;
+
+  const result = await window.api.consent.submit(pendingConsentVersionId, decision);
+  if (!result.ok) {
+    consentErrorEl.textContent = result.message;
+    consentErrorEl.hidden = false;
+    consentAcceptButton.disabled = false;
+    consentDeclineButton.disabled = false;
+    return;
+  }
+
+  if (decision === 'declined') {
+    // Hard stop for a capture-enabled org (see docs/adr/0014-...) — no path
+    // back to the app from here.
+    consentActionsEl.hidden = true;
+    consentBlockedMessageEl.hidden = false;
+    return;
+  }
+
+  show('status-view');
+  void initTracking();
+}
+
+consentAcceptButton.addEventListener('click', () => void submitConsentDecision('granted'));
+consentDeclineButton.addEventListener('click', () => void submitConsentDecision('declined'));
+
+// Only escape from this screen: relaunching re-fetches consent status and
+// lands right back here (declining isn't remembered as "log out and forget
+// it"), and while reviewing the text there's otherwise no way to switch
+// accounts. Reuses the same sign-out path as the logged-in view's button.
+consentLogoutButton.addEventListener('click', () => {
+  void window.api.logout().then(() => showLoginView());
+});
+
+/**
+ * Re-consent on a newly published disclosure version happens at the next
+ * natural poll boundary, not a mid-session interrupt (see docs/adr/0014-...)
+ * — this runs on the same cadence as refreshStatus/refreshCapturePermissionBanner
+ * below, rather than its own poll loop.
+ */
+async function checkMidSessionConsent(): Promise<void> {
+  const result = await window.api.consent.get();
+  if (!result.ok || !result.data.required) return;
+
+  stopPolling();
+  // A running timer would otherwise keep accruing server-side, unattended,
+  // for however long the consent screen sits unanswered — the same
+  // treatment quit/suspend already give an active entry.
+  if (runningEntry && !runningEntry.pausedAt) {
+    const paused = await window.api.tracking.pause();
+    if (paused.ok) setRunning(paused.data);
+  }
+  showConsentView(result.data);
+}
+
+/** Drives the "Tracking is on" banner — intent-based, not tied to whether a sample actually uploaded (see docs/adr/0014-...). */
+async function refreshTrackingIndicator(): Promise<void> {
+  const status = await window.api.tracking.indicatorStatus();
+  trackingIndicator.hidden = !status.active;
+}
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
@@ -640,6 +755,8 @@ function startPolling(): void {
   pollHandle = setInterval(() => {
     void refreshStatus();
     void refreshCapturePermissionBanner();
+    void checkMidSessionConsent();
+    void refreshTrackingIndicator();
   }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
   idlePollHandle = setInterval(() => void checkIdle(), IDLE_POLL_INTERVAL_MS);
@@ -779,6 +896,7 @@ async function initTracking(): Promise<void> {
   }
 
   void refreshCapturePermissionBanner();
+  void refreshTrackingIndicator();
   startPolling();
 }
 

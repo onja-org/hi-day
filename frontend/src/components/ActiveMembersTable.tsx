@@ -10,7 +10,7 @@ type ActiveMembersTableProps = {
   organisationId: string;
 };
 
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 5;
 
 export function ActiveMembersTable({ organisationId }: ActiveMembersTableProps) {
   const membersQuery = useActiveMembers(organisationId);
@@ -60,6 +60,7 @@ export function ActiveMembersTable({ organisationId }: ActiveMembersTableProps) 
             <th className="px-3 py-2 font-medium">Name</th>
             <th className="px-3 py-2 font-medium">Email</th>
             <th className="px-3 py-2 font-medium">Role</th>
+            <th className="px-3 py-2 font-medium">Disclosure region</th>
             <th className="px-3 py-2 font-medium" />
           </tr>
         </thead>

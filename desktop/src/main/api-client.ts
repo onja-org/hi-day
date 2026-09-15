@@ -91,6 +91,18 @@ export interface CaptureSettings {
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
   activityTrackingEnabled: boolean;
+  /** See docs/adr/0014-... — whether this Device must show the consent screen before capture can start. */
+  consent: { required: boolean };
+}
+
+export type ConsentDecision = 'granted' | 'declined';
+
+/** The wire shape for `GET /device/disclosure` — see docs/adr/0014-.... */
+export interface ConsentStatus {
+  required: boolean;
+  /** `null` when there's nothing to show (no capture enabled, or none published yet). */
+  disclosureVersionId: string | null;
+  text: string | null;
 }
 
 /**
@@ -354,6 +366,26 @@ export class ApiClient {
     deviceToken: string,
   ): Promise<TrackingResult<CaptureSettings>> {
     return this.deviceRequest('GET', '/device/capture-settings', deviceToken);
+  }
+
+  /**
+   * The current disclosure text this Device's user should see, if any —
+   * fetched by the consent screen. See docs/adr/0014-....
+   */
+  getDisclosure(deviceToken: string): Promise<TrackingResult<ConsentStatus>> {
+    return this.deviceRequest('GET', '/device/disclosure', deviceToken);
+  }
+
+  /** Records the person's accept/decline of a specific disclosure version. */
+  submitConsent(
+    deviceToken: string,
+    disclosureVersionId: string,
+    decision: ConsentDecision,
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/consent', deviceToken, {
+      disclosureVersionId,
+      decision,
+    });
   }
 
   requestScreenshotUploadUrl(

@@ -34,6 +34,14 @@ export class Organisation {
   @Column({ unique: true })
   slug: string;
 
+  /**
+   * Infrastructure/data-residency region — not a business or legal
+   * concept, not editable by anyone, and unrelated to
+   * `Membership.disclosureRegion` (a per-person jurisdiction used to pick
+   * disclosure/consent text — see docs/adr/0014-... and CONTEXT.md's
+   * Organisation region / Disclosure region entries). Currently a
+   * placeholder single-value enum.
+   */
   @Column({
     type: 'enum',
     enum: OrganisationRegion,

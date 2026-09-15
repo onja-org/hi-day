@@ -8,13 +8,20 @@ export interface CaptureSettingsValue {
   /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
   screenshotFrequencySeconds: number;
   activityTrackingEnabled: boolean;
+  /** See docs/adr/0014-... — AND'd into every capture loop's start condition in main.ts's recomputeSampling. Same shape as ApiClient's own CaptureSettings.consent, so a real API result needs no mapping here. */
+  consent: { required: boolean };
 }
 
+// consent.required defaults true (not false, unlike every other field here):
+// with no session/settings loaded yet, capture must stay off until the gate
+// actually confirms consent isn't needed — fail-closed, matching the
+// backend's own fail-closed default (see DisclosureService.getConsentStatus).
 const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
   activityTrackingEnabled: false,
+  consent: { required: true },
 };
 
 export interface CaptureSettingsResult {
@@ -86,7 +93,8 @@ export class CaptureSettingsGate {
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&
-      settings.activityTrackingEnabled === this.lastSettings.activityTrackingEnabled
+      settings.activityTrackingEnabled === this.lastSettings.activityTrackingEnabled &&
+      settings.consent.required === this.lastSettings.consent.required
     ) {
       return;
     }

@@ -11,6 +11,8 @@ export type ActiveMember = {
   teamIds: string[];
   status: MembershipStatus;
   joinedAt: string;
+  /** Which disclosure/consent text this person sees — see CONTEXT.md's Disclosure region entry. `null` means the org's region-less default. */
+  disclosureRegion: string | null;
 };
 
 export type GetActiveMembersResult =
@@ -20,6 +22,7 @@ export type GetActiveMembersResult =
 export type UpdateMembershipInput = {
   role?: MembershipRole;
   deactivate?: boolean;
+  disclosureRegion?: string | null;
 };
 
 export type UpdateMembershipResult =

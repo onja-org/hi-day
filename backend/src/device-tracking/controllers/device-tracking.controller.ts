@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -10,7 +11,12 @@ import {
 } from '@nestjs/common';
 import type { DeviceAuthenticatedRequest } from '../../devices/device-session.guard';
 import { DeviceSessionGuard } from '../../devices/device-session.guard';
+import type { Membership } from '../../database/entities/membership.entity';
 import { DeviceProjectMemberGuard } from '../../devices/guards/device-project-member.guard';
+import { SubmitConsentDto } from '../../disclosure/dto/submit-consent.dto';
+import { DeviceConsentGuard } from '../../disclosure/guards/device-consent.guard';
+import type { ConsentStatus } from '../../disclosure/services/disclosure.service';
+import { DisclosureService } from '../../disclosure/services/disclosure.service';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import type { ProjectListItem } from '../../projects/services/projects.service';
 import { ProjectsService } from '../../projects/services/projects.service';
@@ -59,6 +65,7 @@ export class DeviceTrackingController {
     private readonly appEventsService: AppEventsService,
     private readonly screenshotsService: ScreenshotsService,
     private readonly activitySamplesService: ActivitySamplesService,
+    private readonly disclosureService: DisclosureService,
   ) {}
 
   @Get('idle-policy')
@@ -67,13 +74,96 @@ export class DeviceTrackingController {
   }
 
   @Get('capture-settings')
-  captureSettings(
+  async captureSettings(
     @Req() request: DeviceAuthenticatedRequest,
-  ): Promise<CaptureSettings> {
-    return this.organisationsService.getCaptureSettings(request.organisationId);
+  ): Promise<CaptureSettings & { consent: { required: boolean } }> {
+    const captureSettings = await this.organisationsService.getCaptureSettings(
+      request.organisationId,
+    );
+    const consentStatus = await this.resolveConsentStatus(
+      request,
+      captureSettings,
+    );
+    return {
+      ...captureSettings,
+      consent: { required: consentStatus.required },
+    };
+  }
+
+  /**
+   * The current disclosure text the device's user should see, if any is
+   * required — deliberately ungated by DeviceConsentGuard, since the agent
+   * must be able to fetch this *before* consent exists. Returns
+   * `disclosureVersionId: null` when there's nothing to show (no capture
+   * enabled, a capture-enabled org that hasn't published text yet, or no
+   * active membership right now — see `resolveConsentStatus` below).
+   */
+  @Get('disclosure')
+  disclosure(
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<ConsentStatus> {
+    return this.resolveConsentStatus(request);
+  }
+
+  @Post('consent')
+  async submitConsent(
+    @Body() dto: SubmitConsentDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<void> {
+    const membership = await this.disclosureService.resolveActiveMembership(
+      request.organisationId,
+      request.userId,
+    );
+    await this.disclosureService.recordConsent(
+      request.organisationId,
+      membership.id,
+      request.deviceId,
+      membership.disclosureRegion,
+      dto.disclosureVersionId,
+      dto.decision,
+      request.userId,
+    );
+  }
+
+  /**
+   * A Membership can go inactive (e.g. just deactivated) before its
+   * Device's session is revoked — there's no push channel, so the device
+   * only learns this the next time it happens to call the backend (see
+   * CONTEXT.md's Device entry). Rather than let that turn into a hard 403
+   * on these two read-only status endpoints (`capture-settings` previously
+   * always returned 200 for any valid device session; `disclosure` is new
+   * but should behave the same way for consistency), treat "no active
+   * membership right now" the same as "nothing to consent to right now" —
+   * the capture loop has nothing to attribute samples to in that state
+   * anyway.
+   */
+  private async resolveConsentStatus(
+    request: DeviceAuthenticatedRequest,
+    captureSettings?: CaptureSettings,
+  ): Promise<ConsentStatus> {
+    let membership: Membership;
+    try {
+      membership = await this.disclosureService.resolveActiveMembership(
+        request.organisationId,
+        request.userId,
+      );
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        return { required: false, disclosureVersionId: null, text: null };
+      }
+      throw error;
+    }
+
+    return this.disclosureService.getConsentStatus(
+      request.organisationId,
+      membership.disclosureRegion,
+      request.deviceId,
+      captureSettings,
+    );
   }
 
   @Post('app-events')
+  @UseGuards(DeviceConsentGuard)
   async recordAppEvents(
     @Body() dto: CreateAppEventsBatchDto,
     @Req() request: DeviceAuthenticatedRequest,
@@ -87,6 +177,7 @@ export class DeviceTrackingController {
   }
 
   @Post('activity-samples')
+  @UseGuards(DeviceConsentGuard)
   async recordActivitySamples(
     @Body() dto: CreateActivitySamplesBatchDto,
     @Req() request: DeviceAuthenticatedRequest,
@@ -100,6 +191,7 @@ export class DeviceTrackingController {
   }
 
   @Post('screenshots/upload-url')
+  @UseGuards(DeviceConsentGuard)
   requestScreenshotUploadUrl(
     @Body() dto: RequestScreenshotUploadUrlDto,
     @Req() request: DeviceAuthenticatedRequest,

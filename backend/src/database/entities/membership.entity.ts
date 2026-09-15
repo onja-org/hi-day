@@ -35,6 +35,17 @@ export class Membership {
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   deactivatedAt: Date | null;
 
+  /**
+   * The jurisdiction used to resolve which DisclosureVersion applies to
+   * this person (see docs/adr/0014-... and CONTEXT.md's Disclosure region
+   * entry) — admin-set only, not self-reported at signup. `null` means the
+   * org's region-less default disclosure text applies. Deliberately not
+   * named `region` — see `Organisation.region`'s own comment for the
+   * unrelated, infrastructure-level concept that word already means here.
+   */
+  @Column({ type: 'character varying', nullable: true })
+  disclosureRegion: string | null;
+
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
 

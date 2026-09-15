@@ -110,6 +110,22 @@ describe('ActivitySampleUploader', () => {
     }
   });
 
+  it('discards (does not retry) a batch rejected with 403 — a consent-gated rejection, not a transient failure', async () => {
+    const postActivitySamples = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, message: 'no consent' });
+    const client = {
+      postActivitySamples,
+    } as unknown as ActivitySampleUploaderClient;
+    const { uploader } = makeUploader(makeSession('token-1'), client);
+
+    uploader.enqueue(makeSample());
+    await uploader.flush();
+
+    expect(postActivitySamples).toHaveBeenCalledTimes(1);
+    expect(store.countPending('activity-sample')).toBe(0);
+  });
+
   it('keeps a sample queued for retry after a failed flush, rather than dropping it', async () => {
     const { client, postActivitySamples } = makeClient({
       ok: false,

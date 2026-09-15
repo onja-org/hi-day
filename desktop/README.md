@@ -12,6 +12,13 @@ follows being clocked in, not merely being logged in. **Activity level
 isn't built yet.** That's deliberate scope for this pass; see
 `docs/TECH_DESIGN.md` for where the rest of activity capture is headed.
 
+Window tracking, screenshots, and activity sampling are all gated by a
+consent screen (see `docs/adr/0014-...`): a capture-enabled org's device
+must show its disclosure text and get an explicit accept before any of
+that can start, and declining is a hard stop on the whole device — no
+login, no timer. A persistent **Tracking is on** banner shows whenever
+capture is actually allowed to run.
+
 Samples are batched and uploaded to the backend (`POST /device/app-events`,
 every 60s) via `AppEventUploader` — the web console's Activity → Apps tab
 shows a "time spent per app" summary for today, aggregated from these. See
@@ -192,6 +199,36 @@ using a UUID generated on first run and persisted under Electron's
     is required for screenshots too (same permission, one banner covers
     both — see docs/adr/0012-...).
 
+12. **Test the consent gate** (see `docs/adr/0014-...`): in the web
+    console's **Settings → Consent & disclosure** page, write some
+    disclosure text and click **Publish**. With a capture setting already
+    on (step 9 or 10) and this device not yet consented, the next time it
+    reaches the logged-in screen (a fresh pairing, or `showLoggedIn`'s
+    check on relaunch) it should show the consent screen with that text
+    instead of the timer — window tracking/screenshots/activity stay off
+    the whole time (`GET /device/capture-settings`'s `consent.required`
+    stays `true`), even though plain time tracking would otherwise work
+    fine. Click **Decline**: the app should show a terminal blocked
+    message with no way back to the timer — confirm `POST
+    /device/consent` recorded a `declined` `ConsentRecord` and a
+    `device_consent.declined` `AuditLog` entry. Relaunch, and this time
+    click **I understand — continue**: the app should proceed straight to
+    the timer, and capture should start working normally on the next
+    `CaptureSettingsGate` poll. Finally, publish a *new* version from the
+    admin page while this device stays logged in — on its next 15s status
+    poll it should drop back to the consent screen for the new text
+    (mid-session interrupt, not waiting for a relaunch), matching the
+    "next natural boundary" design rather than cutting off actual
+    in-progress capture — if a timer was running at that moment, it should
+    be paused (not left accruing unattended) and resume tracking normally
+    once the person responds. The **Tracking is on** banner should only
+    appear once a capture setting is on, the timer is running, and consent
+    is current all at once. The consent screen's **Log out** button should
+    work from either state (still reviewing the text, or already declined)
+    — it's the only way off this screen short of accepting, since declining
+    is a per-Device stance the agent re-checks on every relaunch, not a
+    remembered "give up" state.
+
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
 AppImage/`.deb` directly.
@@ -350,3 +387,15 @@ output — not just assumed from source-mode success):
   past this ticket's scope. Matches this app's existing "Linux
   best-effort" support level (idle detection has the same caveat). See
   `docs/adr/0009-...`.
+- **The "Tracking is on" indicator reflects intent, not verified capture.**
+  It lights up whenever a capture setting is on, a timer is running, and
+  consent has been granted — the same conditions `recomputeSampling` in
+  `main.ts` uses to start the samplers — not whether a sample actually made
+  it to the backend. On Wayland in particular, window-tracking samples come
+  back with both `appName` and `title` null and are dropped before upload
+  (see the Wayland bullet above), so the indicator can read "on" while no
+  useful window data is actually being captured. Screenshot capture has the
+  same gap under Wayland and on unverified real macOS hardware. Matching
+  actual upload success would need a new "last successful capture" signal
+  threaded through the offline queue/uploaders — out of scope for this
+  pass; see docs/adr/0014-....

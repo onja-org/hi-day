@@ -7,6 +7,7 @@ import { ACTIVE_MEMBERS_QUERY_KEY } from "@/hooks/useActiveMembers";
 import { updateMembership } from "@/lib/updateMembership";
 import type { ActiveMember, MembershipRole } from "@/types/membership";
 import { ErrorMessage } from "./ErrorMessage";
+import { MemberDisclosureRegionField } from "./MemberDisclosureRegionField";
 
 type MemberRowProps = {
   organisationId: string;
@@ -122,6 +123,13 @@ export function MemberRow({
           ) : (
             <span className="capitalize">{member.role}</span>
           )}
+        </td>
+        <td className="px-3 py-2">
+          <MemberDisclosureRegionField
+            organisationId={organisationId}
+            member={member}
+            editable={canModify}
+          />
         </td>
         <td className="px-3 py-2">
           <div className="flex items-center justify-end gap-2">

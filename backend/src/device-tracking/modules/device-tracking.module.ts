@@ -7,6 +7,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { DeviceSessionGuard } from '../../devices/device-session.guard';
 import { DeviceProjectMemberGuard } from '../../devices/guards/device-project-member.guard';
+import { DisclosureModule } from '../../disclosure/modules/disclosure.module';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { ProjectsModule } from '../../projects/modules/projects.module';
 import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
@@ -26,6 +27,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     AppEventsModule,
     ScreenshotsModule,
     ActivitySamplesModule,
+    DisclosureModule,
   ],
   controllers: [DeviceTrackingController],
   providers: [DeviceSessionGuard, DeviceProjectMemberGuard],

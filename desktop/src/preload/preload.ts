@@ -84,6 +84,20 @@ export interface UpdateCheckResult {
   latestVersion?: string;
 }
 
+/** See docs/adr/0014-.... */
+export type ConsentDecision = 'granted' | 'declined';
+
+export interface ConsentStatus {
+  required: boolean;
+  /** `null` when there's nothing to show (no capture enabled, or none published yet). */
+  disclosureVersionId: string | null;
+  text: string | null;
+}
+
+export interface TrackingIndicatorStatus {
+  active: boolean;
+}
+
 const api = {
   getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:status') as Promise<AuthStatus>,
   auth: {
@@ -137,6 +151,19 @@ const api = {
       ipcRenderer.invoke('tracking:requestScreenRecordingAccess') as Promise<void>,
     openScreenRecordingSettings: (): Promise<void> =>
       ipcRenderer.invoke('tracking:openScreenRecordingSettings') as Promise<void>,
+    indicatorStatus: (): Promise<TrackingIndicatorStatus> =>
+      ipcRenderer.invoke('tracking:indicatorStatus') as Promise<TrackingIndicatorStatus>,
+  },
+  consent: {
+    get: (): Promise<TrackingResult<ConsentStatus>> =>
+      ipcRenderer.invoke('consent:get') as Promise<TrackingResult<ConsentStatus>>,
+    submit: (
+      disclosureVersionId: string,
+      decision: ConsentDecision,
+    ): Promise<TrackingResult<void>> =>
+      ipcRenderer.invoke('consent:submit', disclosureVersionId, decision) as Promise<
+        TrackingResult<void>
+      >,
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,

@@ -8,7 +8,7 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
-import type { PairingPollResult, TrackingResult } from './api-client';
+import type { ConsentDecision, PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
 import { resolveActivityPeriodMs } from './activity-sample';
@@ -326,8 +326,13 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let activityTrackingEnabled = false;
   let timerRunning = false;
+  // See docs/adr/0014-... — a fourth AND'd condition alongside timerRunning,
+  // fed by CaptureSettingsGate the same way the other four flags are.
+  // Fail-closed by default (CaptureSettingsGate's own OFF_SETTINGS), so
+  // capture can't start before the gate has actually confirmed it's clear.
+  let consentRequired = true;
   function recomputeSampling(): void {
-    if (windowTrackingEnabled && timerRunning) {
+    if (windowTrackingEnabled && timerRunning && !consentRequired) {
       windowSampler.start();
     } else {
       windowSampler.stop();
@@ -338,13 +343,13 @@ async function registerIpcHandlers(): Promise<void> {
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
-    if (screenshotsEnabled && timerRunning) {
+    if (screenshotsEnabled && timerRunning && !consentRequired) {
       screenshotSampler.start();
     } else {
       screenshotSampler.stop();
     }
 
-    if (activityTrackingEnabled && timerRunning) {
+    if (activityTrackingEnabled && timerRunning && !consentRequired) {
       activitySampler.start();
     } else {
       activitySampler.stop();
@@ -360,6 +365,7 @@ async function registerIpcHandlers(): Promise<void> {
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       activityTrackingEnabled = settings.activityTrackingEnabled;
+      consentRequired = settings.consent.required;
       recomputeSampling();
     },
   );
@@ -583,6 +589,37 @@ async function registerIpcHandlers(): Promise<void> {
       };
     },
   );
+
+  // See docs/adr/0014-... — the first-run/re-consent screen fetches the
+  // current disclosure text (if any is required) through this.
+  ipcMain.handle('consent:get', () =>
+    callDeviceApi((token) => apiClient.getDisclosure(token)),
+  );
+
+  ipcMain.handle(
+    'consent:submit',
+    async (_event, disclosureVersionId: string, decision: ConsentDecision) => {
+      const result = await callDeviceApi((token) =>
+        apiClient.submitConsent(token, disclosureVersionId, decision),
+      );
+      if (result.ok) {
+        // Instant local feedback rather than waiting up to
+        // DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS for the gate's own next
+        // poll — capture should be able to start the moment consent lands.
+        void captureSettingsGate.pollOnce();
+      }
+      return result;
+    },
+  );
+
+  // Drives the "tracking is on" banner — intent-based (settings + timer +
+  // consent all line up), not tied to whether a sample actually uploaded
+  // successfully (see docs/adr/0014-...'s indicator-semantics note).
+  ipcMain.handle('tracking:indicatorStatus', (): { active: boolean } => {
+    const anyCaptureEnabled =
+      windowTrackingEnabled || screenshotsEnabled || activityTrackingEnabled;
+    return { active: anyCaptureEnabled && timerRunning && !consentRequired };
+  });
 
   // Triggers the native macOS Screen Recording prompt — never called
   // except from this handler, itself only ever invoked by an explicit

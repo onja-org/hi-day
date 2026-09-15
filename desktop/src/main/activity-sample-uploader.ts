@@ -58,6 +58,17 @@ export class ActivitySampleUploader
       items.map((item) => item.payload),
     );
     if (!result.ok) {
+      if (result.status === 403) {
+        // Consent-gated rejection (see docs/adr/0014-...), not a transient
+        // failure like a network blip — retrying would fail forever while
+        // rejected samples pile up locally, so discard instead.
+        console.warn(
+          '[activity-sample-upload] batch of',
+          items.length,
+          'rejected — no consent for the current disclosure version, discarding',
+        );
+        return true;
+      }
       console.error(
         '[activity-sample-upload] batch of',
         items.length,

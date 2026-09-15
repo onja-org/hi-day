@@ -18,6 +18,8 @@ export interface ScreenshotUploadUrlResult {
   ok: boolean;
   data?: { uploadUrl: string; storageKey: string };
   message?: string;
+  /** See TrackingResult's own field — lets `send` tell a consent-gated 403 apart from a transient failure. */
+  status?: number;
 }
 
 export interface ScreenshotRecordResult {
@@ -100,6 +102,15 @@ export class ScreenshotUploader implements QueueSender<ScreenshotQueuePayload> {
       session.deviceToken,
       item.payload.capturedAt,
     );
+    if (urlResult.status === 403) {
+      // Consent-gated rejection (see docs/adr/0014-...), not a transient
+      // failure like a network blip — retrying would fail forever, and the
+      // image bytes would sit in local SQLite indefinitely. Discard instead.
+      console.warn(
+        '[screenshot-upload] rejected — no consent for the current disclosure version, discarding',
+      );
+      return true;
+    }
     if (!urlResult.ok || !urlResult.data) {
       console.error(
         '[screenshot-upload] could not get an upload URL, will retry:',
