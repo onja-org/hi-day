@@ -65,11 +65,12 @@ describe('RefreshTokenService', () => {
     );
   });
 
-  it('rejects rotate() and revokes all sessions when a revoked token is reused', async () => {
+  it('rejects rotate() and revokes all sessions when a revoked token is reused with no successor on record', async () => {
     const existing = {
       id: 'rt-1',
       userId: 'user-1',
       revokedAt: new Date(),
+      replacedByTokenHash: null,
       expiresAt: new Date(Date.now() + 1000),
     };
     const { manager, update } = makeManager({
@@ -88,6 +89,120 @@ describe('RefreshTokenService', () => {
       expect.objectContaining({ userId: 'user-1' }),
       expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
     );
+  });
+
+  it('rejects rotate() and revokes all sessions when a revoked token is reused long after its successor was issued (grace window elapsed)', async () => {
+    const successorHash = 'successor-hash';
+    const existing = {
+      id: 'rt-1',
+      userId: 'user-1',
+      revokedAt: new Date(Date.now() - 60_000),
+      replacedByTokenHash: successorHash,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const successor = {
+      id: 'rt-2',
+      userId: 'user-1',
+      tokenHash: successorHash,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const findOne = jest
+      .fn()
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(successor);
+    const { manager, update } = makeManager({ findOne });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    await expect(service.rotate(manager, 'stale')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(update).toHaveBeenCalledWith(
+      RefreshToken,
+      expect.objectContaining({ userId: 'user-1' }),
+      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
+    );
+  });
+
+  it('rejects rotate() and revokes all sessions when a revoked token is reused after its successor was itself already rotated', async () => {
+    const successorHash = 'successor-hash';
+    const existing = {
+      id: 'rt-1',
+      userId: 'user-1',
+      revokedAt: new Date(),
+      replacedByTokenHash: successorHash,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const successor = {
+      id: 'rt-2',
+      userId: 'user-1',
+      tokenHash: successorHash,
+      revokedAt: new Date(),
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const findOne = jest
+      .fn()
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(successor);
+    const { manager, update } = makeManager({ findOne });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    await expect(service.rotate(manager, 'stale')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(update).toHaveBeenCalledWith(
+      RefreshToken,
+      expect.objectContaining({ userId: 'user-1' }),
+      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
+    );
+  });
+
+  it('rotates the still-unused successor instead of revoking everything when a just-rotated token is reused within the grace window', async () => {
+    const successorHash = 'successor-hash';
+    const existing = {
+      id: 'rt-1',
+      userId: 'user-1',
+      revokedAt: new Date(),
+      replacedByTokenHash: successorHash,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const successor = {
+      id: 'rt-2',
+      userId: 'user-1',
+      tokenHash: successorHash,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const findOne = jest
+      .fn()
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(successor);
+    const { manager, update, save } = makeManager({ findOne });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    const result = await service.rotate(manager, 'raced');
+
+    // The second (concurrent) request rotates the successor forward, not
+    // the stale row it was actually presented — and nothing gets revoked
+    // wholesale (a single, targeted update call, not revokeAll's
+    // where-clause update).
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      RefreshToken,
+      'rt-2',
+      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
+    );
+    expect(save).toHaveBeenCalled();
+    expect(result).toEqual({ userId: 'user-1', token: 'token-1' });
   });
 
   it('rejects rotate() when the token has expired', async () => {

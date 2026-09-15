@@ -8,6 +8,15 @@ import { TokenService } from './token.service';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_REFRESH_TOKEN_TTL_DAYS = 30;
 const INVALID_REFRESH_TOKEN_MESSAGE = 'Session expired. Please log in again.';
+// Refresh tokens are single-use/rotating, and more than one request can
+// legitimately present the same (about-to-be-stale) cookie at once — e.g.
+// two requests fired by one page load, or two tabs, right at the access
+// token's expiry boundary. Reusing an already-rotated token within this
+// window, while its replacement is still untouched, is treated as that
+// race rather than theft. Reuse outside the window, or once the
+// replacement has itself been used, still revokes every session for the
+// user — that's the actual theft signal.
+const REUSE_GRACE_MS = 5_000;
 
 export interface RotatedRefreshToken {
   userId: string;
@@ -55,6 +64,11 @@ export class RefreshTokenService {
     }
 
     if (existing.revokedAt) {
+      const successor = await this.resolveRaceSuccessor(manager, existing);
+      if (successor) {
+        return this.rotateRow(manager, successor);
+      }
+
       await this.revokeAll(manager, existing.userId);
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
@@ -63,10 +77,49 @@ export class RefreshTokenService {
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
-    await manager.update(RefreshToken, existing.id, { revokedAt: new Date() });
-    const token = await this.issue(manager, existing.userId);
+    return this.rotateRow(manager, existing);
+  }
 
-    return { userId: existing.userId, token };
+  /**
+   * A row that has already been rotated away is only a benign race — not
+   * reuse of a stale/stolen token — when its replacement is still exactly
+   * as it was left: unrevoked (nothing has rotated it onward since) and
+   * unexpired, and the rotation that superseded `existing` happened
+   * recently enough to plausibly be the other half of a concurrent pair of
+   * requests, not a since-forgotten cookie resurfacing.
+   */
+  private async resolveRaceSuccessor(
+    manager: EntityManager,
+    existing: RefreshToken,
+  ): Promise<RefreshToken | null> {
+    if (!existing.replacedByTokenHash || !existing.revokedAt) {
+      return null;
+    }
+    if (Date.now() - existing.revokedAt.getTime() > REUSE_GRACE_MS) {
+      return null;
+    }
+
+    const successor = await manager.findOne(RefreshToken, {
+      where: { tokenHash: existing.replacedByTokenHash },
+    });
+    if (!successor || successor.revokedAt || successor.expiresAt < new Date()) {
+      return null;
+    }
+
+    return successor;
+  }
+
+  private async rotateRow(
+    manager: EntityManager,
+    row: RefreshToken,
+  ): Promise<RotatedRefreshToken> {
+    const token = await this.issue(manager, row.userId);
+    await manager.update(RefreshToken, row.id, {
+      revokedAt: new Date(),
+      replacedByTokenHash: hashToken(token),
+    });
+
+    return { userId: row.userId, token };
   }
 
   async revokeAll(manager: EntityManager, userId: string): Promise<void> {
