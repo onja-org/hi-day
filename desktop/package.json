@@ -18,9 +18,9 @@
     "drills": "vitest run src/main/url-capture/tests/failure-drills.spec.ts src/main/url-capture/tests/acceptance-criteria.spec.ts --reporter=verbose",
     "rebuild:electron": "node scripts/rebuild-electron.mjs",
     "rebuild:node": "pnpm rebuild better-sqlite3",
-    "dist:linux": "pnpm build && electron-builder --linux",
-    "dist:win": "pnpm build && electron-builder --win",
-    "dist:mac": "pnpm build && electron-builder --mac"
+    "dist:linux": "pnpm build && pnpm rebuild:electron && electron-builder --linux",
+    "dist:win": "pnpm build && pnpm rebuild:electron && electron-builder --win",
+    "dist:mac": "pnpm build && pnpm rebuild:electron && electron-builder --mac"
   },
   "dependencies": {
     "@paymoapp/active-window": "^2.2.0",

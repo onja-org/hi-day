@@ -27,6 +27,13 @@ asarUnpack:
   - node_modules/uiohook-napi/**/*
 # Both ship prebuilt native binaries — rebuilding against Electron's headers
 # is unnecessary and fails without system X11 dev headers here.
+# NOTE: this also skips better-sqlite3, which DOES need an Electron-ABI
+# rebuild (it has no prebuilt-per-Electron-version binary the way the two
+# packages above do) — that's why every dist:* script runs `rebuild:electron`
+# first. Without that step this silently ships better-sqlite3 built for
+# plain Node's ABI, which throws a NODE_MODULE_VERSION mismatch inside
+# UrlCaptureService's synchronous construction — before the main window is
+# ever created — so the packaged app never opens a window at all.
 npmRebuild: false
 
 win:
