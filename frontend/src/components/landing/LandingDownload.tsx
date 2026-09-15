@@ -24,6 +24,8 @@ type Platform = {
   name: string;
   detail: string;
   downloads: Download[];
+  /** Rendered under the buttons, for per-platform install gotchas. */
+  note?: string;
 };
 
 const PLATFORMS: Platform[] = [
@@ -46,10 +48,16 @@ const PLATFORMS: Platform[] = [
     icon: LinuxLogo,
     name: "Linux",
     detail: "Ubuntu, Pop!_OS, and most Debian-based distros",
+    // .deb first, deliberately: double-clicking it opens the distro's software
+    // installer and Just Works. An AppImage arrives from the browser without the
+    // executable bit set, so double-clicking it silently does nothing until the
+    // user chmod +x's it — a dead end for anyone who doesn't already know
+    // that, hence the note below.
     downloads: [
-      { label: "Download AppImage", fileName: "workforce-monitor-linux-x86_64.AppImage" },
-      { label: ".deb package", fileName: "workforce-monitor-linux-amd64.deb" },
+      { label: "Download .deb package", fileName: "workforce-monitor-linux-amd64.deb" },
+      { label: "AppImage (portable)", fileName: "workforce-monitor-linux-x86_64.AppImage" },
     ],
+    note: "Using the AppImage? Mark it executable first — right-click it, choose Properties, and tick “Allow executing file as program” (or run chmod +x on it).",
   },
 ];
 
@@ -95,6 +103,10 @@ export function LandingDownload() {
                     </a>
                   ))}
                 </div>
+
+                {platform.note ? (
+                  <p className="mt-1 text-xs text-slate-900/70">{platform.note}</p>
+                ) : null}
               </div>
             </ScrollReveal>
           ))}
