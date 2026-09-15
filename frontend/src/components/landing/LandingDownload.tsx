@@ -48,16 +48,18 @@ const PLATFORMS: Platform[] = [
     icon: LinuxLogo,
     name: "Linux",
     detail: "Ubuntu, Pop!_OS, and most Debian-based distros",
-    // .deb first, deliberately: double-clicking it opens the distro's software
-    // installer and Just Works. An AppImage arrives from the browser without the
-    // executable bit set, so double-clicking it silently does nothing until the
-    // user chmod +x's it — a dead end for anyone who doesn't already know
-    // that, hence the note below.
+    // Neither Linux artifact is double-clickable on a stock modern Ubuntu, so
+    // both get spelled out. Ubuntu 23.04+ removed local .deb installation from
+    // App Center and ships no gdebi, leaving File Roller as the registered
+    // handler — double-clicking a .deb opens it as an *archive*. An AppImage
+    // arrives from the browser without its executable bit, so double-clicking
+    // that does nothing at all. .deb stays first because `apt install` also
+    // resolves the runtime deps and wires up the launcher.
     downloads: [
       { label: "Download .deb package", fileName: "workforce-monitor-linux-amd64.deb" },
       { label: "AppImage (portable)", fileName: "workforce-monitor-linux-x86_64.AppImage" },
     ],
-    note: "Using the AppImage? Mark it executable first — right-click it, choose Properties, and tick “Allow executing file as program” (or run chmod +x on it).",
+    note: "Install the .deb with: sudo apt install ./workforce-monitor-linux-amd64.deb — double-clicking it opens the archive manager, not an installer. For the AppImage, mark it executable first: chmod +x workforce-monitor-linux-x86_64.AppImage",
   },
 ];
 
