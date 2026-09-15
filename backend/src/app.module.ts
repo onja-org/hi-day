@@ -7,6 +7,7 @@ import { AppEventsModule } from './app-events/modules/app-events.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
+import { DashboardModule } from './dashboard/modules/dashboard.module';
 import { DatabaseModule } from './database/database.module';
 import { DeviceTrackingModule } from './device-tracking/modules/device-tracking.module';
 import { DevicesModule } from './devices/modules/devices.module';
@@ -39,6 +40,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     ScreenshotsModule,
     TeamsModule,
     UrlSessionsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,9 +1,13 @@
 "use client";
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { CurrentProjectActivity } from "./CurrentProjectActivity";
+import { DashboardKpiRow } from "./DashboardKpiRow";
 import { ErrorMessage } from "./ErrorMessage";
+import { RecentActivityScreenshots } from "./RecentActivityScreenshots";
 import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
+import { ThisWeekPanel } from "./ThisWeekPanel";
 import { UrlSessionList } from "./UrlSessionList";
 
 export function DashboardSections() {
@@ -34,19 +38,43 @@ export function DashboardSections() {
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-primary-dark">Timesheet</h2>
-        <RecentTimesheetWidget organisationId={organisationId} />
-      </section>
+      <DashboardKpiRow organisationId={organisationId} />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-primary-dark">
+            Recent activity
+          </h2>
+          <RecentActivityScreenshots organisationId={organisationId} />
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-primary-dark">
+            Timesheet
+          </h2>
+          <RecentTimesheetWidget organisationId={organisationId} />
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-primary-dark">
+            Current project activity
+          </h2>
+          <CurrentProjectActivity organisationId={organisationId} />
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-primary-dark">
+            This week
+          </h2>
+          <ThisWeekPanel organisationId={organisationId} />
+        </section>
+      </div>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-primary-dark">Activity</h2>
+        <h2 className="text-lg font-semibold text-primary-dark">
+          Apps &amp; URLs
+        </h2>
         <UrlSessionList organisationId={organisationId} maxEntries={3} />
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-primary-dark">Projects</h2>
-        <p className="text-slate-900">No projects yet.</p>
       </section>
     </div>
   );

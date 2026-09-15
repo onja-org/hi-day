@@ -36,38 +36,56 @@ export function RecentTimesheetWidget({ organisationId }: RecentTimesheetWidgetP
       {entries.length === 0 ? (
         <p className="text-slate-900">You haven&apos;t logged any hours yet.</p>
       ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="text-slate-900/70">
-              <th className="pb-2 font-medium">Project</th>
-              <th className="pb-2 font-medium">Time</th>
-              <th className="pb-2 text-right font-medium">Duration</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id} className="border-t border-input-border">
-                <td className="py-2 text-slate-900">
-                  <span className="flex items-center gap-2">
-                    <ProjectColourBadge colour={entry.projectColour} />
-                    {entry.projectName}
-                  </span>
-                </td>
-                <td className="py-2 whitespace-nowrap text-slate-900">
-                  {new Date(entry.startedAt).toLocaleDateString([], {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </td>
-                <td className="py-2 text-right tabular-nums text-slate-900">
-                  {entry.durationSeconds === null
-                    ? "In progress"
-                    : formatElapsed(entry.durationSeconds * 1000)}
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-slate-900/70">
+                <th className="pb-2 font-medium">Project</th>
+                <th className="pb-2 font-medium">Date</th>
+                <th className="pb-2 font-medium">Start</th>
+                <th className="pb-2 font-medium">Stop</th>
+                <th className="pb-2 text-right font-medium">Duration</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="border-t border-input-border">
+                  <td className="py-2 text-slate-900">
+                    <span className="flex items-center gap-2">
+                      <ProjectColourBadge colour={entry.projectColour} />
+                      {entry.projectName}
+                    </span>
+                  </td>
+                  <td className="py-2 whitespace-nowrap text-slate-900">
+                    {new Date(entry.startedAt).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </td>
+                  <td className="py-2 whitespace-nowrap text-slate-900">
+                    {new Date(entry.startedAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </td>
+                  <td className="py-2 whitespace-nowrap text-slate-900">
+                    {entry.endedAt
+                      ? new Date(entry.endedAt).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-slate-900">
+                    {entry.durationSeconds === null
+                      ? "In progress"
+                      : formatElapsed(entry.durationSeconds * 1000)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <Link
