@@ -90,7 +90,7 @@ export function TimesheetTable({
   const dayGroups = groupTimeEntriesByDay(entries);
 
   return (
-    <div className="overflow-x-auto rounded-md border border-input-border">
+    <div className="overflow-x-auto rounded-lg border border-input-border">
       <table className="w-full min-w-[560px] text-left text-sm">
         <thead>
           <tr className="border-b border-input-border text-slate-900">

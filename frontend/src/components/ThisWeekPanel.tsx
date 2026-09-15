@@ -33,21 +33,28 @@ export function ThisWeekPanel({ organisationId }: ThisWeekPanelProps) {
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-input-border p-4">
+      {/* Bar track and labels are separate sibling rows, not nested inside
+          one flex column — a percentage height (`fractionClass("h", …)`)
+          only resolves against an ancestor chain of *explicit* heights
+          (h-24 → h-full → h-<fraction>); nesting the bar inside a column
+          that's also carrying the label text gives that column an auto
+          height, which collapses every percentage height inside it to 0. */}
       <div className="flex h-24 items-end gap-2">
-        {days.map((day) => (
-          <div
-            key={day.label}
-            className="flex flex-1 flex-col items-center gap-1"
-          >
-            <div className="flex h-full w-full items-end">
-              <div
-                className={clsx(
-                  "w-full rounded-t-md",
-                  day.isToday ? "bg-primary" : "bg-sidebar-active",
-                  fractionClass("h", day.seconds / maxSeconds),
-                )}
-              />
-            </div>
+        {days.map((day, index) => (
+          <div key={index} className="flex h-full flex-1 items-end">
+            <div
+              className={clsx(
+                "w-full rounded-t-md",
+                day.isToday ? "bg-primary" : "bg-sidebar-active",
+                fractionClass("h", day.seconds / maxSeconds),
+              )}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {days.map((day, index) => (
+          <div key={index} className="flex flex-1 flex-col items-center gap-1">
             <span
               className={clsx(
                 "text-xs font-medium",

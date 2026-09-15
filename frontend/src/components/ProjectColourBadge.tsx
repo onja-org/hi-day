@@ -6,7 +6,11 @@ type ProjectColourBadgeProps = {
   className?: string;
 };
 
-const COLOUR_CLASSES: Record<ProjectColour, string> = {
+// Exported so any other per-project visual (e.g. a chart bar) can reuse the
+// exact same literal class list — Tailwind needs these as literal strings in
+// source to generate their CSS, so `bg-project-${colour}` string
+// interpolation elsewhere would silently produce no styles.
+export const PROJECT_COLOUR_BG_CLASSES: Record<ProjectColour, string> = {
   blue: "bg-project-blue",
   green: "bg-project-green",
   amber: "bg-project-amber",
@@ -23,7 +27,7 @@ export function ProjectColourBadge({ colour, className }: ProjectColourBadgeProp
       aria-hidden="true"
       className={clsx(
         "inline-block h-3 w-3 shrink-0 rounded-full",
-        COLOUR_CLASSES[colour],
+        PROJECT_COLOUR_BG_CLASSES[colour],
         className,
       )}
     />
