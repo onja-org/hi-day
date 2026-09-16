@@ -27,6 +27,16 @@ public enum ResolveErrorCode
 
     /// <summary>The address bar has keyboard focus — the user is typing; the reading is rejected.</summary>
     AddressBarFocused,
+
+    /// <summary>
+    /// The read threw something no other code covers. Exists because the
+    /// generic catch used to write a bare "Unexpected UIA read failure:"
+    /// string with no [tag], which the agent-side extractor then bucketed
+    /// as "unknown" — indistinguishable from a request that got no reply
+    /// at all. That ambiguity hid a real Windows fault: every browser read
+    /// was throwing, and the logs said only "unknown".
+    /// </summary>
+    Unexpected,
 }
 
 public sealed record ResolveFailure(ResolveErrorCode Code, string Message)
@@ -39,6 +49,7 @@ public sealed record ResolveFailure(ResolveErrorCode Code, string Message)
         ResolveErrorCode.UiaTimeout => "uia-timeout",
         ResolveErrorCode.NoAddressBar => "no-address-bar",
         ResolveErrorCode.AddressBarFocused => "address-bar-focused",
+        ResolveErrorCode.Unexpected => "unexpected",
         _ => "unknown",
     };
 

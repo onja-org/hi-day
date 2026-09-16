@@ -188,7 +188,17 @@ async Task HandleResolveAsync(ResolveRequest request)
     }
     catch (Exception ex)
     {
-        WriteLine(new ErrorResponse(request.Id, $"Unexpected UIA read failure: {ex.Message}"));
+        // Type and stack only, never ex.Message: a COM/UIA exception message
+        // can quote the element text it choked on, which for an address bar
+        // is the URL itself — and stderr is forwarded to the agent's normal
+        // logger, where CLAUDE.md's "never log a full URL above debug level"
+        // applies. The type and the throwing frame are what identify the
+        // fault anyway.
+        Console.Error.WriteLine(
+            $"[resolve] {ex.GetType().FullName} reading {focus.App}{Environment.NewLine}{ex.StackTrace}");
+        WriteLine(new ErrorResponse(request.Id, new ResolveFailure(
+            ResolveErrorCode.Unexpected,
+            $"UIA read threw {ex.GetType().Name}.").ToWireMessage()));
     }
     finally
     {
