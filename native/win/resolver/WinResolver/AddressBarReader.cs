@@ -227,9 +227,36 @@ public sealed class AddressBarReader : IDisposable
             foreach (var element in elements)
             {
                 var hasKeyboardFocus = element.Properties.HasKeyboardFocus.Value;
-                var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
-                candidates.Add(new AddressBarCandidate(value, hasKeyboardFocus, IsEdit: true));
+                candidates.Add(new AddressBarCandidate(ReadValue(element), hasKeyboardFocus, IsEdit: true));
             }
+        }
+
+        // ValuePattern first — it is what the five Chromium browsers answer
+        // on, at 40-85ms. Firefox implements the pattern but returns nothing
+        // through it:
+        //
+        //   [tree] firefox.exe stage=no-valid-host toolbarEdits=1 withNonEmptyValue=0
+        //
+        // i.e. the address bar was found (the Gecko fallback above works) and
+        // simply had no value to give. Gecko's accessibility is IAccessible2
+        // behind a UIA bridge, and the bridge surfaces that text through
+        // LegacyIAccessible instead.
+        //
+        // Ordered, not merged: Chromium keeps its existing path untouched and
+        // pays nothing, and LegacyIAccessible is consulted only when
+        // ValuePattern yields nothing. Both accessor shapes verified against
+        // FlaUI's own source rather than recalled — ILegacyIAccessiblePattern
+        // exposes `AutomationProperty<string> Value`, and the element-side
+        // accessor is `Patterns.LegacyIAccessible`.
+        static string? ReadValue(FlaUI.Core.AutomationElements.AutomationElement element)
+        {
+            var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            return element.Patterns.LegacyIAccessible.PatternOrDefault?.Value.Value;
         }
 
         return candidates;
