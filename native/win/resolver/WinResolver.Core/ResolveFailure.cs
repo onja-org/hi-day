@@ -29,12 +29,8 @@ public enum ResolveErrorCode
     AddressBarFocused,
 
     /// <summary>
-    /// The read threw something no other code covers. Exists because the
-    /// generic catch used to write a bare "Unexpected UIA read failure:"
-    /// string with no [tag], which the agent-side extractor then bucketed
-    /// as "unknown" — indistinguishable from a request that got no reply
-    /// at all. That ambiguity hid a real Windows fault: every browser read
-    /// was throwing, and the logs said only "unknown".
+    /// The read threw something no other code covers. Tagged like every other
+    /// failure so it cannot be confused with a request that got no reply.
     /// </summary>
     Unexpected,
 }

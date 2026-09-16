@@ -114,20 +114,10 @@ export class ResolverOrchestrator {
       // record unconditionally.
       this.health.onResolveFailure(outcome.message);
 
-      // A failed read used to leave no trace anywhere: not in the logger
-      // (the rule above), and not in the debug log either, because the
-      // old early return sat in front of debugSink.record(). That made an
-      // absent url-capture-debug.jsonl mean either "no resolve was ever
-      // sent" or "every resolve failed", with no way to tell which — the
-      // exact ambiguity that stalled first-contact Windows debugging.
-      //
-      // Recording the failure through the same opt-in sink fixes that
-      // without weakening the rule: only the leading [code] tag is kept,
-      // via the extractor the health tracker already uses and documents as
-      // safe to record unconditionally. The message itself — which can
-      // echo raw address-bar text back from some resolver error paths —
-      // is dropped, and `raw` stays empty precisely because there is no
-      // reading to record.
+      // Recorded through the same opt-in sink as successes, so an absent
+      // debug log means "no resolve was sent" rather than "every resolve
+      // failed". Only the [code] tag is kept — the message can echo raw
+      // address-bar text — and `raw` stays empty because there is no reading.
       this.debugSink.record({
         ts: realClock().wallClockMs,
         raw: '',

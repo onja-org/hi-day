@@ -52,25 +52,18 @@ public static class HostValidator
         }
 
         // localhost is a real target, not an ambiguous word. The shared
-        // normalization pipeline every platform feeds into already says so
-        // explicitly — see validateHost in
-        // url-capture/normalization/host-validation.ts, which accepts
-        // `parsed.hostname === 'localhost'` alongside public suffixes and
-        // IP literals. The Linux resolver does no host filtering of its
-        // own and relies entirely on that rule, so excluding localhost
-        // here made Windows quietly stricter than Linux for the one host
-        // developers visit all day.
+        // pipeline every platform feeds into already accepts it — see
+        // validateHost in url-capture/normalization/host-validation.ts — and
+        // Linux relies on that rule alone, so excluding it here made Windows
+        // stricter than Linux.
         if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
             || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
         {
             return host;
         }
 
-        // Otherwise a dot is still required. Uri.CheckHostName classifies
-        // any syntactically legal single-label name ("settings", a
-        // half-typed search) as Dns too, and this conservative fallback
-        // exists to keep those out — localhost is carved out by name
-        // above precisely so the general rule can stay strict.
+        // Otherwise a dot is required: CheckHostName treats any legal
+        // single-label name ("settings", a half-typed search) as Dns too.
         return host.Contains('.') ? host : null;
     }
 }

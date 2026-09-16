@@ -46,15 +46,12 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
       command: process.execPath,
       args: [resolveDarwinResolverPath()],
       env: {
-        // Runs the darwin resolver (a plain compiled JS file, not a
-        // separately-built native binary) via Electron's own executable
-        // acting as a plain Node process — avoids depending on a system
-        // Node install existing on the user's machine.
+        // The darwin resolver is compiled JS, not a native binary, so it runs
+        // on Electron's own executable as a plain Node process — no system
+        // Node required.
         ELECTRON_RUN_AS_NODE: '1',
-        // That same plain-Node-process consequence means the resolver
-        // can't call app.isPackaged/process.resourcesPath itself to find
-        // firefox-ax-helper (a separate native binary it spawns as its
-        // own child) — see firefox-ax-helper-path.ts.
+        // Which also means it can't read app.isPackaged/resourcesPath itself
+        // to locate firefox-ax-helper — see firefox-ax-helper-path.ts.
         RESOLVER_IS_PACKAGED: app.isPackaged ? '1' : '0',
         RESOLVER_RESOURCES_PATH: process.resourcesPath,
       },
@@ -71,10 +68,8 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
     return {
       command: process.execPath,
       args: [resolveLinuxResolverPath()],
-      // Same plain-Node-process trick as darwin: this resolver is compiled
-      // TypeScript inside the app's own dist/, not a separate binary. It
-      // needs no resourcesPath hints — it spawns no child of its own,
-      // talking to the accessibility bus directly over D-Bus.
+      // Same trick as darwin. No resourcesPath hints needed: this one spawns
+      // no child, talking to the accessibility bus directly over D-Bus.
       env: { ELECTRON_RUN_AS_NODE: '1' },
     };
   }

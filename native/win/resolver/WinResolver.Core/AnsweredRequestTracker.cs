@@ -1,14 +1,10 @@
 namespace WinResolver.Core;
 
 /// <summary>
-/// Guards the resolve() timeout race from Step 14: the caller answers a
-/// request with uia_timeout after ~250ms, but the queued UIA work may
-/// still complete afterwards and produce a real result. Whichever side
-/// gets here first must win — the loser's response must be silently
-/// discarded, never written to stdout, since ResolverManager expects
-/// exactly one response per request id and a second one would be either
-/// dropped as "unknown id" (harmless, but wasted work) or, worse, matched
-/// against a NEWER request that happens to reuse the id space unexpectedly.
+/// Guards the resolve() timeout race (Step 14): the caller answers with
+/// uia_timeout after ~250ms, but the queued UIA work may still finish and
+/// produce a real result. First one here wins; the loser is discarded, since
+/// ResolverManager expects exactly one response per id.
 /// </summary>
 public sealed class AnsweredRequestTracker
 {
@@ -16,10 +12,8 @@ public sealed class AnsweredRequestTracker
     private readonly HashSet<int> _answered = new();
 
     /// <summary>
-    /// Atomically checks whether `id` is already answered and, if not,
-    /// claims it — returns true only for the first caller to claim a given
-    /// id. Callers must gate "should I actually write this response" on
-    /// the return value.
+    /// Atomically claims `id`, returning true only for the first caller.
+    /// Gate "should I write this response" on the result.
     /// </summary>
     public bool TryClaim(int id)
     {

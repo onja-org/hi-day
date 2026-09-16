@@ -188,12 +188,9 @@ async Task HandleResolveAsync(ResolveRequest request)
     }
     catch (Exception ex)
     {
-        // Type and stack only, never ex.Message: a COM/UIA exception message
-        // can quote the element text it choked on, which for an address bar
-        // is the URL itself — and stderr is forwarded to the agent's normal
-        // logger, where CLAUDE.md's "never log a full URL above debug level"
-        // applies. The type and the throwing frame are what identify the
-        // fault anyway.
+        // Type and stack only, never ex.Message: a UIA exception can quote the
+        // element text it choked on, which for an address bar is the URL, and
+        // stderr reaches the normal logger.
         Console.Error.WriteLine(
             $"[resolve] {ex.GetType().FullName} reading {focus.App}{Environment.NewLine}{ex.StackTrace}");
         WriteLine(new ErrorResponse(request.Id, new ResolveFailure(

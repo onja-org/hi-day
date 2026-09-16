@@ -3,11 +3,9 @@ import type { AppleEventsErrorCode } from './errors';
 export type PermissionState = 'unknown' | 'granted' | 'denied' | 'not-required';
 
 /**
- * Automation consent in macOS TCC is granted per (our app, target app) pair
- * — "Automation for Chrome" and "Automation for Safari" are entirely
- * separate grants. `system-events` is its own target because focus
- * detection (`focus-monitor.ts`) sends Apple Events to System Events
- * itself, independent of whichever browser is actually focused.
+ * TCC grants Automation per (our app, target app) pair — Chrome and Safari are
+ * separate grants. `system-events` is its own target because focus detection
+ * sends Apple Events to System Events regardless of which browser is focused.
  */
 export type AutomationTargetKey =
   | 'system-events'
@@ -57,12 +55,9 @@ function initialAutomationStates(): Record<AutomationTargetKey, PermissionState>
 }
 
 /**
- * Never assume a granted permission stays granted (Prompt B.3 point 1) — the
- * user can revoke any of these in System Settings at any moment, including
- * while the machine is asleep. `resetAll()` is what a caller invokes on
- * launch and on powerMonitor's `resume` event; nothing here schedules that
- * itself, since this class has no clock/lifecycle of its own (same
- * pure-state-container discipline as SessionEngine).
+ * Never assume a grant persists — the user can revoke it any time, including
+ * while asleep. Callers invoke `resetAll()` on launch and on resume; this
+ * class has no clock of its own.
  */
 export class PermissionStateMachine {
   private snapshot: PermissionSnapshot;

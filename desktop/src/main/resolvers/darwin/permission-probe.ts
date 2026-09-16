@@ -5,19 +5,16 @@ export type PermissionProbeResult =
   | { state: 'granted' }
   | { state: 'denied' }
   /**
-   * Either the browser isn't currently running (can't probe without
-   * launching it — not allowed), or the probe genuinely couldn't tell
-   * (timeout/busy/unexpected error). Onboarding treats both the same way:
-   * "nothing to report yet," never a false grant or false deny.
+   * The browser isn't running (probing would launch it — not allowed), or the
+   * probe couldn't tell. Onboarding treats both as "nothing to report yet",
+   * never a false grant or deny.
    */
   | { state: 'indeterminate'; reason: string };
 
 /**
- * Proactively triggers the Automation consent prompt for an installed,
- * currently-running browser during onboarding (Prompt B.3 point 3) —
- * shares the caller's `OsascriptRunner` instance rather than owning one, so
- * the "never more than one osascript process in flight" bound (Prompt B.1)
- * stays global across focus polling, resolving, and probing alike.
+ * Triggers the Automation consent prompt for a running browser during
+ * onboarding. Shares the caller's OsascriptRunner so the "one osascript in
+ * flight" bound stays global across polling, resolving and probing.
  */
 export class PermissionProbe {
   constructor(private readonly runner: OsascriptRunner) {}

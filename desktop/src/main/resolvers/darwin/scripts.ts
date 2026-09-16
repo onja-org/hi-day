@@ -8,11 +8,10 @@ import { join } from 'node:path';
  * docs/url-tracking-plan.md Step 8). `appName` (argv[1]) is the process/app
  * name from the browser registry's `darwinAppName`, never a bundle id.
  *
- * The `not-running`/`not-frontmost`/`no-window` checks run entirely inside
- * System Events, before ever sending `tell application appName` — that's
- * what guarantees this never launches the browser: `tell application X`
- * only auto-launches when X isn't already a running process, and we've
- * already confirmed it is one by this point.
+ * The not-running/not-frontmost/no-window checks run inside System Events
+ * before any `tell application appName`, which is what guarantees this never
+ * launches the browser — `tell application X` only auto-launches X when it is
+ * not already running.
  */
 export const CHROMIUM_FAMILY_SCRIPT = `
 on run argv

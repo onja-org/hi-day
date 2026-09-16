@@ -15,12 +15,9 @@ export interface DebugRecord {
   latencyMs: number;
   decision?: string;
   /**
-   * Executable name of the window that was focused for this reading
-   * (`chrome.exe`, `slack.exe`). Not a URL and not window-title text, so it
-   * carries none of the content the debug-log rules restrict — but without
-   * it a failed reading is unattributable, and `no-address-bar` against a
-   * chat app (correct) is indistinguishable from the same code against a
-   * browser (a bug).
+   * Executable name of the focused window (`chrome.exe`). Not URL or title
+   * text. Without it, `no-address-bar` against a chat app (correct) is
+   * indistinguishable from the same code against a browser (a bug).
    */
   app?: string;
 }
