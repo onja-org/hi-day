@@ -16,13 +16,12 @@ public sealed record AddressBarReadResult(string Value, bool? IsPrivate);
 /// available. Two areas here carry meaningfully higher risk than the rest
 /// of this project's native code:
 ///
-///  1. The CacheRequest usage below (batching value/keyboard-focus/
-///     control-type into one round trip) — FlaUI's exact CacheRequest API
-///     surface is less certain than the plain Win32 P/Invoke code
-///     elsewhere in this project, which is unusually stable and
-///     well-documented by comparison. If this fails to compile, that is
-///     the single most likely point of failure — fix from the real
-///     compiler error.
+///  1. RESOLVED. A CacheRequest here was the single biggest risk, exactly
+///     as predicted: it did not compile (7515cf5), and once it did, every
+///     browser read threw while non-browser windows resolved fine. It has
+///     been removed — see CollectToolbarCandidates. The prediction was
+///     right; the mitigation was to stop using the API, not to get it
+///     right blind.
 ///  2. IncognitoIndicatorAutomationId below is a GUESS, not a confirmed
 ///     value — see that constant's own comment. A wrong guess here fails
 ///     SILENTLY (an incognito window just never gets detected as
@@ -99,55 +98,37 @@ public sealed class AddressBarReader : IDisposable
     /// an Edit control matters and a bookmarks-only toolbar naturally
     /// contributes no candidates.
     ///
-    /// Uses a CacheRequest so value, keyboard-focus state, and control
-    /// type are fetched in ONE cross-process round trip per element
-    /// rather than three separate calls — see this class's own
-    /// higher-risk-area note about this specific API surface.
+    /// Each property read is its own cross-process round trip. A
+    /// CacheRequest was meant to batch them, and is gone — see the body.
     /// </summary>
     private static List<AddressBarCandidate> CollectToolbarCandidates(FlaUI.Core.AutomationElements.AutomationElement window)
     {
         var candidates = new List<AddressBarCandidate>();
 
-        // The cached property/pattern identifiers come from the automation
-        // instance's own libraries (AutomationBase.PropertyLibrary /
-        // .PatternLibrary), NOT from statics on AutomationElement — an
-        // earlier best-effort guess at this API cost three compile errors
-        // (CS1674/CS0120/CS0117). Verified against FlaUI's source:
-        // CacheRequest.Add takes a PropertyId or PatternId, CacheRequest
-        // itself is not IDisposable (Activate() returns the IDisposable
-        // that pops it), and FrameworkAutomationElementBase reaches
-        // HasKeyboardFocus through exactly this Element-group path.
+        // No CacheRequest here, deliberately. One was written into the
+        // original blind implementation and never worked: it failed to
+        // compile at all until 7515cf5, and on its first real run against
+        // Chrome and Edge every read threw, while cmd.exe and explorer.exe
+        // resolved correctly. A cache request caches the properties it is
+        // told to and no others, but these searches filter on ControlType,
+        // which was never among them — and browser windows are the ones
+        // deep enough to reach that nested search, which is exactly the
+        // split the logs showed.
         //
-        // The property-access calls inside the loop
-        // (.Patterns.Value.PatternOrDefault?.Value.Value,
-        // .Properties.HasKeyboardFocus.Value) were never in doubt: they
-        // reuse the exact syntax already confirmed to compile in the C.0
-        // spike's flaui-variant (see its fix history) rather than guessing
-        // new property names. Searching directly for ControlType.Edit (rather
-        // than enumerating every descendant and checking its type
-        // afterward) mirrors that exact confirmed FindFirstDescendant
-        // call, pluralized, instead of relying on an unverified
-        // parameterless "all descendants" overload.
-        var automation = window.Automation;
-        var cacheRequest = new CacheRequest();
-        cacheRequest.Add(automation.PropertyLibrary.Element.HasKeyboardFocus);
-        cacheRequest.Add(automation.PatternLibrary.ValuePattern);
-        cacheRequest.TreeScope = TreeScope.Descendants;
-
-        // Activate() returns the IDisposable that deactivates the request —
-        // the cache is only populated for calls made inside this block.
-        using (cacheRequest.Activate())
+        // It was only ever an optimisation. Searching without one is
+        // FlaUI's default path, so this trades a speed-up that has never
+        // once worked for the plain behaviour that should. If the reads
+        // now succeed but run slow, reintroduce caching deliberately, with
+        // ControlType included and measured on real hardware.
+        var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
+        foreach (var toolbar in toolbars)
         {
-            var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
-            foreach (var toolbar in toolbars)
+            var editElements = toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit));
+            foreach (var element in editElements)
             {
-                var editElements = toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit));
-                foreach (var element in editElements)
-                {
-                    var hasKeyboardFocus = element.Properties.HasKeyboardFocus.Value;
-                    var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
-                    candidates.Add(new AddressBarCandidate(value, hasKeyboardFocus, IsEdit: true));
-                }
+                var hasKeyboardFocus = element.Properties.HasKeyboardFocus.Value;
+                var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
+                candidates.Add(new AddressBarCandidate(value, hasKeyboardFocus, IsEdit: true));
             }
         }
 
