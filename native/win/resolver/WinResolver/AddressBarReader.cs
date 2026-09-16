@@ -108,27 +108,36 @@ public sealed class AddressBarReader : IDisposable
     {
         var candidates = new List<AddressBarCandidate>();
 
-        // AutomationElement.Properties.HasKeyboardFocus / .PatternIds.Value
-        // below are the property/pattern identifiers CacheRequest.Add
-        // expects — this specific naming is a best-effort recollection of
-        // FlaUI's documented caching API, less certain than the
-        // property-access calls inside the loop
+        // The cached property/pattern identifiers come from the automation
+        // instance's own libraries (AutomationBase.PropertyLibrary /
+        // .PatternLibrary), NOT from statics on AutomationElement — an
+        // earlier best-effort guess at this API cost three compile errors
+        // (CS1674/CS0120/CS0117). Verified against FlaUI's source:
+        // CacheRequest.Add takes a PropertyId or PatternId, CacheRequest
+        // itself is not IDisposable (Activate() returns the IDisposable
+        // that pops it), and FrameworkAutomationElementBase reaches
+        // HasKeyboardFocus through exactly this Element-group path.
+        //
+        // The property-access calls inside the loop
         // (.Patterns.Value.PatternOrDefault?.Value.Value,
-        // .Properties.HasKeyboardFocus.Value), which reuse the exact
-        // syntax already confirmed to compile in the C.0 spike's
-        // flaui-variant (see its fix history) rather than guessing new
-        // property names. Searching directly for ControlType.Edit (rather
+        // .Properties.HasKeyboardFocus.Value) were never in doubt: they
+        // reuse the exact syntax already confirmed to compile in the C.0
+        // spike's flaui-variant (see its fix history) rather than guessing
+        // new property names. Searching directly for ControlType.Edit (rather
         // than enumerating every descendant and checking its type
         // afterward) mirrors that exact confirmed FindFirstDescendant
         // call, pluralized, instead of relying on an unverified
         // parameterless "all descendants" overload.
-        using (var cacheRequest = new CacheRequest())
-        {
-            cacheRequest.Add(FlaUI.Core.AutomationElements.AutomationElement.Properties.HasKeyboardFocus);
-            cacheRequest.Add(FlaUI.Core.AutomationElements.AutomationElement.PatternIds.Value);
-            cacheRequest.TreeScope = TreeScope.Descendants;
-            cacheRequest.Activate();
+        var automation = window.Automation;
+        var cacheRequest = new CacheRequest();
+        cacheRequest.Add(automation.PropertyLibrary.Element.HasKeyboardFocus);
+        cacheRequest.Add(automation.PatternLibrary.ValuePattern);
+        cacheRequest.TreeScope = TreeScope.Descendants;
 
+        // Activate() returns the IDisposable that deactivates the request —
+        // the cache is only populated for calls made inside this block.
+        using (cacheRequest.Activate())
+        {
             var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
             foreach (var toolbar in toolbars)
             {
