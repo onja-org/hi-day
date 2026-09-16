@@ -118,6 +118,9 @@ public sealed class AddressBarReader : IDisposable
     /// TryGetValue is the non-throwing accessor (verified against FlaUI's
     /// AutomationProperty source, alongside ValueOrDefault and IsSupported).
     /// </summary>
+    /// <summary>Upper bound on TextPattern reads — see ReadTextPattern.</summary>
+    private const int MaxTextLength = 2048;
+
     private static string? ReadPatternValue(AutomationProperty<string>? property)
     {
         if (property is null)
@@ -153,7 +156,39 @@ public sealed class AddressBarReader : IDisposable
             return value;
         }
 
-        return ReadPatternValue(element.Patterns.LegacyIAccessible.PatternOrDefault?.Value);
+        value = ReadPatternValue(element.Patterns.LegacyIAccessible.PatternOrDefault?.Value);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return ReadTextPattern(element);
+    }
+
+    /// <summary>
+    /// Third and last source, for Gecko. Measured on Firefox, every Edit in
+    /// the window reported the same shape:
+    ///
+    ///   edits[value=False legacy=False textPattern=True name=True | ...]
+    ///
+    /// ValuePattern and LegacyIAccessible both empty, TextPattern present.
+    /// Chromium never reaches here — it answers on ValuePattern first.
+    ///
+    /// MaxTextLength caps GetText because DocumentRange spans the element's
+    /// whole text, and this is a URL bar, not a document. A URL longer than
+    /// this is already past what the normalization pipeline keeps.
+    /// </summary>
+    private static string? ReadTextPattern(FlaUI.Core.AutomationElements.AutomationElement element)
+    {
+        try
+        {
+            var text = element.Patterns.Text.PatternOrDefault?.DocumentRange.GetText(MaxTextLength);
+            return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>Same throwing hazard as ReadPatternValue; absent focus is the safe default.</summary>
