@@ -25,7 +25,7 @@ describe('renderer markup contract', () => {
     const html = read('index.html');
 
     const wanted = [
-      ...renderer.matchAll(/getElementById\('([^']+)'\)/g),
+      ...renderer.matchAll(/getElementById\(["']([^"']+)["']\)/g),
     ].map((match) => match[1]);
     const present = new Set(
       [...html.matchAll(/id="([^"]+)"/g)].map((match) => match[1]),
@@ -43,7 +43,7 @@ describe('renderer markup contract', () => {
     const styles = read('styles.css');
 
     const toggled = [
-      ...renderer.matchAll(/classList\.(?:toggle|add)\('([^']+)'/g),
+      ...renderer.matchAll(/classList\.(?:toggle|add)\(["']([^"']+)["']/g),
     ].map((match) => match[1]);
 
     expect(toggled.length).toBeGreaterThan(0);

@@ -72,6 +72,7 @@ export interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
+  waylandUnsupported: boolean;
 }
 
 export type TrackingResult<T> =

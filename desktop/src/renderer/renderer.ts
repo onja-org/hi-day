@@ -200,6 +200,9 @@ const idleNotice = document.getElementById("idle-notice")!;
 const screenRecordingBanner = document.getElementById(
   "screen-recording-banner",
 )!;
+const screenRecordingBannerMessage = document.getElementById(
+  "screen-recording-banner-message",
+)!;
 const screenRecordingGrantButton = document.getElementById(
   "screen-recording-grant-button",
 ) as HTMLButtonElement;
@@ -605,17 +608,28 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   if (!result.ok) return null;
   const status = result.data;
 
-  // Window titles and screenshots are gated by the same macOS permission
-  // (see docs/adr/0011-..., docs/adr/0012-...) — one banner covers both,
-  // shown whenever either capture feature is on and access isn't granted
-  // yet.
-  const captureRequested =
-    status.windowTrackingEnabled || status.screenshotsEnabled;
-  screenRecordingBanner.hidden = !(
-    captureRequested &&
+  // On macOS, window titles and screenshots are gated by the same Screen
+  // Recording permission (see docs/adr/0011-..., docs/adr/0012-...), so the
+  // banner there covers either capture feature being on. On Linux/Wayland,
+  // only screenshots need a grant (the portal call in screenshot-portal.ts)
+  // — window tracking already works there via AT-SPI2 (docs/adr/0016-...)
+  // with no permission step of its own.
+  const isMacCaptureGate =
     status.platform === "macos" &&
+    (status.windowTrackingEnabled || status.screenshotsEnabled);
+  const isWaylandScreenshotGate =
+    status.platform === "linux" &&
+    status.waylandUnsupported &&
+    status.screenshotsEnabled;
+  screenRecordingBanner.hidden = !(
+    (isMacCaptureGate || isWaylandScreenshotGate) &&
     !status.screenRecordingGranted
   );
+  screenRecordingBannerMessage.textContent = isWaylandScreenshotGate
+    ? "Screenshots are off — needs a one-time screen access grant."
+    : "Window title tracking is off — needs Screen Recording access.";
+  // No Linux equivalent of macOS's Screen Recording settings pane to open.
+  screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
   return status;
 }

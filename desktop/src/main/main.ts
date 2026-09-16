@@ -21,8 +21,9 @@ import { getOrCreateDeviceFingerprint } from './device-identity';
 import { GnomeWindowFocusTracker } from './gnome-window-focus-tracker';
 import { OfflineQueue } from './offline-queue';
 import { OfflineQueueStore } from './offline-queue-store';
-import { toDevicePlatform } from './platform';
+import { isWaylandSession, toDevicePlatform } from './platform';
 import type { DesktopDevicePlatform } from './platform';
+import { captureScreenViaPortal } from './screenshot-portal';
 import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
 import { ScreenshotUploader } from './screenshot-uploader';
 import { TimerStatusGate } from './timer-status-gate';
@@ -93,6 +94,7 @@ interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
+  waylandUnsupported: boolean;
 }
 
 // Otherwise userData resolves from package.json's "name" ("desktop"),
@@ -316,6 +318,8 @@ async function registerIpcHandlers(): Promise<void> {
   offlineQueue.registerSender(screenshotUploader);
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
+    isWaylandScreenshotGranted: () =>
+      authStore.load()?.waylandScreenshotGranted ?? false,
   });
 
   const activitySampleUploader = new ActivitySampleUploader(
@@ -586,15 +590,22 @@ async function registerIpcHandlers(): Promise<void> {
           windowTrackingEnabled,
           screenshotsEnabled,
           platform,
-          // Non-prompting status check (Electron's own API), not
-          // @paymoapp/active-window's `requestPermissions()` — that one
-          // triggers macOS's native Screen Recording prompt on first call,
-          // which must only ever fire from an explicit "Grant Access"
-          // click below, never from a status poll like this one.
+          // Non-prompting status check — never triggers a native prompt on
+          // its own (unlike @paymoapp/active-window's `requestPermissions()`
+          // or the portal's own `interactive: true` call, both of which must
+          // only ever fire from an explicit "Grant Access" click below).
+          // macOS reads the real OS permission; Linux/Wayland reads our own
+          // record of the one-time portal grant (see
+          // AuthStore.rememberWaylandScreenshotGranted) since the portal
+          // itself has no query-only "check without asking" API the way
+          // macOS's getMediaAccessStatus does.
           screenRecordingGranted:
             platform === 'macos'
               ? systemPreferences.getMediaAccessStatus('screen') === 'granted'
-              : true,
+              : platform === 'linux' && isWaylandSession()
+                ? (session.waylandScreenshotGranted ?? false)
+                : true,
+          waylandUnsupported: isWaylandSession(),
         },
       };
     },
@@ -632,16 +643,34 @@ async function registerIpcHandlers(): Promise<void> {
     return { active: anyCaptureEnabled && timerRunning };
   });
 
-  // Triggers the native macOS Screen Recording prompt — never called
+  // Triggers the native macOS Screen Recording prompt, or (on Linux/Wayland)
+  // the portal's one-time interactive Screenshot grant — never called
   // except from this handler, itself only ever invoked by an explicit
-  // "Grant Access" click in the renderer. macOS won't re-show the prompt
-  // on repeat silent calls, so this must never be called automatically
-  // (e.g. on launch).
-  ipcMain.handle('tracking:requestScreenRecordingAccess', (): void => {
-    if (process.platform === 'darwin') {
-      loadActiveWindowModule()?.requestPermissions();
-    }
-  });
+  // "Grant Access" click in the renderer. Neither platform re-shows its own
+  // prompt on a later silent call, so this must never fire automatically
+  // (e.g. on launch) — see screenshot-portal.ts and ScreenshotSampler's
+  // `isWaylandScreenshotGranted` gate.
+  ipcMain.handle(
+    'tracking:requestScreenRecordingAccess',
+    async (): Promise<void> => {
+      if (process.platform === 'darwin') {
+        loadActiveWindowModule()?.requestPermissions();
+        return;
+      }
+      if (process.platform === 'linux' && isWaylandSession()) {
+        const buffer = await captureScreenViaPortal(true);
+        if (!buffer) return;
+        authStore.rememberWaylandScreenshotGranted();
+        // The grant call itself already captured a real screenshot —
+        // upload it instead of discarding it, same shape as any other
+        // tick's sample.
+        screenshotUploader.upload({
+          buffer,
+          capturedAt: new Date().toISOString(),
+        });
+      }
+    },
+  );
 
   // Fallback for when macOS won't re-show the native prompt (already
   // asked/denied before) — opens the Screen Recording pane directly so the
