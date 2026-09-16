@@ -3,18 +3,15 @@
 import { useState } from "react";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
 import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
-import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
-import { useTimeEntries } from "@/hooks/useTimeEntries";
 import type { TimeEntryListItem } from "@/types/timeEntry";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
 import { TimesheetDayGroupSection } from "./TimesheetDayGroupSection";
 
 type TimesheetTableProps = {
   organisationId: string;
-  /** Omit to view the caller's own timesheet. */
-  membershipId?: string;
+  entries: TimeEntryListItem[];
+  /** True when viewing the caller's own timesheet — only changes the empty-state copy. */
+  isOwnTimesheet: boolean;
   /** Defaults to "today". */
   datePreset?: TimesheetDatePreset;
 };
@@ -28,45 +25,17 @@ const DATE_PRESET_EMPTY_LABEL: Record<Exclude<TimesheetDatePreset, "all">, strin
 
 export function TimesheetTable({
   organisationId,
-  membershipId,
+  entries,
+  isOwnTimesheet,
   datePreset = "today",
 }: TimesheetTableProps) {
-  const range = getTimesheetDateRange(datePreset);
-  const entriesQuery = useTimeEntries(organisationId, {
-    membershipId,
-    from: range?.from,
-    to: range?.to,
-  });
   const [editingEntry, setEditingEntry] = useState<TimeEntryListItem | null>(null);
-
-  if (entriesQuery.isLoading) {
-    return (
-      <p className="flex items-center gap-2 text-slate-900">
-        <Spinner className="text-primary-dark" />
-        Loading timesheet…
-      </p>
-    );
-  }
-
-  if (entriesQuery.isError || !entriesQuery.data) {
-    return (
-      <ErrorMessage
-        message={
-          entriesQuery.error instanceof Error
-            ? entriesQuery.error.message
-            : "Could not load this timesheet."
-        }
-      />
-    );
-  }
-
-  const entries = entriesQuery.data;
 
   if (entries.length === 0) {
     const period = datePreset === "all" ? "" : ` for ${DATE_PRESET_EMPTY_LABEL[datePreset]}`;
     return (
       <p className="text-slate-900">
-        {membershipId ? `No hours logged${period}.` : `No hours logged${period} yet.`}
+        {isOwnTimesheet ? `No hours logged${period} yet.` : `No hours logged${period}.`}
       </p>
     );
   }

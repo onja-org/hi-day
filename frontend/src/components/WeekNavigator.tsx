@@ -30,6 +30,7 @@ export function WeekNavigator({ weekOffset, onChange }: WeekNavigatorProps) {
       </button>
       <span className="min-w-40 text-center text-sm font-medium text-slate-900">
         {formatRangeLabel(start, end)}
+        {weekOffset === 0 && <span className="text-primary"> · This week</span>}
       </span>
       <button
         type="button"

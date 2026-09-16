@@ -7,10 +7,12 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
+import { getWeekRange } from "@/lib/getWeekRange";
+import { ErrorMessage } from "./ErrorMessage";
 import { ExportCsvButton } from "./ExportCsvButton";
+import { Spinner } from "./Spinner";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
 import { TimesheetCalendarGrid } from "./TimesheetCalendarGrid";
-import { TimesheetDailyChart } from "./TimesheetDailyChart";
 import { TimesheetProjectBreakdown } from "./TimesheetProjectBreakdown";
 import { TimesheetSummaryTiles } from "./TimesheetSummaryTiles";
 import { TimesheetTable } from "./TimesheetTable";
@@ -43,8 +45,6 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   // admins/managers.
   const [viewingMembershipId, setViewingMembershipId] = useState("");
   const [viewMode, setViewMode] = useState<TimesheetViewMode>("daily");
-  // "this_week" (not "today") so the daily chart has something to show by
-  // default — a single day doesn't make a useful chart.
   const [datePreset, setDatePreset] = useState<TimesheetDatePreset>("this_week");
   // Shared by the Weekly and Calendar tabs so switching between them keeps
   // the same week in view.
@@ -65,33 +65,19 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
     { enabled: viewMode === "daily" },
   );
 
+  const now = new Date();
+  const { start: weekStart, end: weekEnd } = getWeekRange(now, weekOffset);
+  const weekEntriesQuery = useTimeEntries(
+    organisationId,
+    { membershipId, from: weekStart, to: weekEnd },
+    { enabled: viewMode === "weekly" || viewMode === "calendar" },
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
-          <div
-            role="group"
-            aria-label="View mode"
-            className="inline-flex rounded-lg border border-input-border p-1"
-          >
-            {Object.entries(VIEW_MODE_LABELS).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={viewMode === value}
-                onClick={() => setViewMode(value as TimesheetViewMode)}
-                className={clsx(
-                  "cursor-pointer rounded-md px-3 py-1 text-sm font-medium transition-colors duration-150",
-                  viewMode === value
-                    ? "bg-primary text-white"
-                    : "text-slate-900 hover:bg-cream",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
           {canViewOthers && membersQuery.data && (
             <select
               value={viewingMembershipId}
@@ -106,26 +92,40 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
               ))}
             </select>
           )}
+          {isOwnTimesheet && (
+            <button
+              type="button"
+              onClick={() => setAddingTime(true)}
+              className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+            >
+              Add time
+            </button>
+          )}
         </div>
-        {isOwnTimesheet && (
-          <button
-            type="button"
-            onClick={() => setAddingTime(true)}
-            className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
-          >
-            Add time
-          </button>
-        )}
       </div>
+
+      <nav role="tablist" aria-label="View mode" className="flex gap-1 border-b border-input-border">
+        {Object.entries(VIEW_MODE_LABELS).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={viewMode === value}
+            onClick={() => setViewMode(value as TimesheetViewMode)}
+            className={clsx(
+              "cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150",
+              viewMode === value
+                ? "border-primary text-primary"
+                : "border-transparent text-slate-900 hover:text-primary-dark",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {viewMode === "daily" && (
         <>
-          <TimesheetSummaryTiles
-            organisationId={organisationId}
-            membershipId={membershipId}
-            datePreset={datePreset}
-          />
-
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div
               role="group"
@@ -155,53 +155,69 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
             />
           </div>
 
-          {(datePreset === "this_week" || datePreset === "this_month") && (
-            <TimesheetDailyChart
-              organisationId={organisationId}
-              membershipId={membershipId}
-              datePreset={datePreset}
+          {dailyEntriesQuery.isLoading && (
+            <p className="flex items-center gap-2 text-slate-900">
+              <Spinner className="text-primary-dark" />
+              Loading timesheet…
+            </p>
+          )}
+
+          {dailyEntriesQuery.isError && (
+            <ErrorMessage
+              message={
+                dailyEntriesQuery.error instanceof Error
+                  ? dailyEntriesQuery.error.message
+                  : "Could not load this timesheet."
+              }
             />
           )}
 
-          <div className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-primary-dark">By project</h2>
-            <TimesheetProjectBreakdown
-              organisationId={organisationId}
-              membershipId={membershipId}
-              datePreset={datePreset}
-            />
-          </div>
+          {dailyEntriesQuery.data && (
+            <>
+              <TimesheetSummaryTiles entries={dailyEntriesQuery.data} datePreset={datePreset} />
 
-          <div className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold text-primary-dark">Entries</h2>
-            <TimesheetTable
-              organisationId={organisationId}
-              membershipId={membershipId}
-              datePreset={datePreset}
-            />
-          </div>
+              <TimesheetProjectBreakdown entries={dailyEntriesQuery.data} />
+
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-primary-dark">Entries</h2>
+                <TimesheetTable
+                  organisationId={organisationId}
+                  entries={dailyEntriesQuery.data}
+                  isOwnTimesheet={isOwnTimesheet}
+                  datePreset={datePreset}
+                />
+              </div>
+            </>
+          )}
         </>
       )}
 
-      {viewMode === "weekly" && (
+      {(viewMode === "weekly" || viewMode === "calendar") && (
         <div className="flex flex-col gap-3">
-          <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
-          <TimesheetWeeklyMatrix
-            organisationId={organisationId}
-            membershipId={membershipId}
-            weekOffset={weekOffset}
-          />
-        </div>
-      )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
+            <ExportCsvButton
+              entries={weekEntriesQuery.data ?? []}
+              filename={`timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}.csv`}
+            />
+          </div>
 
-      {viewMode === "calendar" && (
-        <div className="flex flex-col gap-3">
-          <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
-          <TimesheetCalendarGrid
-            organisationId={organisationId}
-            membershipId={membershipId}
-            weekOffset={weekOffset}
-          />
+          {weekEntriesQuery.isLoading && (
+            <p className="flex items-center gap-2 text-slate-900">
+              <Spinner className="text-primary-dark" />
+              Loading timesheet…
+            </p>
+          )}
+
+          {weekEntriesQuery.isError && <ErrorMessage message="Could not load this timesheet." />}
+
+          {weekEntriesQuery.data && viewMode === "weekly" && (
+            <TimesheetWeeklyMatrix entries={weekEntriesQuery.data} start={weekStart} />
+          )}
+
+          {weekEntriesQuery.data && viewMode === "calendar" && (
+            <TimesheetCalendarGrid entries={weekEntriesQuery.data} start={weekStart} now={now} />
+          )}
         </div>
       )}
 

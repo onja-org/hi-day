@@ -1,18 +1,14 @@
-import { ActivityTabs } from "@/components/ActivityTabs";
-import { NotesPageContent } from "@/components/NotesPageContent";
+import { redirect } from "next/navigation";
 
 type ActivitiesPageProps = {
   params: Promise<{ organisationId: string }>;
 };
 
+// The bare /activities path has no content of its own — it opens on the
+// first tab (Apps), matching ActivityTabs' own ordering. Notes moved to
+// its own /activities/notes route so it no longer needs to live here.
 export default async function ActivitiesPage({ params }: ActivitiesPageProps) {
   const { organisationId } = await params;
 
-  return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold text-primary-dark">Activity</h1>
-      <ActivityTabs organisationId={organisationId} />
-      <NotesPageContent organisationId={organisationId} />
-    </div>
-  );
+  redirect(`/organisations/${organisationId}/activities/apps`);
 }

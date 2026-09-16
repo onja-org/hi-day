@@ -16,7 +16,7 @@ export function ActivityTabs({ organisationId }: ActivityTabsProps) {
   const appsHref = `/organisations/${organisationId}/activities/apps`;
   const urlsHref = `/organisations/${organisationId}/activities/urls`;
   const screenshotsHref = `/organisations/${organisationId}/activities/screenshots`;
-  const notesHref = `/organisations/${organisationId}/activities`;
+  const notesHref = `/organisations/${organisationId}/activities/notes`;
 
   // Tracked-data tabs first, Notes last as the lighter annotation layer —
   // a one-line reorder, easy to revisit.

@@ -1,53 +1,24 @@
 "use client";
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { formatDuration } from "@/lib/formatDuration";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
 import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
-import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
+import type { TimeEntryListItem } from "@/types/timeEntry";
 import { DashboardKpiTile } from "./DashboardKpiTile";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
 
 // A daily-hours target only makes sense as a comparison for a single-day
 // view — "12h of 8h target" for a whole week/month would be misleading.
 const SINGLE_DAY_PRESETS: TimesheetDatePreset[] = ["today", "yesterday"];
 
 type TimesheetSummaryTilesProps = {
-  organisationId: string;
-  membershipId?: string;
+  entries: TimeEntryListItem[];
   datePreset: TimesheetDatePreset;
 };
 
-export function TimesheetSummaryTiles({
-  organisationId,
-  membershipId,
-  datePreset,
-}: TimesheetSummaryTilesProps) {
-  const range = getTimesheetDateRange(datePreset);
-  const entriesQuery = useTimeEntries(organisationId, {
-    membershipId,
-    from: range?.from,
-    to: range?.to,
-  });
+export function TimesheetSummaryTiles({ entries, datePreset }: TimesheetSummaryTilesProps) {
   const organisationQuery = useCurrentOrganisation();
-
-  if (entriesQuery.isLoading) {
-    return (
-      <p className="flex items-center gap-2 text-slate-900">
-        <Spinner className="text-primary-dark" />
-        Loading…
-      </p>
-    );
-  }
-
-  if (entriesQuery.isError || !entriesQuery.data) {
-    return <ErrorMessage message="Could not load this timesheet's summary." />;
-  }
-
-  const entries = entriesQuery.data;
   const dayGroups = groupTimeEntriesByDay(entries);
   const totalSeconds = dayGroups.reduce((sum, group) => sum + group.totalSeconds, 0);
   const averageSecondsPerDay =
