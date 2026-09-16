@@ -56,6 +56,20 @@ public sealed class AddressBarReader : IDisposable
         if (window is null)
         {
             LastCandidates = Array.Empty<AddressBarCandidate>();
+
+            // Instrumented separately from the two searches below: this
+            // path returns before any tree walk, so a browser failing here
+            // produces a no-address-bar in the log and NOTHING from the
+            // probe — which is exactly how Firefox first presented, and
+            // read as "the probe is not running" rather than "the window
+            // could not be attached to".
+            if (Environment.GetEnvironmentVariable("WINRESOLVER_DIAGNOSE_TREE") == "1")
+            {
+                Console.Error.WriteLine(
+                    $"[tree] {focus.App} stage=window-null hwnd={focus.Hwnd} pid={focus.Pid} " +
+                    "— UIA could not attach to this handle at all");
+            }
+
             throw new ResolveFailureException(new ResolveFailure(
                 ResolveErrorCode.NoAddressBar, "Could not attach to the focused window via UIA."));
         }
