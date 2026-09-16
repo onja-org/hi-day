@@ -197,8 +197,34 @@ public sealed class AddressBarReader : IDisposable
         var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
         foreach (var toolbar in toolbars)
         {
-            var editElements = toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit));
-            foreach (var element in editElements)
+            Collect(toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit)));
+        }
+
+        // Gecko fallback. Firefox exposes four ToolBars and exactly one Edit
+        // — and that Edit, the address bar, sits under none of them:
+        //
+        //   [tree] firefox.exe toolbars=4 editsAnywhere=1 toolbarEdits=0
+        //
+        // measured on Windows 10 with Firefox's accessibility engine fully
+        // active (three Documents present). The toolbar scoping is right for
+        // the five Chromium browsers, which all resolve in 40-85ms through
+        // the loop above; it is simply not how Gecko nests its URL bar.
+        //
+        // Only reached when the narrow search found nothing, so Chromium
+        // never pays for it. Widening the scope risks pulling in page-content
+        // inputs, which is what the narrowing was guarding against — but the
+        // guard that actually matters is downstream and unchanged:
+        // SelectGenericFallback still requires a candidate's value to
+        // normalize to a valid host and to not hold keyboard focus, so a
+        // search box containing "how do I center a div" cannot win.
+        if (candidates.Count == 0)
+        {
+            Collect(window.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit)));
+        }
+
+        void Collect(FlaUI.Core.AutomationElements.AutomationElement[] elements)
+        {
+            foreach (var element in elements)
             {
                 var hasKeyboardFocus = element.Properties.HasKeyboardFocus.Value;
                 var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
