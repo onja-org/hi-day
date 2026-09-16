@@ -1,10 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useMyScreenshots } from "@/hooks/useMyScreenshots";
+import { useSearchParams } from "next/navigation";
+import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import type { ScreenshotSummaryItem } from "@/types/screenshot";
+import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityMeter } from "./ActivityMeter";
 import { ErrorMessage } from "./ErrorMessage";
+import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
 import { Spinner } from "./Spinner";
 
 type ScreenshotsPageContentProps = {
@@ -28,66 +32,83 @@ function formatPeriodLabel(screenshot: ScreenshotSummaryItem): string {
 export function ScreenshotsPageContent({
   organisationId,
 }: ScreenshotsPageContentProps) {
-  const screenshotsQuery = useMyScreenshots(organisationId);
+  const searchParams = useSearchParams();
+  const organisationQuery = useCurrentOrganisation();
+  const canViewOthers =
+    organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
 
-  if (screenshotsQuery.isLoading) {
-    return (
-      <p className="flex items-center gap-2 text-slate-900">
-        <Spinner className="text-primary-dark" />
-        Loading screenshots…
-      </p>
-    );
-  }
+  const date = searchParams.get("date") ?? undefined;
+  const membershipId = searchParams.get("membershipId") ?? undefined;
+  const untracked = searchParams.get("untracked") === "1";
+  const projectId = untracked ? undefined : (searchParams.get("projectId") ?? undefined);
 
-  if (screenshotsQuery.isError || !screenshotsQuery.data) {
-    return (
-      <ErrorMessage
-        message={
-          screenshotsQuery.error instanceof Error
-            ? screenshotsQuery.error.message
-            : "Could not load screenshots."
-        }
-      />
-    );
-  }
-
-  const screenshots = screenshotsQuery.data;
-  console.log(screenshots);
-
-  if (screenshots.length === 0) {
-    return (
-      <p className="text-slate-900">
-        No screenshots captured today yet — this fills in once screenshots are
-        turned on and a timer is running.
-      </p>
-    );
-  }
+  const screenshotsQuery = useActivityScreenshots(organisationId, {
+    date,
+    membershipId,
+    projectId,
+    untracked,
+  });
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {screenshots.map((screenshot) => (
-        <figure
-          key={screenshot.id}
-          className="flex flex-col gap-1.5 overflow-hidden rounded-md border border-input-border bg-white"
-        >
-          <div className="relative aspect-video w-full bg-cream">
-            {/* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */}
-            <Image
-              src={screenshot.url}
-              alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
-              fill
-              unoptimized
-              className="object-cover"
-            />
-          </div>
-          <figcaption className="flex flex-col gap-2 px-2 pb-2">
-            <span className="text-sm text-slate-900/70">
-              {formatPeriodLabel(screenshot)}
-            </span>
-            <ActivityMeter activePercentage={screenshot.activePercentage} />
-          </figcaption>
-        </figure>
-      ))}
+    <div className="flex flex-col gap-4">
+      <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
+
+      {screenshotsQuery.isLoading && (
+        <p className="flex items-center gap-2 text-slate-900">
+          <Spinner className="text-primary-dark" />
+          Loading screenshots…
+        </p>
+      )}
+
+      {screenshotsQuery.isError && (
+        <ErrorMessage
+          message={
+            screenshotsQuery.error instanceof Error
+              ? screenshotsQuery.error.message
+              : "Could not load screenshots."
+          }
+        />
+      )}
+
+      {screenshotsQuery.data && screenshotsQuery.data.length === 0 && (
+        <p className="text-slate-900">
+          {projectId || untracked
+            ? "No screenshots match this filter for this day."
+            : "No screenshots captured this day yet — this fills in once screenshots are turned on and a timer is running."}
+        </p>
+      )}
+
+      {screenshotsQuery.data && screenshotsQuery.data.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {screenshotsQuery.data.map((screenshot) => (
+            <figure
+              key={screenshot.id}
+              className="flex flex-col gap-1.5 overflow-hidden rounded-md border border-input-border bg-white"
+            >
+              <div className="relative aspect-video w-full bg-cream">
+                {/* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */}
+                <Image
+                  src={screenshot.url}
+                  alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
+              <figcaption className="flex flex-col gap-2 px-2 pb-2">
+                <span className="text-sm text-slate-900/70">
+                  {formatPeriodLabel(screenshot)}
+                </span>
+                <ProjectBadgeOrUntracked
+                  organisationId={organisationId}
+                  projectId={screenshot.projectId}
+                />
+                <ActivityMeter activePercentage={screenshot.activePercentage} />
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

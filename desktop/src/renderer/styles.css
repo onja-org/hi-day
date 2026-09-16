@@ -153,54 +153,17 @@ select {
   border-left: 3px solid #259cd9;
 }
 
-.consent-text-box {
-  max-height: 220px;
+/* Passive, non-blocking disclosure notice (see docs/adr/0015-...) — reuses
+   .idle-banner's attention-getting look, just with a scrollable text area
+   since disclosure text can run long. */
+#disclosure-text {
+  max-height: 160px;
   overflow-y: auto;
-  margin: 12px 0;
-  padding: 12px;
-  border: 1px solid #d0d5dd;
-  border-radius: 6px;
-  background: #f9fafb;
-}
-
-.consent-text-box p {
-  margin: 0;
-  font-size: 13px;
-  color: #003673;
   white-space: pre-wrap;
 }
 
-#consent-actions {
-  display: flex;
-  gap: 10px;
-}
-
-#consent-actions button {
-  margin-top: 20px;
-}
-
-.consent-decline {
-  background: transparent;
+#disclosure-error {
   color: #b42318;
-  border: 1px solid #b42318;
-}
-
-#consent-blocked-message {
-  margin-top: 20px;
-  padding: 12px;
-  border: 1px solid #fda29b;
-  border-radius: 6px;
-  background: #fef3f2;
-  color: #b42318;
-  font-size: 13px;
-}
-
-/* Neutral, not red like .consent-decline — this is an exit, not a decision. */
-#consent-logout-button {
-  margin-top: 12px;
-  background: transparent;
-  color: #475467;
-  border: 1px solid #d0d5dd;
 }
 
 #stop-button {

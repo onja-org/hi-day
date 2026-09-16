@@ -1145,6 +1145,66 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  describe('listCoveringWindow', () => {
+    function makeQueryBuilderRepo(rows: unknown[] = []) {
+      const queryBuilder = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(rows),
+      };
+      const createQueryBuilder = jest.fn().mockReturnValue(queryBuilder);
+      const repo = {
+        createQueryBuilder,
+      } as unknown as Repository<TimeEntry>;
+      return { repo, queryBuilder, createQueryBuilder };
+    }
+
+    it('queries overlap (not containment) scoped to the org and membership', async () => {
+      const { repo, queryBuilder, createQueryBuilder } = makeQueryBuilderRepo();
+      const service = makeService({ timeEntriesRepo: repo });
+      const start = new Date('2026-01-05T00:00:00.000Z');
+      const end = new Date('2026-01-06T00:00:00.000Z');
+
+      await service.listCoveringWindow('org-1', 'm-1', start, end);
+
+      expect(createQueryBuilder).toHaveBeenCalledWith('entry');
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'entry.organisationId = :organisationId',
+        { organisationId: 'org-1' },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'entry.membershipId = :membershipId',
+        { membershipId: 'm-1' },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'entry.startedAt < :end',
+        { end },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(entry.endedAt IS NULL OR entry.endedAt > :start)',
+        { start },
+      );
+    });
+
+    it('returns the rows from the query builder', async () => {
+      const rows = [
+        { id: 'e-1', projectId: 'p-1', startedAt: new Date(), endedAt: null },
+      ];
+      const { repo } = makeQueryBuilderRepo(rows);
+      const service = makeService({ timeEntriesRepo: repo });
+
+      const result = await service.listCoveringWindow(
+        'org-1',
+        'm-1',
+        new Date('2026-01-05T00:00:00.000Z'),
+        new Date('2026-01-06T00:00:00.000Z'),
+      );
+
+      expect(result).toBe(rows);
+    });
+  });
+
   describe('hasRunningEntryForProject', () => {
     it('returns true when a running entry exists for the project', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({

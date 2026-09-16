@@ -275,54 +275,6 @@ describe('DisclosureService', () => {
     });
   });
 
-  describe('isCaptureConsentSatisfied', () => {
-    it('fails closed when no published version exists yet', async () => {
-      const service = makeService({
-        disclosureVersionsRepo: makeDisclosureVersionsRepo({
-          findOne: jest.fn().mockResolvedValue(null),
-        }),
-      });
-
-      await expect(
-        service.isCaptureConsentSatisfied('org-1', null, 'device-1'),
-      ).resolves.toBe(false);
-    });
-
-    it('is false when the device last declined', async () => {
-      const service = makeService({
-        disclosureVersionsRepo: makeDisclosureVersionsRepo({
-          findOne: jest.fn().mockResolvedValue(DEFAULT_VERSION),
-        }),
-        consentRecordsRepo: makeConsentRecordsRepo({
-          findOne: jest
-            .fn()
-            .mockResolvedValue({ decision: ConsentDecision.DECLINED }),
-        }),
-      });
-
-      await expect(
-        service.isCaptureConsentSatisfied('org-1', null, 'device-1'),
-      ).resolves.toBe(false);
-    });
-
-    it('is true only once the device has granted consent for the currently resolved version', async () => {
-      const service = makeService({
-        disclosureVersionsRepo: makeDisclosureVersionsRepo({
-          findOne: jest.fn().mockResolvedValue(DEFAULT_VERSION),
-        }),
-        consentRecordsRepo: makeConsentRecordsRepo({
-          findOne: jest
-            .fn()
-            .mockResolvedValue({ decision: ConsentDecision.GRANTED }),
-        }),
-      });
-
-      await expect(
-        service.isCaptureConsentSatisfied('org-1', null, 'device-1'),
-      ).resolves.toBe(true);
-    });
-  });
-
   describe('recordConsent', () => {
     it('rejects a disclosureVersionId that is not a published version of this org', async () => {
       const service = makeService({

@@ -91,11 +91,11 @@ describe('ScreenshotUploader', () => {
     store.close();
   });
 
-  it('discards (does not retry) a capture rejected with 403 on the upload-url request — a consent-gated rejection, not a transient failure', async () => {
+  it('discards (does not retry) a capture rejected with 403 on the upload-url request — a permanent rejection, not a transient failure', async () => {
     const { client, putScreenshot, recordScreenshot } = makeClient({
       requestScreenshotUploadUrl: vi
         .fn()
-        .mockResolvedValue({ ok: false, status: 403, message: 'no consent' }),
+        .mockResolvedValue({ ok: false, status: 403, message: 'forbidden' }),
     });
     const { uploader, offlineQueue, store } = await makeUploader(makeSession('token-1'), client);
 

@@ -84,7 +84,7 @@ export interface UpdateCheckResult {
   latestVersion?: string;
 }
 
-/** See docs/adr/0014-.... */
+/** See docs/adr/0015-.... */
 export type ConsentDecision = 'granted' | 'declined';
 
 export interface ConsentStatus {

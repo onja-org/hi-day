@@ -15,8 +15,9 @@ describe('CaptureSettingsGate', () => {
       screenshotsEnabled: false,
       screenshotFrequencySeconds: 0,
       activityTrackingEnabled: false,
-      // Matches OFF_SETTINGS' own fail-closed default — see
-      // capture-settings-gate.ts's comment on it.
+      // Matches OFF_SETTINGS' own default — see capture-settings-gate.ts's
+      // comment on it. Informational only now (drives the disclosure
+      // banner), never gates capture.
       consent: { required: true },
       ...overrides,
     };

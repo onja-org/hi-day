@@ -4,7 +4,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
-import type { AppTimeSummary } from '../services/app-events.service';
+import type { AppActivityDay } from '../services/app-events.service';
 import { AppEventsService } from '../services/app-events.service';
 
 @Controller('organisations/:id/app-events')
@@ -18,14 +18,17 @@ export class AppEventsController {
   constructor(private readonly appEventsService: AppEventsService) {}
 
   @Get('summary/mine')
-  getMySummary(
+  getMyDay(
     @Query('date') date: string | undefined,
+    @Query('projectId') projectId: string | undefined,
+    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
-  ): Promise<AppTimeSummary> {
-    return this.appEventsService.getMySummary(
+  ): Promise<AppActivityDay> {
+    return this.appEventsService.getMyDay(
       request.organisationId!,
       request.userId,
       date,
+      { projectId: untracked === '1' ? null : projectId },
     );
   }
 }

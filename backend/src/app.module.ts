@@ -12,6 +12,7 @@ import { DatabaseModule } from './database/database.module';
 import { DeviceTrackingModule } from './device-tracking/modules/device-tracking.module';
 import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
+import { NotesModule } from './notes/modules/notes.module';
 import { ProjectsModule } from './projects/modules/projects.module';
 import { ScreenshotsModule } from './screenshots/modules/screenshots.module';
 import { TasksModule } from './tasks/modules/tasks.module';
@@ -38,6 +39,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     ActivitiesModule,
     AppEventsModule,
     ScreenshotsModule,
+    NotesModule,
     TeamsModule,
     UrlSessionsModule,
     DashboardModule,

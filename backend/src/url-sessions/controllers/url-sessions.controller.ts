@@ -4,7 +4,10 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
-import type { UrlSessionGroup } from '../services/url-sessions.service';
+import type {
+  UrlActivityDay,
+  UrlSessionGroup,
+} from '../services/url-sessions.service';
 import { UrlSessionsService } from '../services/url-sessions.service';
 
 // Not scoped to a :projectId — this is per-member browsing history, same
@@ -25,6 +28,23 @@ export class UrlSessionsController {
     return this.urlSessionsService.listGroupedByUrl(
       request.organisationId!,
       request.userId,
+      membershipId,
+    );
+  }
+
+  @Get('day')
+  getDay(
+    @Query('membershipId') membershipId: string | undefined,
+    @Query('date') date: string | undefined,
+    @Query('projectId') projectId: string | undefined,
+    @Query('untracked') untracked: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<UrlActivityDay> {
+    return this.urlSessionsService.getDayGroupedByUrl(
+      request.organisationId!,
+      request.userId,
+      date,
+      { projectId: untracked === '1' ? null : projectId },
       membershipId,
     );
   }

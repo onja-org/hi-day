@@ -5,15 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { Between, DataSource, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { UrlSession } from '../../database/entities/url-session.entity';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../dto/url-session-entry.dto';
 
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 // A personal "sites visited" view, not a report — mirrors
 // TimeEntriesService's own LIST_LIMIT precedent. Revisit with real
@@ -36,6 +41,38 @@ export interface UrlSessionGroup {
   sessionCount: number;
 }
 
+export interface UrlHourBucketPage {
+  /** The project whose TimeEntry covered this session's startedAt — null
+   * means no timer was running (the common case). */
+  projectId: string | null;
+  url: string;
+  host: string;
+  title: string | null;
+  /** Summed whole — a session's `activeMs` is never split across an hour
+   * boundary (it isn't `endedAt - startedAt`, see UrlSession's own doc
+   * comment, so there's no principled way to partition it; it's counted in
+   * full in the hour its session started). */
+  activeMs: number;
+  sessionCount: number;
+}
+
+export interface UrlHourBucket {
+  hourStart: string;
+  pages: UrlHourBucketPage[];
+}
+
+export interface UrlActivityDay {
+  date: string;
+  totalActiveMs: number;
+  buckets: UrlHourBucket[];
+}
+
+interface UrlActivityFilter {
+  /** undefined = every project; null = untracked only; a string = that
+   * project only. */
+  projectId?: string | null;
+}
+
 @Injectable()
 export class UrlSessionsService {
   constructor(
@@ -45,6 +82,7 @@ export class UrlSessionsService {
     private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   /**
@@ -111,7 +149,11 @@ export class UrlSessionsService {
     );
 
     const rows = await this.urlSessions.find({
-      where: { membershipId: subjectMembershipId, url: Not('') },
+      where: {
+        organisationId,
+        membershipId: subjectMembershipId,
+        url: Not(''),
+      },
       order: { endedAt: 'DESC' },
       take: RAW_SESSION_LIMIT,
     });
@@ -140,6 +182,104 @@ export class UrlSessionsService {
     return Array.from(byUrl.values()).sort(
       (a, b) => b.lastVisitedAt.getTime() - a.lastVisitedAt.getTime(),
     );
+  }
+
+  /**
+   * One day's tracked URLs, grouped by hour and (real, `TimeEntry`-derived)
+   * project, then by exact URL within each — the Activities page's
+   * hour-bucketed view. Deliberately a separate method from
+   * `listGroupedByUrl` rather than adding date-scoping to it: that method's
+   * two other callers (the dashboard's recent-URLs preview, the member
+   * detail page) depend on its current "most recent 1000 rows, no date
+   * filter" behaviour.
+   */
+  async getDayGroupedByUrl(
+    organisationId: string,
+    userId: string,
+    date: string | undefined,
+    filter: UrlActivityFilter = {},
+    targetMembershipId?: string,
+  ): Promise<UrlActivityDay> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const subjectMembershipId = await this.resolveSubjectMembershipId(
+      organisationId,
+      membership,
+      targetMembershipId,
+    );
+    const resolvedDate = this.resolveDate(date);
+    const start = new Date(`${resolvedDate}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + MS_PER_DAY);
+
+    const [rows, coveringEntries] = await Promise.all([
+      this.urlSessions.find({
+        where: {
+          organisationId,
+          membershipId: subjectMembershipId,
+          url: Not(''),
+          startedAt: Between(start, end),
+        },
+        order: { startedAt: 'ASC' },
+      }),
+      this.timeEntriesService.listCoveringWindow(
+        organisationId,
+        subjectMembershipId,
+        start,
+        end,
+      ),
+    ]);
+
+    // Keyed by `${hourStart}|${projectId ?? 'untracked'}|${url}`.
+    const cells = new Map<string, UrlHourBucketPage & { hourStart: string }>();
+    for (const row of rows) {
+      const projectId =
+        findEntryCovering(coveringEntries, row.startedAt)?.projectId ?? null;
+      const hourStart = new Date(
+        Math.floor(row.startedAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
+      ).toISOString();
+      const key = `${hourStart}|${projectId ?? 'untracked'}|${row.url}`;
+
+      const existing = cells.get(key);
+      if (existing) {
+        existing.activeMs += row.activeMs;
+        existing.sessionCount += 1;
+        existing.title = row.title ?? existing.title;
+        continue;
+      }
+      cells.set(key, {
+        hourStart,
+        projectId,
+        url: row.url,
+        host: row.host,
+        title: row.title,
+        activeMs: row.activeMs,
+        sessionCount: 1,
+      });
+    }
+
+    const matchesFilter = (projectId: string | null): boolean => {
+      if (filter.projectId === undefined) return true;
+      return filter.projectId === projectId;
+    };
+
+    const bucketsByHour = new Map<string, UrlHourBucketPage[]>();
+    let totalActiveMs = 0;
+    for (const cell of cells.values()) {
+      if (!matchesFilter(cell.projectId)) continue;
+      totalActiveMs += cell.activeMs;
+      const { hourStart, ...page } = cell;
+      const pages = bucketsByHour.get(hourStart) ?? [];
+      pages.push(page);
+      bucketsByHour.set(hourStart, pages);
+    }
+
+    const buckets = Array.from(bucketsByHour.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([hourStart, pages]) => ({
+        hourStart,
+        pages: pages.sort((a, b) => b.activeMs - a.activeMs),
+      }));
+
+    return { date: resolvedDate, totalActiveMs, buckets };
   }
 
   /**
@@ -215,6 +355,16 @@ export class UrlSessionsService {
       throw new NotFoundException('Member not found.');
     }
     return target.id;
+  }
+
+  private resolveDate(date?: string): string {
+    if (date === undefined) {
+      return new Date().toISOString().slice(0, 10);
+    }
+    if (!DATE_PATTERN.test(date)) {
+      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
+    }
+    return date;
   }
 
   private async getActiveMembership(

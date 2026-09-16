@@ -91,13 +91,13 @@ export interface CaptureSettings {
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
   activityTrackingEnabled: boolean;
-  /** See docs/adr/0014-... — whether this Device must show the consent screen before capture can start. */
+  /** See docs/adr/0015-... — whether the passive disclosure banner should be shown. Informational only; never gates capture. */
   consent: { required: boolean };
 }
 
 export type ConsentDecision = 'granted' | 'declined';
 
-/** The wire shape for `GET /device/disclosure` — see docs/adr/0014-.... */
+/** The wire shape for `GET /device/disclosure` — see docs/adr/0015-.... */
 export interface ConsentStatus {
   required: boolean;
   /** `null` when there's nothing to show (no capture enabled, or none published yet). */
@@ -370,13 +370,13 @@ export class ApiClient {
 
   /**
    * The current disclosure text this Device's user should see, if any —
-   * fetched by the consent screen. See docs/adr/0014-....
+   * fetched to populate the passive notice banner. See docs/adr/0015-....
    */
   getDisclosure(deviceToken: string): Promise<TrackingResult<ConsentStatus>> {
     return this.deviceRequest('GET', '/device/disclosure', deviceToken);
   }
 
-  /** Records the person's accept/decline of a specific disclosure version. */
+  /** Records the person's acknowledgment of a specific disclosure version — audit trail only, see docs/adr/0015-.... */
   submitConsent(
     deviceToken: string,
     disclosureVersionId: string,

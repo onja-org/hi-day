@@ -15,6 +15,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
+import { NotesModule } from '../../notes/modules/notes.module';
 import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
 import { InvitationAcceptController } from '../controllers/invitation-accept.controller';
 import { InvitationsController } from '../controllers/invitations.controller';
@@ -39,6 +40,7 @@ function inviteCreateTracker(req: Request): string {
     ActivitiesModule,
     AppEventsModule,
     ScreenshotsModule,
+    NotesModule,
     TimeEntriesModule,
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 15 * 60 * 1000, limit: 10 },

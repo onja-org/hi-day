@@ -8,11 +8,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Between, In, LessThan, Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Screenshot } from '../../database/entities/screenshot.entity';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { ScreenshotStorageService } from './screenshot-storage.service';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,6 +48,15 @@ export interface ScreenshotSummaryItem {
   activePercentage: number | null;
   periodStart: string | null;
   periodEnd: string | null;
+  /** The project whose TimeEntry covered `capturedAt` — null if no timer
+   * was running (the common case; see time-entry-coverage.util.ts). */
+  projectId: string | null;
+}
+
+export interface ScreenshotsFilter {
+  /** undefined = every project; null = untracked only; a string = that
+   * project only. */
+  projectId?: string | null;
 }
 
 @Injectable()
@@ -59,6 +70,7 @@ export class ScreenshotsService {
     private readonly memberships: Repository<Membership>,
     private readonly organisationsService: OrganisationsService,
     private readonly storage: ScreenshotStorageService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   /**
@@ -122,12 +134,14 @@ export class ScreenshotsService {
     organisationId: string,
     userId: string,
     date?: string,
+    filter: ScreenshotsFilter = {},
   ): Promise<ScreenshotSummaryItem[]> {
     const membership = await this.getActiveMembership(organisationId, userId);
     return this.listForMembershipId(
       organisationId,
       membership.id,
       this.resolveDate(date),
+      filter,
     );
   }
 
@@ -141,6 +155,7 @@ export class ScreenshotsService {
     callerUserId: string,
     targetMembershipId: string,
     date?: string,
+    filter: ScreenshotsFilter = {},
   ): Promise<ScreenshotSummaryItem[]> {
     const [caller, target] = await Promise.all([
       this.memberships.findOne({
@@ -171,6 +186,7 @@ export class ScreenshotsService {
       organisationId,
       target.id,
       this.resolveDate(date),
+      filter,
     );
   }
 
@@ -178,11 +194,12 @@ export class ScreenshotsService {
     organisationId: string,
     membershipId: string,
     date: string,
+    filter: ScreenshotsFilter = {},
   ): Promise<ScreenshotSummaryItem[]> {
     const start = new Date(`${date}T00:00:00.000Z`);
     const end = new Date(start.getTime() + MS_PER_DAY);
 
-    const [rows, samples] = await Promise.all([
+    const [rows, samples, coveringEntries] = await Promise.all([
       this.screenshots.find({
         where: {
           organisationId,
@@ -199,11 +216,19 @@ export class ScreenshotsService {
         },
         order: { periodStart: 'ASC' },
       }),
+      this.timeEntriesService.listCoveringWindow(
+        organisationId,
+        membershipId,
+        start,
+        end,
+      ),
     ]);
 
-    return Promise.all(
+    const items = await Promise.all(
       rows.map(async (row) => {
         const sample = findSampleCovering(samples, row.capturedAt);
+        const projectId =
+          findEntryCovering(coveringEntries, row.capturedAt)?.projectId ?? null;
         return {
           id: row.id,
           capturedAt: row.capturedAt.toISOString(),
@@ -211,9 +236,15 @@ export class ScreenshotsService {
           activePercentage: sample?.activePercentage ?? null,
           periodStart: sample ? sample.periodStart.toISOString() : null,
           periodEnd: sample ? sample.periodEnd.toISOString() : null,
+          projectId,
         };
       }),
     );
+
+    if (filter.projectId === undefined) {
+      return items;
+    }
+    return items.filter((item) => item.projectId === filter.projectId);
   }
 
   /**

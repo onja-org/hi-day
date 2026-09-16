@@ -1,3 +1,5 @@
+**Superseded by [`0015-disclosure-as-passive-non-blocking-notice.md`](0015-disclosure-as-passive-non-blocking-notice.md):** capture is no longer blocked on consent — this document is kept for history, not as a description of current behavior.
+
 # Consent & disclosure as a hard, backend-enforced gate on capture
 
 Window tracking, screenshots, and activity sampling shipped before any consent mechanism existed — this closes that gap for a compliance-critical requirement ("no capture feature should go live before this is in place").

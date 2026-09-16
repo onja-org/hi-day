@@ -6,6 +6,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { UrlSessionsController } from '../controllers/url-sessions.controller';
 import { UrlSessionsService } from '../services/url-sessions.service';
 
@@ -14,6 +15,7 @@ import { UrlSessionsService } from '../services/url-sessions.service';
     TypeOrmModule.forFeature([UrlSession, Membership, Organisation]),
     AuditLogModule,
     JwtAuthModule,
+    TimeEntriesModule,
   ],
   controllers: [UrlSessionsController],
   providers: [UrlSessionsService, RoleGuard],

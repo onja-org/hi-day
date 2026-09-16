@@ -11,12 +11,14 @@ import {
 import { ActivitiesService } from '../../activities/services/activities.service';
 import type { ActivityEntry } from '../../activities/services/activities.service';
 import { AppEventsService } from '../../app-events/services/app-events.service';
-import type { AppTimeSummary } from '../../app-events/services/app-events.service';
+import type { AppActivityDay } from '../../app-events/services/app-events.service';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import type { NoteEntry } from '../../notes/services/notes.service';
+import { NotesService } from '../../notes/services/notes.service';
 import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
@@ -35,6 +37,7 @@ export class MembershipsController {
     private readonly timeEntriesService: TimeEntriesService,
     private readonly appEventsService: AppEventsService,
     private readonly screenshotsService: ScreenshotsService,
+    private readonly notesService: NotesService,
   ) {}
 
   @Get()
@@ -102,13 +105,16 @@ export class MembershipsController {
   getAppEventsSummary(
     @Param('membershipId') membershipId: string,
     @Query('date') date: string | undefined,
+    @Query('projectId') projectId: string | undefined,
+    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
-  ): Promise<AppTimeSummary> {
-    return this.appEventsService.getSummaryForMembership(
+  ): Promise<AppActivityDay> {
+    return this.appEventsService.getDayForMembership(
       request.organisationId!,
       request.userId,
       membershipId,
       date,
+      { projectId: untracked === '1' ? null : projectId },
     );
   }
 
@@ -121,9 +127,31 @@ export class MembershipsController {
   getScreenshots(
     @Param('membershipId') membershipId: string,
     @Query('date') date: string | undefined,
+    @Query('projectId') projectId: string | undefined,
+    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<ScreenshotSummaryItem[]> {
     return this.screenshotsService.getScreenshotsForMembership(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+      date,
+      { projectId: untracked === '1' ? null : projectId },
+    );
+  }
+
+  @Get(':membershipId/notes')
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
+  getNotes(
+    @Param('membershipId') membershipId: string,
+    @Query('date') date: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<NoteEntry[]> {
+    return this.notesService.listForMembership(
       request.organisationId!,
       request.userId,
       membershipId,

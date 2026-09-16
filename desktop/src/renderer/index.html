@@ -19,10 +19,6 @@
         <button id="update-dismiss" type="button" aria-label="Dismiss">&times;</button>
       </div>
 
-      <!-- Shared across status-view and consent-view (both call
-           refreshCapturePermissionBanner) so the exact same OS-permission
-           guidance appears whether it's shown as part of the first-run
-           consent flow or later, independently, while already tracking. -->
       <div id="screen-recording-banner" class="idle-banner" role="alert" hidden>
         <p id="screen-recording-banner-message">
           Window title tracking is off — needs Screen Recording access.
@@ -33,8 +29,8 @@
         </button>
       </div>
       <p id="wayland-notice" class="idle-notice" hidden>
-        App and window tracking isn't available on this Linux session
-        (Wayland) — this can't be fixed from within the app.
+        App/window tracking and screenshots aren't available on this Linux
+        session (Wayland) — this can't be fixed from within the app.
       </p>
 
       <p id="loading-view">Loading…</p>
@@ -45,33 +41,19 @@
         <button id="login-button" type="button">Log in</button>
       </section>
 
-      <section id="consent-view" hidden>
-        <p>
-          Before this device can start capturing activity, please review what's tracked.
-        </p>
-        <div id="consent-text-box" class="consent-text-box">
-          <p id="consent-text"></p>
-        </div>
-        <p id="consent-error" role="alert" hidden></p>
-        <div id="consent-actions">
-          <button id="consent-accept-button" type="button">I understand — continue</button>
-          <button id="consent-decline-button" type="button" class="consent-decline">
-            Decline
-          </button>
-        </div>
-        <p id="consent-blocked-message" role="alert" hidden>
-          This organisation requires accepting this disclosure before the device can be
-          used. Since you declined, you can't continue here — contact your admin if
-          you believe this is a mistake.
-        </p>
-        <button id="consent-logout-button" type="button">Log out</button>
-      </section>
-
       <section id="status-view" hidden>
         <p id="organisation-name" class="organisation-name"></p>
 
         <div id="tracking-view">
           <p id="tracking-error" role="alert" hidden></p>
+
+          <!-- Passive, non-blocking disclosure notice (see docs/adr/0015-...)
+               — informational only, never gates the timer/tracking below it. -->
+          <div id="disclosure-banner" class="idle-banner" role="status" hidden>
+            <p id="disclosure-text"></p>
+            <p id="disclosure-error" role="alert" hidden></p>
+            <button id="disclosure-acknowledge-button" type="button">Got it</button>
+          </div>
 
           <p id="tracking-indicator" class="idle-notice" hidden>Tracking is on</p>
 

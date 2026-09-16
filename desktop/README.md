@@ -12,12 +12,15 @@ follows being clocked in, not merely being logged in. **Activity level
 isn't built yet.** That's deliberate scope for this pass; see
 `docs/TECH_DESIGN.md` for where the rest of activity capture is headed.
 
-Window tracking, screenshots, and activity sampling are all gated by a
-consent screen (see `docs/adr/0014-...`): a capture-enabled org's device
-must show its disclosure text and get an explicit accept before any of
-that can start, and declining is a hard stop on the whole device — no
-login, no timer. A persistent **Tracking is on** banner shows whenever
-capture is actually allowed to run.
+Window tracking, screenshots, and activity sampling are never blocked on
+consent (see `docs/adr/0015-...`, which supersedes the earlier hard-gate
+design in `docs/adr/0014-...`): capture starts as soon as its org setting
+is on and a timer is running, same as everything else. If the org has
+published disclosure text, the agent shows it as a persistent,
+non-blocking notice banner alongside the normal login/timer UI — there is
+no separate consent screen, and no "decline" option, since nothing is
+gated on the answer. A persistent **Tracking is on** banner shows whenever
+capture is actually running.
 
 Samples are batched and uploaded to the backend (`POST /device/app-events`,
 every 60s) via `AppEventUploader` — the web console's Activity → Apps tab
@@ -26,7 +29,10 @@ shows a "time spent per app" summary for today, aggregated from these. See
 original `get-windows` integration, and `docs/adr/0011-...` for the
 migration to `@paymoapp/active-window` (which also fixed the macOS title
 gap `0009` had deliberately accepted — the permission that actually gates
-window titles is Screen Recording, not Accessibility).
+window titles is Screen Recording, not Accessibility), and `docs/adr/0016-...`
+for GNOME's Wayland gap being closed via AT-SPI2 (`GnomeWindowFocusTracker`,
+`desktop/src/main/gnome-window-focus-tracker.ts`) rather than the extension
+`0009` had originally deferred this to.
 
 Screenshots are captured via Electron's own `desktopCapturer`
 (`ScreenshotSampler`, `desktop/src/main/screenshot-sampler.ts` — no
@@ -151,17 +157,19 @@ using a UUID generated on first run and persisted under Electron's
    logout, and instantly on this app's own Start/Stop/switch actions).
    Samples aren't logged to this app's terminal — see step 10 to confirm
    sampling is actually happening via the web console instead. On a
-   Wayland session (`$WAYLAND_DISPLAY` set) an informational note (no
-   "Grant Access"-style button — there's no fix available) should appear
-   in this app's own window instead of the Screen Recording banner —
-   samples still get produced with `titleUnavailableReason: 'not-exposed'`,
-   but with **both** `appName` and `title` null (neither `get-windows` nor
-   `@paymoapp/active-window` provides any information at all under
-   Wayland, not just no title — verified live; see `docs/adr/0009-...`),
-   so they never reach step 10's summary either (dropped before upload, see
-   `docs/adr/0010-...`). macOS-specific behavior (the Screen Recording
-   banner, "Grant Access", and the 30s grant-detection poll) needs a real
-   Mac to verify — see `docs/adr/0011-...` for the migration that fixed
+   Wayland session (`$WAYLAND_DISPLAY` set) on GNOME, `@paymoapp/active-window`
+   itself still produces nothing (X11-only), but `GnomeWindowFocusTracker`
+   (see `docs/adr/0016-...`) fills in real `appName`/`title` via AT-SPI2 once
+   you've switched focus at least once after the timer starts — the very
+   first tick or two, before any window activation has been observed yet,
+   still falls back to `titleUnavailableReason: 'not-exposed'` with both
+   fields null. A non-GNOME Wayland session (or one with no working
+   accessibility bus at all) gets that same `'not-exposed'` fallback
+   permanently instead — this is a known, informational, un-fixable-from-here
+   gap for those cases (no "Grant Access"-style button, since there's
+   nothing to grant). macOS-specific behavior (the Screen Recording banner,
+   "Grant Access", and the 30s grant-detection poll) needs a real Mac to
+   verify — see `docs/adr/0011-...` for the migration that fixed
    `0009-...`'s known macOS title-reading gap (window titles are gated by
    Screen Recording access, not Accessibility — this app now checks and
    requests the right permission).
@@ -197,37 +205,28 @@ using a UUID generated on first run and persisted under Electron's
     captures for the signed-in member with a thumbnail per screenshot. On
     macOS, granting Screen Recording via the same banner step 8 describes
     is required for screenshots too (same permission, one banner covers
-    both — see docs/adr/0012-...).
+    both — see docs/adr/0012-...). On a Wayland session, expect the same
+    informational note step 9 describes and **no** OS "share your screen"
+    picker — screenshot capture is skipped outright there (see **Known
+    limitations** below), so nothing appears in the Screenshots tab either.
 
-12. **Test the consent gate** (see `docs/adr/0014-...`): in the web
-    console's **Settings → Consent & disclosure** page, write some
+12. **Test the passive disclosure notice** (see `docs/adr/0015-...`): in
+    the web console's **Settings → Consent & disclosure** page, write some
     disclosure text and click **Publish**. With a capture setting already
-    on (step 9 or 10) and this device not yet consented, the next time it
-    reaches the logged-in screen (a fresh pairing, or `showLoggedIn`'s
-    check on relaunch) it should show the consent screen with that text
-    instead of the timer — window tracking/screenshots/activity stay off
-    the whole time (`GET /device/capture-settings`'s `consent.required`
-    stays `true`), even though plain time tracking would otherwise work
-    fine. Click **Decline**: the app should show a terminal blocked
-    message with no way back to the timer — confirm `POST
-    /device/consent` recorded a `declined` `ConsentRecord` and a
-    `device_consent.declined` `AuditLog` entry. Relaunch, and this time
-    click **I understand — continue**: the app should proceed straight to
-    the timer, and capture should start working normally on the next
-    `CaptureSettingsGate` poll. Finally, publish a *new* version from the
-    admin page while this device stays logged in — on its next 15s status
-    poll it should drop back to the consent screen for the new text
-    (mid-session interrupt, not waiting for a relaunch), matching the
-    "next natural boundary" design rather than cutting off actual
-    in-progress capture — if a timer was running at that moment, it should
-    be paused (not left accruing unattended) and resume tracking normally
-    once the person responds. The **Tracking is on** banner should only
-    appear once a capture setting is on, the timer is running, and consent
-    is current all at once. The consent screen's **Log out** button should
-    work from either state (still reviewing the text, or already declined)
-    — it's the only way off this screen short of accepting, since declining
-    is a per-Device stance the agent re-checks on every relaunch, not a
-    remembered "give up" state.
+    on (step 9 or 10), window tracking/screenshots/activity should already
+    be running normally — publishing disclosure text never pauses or gates
+    them. The next time this device reaches the logged-in screen (a fresh
+    pairing, or `refreshDisclosureBanner`'s check on relaunch, or its next
+    15s poll mid-session) it should show a non-blocking banner with that
+    text above the timer, not instead of it. Click **Got it**: the banner
+    should disappear, and confirm `POST /device/consent` recorded a
+    `granted` `ConsentRecord` and a `device_consent.granted` `AuditLog`
+    entry — purely for the record, since capture was already running
+    throughout. Publish a *new* version while this device stays logged
+    in: on its next 15s poll the banner should reappear with the new text
+    (capture keeps running uninterrupted the whole time). The **Tracking
+    is on** banner reflects only the capture setting and timer state now,
+    independent of the disclosure banner.
 
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
@@ -301,6 +300,16 @@ output — not just assumed from source-mode success):
 
 ## Known limitations (this pass)
 
+- **On Linux, running this app turns on the session's accessibility bridge
+  (`org.a11y.Status.IsEnabled`) permanently, and never turns it back off.**
+  See `docs/adr/0016-...`: this is what makes GNOME window tracking work at
+  all under Wayland, but it's a real, user-visible, session-wide side
+  effect — GNOME's own Accessibility quick-setting will show as on for as
+  long as this app has run at least once in that session. Deliberately
+  never reverted on quit, since another AT-SPI consumer (a real screen
+  reader, or this app's own URL-tracking resolver) may depend on it staying
+  on, and there's no reliable way to tell whether this app was the one that
+  turned it on.
 - **Unsigned.** No Apple notarization or Windows Authenticode certificate
   yet, so macOS Gatekeeper and Windows SmartScreen will both warn on
   install. Signing is deferred, matching the earlier device-management
@@ -354,11 +363,17 @@ output — not just assumed from source-mode success):
   `screenshotRetentionDays` was set then — shortening the setting later
   only affects screenshots captured after the change, not existing ones.
   See the `Screenshot` entity's own comment and `docs/adr/0012-...`.
-- **Screenshot capture is unverified on real macOS hardware and expected
-  to fail under Wayland**, same footing as window tracking's own
-  Screen-Recording and Wayland caveats below — nobody on this project has
-  a Mac, and `desktopCapturer` relies on the same underlying screen-access
-  APIs that don't work under Wayland.
+- **Screenshot capture is unverified on real macOS hardware, and is
+  explicitly skipped under Wayland** (`ScreenshotSampler.tick()`'s
+  Wayland guard, mirroring `WindowSampler`'s own): Electron's
+  `desktopCapturer` goes through the xdg-desktop-portal ScreenCast API
+  under Wayland (unlike X11, which needs no such round-trip), which pops
+  the OS's own "share your screen" picker in front of the person on
+  every single tick if ever actually called — and canceling that picker
+  has been observed to crash the whole app. Checked and skipped up front
+  instead, the same way window tracking never calls into its native
+  module under Wayland — no sample, no popup, no crash. Nobody on this
+  project has a Mac, so the macOS side of this remains unverified.
 - **App-activity "time spent" is an approximation, not a measured
   duration.** Each sample is assumed to represent
   `DEFAULT_WINDOW_SAMPLE_INTERVAL_MS` (5s) of foreground time — see
@@ -374,28 +389,29 @@ output — not just assumed from source-mode success):
   permission now. Still unverified on real macOS hardware — nobody on this
   project has a Mac — so treat "does title actually populate once granted"
   as confirmed by the library's own docs, not by this repo's own testing.
-- **Wayland gives no app name either, not just no title** — a known,
-  deliberately-accepted gap, confirmed on real hardware (not just
-  theoretical). Neither `get-windows` nor `@paymoapp/active-window`
+- **Wayland gave no app name either, not just no title — fixed on GNOME, still
+  a real gap elsewhere.** Neither `get-windows` nor `@paymoapp/active-window`
   provides any window/app information at all under Wayland (both only
-  support X11 on Linux, "for security reasons" per their docs), so a
-  sample under Wayland is `{ appName: null, title: null,
-  titleUnavailableReason: 'not-exposed' }` — the original ticket's
-  acceptance criteria assumed app name would still be recorded here, but
-  that isn't achievable through either library; a portable fix would need
-  a compositor-specific approach (e.g. a GNOME/KDE D-Bus extension), well
-  past this ticket's scope. Matches this app's existing "Linux
-  best-effort" support level (idle detection has the same caveat). See
-  `docs/adr/0009-...`.
+  support X11 on Linux, "for security reasons" per their docs). On GNOME,
+  `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) now fills this via
+  AT-SPI2 instead, verified live against a real GNOME Wayland session — a
+  sample only falls back to `{ appName: null, title: null,
+  titleUnavailableReason: 'not-exposed' }` before the first window
+  activation this session has seen, or on a non-GNOME Wayland session (or
+  one with no working accessibility bus at all), where this remains an
+  accepted gap matching this app's existing "Linux best-effort" support
+  level (idle detection has the same caveat). See `docs/adr/0009-...` for
+  the original deferral and `docs/adr/0016-...` for the fix.
 - **The "Tracking is on" indicator reflects intent, not verified capture.**
-  It lights up whenever a capture setting is on, a timer is running, and
-  consent has been granted — the same conditions `recomputeSampling` in
-  `main.ts` uses to start the samplers — not whether a sample actually made
-  it to the backend. On Wayland in particular, window-tracking samples come
+  It lights up whenever a capture setting is on and a timer is running —
+  the same conditions `recomputeSampling` in `main.ts` uses to start the
+  samplers — not whether a sample actually made it to the backend. On a
+  non-GNOME Wayland session in particular, window-tracking samples come
   back with both `appName` and `title` null and are dropped before upload
   (see the Wayland bullet above), so the indicator can read "on" while no
-  useful window data is actually being captured. Screenshot capture has the
-  same gap under Wayland and on unverified real macOS hardware. Matching
-  actual upload success would need a new "last successful capture" signal
-  threaded through the offline queue/uploaders — out of scope for this
-  pass; see docs/adr/0014-....
+  useful window data is actually being captured. Screenshot capture is
+  skipped outright under Wayland (see the screenshot bullet above) and
+  remains unverified on real macOS hardware. Matching actual upload success
+  would need a new "last successful capture" signal threaded through the
+  offline queue/uploaders — out of scope for this pass; see
+  docs/adr/0015-....

@@ -10,8 +10,16 @@ import { MembershipRole } from '../../../database/entities/membership-role.enum'
 import { UrlSession } from '../../../database/entities/url-session.entity';
 import { UrlSessionConfidence } from '../../../database/entities/url-session-confidence.enum';
 import { UrlSessionSource } from '../../../database/entities/url-session-source.enum';
+import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../../dto/url-session-entry.dto';
 import { UrlSessionsService } from '../url-sessions.service';
+
+type FakeCoveringEntry = {
+  id: string;
+  projectId: string;
+  startedAt: Date;
+  endedAt: Date | null;
+};
 
 describe('UrlSessionsService', () => {
   function makeUrlSessionsRepo(
@@ -52,12 +60,19 @@ describe('UrlSessionsService', () => {
     };
   }
 
+  function makeTimeEntriesService(coveringEntries: FakeCoveringEntry[] = []) {
+    return {
+      listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
+    } as unknown as TimeEntriesService;
+  }
+
   function makeService(
     overrides: {
       urlSessionsRepo?: Repository<UrlSession>;
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
+      timeEntriesService?: TimeEntriesService;
     } = {},
   ) {
     return new UrlSessionsService(
@@ -65,6 +80,7 @@ describe('UrlSessionsService', () => {
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.timeEntriesService ?? makeTimeEntriesService(),
     );
   }
 
@@ -168,7 +184,7 @@ describe('UrlSessionsService', () => {
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { membershipId: 'm-1', url: Not('') },
+          where: { organisationId: 'org-1', membershipId: 'm-1', url: Not('') },
         }),
       );
     });
@@ -196,9 +212,167 @@ describe('UrlSessionsService', () => {
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { membershipId: 'other-membership', url: Not('') },
+          where: {
+            organisationId: 'org-1',
+            membershipId: 'other-membership',
+            url: Not(''),
+          },
         }),
       );
+    });
+  });
+
+  describe('getDayGroupedByUrl', () => {
+    function makeSessionRow(overrides: Partial<UrlSession> = {}): UrlSession {
+      return {
+        id: 'session-1',
+        url: 'https://example.com/page',
+        host: 'example.com',
+        title: 'Example Page',
+        startedAt: new Date('2026-09-08T09:00:00.000Z'),
+        endedAt: new Date('2026-09-08T09:05:00.000Z'),
+        activeMs: 60_000,
+        ...overrides,
+      } as UrlSession;
+    }
+
+    it('buckets sessions by hour and sums activeMs whole, never split', async () => {
+      const rows = [
+        makeSessionRow({
+          startedAt: new Date('2026-09-08T09:00:00.000Z'),
+          activeMs: 60_000,
+        }),
+        makeSessionRow({
+          startedAt: new Date('2026-09-08T09:30:00.000Z'),
+          activeMs: 30_000,
+        }),
+        makeSessionRow({
+          url: 'https://other.example/',
+          host: 'other.example',
+          startedAt: new Date('2026-09-08T10:00:00.000Z'),
+          activeMs: 15_000,
+        }),
+      ];
+      const urlSessionsRepo = makeUrlSessionsRepo({
+        find: jest.fn().mockResolvedValue(rows),
+      });
+      const service = makeService({ urlSessionsRepo });
+
+      const day = await service.getDayGroupedByUrl(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+      );
+
+      expect(day.date).toBe('2026-09-08');
+      expect(day.totalActiveMs).toBe(105_000);
+      expect(day.buckets).toEqual([
+        {
+          hourStart: '2026-09-08T09:00:00.000Z',
+          pages: [
+            {
+              projectId: null,
+              url: 'https://example.com/page',
+              host: 'example.com',
+              title: 'Example Page',
+              activeMs: 90_000,
+              sessionCount: 2,
+            },
+          ],
+        },
+        {
+          hourStart: '2026-09-08T10:00:00.000Z',
+          pages: [
+            {
+              projectId: null,
+              url: 'https://other.example/',
+              host: 'other.example',
+              title: 'Example Page',
+              activeMs: 15_000,
+              sessionCount: 1,
+            },
+          ],
+        },
+      ]);
+    });
+
+    it('attributes a session to whichever project covered its startedAt', async () => {
+      const rows = [
+        makeSessionRow({ startedAt: new Date('2026-09-08T09:00:00.000Z') }),
+      ];
+      const urlSessionsRepo = makeUrlSessionsRepo({
+        find: jest.fn().mockResolvedValue(rows),
+      });
+      const coveringEntries: FakeCoveringEntry[] = [
+        {
+          id: 'te-1',
+          projectId: 'project-1',
+          startedAt: new Date('2026-09-08T08:00:00.000Z'),
+          endedAt: new Date('2026-09-08T10:00:00.000Z'),
+        },
+      ];
+      const service = makeService({
+        urlSessionsRepo,
+        timeEntriesService: makeTimeEntriesService(coveringEntries),
+      });
+
+      const day = await service.getDayGroupedByUrl(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+      );
+
+      expect(day.buckets[0].pages[0].projectId).toBe('project-1');
+    });
+
+    it('filters to untracked (no covering entry) when projectId is null', async () => {
+      const rows = [
+        makeSessionRow({
+          url: 'https://tracked.example/',
+          host: 'tracked.example',
+          startedAt: new Date('2026-09-08T09:00:00.000Z'),
+        }),
+        makeSessionRow({
+          url: 'https://untracked.example/',
+          host: 'untracked.example',
+          startedAt: new Date('2026-09-08T11:00:00.000Z'),
+        }),
+      ];
+      const urlSessionsRepo = makeUrlSessionsRepo({
+        find: jest.fn().mockResolvedValue(rows),
+      });
+      const coveringEntries: FakeCoveringEntry[] = [
+        {
+          id: 'te-1',
+          projectId: 'project-1',
+          startedAt: new Date('2026-09-08T08:00:00.000Z'),
+          endedAt: new Date('2026-09-08T10:00:00.000Z'),
+        },
+      ];
+      const service = makeService({
+        urlSessionsRepo,
+        timeEntriesService: makeTimeEntriesService(coveringEntries),
+      });
+
+      const day = await service.getDayGroupedByUrl(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {
+          projectId: null,
+        },
+      );
+
+      expect(day.buckets[0].pages).toHaveLength(1);
+      expect(day.buckets[0].pages[0].url).toBe('https://untracked.example/');
+    });
+
+    it('rejects a malformed date', async () => {
+      const service = makeService();
+
+      await expect(
+        service.getDayGroupedByUrl('org-1', 'user-1', 'not-a-date'),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

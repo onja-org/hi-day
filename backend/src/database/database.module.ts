@@ -12,6 +12,7 @@ import { DeviceSession } from './entities/device-session.entity';
 import { DisclosureVersion } from './entities/disclosure-version.entity';
 import { Invitation } from './entities/invitation.entity';
 import { Membership } from './entities/membership.entity';
+import { Note } from './entities/note.entity';
 import { Organisation } from './entities/organisation.entity';
 import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
@@ -57,6 +58,7 @@ import { User } from './entities/user.entity';
           ActivitySample,
           DisclosureVersion,
           ConsentRecord,
+          Note,
         ],
         synchronize: false,
       }),

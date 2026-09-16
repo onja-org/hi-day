@@ -36,6 +36,7 @@ export interface DisclosureVersionSummary {
 }
 
 export interface ConsentStatus {
+  /** Whether the desktop agent should show its passive disclosure notice — informational only, never gates capture (see docs/adr/0015-...). */
   required: boolean;
   disclosureVersionId: string | null;
   text: string | null;
@@ -282,44 +283,12 @@ export class DisclosureService {
   }
 
   /**
-   * Used by DeviceConsentGuard to gate the three capture-ingest routes
-   * (app-events, activity-samples, screenshots/upload-url) — deliberately
-   * simpler than `getConsentStatus` below: it doesn't check whether any
-   * capture setting is actually enabled, because if none were, the agent
-   * wouldn't be calling these routes in the first place. No published
-   * version at all means fail-closed (nothing to have consented to yet).
-   */
-  async isCaptureConsentSatisfied(
-    organisationId: string,
-    disclosureRegion: string | null | undefined,
-    deviceId: string,
-  ): Promise<boolean> {
-    const version = await this.resolveCurrentVersion(
-      organisationId,
-      disclosureRegion,
-    );
-    if (!version) return false;
-
-    const decision = await this.latestDecision(
-      organisationId,
-      deviceId,
-      version.id,
-    );
-    return decision === ConsentDecision.GRANTED;
-  }
-
-  /**
-   * Used by the desktop agent's own consent screen and its whole-device
-   * login gate — unlike `isCaptureConsentSatisfied`, this also checks
-   * whether the org has any capture setting enabled at all. An org with
-   * nothing enabled never needs to show a consent screen (the narrow-gate
-   * design — see docs/adr/0014-...), even if disclosure text happens to
-   * exist for historical reasons. Similarly, if capture is enabled but no
-   * DisclosureVersion has been published yet, there is nothing to show the
-   * device's user — login proceeds normally, and capture is instead
-   * blocked purely at the ingest layer by `isCaptureConsentSatisfied`
-   * above (fail-closed without blocking the whole device on an admin's
-   * incomplete setup).
+   * Used by the desktop agent to decide whether to show the passive
+   * disclosure notice — this also checks whether the org has any capture
+   * setting enabled at all. An org with nothing enabled never needs to show
+   * a notice (see docs/adr/0015-...), even if disclosure text happens to
+   * exist for historical reasons. Purely informational: whatever this
+   * returns, capture is never blocked on it.
    */
   async getConsentStatus(
     organisationId: string,
@@ -389,11 +358,9 @@ export class DisclosureService {
     // Beyond "is this a real published version of this org", it must also
     // be the version currently resolved for this membership's region — the
     // exact one `GET /device/disclosure` would have shown them. Without
-    // this, a device could record consent against a stale or
+    // this, a device could record acknowledgment against a stale or
     // wrong-region version, producing a ConsentRecord/audit trail that
-    // doesn't reflect what the person actually saw (isCaptureConsentSatisfied
-    // would still fail closed for the real current version, so this
-    // wouldn't bypass the gate — but it would misrepresent the record).
+    // doesn't reflect what the person actually saw.
     const currentVersion = await this.resolveCurrentVersion(
       organisationId,
       disclosureRegion,

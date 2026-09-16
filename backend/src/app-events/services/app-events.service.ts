@@ -5,14 +5,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { AppEventItemDto } from '../dto/app-event-item.dto';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
  * Every sample is treated as representing this many seconds of foreground
@@ -25,15 +29,43 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  */
 const SAMPLE_INTERVAL_SECONDS = 5;
 
-export interface AppTimeSummaryItem {
+export interface AppHourBucketItem {
+  /** The project whose TimeEntry covered these samples — null means no
+   * timer was running (the common case: the desktop agent samples
+   * continuously, a TimeEntry only exists while a timer runs). */
+  projectId: string | null;
   appName: string;
   secondsSpent: number;
+  /**
+   * A "session" is a maximal run of consecutive samples of this app in
+   * `sampledAt` order, ending the moment a *different* app becomes the
+   * foreground sample — not a time-gap threshold (a gap threshold would
+   * over-count sessions from ordinary dropped sampling ticks). A session's
+   * duration is split across whichever hour(s)/project(s) its samples
+   * actually fall in (so subtotals sum to the day total); its count is
+   * attributed once, to the hour/project bucket of its *first* sample.
+   */
+  sessionCount: number;
 }
 
-export interface AppTimeSummary {
+export interface AppHourBucket {
+  /** ISO instant for the start of this hour. */
+  hourStart: string;
+  items: AppHourBucketItem[];
+}
+
+export interface AppActivityDay {
   date: string;
   totalSecondsSpent: number;
-  items: AppTimeSummaryItem[];
+  /** Only hours with at least one (post-filter) sample — a tracked day
+   * rarely fills 24 contiguous hours, so empty hour headers are omitted. */
+  buckets: AppHourBucket[];
+}
+
+interface AppActivityFilter {
+  /** undefined = every project; null = untracked (no covering TimeEntry)
+   * only; a string = that project only. */
+  projectId?: string | null;
 }
 
 @Injectable()
@@ -43,6 +75,7 @@ export class AppEventsService {
     private readonly appEvents: Repository<AppEvent>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   /**
@@ -73,16 +106,18 @@ export class AppEventsService {
     await this.appEvents.save(rows);
   }
 
-  async getMySummary(
+  async getMyDay(
     organisationId: string,
     userId: string,
-    date?: string,
-  ): Promise<AppTimeSummary> {
+    date: string | undefined,
+    filter: AppActivityFilter = {},
+  ): Promise<AppActivityDay> {
     const membership = await this.getActiveMembership(organisationId, userId);
-    return this.summariseForMembershipId(
+    return this.buildDayForMembershipId(
       organisationId,
       membership.id,
       this.resolveDate(date),
+      filter,
     );
   }
 
@@ -91,12 +126,13 @@ export class AppEventsService {
    * their own team — peers never see each other's app activity. See
    * canViewMembership for the shared rule (same as Activities/TimeEntries).
    */
-  async getSummaryForMembership(
+  async getDayForMembership(
     organisationId: string,
     callerUserId: string,
     targetMembershipId: string,
-    date?: string,
-  ): Promise<AppTimeSummary> {
+    date: string | undefined,
+    filter: AppActivityFilter = {},
+  ): Promise<AppActivityDay> {
     const [caller, target] = await Promise.all([
       this.memberships.findOne({
         where: {
@@ -122,46 +158,98 @@ export class AppEventsService {
       );
     }
 
-    return this.summariseForMembershipId(
+    return this.buildDayForMembershipId(
       organisationId,
       target.id,
       this.resolveDate(date),
+      filter,
     );
   }
 
-  private async summariseForMembershipId(
+  private async buildDayForMembershipId(
     organisationId: string,
     membershipId: string,
     date: string,
-  ): Promise<AppTimeSummary> {
+    filter: AppActivityFilter,
+  ): Promise<AppActivityDay> {
     const start = new Date(`${date}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + MS_PER_DAY);
 
-    const rows = await this.appEvents
-      .createQueryBuilder('event')
-      .select('event.appName', 'appName')
-      .addSelect('COUNT(*)', 'sampleCount')
-      .where('event.organisationId = :organisationId', { organisationId })
-      .andWhere('event.membershipId = :membershipId', { membershipId })
-      .andWhere('event.sampledAt >= :start', { start })
-      .andWhere('event.sampledAt < :end', { end })
-      .groupBy('event.appName')
-      .orderBy('"sampleCount"', 'DESC')
-      .getRawMany<{ appName: string; sampleCount: string }>();
-
-    const items = rows.map((row) => ({
-      appName: row.appName,
-      secondsSpent: Number(row.sampleCount) * SAMPLE_INTERVAL_SECONDS,
-    }));
-
-    return {
-      date,
-      totalSecondsSpent: items.reduce(
-        (sum, item) => sum + item.secondsSpent,
-        0,
+    const [rows, coveringEntries] = await Promise.all([
+      this.appEvents.find({
+        where: {
+          organisationId,
+          membershipId,
+          sampledAt: Between(start, end),
+        },
+        order: { sampledAt: 'ASC' },
+      }),
+      this.timeEntriesService.listCoveringWindow(
+        organisationId,
+        membershipId,
+        start,
+        end,
       ),
-      items,
+    ]);
+
+    // Keyed by `${hourStart}|${projectId ?? 'untracked'}|${appName}` — one
+    // row per (hour, project, app) combination, matching the response's
+    // per-bucket `items` shape.
+    const cells = new Map<string, AppHourBucketItem & { hourStart: string }>();
+    let previousAppName: string | null = null;
+
+    for (const row of rows) {
+      const projectId =
+        findEntryCovering(coveringEntries, row.sampledAt)?.projectId ?? null;
+      const hourStart = new Date(
+        Math.floor(row.sampledAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
+      ).toISOString();
+      const key = `${hourStart}|${projectId ?? 'untracked'}|${row.appName}`;
+
+      let cell = cells.get(key);
+      if (!cell) {
+        cell = {
+          hourStart,
+          projectId,
+          appName: row.appName,
+          secondsSpent: 0,
+          sessionCount: 0,
+        };
+        cells.set(key, cell);
+      }
+      cell.secondsSpent += SAMPLE_INTERVAL_SECONDS;
+
+      const isNewSession = row.appName !== previousAppName;
+      if (isNewSession) {
+        cell.sessionCount += 1;
+      }
+      previousAppName = row.appName;
+    }
+
+    const matchesFilter = (projectId: string | null): boolean => {
+      if (filter.projectId === undefined) return true;
+      return filter.projectId === projectId;
     };
+
+    const bucketsByHour = new Map<string, AppHourBucketItem[]>();
+    let totalSecondsSpent = 0;
+    for (const cell of cells.values()) {
+      if (!matchesFilter(cell.projectId)) continue;
+      totalSecondsSpent += cell.secondsSpent;
+      const { hourStart, ...item } = cell;
+      const items = bucketsByHour.get(hourStart) ?? [];
+      items.push(item);
+      bucketsByHour.set(hourStart, items);
+    }
+
+    const buckets = Array.from(bucketsByHour.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([hourStart, items]) => ({
+        hourStart,
+        items: items.sort((a, b) => b.secondsSpent - a.secondsSpent),
+      }));
+
+    return { date, totalSecondsSpent, buckets };
   }
 
   private resolveDate(date?: string): string {

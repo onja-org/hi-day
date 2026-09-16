@@ -61,7 +61,7 @@ describe('WindowSampler', () => {
     });
   });
 
-  it("short-circuits on Wayland, never calling @paymoapp/active-window, tagged 'not-exposed'", () => {
+  it("short-circuits on Wayland, never calling @paymoapp/active-window, tagged 'not-exposed', when no GNOME focus has been seen yet", () => {
     const { sink, samples } = makeSink();
     const getActiveWindow = vi.fn();
     const sampler = new WindowSampler({
@@ -70,6 +70,7 @@ describe('WindowSampler', () => {
       isWayland: () => true,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow,
+      getGnomeFocus: () => null,
     });
 
     sampler.tick();
@@ -80,6 +81,68 @@ describe('WindowSampler', () => {
       title: null,
       titleUnavailableReason: 'not-exposed',
       sampledAt: samples[0].sampledAt,
+    });
+  });
+
+  it("short-circuits on Wayland the same way when getGnomeFocus is never wired up at all (default)", () => {
+    const { sink, samples } = makeSink();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: vi.fn(),
+    });
+
+    sampler.tick();
+
+    expect(samples[0]).toMatchObject({
+      appName: null,
+      title: null,
+      titleUnavailableReason: 'not-exposed',
+    });
+  });
+
+  it('on Wayland, reports the GNOME (AT-SPI) focus instead of not-exposed once one has been seen', () => {
+    const { sink, samples } = makeSink();
+    const getActiveWindow = vi.fn();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow,
+      getGnomeFocus: () => ({ appName: 'Google Chrome', title: 'Example Domain' }),
+    });
+
+    sampler.tick();
+
+    expect(getActiveWindow).not.toHaveBeenCalled();
+    expect(samples[0]).toEqual({
+      appName: 'Google Chrome',
+      title: 'Example Domain',
+      titleUnavailableReason: null,
+      sampledAt: samples[0].sampledAt,
+    });
+  });
+
+  it("on Wayland, tags 'hidden-by-app' when GNOME focus has an app name but an empty title", () => {
+    const { sink, samples } = makeSink();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow: vi.fn(),
+      getGnomeFocus: () => ({ appName: 'gnome-shell', title: '' }),
+    });
+
+    sampler.tick();
+
+    expect(samples[0]).toMatchObject({
+      appName: 'gnome-shell',
+      title: null,
+      titleUnavailableReason: 'hidden-by-app',
     });
   });
 

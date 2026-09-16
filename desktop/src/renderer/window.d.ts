@@ -91,7 +91,7 @@ declare global {
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
 
-  /** See docs/adr/0014-.... */
+  /** See docs/adr/0015-.... */
   type ConsentDecision = 'granted' | 'declined';
 
   interface ConsentStatus {

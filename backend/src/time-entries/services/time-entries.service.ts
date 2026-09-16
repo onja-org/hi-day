@@ -17,6 +17,7 @@ import {
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -399,6 +400,36 @@ export class TimeEntriesService {
         pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
       ),
     );
+  }
+
+  /**
+   * Every entry for one membership whose `[startedAt, endedAt)` interval
+   * overlaps `[start, end)` — an attribution lookup (which project was
+   * being timed at some instant), not a display listing. No pagination, no
+   * relations, no pause-state resolution, unlike `list()`. Callers fetch
+   * once per request and match many instants against the result in memory
+   * via `findEntryCovering` (see `common/time-entry-coverage.util.ts`) —
+   * never a query per instant.
+   */
+  async listCoveringWindow(
+    organisationId: string,
+    membershipId: string,
+    start: Date,
+    end: Date,
+  ): Promise<TimeEntryCoverageWindow[]> {
+    return this.timeEntries
+      .createQueryBuilder('entry')
+      .select([
+        'entry.id',
+        'entry.projectId',
+        'entry.startedAt',
+        'entry.endedAt',
+      ])
+      .where('entry.organisationId = :organisationId', { organisationId })
+      .andWhere('entry.membershipId = :membershipId', { membershipId })
+      .andWhere('entry.startedAt < :end', { end })
+      .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :start)', { start })
+      .getMany();
   }
 
   /**

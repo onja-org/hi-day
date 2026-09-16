@@ -9,7 +9,6 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { DisclosureVersionsController } from '../controllers/disclosure-versions.controller';
-import { DeviceConsentGuard } from '../guards/device-consent.guard';
 import { DisclosureService } from '../services/disclosure.service';
 
 @Module({
@@ -25,7 +24,7 @@ import { DisclosureService } from '../services/disclosure.service';
     JwtAuthModule,
   ],
   controllers: [DisclosureVersionsController],
-  providers: [DisclosureService, DeviceConsentGuard, RoleGuard],
-  exports: [DisclosureService, DeviceConsentGuard],
+  providers: [DisclosureService, RoleGuard],
+  exports: [DisclosureService],
 })
 export class DisclosureModule {}

@@ -14,7 +14,6 @@ import { DeviceSessionGuard } from '../../devices/device-session.guard';
 import type { Membership } from '../../database/entities/membership.entity';
 import { DeviceProjectMemberGuard } from '../../devices/guards/device-project-member.guard';
 import { SubmitConsentDto } from '../../disclosure/dto/submit-consent.dto';
-import { DeviceConsentGuard } from '../../disclosure/guards/device-consent.guard';
 import type { ConsentStatus } from '../../disclosure/services/disclosure.service';
 import { DisclosureService } from '../../disclosure/services/disclosure.service';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
@@ -91,12 +90,12 @@ export class DeviceTrackingController {
   }
 
   /**
-   * The current disclosure text the device's user should see, if any is
-   * required — deliberately ungated by DeviceConsentGuard, since the agent
-   * must be able to fetch this *before* consent exists. Returns
-   * `disclosureVersionId: null` when there's nothing to show (no capture
-   * enabled, a capture-enabled org that hasn't published text yet, or no
-   * active membership right now — see `resolveConsentStatus` below).
+   * The current disclosure text to show the device's user, if any — purely
+   * informational (see docs/adr/0015-...): capture is never blocked on
+   * whether this has been acknowledged. Returns `disclosureVersionId: null`
+   * when there's nothing to show (no capture enabled, a capture-enabled org
+   * that hasn't published text yet, or no active membership right now — see
+   * `resolveConsentStatus` below).
    */
   @Get('disclosure')
   disclosure(
@@ -163,7 +162,6 @@ export class DeviceTrackingController {
   }
 
   @Post('app-events')
-  @UseGuards(DeviceConsentGuard)
   async recordAppEvents(
     @Body() dto: CreateAppEventsBatchDto,
     @Req() request: DeviceAuthenticatedRequest,
@@ -177,7 +175,6 @@ export class DeviceTrackingController {
   }
 
   @Post('activity-samples')
-  @UseGuards(DeviceConsentGuard)
   async recordActivitySamples(
     @Body() dto: CreateActivitySamplesBatchDto,
     @Req() request: DeviceAuthenticatedRequest,
@@ -191,7 +188,6 @@ export class DeviceTrackingController {
   }
 
   @Post('screenshots/upload-url')
-  @UseGuards(DeviceConsentGuard)
   requestScreenshotUploadUrl(
     @Body() dto: RequestScreenshotUploadUrlDto,
     @Req() request: DeviceAuthenticatedRequest,

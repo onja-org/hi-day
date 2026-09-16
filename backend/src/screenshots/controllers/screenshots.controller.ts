@@ -20,12 +20,15 @@ export class ScreenshotsController {
   @Get('mine')
   getMine(
     @Query('date') date: string | undefined,
+    @Query('projectId') projectId: string | undefined,
+    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<ScreenshotSummaryItem[]> {
     return this.screenshotsService.getMyScreenshots(
       request.organisationId!,
       request.userId,
       date,
+      { projectId: untracked === '1' ? null : projectId },
     );
   }
 }

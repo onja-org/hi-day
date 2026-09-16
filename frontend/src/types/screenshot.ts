@@ -7,6 +7,9 @@ export type ScreenshotSummaryItem = {
   activePercentage: number | null;
   periodStart: string | null;
   periodEnd: string | null;
+  /** The project whose TimeEntry covered this screenshot's capturedAt —
+   * null if no timer was running (the common case). */
+  projectId: string | null;
 };
 
 export type GetScreenshotsResult =

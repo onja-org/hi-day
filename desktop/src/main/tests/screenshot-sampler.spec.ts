@@ -13,12 +13,17 @@ describe('ScreenshotSampler', () => {
     };
   }
 
+  // isWayland: () => false makes these deterministic regardless of the
+  // session actually running the test suite — see the dedicated Wayland
+  // tests below for the guard itself.
+
   it('emits a capture with the buffer and an ISO timestamp', async () => {
     const { sink, captures } = makeSink();
     const buffer = Buffer.from('fake-jpeg-bytes');
     const sampler = new ScreenshotSampler({
       sink,
       capture: () => Promise.resolve(buffer),
+      isWayland: () => false,
     });
 
     await sampler.tick();
@@ -33,6 +38,7 @@ describe('ScreenshotSampler', () => {
     const sampler = new ScreenshotSampler({
       sink,
       capture: () => Promise.resolve(null),
+      isWayland: () => false,
     });
 
     await sampler.tick();
@@ -45,11 +51,43 @@ describe('ScreenshotSampler', () => {
     const sampler = new ScreenshotSampler({
       sink,
       capture: () => Promise.reject(new Error('boom')),
+      isWayland: () => false,
     });
 
     await sampler.tick();
 
     expect(captures).toHaveLength(0);
+  });
+
+  it('never calls capture() on Linux Wayland — desktopCapturer would otherwise prompt the OS share-screen picker every tick', async () => {
+    const { sink, captures } = makeSink();
+    const capture = vi.fn().mockResolvedValue(Buffer.from('fake-jpeg-bytes'));
+    const sampler = new ScreenshotSampler({
+      sink,
+      capture,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capture).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(0);
+  });
+
+  it('still captures on Linux X11 (isWayland false)', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('fake-jpeg-bytes');
+    const sampler = new ScreenshotSampler({
+      sink,
+      capture: () => Promise.resolve(buffer),
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(captures).toHaveLength(1);
   });
 });
 

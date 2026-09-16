@@ -1,5 +1,5 @@
 import { ActivityTabs } from "@/components/ActivityTabs";
-import { UrlSessionList } from "@/components/UrlSessionList";
+import { UrlActivityPageContent } from "@/components/UrlActivityPageContent";
 
 type UrlActivityPageProps = {
   params: Promise<{ organisationId: string }>;
@@ -12,7 +12,7 @@ export default async function UrlActivityPage({ params }: UrlActivityPageProps) 
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold text-primary-dark">Activity</h1>
       <ActivityTabs organisationId={organisationId} />
-      <UrlSessionList organisationId={organisationId} />
+      <UrlActivityPageContent organisationId={organisationId} />
     </div>
   );
 }

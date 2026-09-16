@@ -118,10 +118,10 @@ describe('AppEventUploader', () => {
     }
   });
 
-  it('discards (does not retry) a batch rejected with 403 — a consent-gated rejection, not a transient failure', async () => {
+  it('discards (does not retry) a batch rejected with 403 — a permanent rejection, not a transient failure', async () => {
     const postAppEvents = vi
       .fn()
-      .mockResolvedValue({ ok: false, status: 403, message: 'no consent' });
+      .mockResolvedValue({ ok: false, status: 403, message: 'forbidden' });
     const client = { postAppEvents } as unknown as AppEventUploaderClient;
     const { uploader } = makeUploader(makeSession('token-1'), client);
 

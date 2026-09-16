@@ -93,6 +93,14 @@ export interface WindowSamplerDeps {
   isWayland?: () => boolean;
   isMacScreenRecordingGranted?: () => boolean;
   getActiveWindow?: GetActiveWindowFn;
+  /**
+   * The last window AT-SPI2 saw activated on a GNOME session (see
+   * docs/adr/0016-..., `gnome-window-focus-tracker.ts`) — `null` when
+   * nothing has been seen yet, or the tracker isn't running at all
+   * (non-GNOME/non-Linux). Consulted only on Linux+Wayland, where
+   * `getActiveWindow` above is never even reachable.
+   */
+  getGnomeFocus?: () => { appName: string; title: string } | null;
 }
 
 /**
@@ -115,6 +123,7 @@ export class WindowSampler {
   private readonly isWayland: () => boolean;
   private readonly isMacScreenRecordingGranted: () => boolean;
   private readonly getActiveWindow: GetActiveWindowFn;
+  private readonly getGnomeFocus: () => { appName: string; title: string } | null;
   private handle: ReturnType<typeof setInterval> | null = null;
 
   constructor(deps: WindowSamplerDeps = {}) {
@@ -132,6 +141,7 @@ export class WindowSampler {
       deps.isMacScreenRecordingGranted ??
       (() => systemPreferences.getMediaAccessStatus('screen') === 'granted');
     this.getActiveWindow = deps.getActiveWindow ?? readActiveWindow;
+    this.getGnomeFocus = deps.getGnomeFocus ?? ((): null => null);
   }
 
   start(): void {
@@ -161,10 +171,38 @@ export class WindowSampler {
     const sampledAt = new Date().toISOString();
 
     if (platform === 'linux' && this.isWayland()) {
+      // @paymoapp/active-window (like get-windows before it) has no
+      // Wayland support at all (see docs/adr/0009-.../0011-...) — GNOME
+      // sessions fill this gap via AT-SPI2 instead (see docs/adr/0016-...,
+      // gnome-window-focus-tracker.ts), which isn't affected by the
+      // Wayland gap this whole branch otherwise exists for. Falls back to
+      // the original 'not-exposed' only when nothing has been seen yet
+      // (nothing to report before the very first window activation this
+      // session, or a non-GNOME/non-Linux caller that never wires
+      // getGnomeFocus at all).
+      const gnomeFocus = this.getGnomeFocus();
+      if (!gnomeFocus) {
+        this.sink({
+          appName: null,
+          title: null,
+          titleUnavailableReason: 'not-exposed',
+          sampledAt,
+        });
+        return;
+      }
+
+      const reason = classifyTitleUnavailability({
+        platform,
+        macScreenRecordingGranted: true, // meaningless off macOS
+        isWayland: false, // AT-SPI is unaffected by the gap this flag models
+        rawTitle: gnomeFocus.title || undefined,
+        rawOwnerName: gnomeFocus.appName || undefined,
+      });
+
       this.sink({
-        appName: null,
-        title: null,
-        titleUnavailableReason: 'not-exposed',
+        appName: gnomeFocus.appName || null,
+        title: reason === null ? gnomeFocus.title || null : null,
+        titleUnavailableReason: reason,
         sampledAt,
       });
       return;

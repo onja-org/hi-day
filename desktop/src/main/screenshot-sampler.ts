@@ -1,4 +1,6 @@
 import { desktopCapturer, screen } from 'electron';
+import type { DesktopDevicePlatform } from './platform';
+import { isWaylandSession, toDevicePlatform } from './platform';
 
 export const DEFAULT_SCREENSHOT_INTERVAL_MS = 600_000; // 10 minutes — matches the backend's DEFAULT_SCREENSHOT_FREQUENCY_SECONDS.
 
@@ -53,16 +55,18 @@ export interface ScreenshotSamplerDeps {
   intervalMs?: number;
   sink?: ScreenshotSink;
   capture?: () => Promise<Buffer | null>;
+  getPlatform?: () => DesktopDevicePlatform;
+  isWayland?: () => boolean;
 }
 
 /**
  * Runs entirely in the main process, gated on/off by the combination of
  * `screenshotsEnabled` and a running timer (main.ts's `recomputeSampling`
  * combines both, same Hubstaff-style rule as WindowSampler). Unlike
- * WindowSampler, a tick that produces nothing (capture failed, or the
- * image came back empty — e.g. macOS Screen Recording not yet granted)
- * simply emits no sample — there's no "reason unavailable" row to write
- * for a screenshot.
+ * WindowSampler, a tick that produces nothing (capture failed, the image
+ * came back empty — e.g. macOS Screen Recording not yet granted — or the
+ * session is Wayland, see `tick()`'s guard) simply emits no sample —
+ * there's no "reason unavailable" row to write for a screenshot.
  *
  * `setIntervalMs` lets main.ts apply an org's `screenshotFrequencySeconds`
  * without tearing down and recreating the sampler every time
@@ -73,6 +77,8 @@ export interface ScreenshotSamplerDeps {
 export class ScreenshotSampler {
   private readonly sink: ScreenshotSink;
   private readonly capture: () => Promise<Buffer | null>;
+  private readonly getPlatform: () => DesktopDevicePlatform;
+  private readonly isWayland: () => boolean;
   private intervalMs: number;
   private handle: ReturnType<typeof setInterval> | null = null;
 
@@ -80,6 +86,9 @@ export class ScreenshotSampler {
     this.intervalMs = deps.intervalMs ?? DEFAULT_SCREENSHOT_INTERVAL_MS;
     this.sink = deps.sink ?? (() => {});
     this.capture = deps.capture ?? captureScreen;
+    this.getPlatform =
+      deps.getPlatform ?? (() => toDevicePlatform(process.platform));
+    this.isWayland = deps.isWayland ?? isWaylandSession;
   }
 
   start(): void {
@@ -111,6 +120,16 @@ export class ScreenshotSampler {
   }
 
   async tick(): Promise<void> {
+    // Electron's desktopCapturer goes through the xdg-desktop-portal
+    // ScreenCast API under Wayland (unlike X11, where it needs no such
+    // round-trip) — that means every single tick would pop the OS's own
+    // "share your screen" picker in front of the person, forever, and
+    // canceling it has been observed to take the whole app down with it.
+    // Checked up front and skipped entirely, the same way WindowSampler
+    // never calls into its native module under Wayland — never even
+    // reaching `this.capture()` here, so the picker never appears.
+    if (this.getPlatform() === 'linux' && this.isWayland()) return;
+
     const capturedAt = new Date().toISOString();
 
     let buffer: Buffer | null;

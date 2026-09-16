@@ -9,8 +9,16 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Screenshot } from '../../../database/entities/screenshot.entity';
 import type { OrganisationsService } from '../../../organisations/services/organisations.service';
+import type { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import type { ScreenshotStorageService } from '../screenshot-storage.service';
 import { ScreenshotsService } from '../screenshots.service';
+
+type FakeCoveringEntry = {
+  id: string;
+  projectId: string;
+  startedAt: Date;
+  endedAt: Date | null;
+};
 
 describe('ScreenshotsService', () => {
   function makeScreenshotsRepo(rows: Screenshot[] = []) {
@@ -84,6 +92,12 @@ describe('ScreenshotsService', () => {
     };
   }
 
+  function makeTimeEntriesService(coveringEntries: FakeCoveringEntry[] = []) {
+    return {
+      listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
+    } as unknown as TimeEntriesService;
+  }
+
   describe('requestUploadUrl', () => {
     it('builds a storage key namespaced by org and device, and returns a presigned PUT URL', async () => {
       const { storage, buildStorageKey } = makeStorage();
@@ -93,6 +107,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,
+        makeTimeEntriesService(),
       );
 
       const result = await service.requestUploadUrl(
@@ -121,6 +136,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo(),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -141,6 +157,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -171,6 +188,7 @@ describe('ScreenshotsService', () => {
           }),
         }),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await service.recordScreenshot(
@@ -210,6 +228,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         storage,
+        makeTimeEntriesService(),
       );
 
       const result = await service.getMyScreenshots(
@@ -226,11 +245,132 @@ describe('ScreenshotsService', () => {
           activePercentage: null,
           periodStart: null,
           periodEnd: null,
+          projectId: null,
         },
       ]);
       expect(createViewUrl).toHaveBeenCalledWith(
         'screenshots/org-1/device-1/123-uuid.jpg',
       );
+    });
+
+    it('attributes a screenshot to whichever project covered its capturedAt', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const row = {
+        id: 'screenshot-1',
+        capturedAt: new Date('2026-09-08T12:00:00.000Z'),
+        storageKey: 'screenshots/org-1/device-1/123-uuid.jpg',
+      } as Screenshot;
+      const { repo } = makeScreenshotsRepo([row]);
+      const coveringEntries: FakeCoveringEntry[] = [
+        {
+          id: 'te-1',
+          projectId: 'project-1',
+          startedAt: new Date('2026-09-08T11:00:00.000Z'),
+          endedAt: new Date('2026-09-08T13:00:00.000Z'),
+        },
+      ];
+      const service = new ScreenshotsService(
+        repo,
+        makeActivitySamplesRepo().repo,
+        makeMembershipsRepo({ findOne }),
+        makeOrganisationsService(),
+        makeStorage().storage,
+        makeTimeEntriesService(coveringEntries),
+      );
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+      );
+
+      expect(result[0].projectId).toBe('project-1');
+    });
+
+    it('filters to a given project, excluding screenshots outside its covering entries', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const covered = {
+        id: 'screenshot-1',
+        capturedAt: new Date('2026-09-08T12:00:00.000Z'),
+        storageKey: 'screenshots/org-1/device-1/a.jpg',
+      } as Screenshot;
+      const uncovered = {
+        id: 'screenshot-2',
+        capturedAt: new Date('2026-09-08T15:00:00.000Z'),
+        storageKey: 'screenshots/org-1/device-1/b.jpg',
+      } as Screenshot;
+      const { repo } = makeScreenshotsRepo([covered, uncovered]);
+      const coveringEntries: FakeCoveringEntry[] = [
+        {
+          id: 'te-1',
+          projectId: 'project-1',
+          startedAt: new Date('2026-09-08T11:00:00.000Z'),
+          endedAt: new Date('2026-09-08T13:00:00.000Z'),
+        },
+      ];
+      const service = new ScreenshotsService(
+        repo,
+        makeActivitySamplesRepo().repo,
+        makeMembershipsRepo({ findOne }),
+        makeOrganisationsService(),
+        makeStorage().storage,
+        makeTimeEntriesService(coveringEntries),
+      );
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {
+          projectId: 'project-1',
+        },
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('screenshot-1');
+    });
+
+    it('filters to untracked (no covering entry) when projectId is null', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const covered = {
+        id: 'screenshot-1',
+        capturedAt: new Date('2026-09-08T12:00:00.000Z'),
+        storageKey: 'screenshots/org-1/device-1/a.jpg',
+      } as Screenshot;
+      const uncovered = {
+        id: 'screenshot-2',
+        capturedAt: new Date('2026-09-08T15:00:00.000Z'),
+        storageKey: 'screenshots/org-1/device-1/b.jpg',
+      } as Screenshot;
+      const { repo } = makeScreenshotsRepo([covered, uncovered]);
+      const coveringEntries: FakeCoveringEntry[] = [
+        {
+          id: 'te-1',
+          projectId: 'project-1',
+          startedAt: new Date('2026-09-08T11:00:00.000Z'),
+          endedAt: new Date('2026-09-08T13:00:00.000Z'),
+        },
+      ];
+      const service = new ScreenshotsService(
+        repo,
+        makeActivitySamplesRepo().repo,
+        makeMembershipsRepo({ findOne }),
+        makeOrganisationsService(),
+        makeStorage().storage,
+        makeTimeEntriesService(coveringEntries),
+      );
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {
+          projectId: null,
+        },
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('screenshot-2');
     });
 
     it("attaches the ActivitySample whose period covers the screenshot's capturedAt", async () => {
@@ -254,6 +394,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         storage,
+        makeTimeEntriesService(),
       );
 
       const result = await service.getMyScreenshots(
@@ -291,6 +432,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       const result = await service.getMyScreenshots(
@@ -316,6 +458,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -344,6 +487,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -375,6 +519,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -394,6 +539,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -412,6 +558,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,
+        makeTimeEntriesService(),
       );
 
       await service.deleteExpired();
@@ -432,6 +579,7 @@ describe('ScreenshotsService', () => {
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,
+        makeTimeEntriesService(),
       );
 
       await service.deleteExpired();

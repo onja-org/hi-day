@@ -18,6 +18,7 @@ import { AppEventUploader } from './app-event-uploader';
 import { AuthStore } from './auth-store';
 import { CaptureSettingsGate } from './capture-settings-gate';
 import { getOrCreateDeviceFingerprint } from './device-identity';
+import { GnomeWindowFocusTracker } from './gnome-window-focus-tracker';
 import { OfflineQueue } from './offline-queue';
 import { OfflineQueueStore } from './offline-queue-store';
 import { isWaylandSession, toDevicePlatform } from './platform';
@@ -293,7 +294,24 @@ async function registerIpcHandlers(): Promise<void> {
 
   const appEventUploader = new AppEventUploader(authStore, apiClient, offlineQueue);
   offlineQueue.registerSender(appEventUploader);
-  const windowSampler = new WindowSampler({ sink: appEventUploader.enqueue });
+
+  // Fills WindowSampler's Wayland gap via AT-SPI2 (see docs/adr/0016-...) —
+  // started unconditionally at app startup, independent of login/timer
+  // state, same as the other capture-adjacent infrastructure here: it's a
+  // passive listener with negligible cost while idle, and WindowSampler
+  // itself already gates on windowTrackingEnabled && timerRunning before
+  // ever consulting it. Linux-only — the accessibility bus this depends on
+  // doesn't exist on macOS/Windows.
+  const gnomeWindowFocusTracker =
+    process.platform === 'linux'
+      ? new GnomeWindowFocusTracker({ logger: (line) => console.log(line) })
+      : null;
+  void gnomeWindowFocusTracker?.start();
+
+  const windowSampler = new WindowSampler({
+    sink: appEventUploader.enqueue,
+    getGnomeFocus: () => gnomeWindowFocusTracker?.getLastFocus() ?? null,
+  });
 
   const screenshotUploader = new ScreenshotUploader(authStore, apiClient, offlineQueue);
   offlineQueue.registerSender(screenshotUploader);
@@ -326,13 +344,8 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let activityTrackingEnabled = false;
   let timerRunning = false;
-  // See docs/adr/0014-... — a fourth AND'd condition alongside timerRunning,
-  // fed by CaptureSettingsGate the same way the other four flags are.
-  // Fail-closed by default (CaptureSettingsGate's own OFF_SETTINGS), so
-  // capture can't start before the gate has actually confirmed it's clear.
-  let consentRequired = true;
   function recomputeSampling(): void {
-    if (windowTrackingEnabled && timerRunning && !consentRequired) {
+    if (windowTrackingEnabled && timerRunning) {
       windowSampler.start();
     } else {
       windowSampler.stop();
@@ -343,13 +356,13 @@ async function registerIpcHandlers(): Promise<void> {
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
-    if (screenshotsEnabled && timerRunning && !consentRequired) {
+    if (screenshotsEnabled && timerRunning) {
       screenshotSampler.start();
     } else {
       screenshotSampler.stop();
     }
 
-    if (activityTrackingEnabled && timerRunning && !consentRequired) {
+    if (activityTrackingEnabled && timerRunning) {
       activitySampler.start();
     } else {
       activitySampler.stop();
@@ -365,7 +378,6 @@ async function registerIpcHandlers(): Promise<void> {
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       activityTrackingEnabled = settings.activityTrackingEnabled;
-      consentRequired = settings.consent.required;
       recomputeSampling();
     },
   );
@@ -590,8 +602,8 @@ async function registerIpcHandlers(): Promise<void> {
     },
   );
 
-  // See docs/adr/0014-... — the first-run/re-consent screen fetches the
-  // current disclosure text (if any is required) through this.
+  // See docs/adr/0015-... — the passive disclosure banner fetches the
+  // current notice text (if any is due) through this.
   ipcMain.handle('consent:get', () =>
     callDeviceApi((token) => apiClient.getDisclosure(token)),
   );
@@ -605,20 +617,21 @@ async function registerIpcHandlers(): Promise<void> {
       if (result.ok) {
         // Instant local feedback rather than waiting up to
         // DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS for the gate's own next
-        // poll — capture should be able to start the moment consent lands.
+        // poll — refreshes the banner's "acknowledged" state promptly. Purely
+        // cosmetic now: capture was never gated on this.
         void captureSettingsGate.pollOnce();
       }
       return result;
     },
   );
 
-  // Drives the "tracking is on" banner — intent-based (settings + timer +
-  // consent all line up), not tied to whether a sample actually uploaded
-  // successfully (see docs/adr/0014-...'s indicator-semantics note).
+  // Drives the "tracking is on" banner — intent-based (settings + timer
+  // line up), not tied to whether a sample actually uploaded successfully
+  // (see docs/adr/0015-...'s indicator-semantics note).
   ipcMain.handle('tracking:indicatorStatus', (): { active: boolean } => {
     const anyCaptureEnabled =
       windowTrackingEnabled || screenshotsEnabled || activityTrackingEnabled;
-    return { active: anyCaptureEnabled && timerRunning && !consentRequired };
+    return { active: anyCaptureEnabled && timerRunning };
   });
 
   // Triggers the native macOS Screen Recording prompt — never called
