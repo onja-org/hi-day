@@ -64,6 +64,7 @@ public sealed class AddressBarReader : IDisposable
         LastCandidates = candidates;
         if (candidates.Count == 0)
         {
+            DiagnoseTree(window, focus, candidates, "no-toolbar-edits");
             throw new ResolveFailureException(new ResolveFailure(
                 ResolveErrorCode.NoAddressBar, "No toolbar Edit elements found in the focused window."));
         }
@@ -72,6 +73,11 @@ public sealed class AddressBarReader : IDisposable
         var value = AddressBarSelector.SelectGenericFallback(candidates);
         if (value is null)
         {
+            if (!anyEditHasFocus)
+            {
+                DiagnoseTree(window, focus, candidates, "no-valid-host");
+            }
+
             throw new ResolveFailureException(anyEditHasFocus
                 ? new ResolveFailure(ResolveErrorCode.AddressBarFocused,
                     "The address bar has keyboard focus; the user appears to be typing.")
@@ -87,6 +93,60 @@ public sealed class AddressBarReader : IDisposable
         };
 
         return new AddressBarReadResult(value, isPrivate);
+    }
+
+    /// <summary>
+    /// Opt-in structural probe for "this browser reads on Windows but that
+    /// one doesn't". Both no-address-bar paths collapse to one wire code,
+    /// so from the outside a tree that doesn't match the toolbar/Edit shape
+    /// is indistinguishable from one that matches but whose values fail
+    /// host validation — the exact ambiguity Firefox presented after five
+    /// Chromium browsers worked.
+    ///
+    /// Counts and booleans only, never element text: an address bar's value
+    /// IS the URL, and stderr is forwarded to the agent's normal logger.
+    ///
+    /// Gated on WINRESOLVER_DIAGNOSE_TREE=1 because it re-walks the window
+    /// on a path that has already failed, and the read runs under a 250ms
+    /// deadline — free when unset, which is how it ships.
+    /// </summary>
+    private static void DiagnoseTree(
+        FlaUI.Core.AutomationElements.AutomationElement window,
+        FocusTarget focus,
+        IReadOnlyList<AddressBarCandidate> candidates,
+        string stage)
+    {
+        if (Environment.GetEnvironmentVariable("WINRESOLVER_DIAGNOSE_TREE") != "1")
+        {
+            return;
+        }
+
+        try
+        {
+            // Only call shapes already proven against real browser windows
+            // here — this file's history is a lesson in not inventing FlaUI
+            // API surface on a machine that cannot compile it.
+            var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
+            var editsAnywhere = window.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit));
+            var docs = window.FindAllDescendants(cf => cf.ByControlType(ControlType.Document));
+
+            var withValue = 0;
+            var withFocus = 0;
+            foreach (var c in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(c.Value)) withValue++;
+                if (c.HasKeyboardFocus) withFocus++;
+            }
+
+            Console.Error.WriteLine(
+                $"[tree] {focus.App} stage={stage} toolbars={toolbars.Length} " +
+                $"editsAnywhere={editsAnywhere.Length} documents={docs.Length} " +
+                $"toolbarEdits={candidates.Count} withNonEmptyValue={withValue} withFocus={withFocus}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[tree] {focus.App} probe failed: {ex.GetType().Name}");
+        }
     }
 
     /// <summary>
