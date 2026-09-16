@@ -616,9 +616,6 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
     status.platform === "macos" &&
     !status.screenRecordingGranted
   );
-  // Wayland has no fix available, so this is informational only — no
-  // "Grant Access"-style call to action, unlike the screen-recording banner.
-  waylandNotice.hidden = !(captureRequested && status.waylandUnsupported);
 
   return status;
 }
