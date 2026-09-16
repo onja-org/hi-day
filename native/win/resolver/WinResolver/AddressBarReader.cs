@@ -316,32 +316,30 @@ public sealed class AddressBarReader : IDisposable
         // now succeed but run slow, reintroduce caching deliberately, with
         // ControlType included and measured on real hardware.
         var toolbars = window.FindAllDescendants(cf => cf.ByControlType(ControlType.ToolBar));
+        // Gecko's URL bar is an editable ComboBox, not an Edit — it carries
+        // the autocomplete dropdown. Chromium is the one that exposes a plain
+        // Edit. Searching both inside each toolbar covers every browser.
         foreach (var toolbar in toolbars)
         {
             Collect(toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit)));
+            Collect(toolbar.FindAllDescendants(cf => cf.ByControlType(ControlType.ComboBox)));
         }
 
-        // Gecko fallback. Firefox exposes four ToolBars and exactly one Edit
-        // — and that Edit, the address bar, sits under none of them:
+        // Toolbar-scoped, always. A window-wide Edit fallback briefly lived
+        // here and is deliberately gone: against Firefox it found no browser
+        // chrome at all, only page content —
         //
-        //   [tree] firefox.exe toolbars=4 editsAnywhere=1 toolbarEdits=0
+        //   id='id_login' class='form-control' | id='id_password'
+        //   class='form-control' | id='searchInput' class='cdx-text-input...'
         //
-        // measured on Windows 10 with Firefox's accessibility engine fully
-        // active (three Documents present). The toolbar scoping is right for
-        // the five Chromium browsers, which all resolve in 40-85ms through
-        // the loop above; it is simply not how Gecko nests its URL bar.
+        // a Bootstrap login form and a Wikipedia search box. It was reading a
+        // PASSWORD FIELD. HostValidator rejected every one, so nothing was
+        // recorded, but a URL reader has no business touching those elements
+        // at all, and that alone settles it.
         //
-        // Only reached when the narrow search found nothing, so Chromium
-        // never pays for it. Widening the scope risks pulling in page-content
-        // inputs, which is what the narrowing was guarding against — but the
-        // guard that actually matters is downstream and unchanged:
-        // SelectGenericFallback still requires a candidate's value to
-        // normalize to a valid host and to not hold keyboard focus, so a
-        // search box containing "how do I center a div" cannot win.
-        if (candidates.Count == 0)
-        {
-            Collect(window.FindAllDescendants(cf => cf.ByControlType(ControlType.Edit)));
-        }
+        // The same measurement showed the chrome IS reachable — toolbars=4
+        // were found, they simply held no Edit — which is what pointed at
+        // ComboBox above.
 
         void Collect(FlaUI.Core.AutomationElements.AutomationElement[] elements)
         {
