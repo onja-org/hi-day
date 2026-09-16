@@ -7,7 +7,10 @@ import {
 import { buildSessionCookieOptions } from './cookies.util';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const ACCESS_TOKEN_COOKIE_MAX_AGE_MS = 15 * 60 * 1000;
+// Also the fallback JwtAuthModule uses to sign the JWT itself, so the
+// cookie's browser-facing max-age and the token's own exp claim can't drift
+// apart — see ACCESS_TOKEN_TTL_DAYS in .env.example.
+export const DEFAULT_ACCESS_TOKEN_TTL_DAYS = 14;
 const DEFAULT_REFRESH_TOKEN_TTL_DAYS = 30;
 
 /**
@@ -22,6 +25,9 @@ export function setSessionCookies(
   refreshToken: string,
   configService: ConfigService,
 ): void {
+  const accessTokenTtlDays = Number(
+    configService.get('ACCESS_TOKEN_TTL_DAYS', DEFAULT_ACCESS_TOKEN_TTL_DAYS),
+  );
   const refreshTokenTtlDays = Number(
     configService.get('REFRESH_TOKEN_TTL_DAYS', DEFAULT_REFRESH_TOKEN_TTL_DAYS),
   );
@@ -29,7 +35,7 @@ export function setSessionCookies(
   response.cookie(
     ACCESS_TOKEN_COOKIE,
     accessToken,
-    buildSessionCookieOptions(ACCESS_TOKEN_COOKIE_MAX_AGE_MS, configService),
+    buildSessionCookieOptions(accessTokenTtlDays * MS_PER_DAY, configService),
   );
   response.cookie(
     REFRESH_TOKEN_COOKIE,
