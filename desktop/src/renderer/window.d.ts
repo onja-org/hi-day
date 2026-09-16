@@ -68,6 +68,7 @@ declare global {
     screenshotsEnabled: boolean;
     platform: DesktopDevicePlatformName;
     screenRecordingGranted: boolean;
+    waylandUnsupported: boolean;
   }
 
   interface StartPairingResult {

@@ -205,10 +205,16 @@ using a UUID generated on first run and persisted under Electron's
     captures for the signed-in member with a thumbnail per screenshot. On
     macOS, granting Screen Recording via the same banner step 8 describes
     is required for screenshots too (same permission, one banner covers
-    both — see docs/adr/0012-...). On a Wayland session, expect the same
-    informational note step 9 describes and **no** OS "share your screen"
-    picker — screenshot capture is skipped outright there (see **Known
-    limitations** below), so nothing appears in the Screenshots tab either.
+    both — see docs/adr/0012-...). On a Wayland session, the same banner
+    appears with different text ("Screenshots are off — needs a one-time
+    screen access grant.") and **no** "Open System Settings" fallback
+    button (there's no equivalent settings pane); clicking **Grant Access**
+    calls the `org.freedesktop.portal.Screenshot` D-Bus portal directly
+    (`screenshot-portal.ts` — not `desktopCapturer`/ScreenCast, which pops
+    the OS's own "share your screen" picker on every call and has been
+    observed to crash the app if that picker is canceled). Approve that
+    one dialog once and every later tick captures silently — verified live
+    against a real GNOME/Wayland session — with no repeat prompt.
 
 12. **Test the passive disclosure notice** (see `docs/adr/0015-...`): in
     the web console's **Settings → Consent & disclosure** page, write some
@@ -363,17 +369,30 @@ output — not just assumed from source-mode success):
   `screenshotRetentionDays` was set then — shortening the setting later
   only affects screenshots captured after the change, not existing ones.
   See the `Screenshot` entity's own comment and `docs/adr/0012-...`.
-- **Screenshot capture is unverified on real macOS hardware, and is
-  explicitly skipped under Wayland** (`ScreenshotSampler.tick()`'s
-  Wayland guard, mirroring `WindowSampler`'s own): Electron's
-  `desktopCapturer` goes through the xdg-desktop-portal ScreenCast API
-  under Wayland (unlike X11, which needs no such round-trip), which pops
-  the OS's own "share your screen" picker in front of the person on
-  every single tick if ever actually called — and canceling that picker
-  has been observed to crash the whole app. Checked and skipped up front
-  instead, the same way window tracking never calls into its native
-  module under Wayland — no sample, no popup, no crash. Nobody on this
-  project has a Mac, so the macOS side of this remains unverified.
+- **Screenshot capture is unverified on real macOS hardware.** Nobody on
+  this project has a Mac, so that side of the Screen Recording permission
+  flow remains unverified.
+- **Wayland screenshot capture goes through a different portal than X11/
+  macOS, gated behind its own one-time grant** (`screenshot-portal.ts`,
+  `ScreenshotSampler.captureBuffer()`): Electron's `desktopCapturer` goes
+  through the xdg-desktop-portal ScreenCast API under Wayland (unlike X11,
+  which needs no such round-trip), which would pop the OS's own "share your
+  screen" picker on every single tick — and canceling that picker has been
+  observed to crash the whole app — so it is never called there at all.
+  Instead, Wayland captures go through the separate
+  `org.freedesktop.portal.Screenshot` interface directly over D-Bus: a
+  single request/response with no live stream to cancel out from under, so
+  it doesn't share that crash. It only ever captures silently
+  (`interactive: false`) once a person has clicked **Grant Access** in the
+  capture-permission banner at least once (`AuthStore`'s
+  `waylandScreenshotGranted`, mirroring the macOS Screen Recording flow) —
+  verified live against a real GNOME/Wayland session: one approved
+  `interactive: true` call was enough for every later `interactive: false`
+  call to keep capturing with no repeat dialog. KDE's portal backend is
+  less consistently reported to remember that grant the same way GNOME's
+  does, and hasn't been verified on this project — a tick there may simply
+  keep emitting nothing (same "unlucky failure" fallback as any other
+  capture error) rather than silently succeeding.
 - **App-activity "time spent" is an approximation, not a measured
   duration.** Each sample is assumed to represent
   `DEFAULT_WINDOW_SAMPLE_INTERVAL_MS` (5s) of foreground time — see

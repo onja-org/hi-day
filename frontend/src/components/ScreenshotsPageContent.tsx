@@ -35,12 +35,15 @@ export function ScreenshotsPageContent({
   const searchParams = useSearchParams();
   const organisationQuery = useCurrentOrganisation();
   const canViewOthers =
-    organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
+    organisationQuery.data?.role === "admin" ||
+    organisationQuery.data?.role === "manager";
 
   const date = searchParams.get("date") ?? undefined;
   const membershipId = searchParams.get("membershipId") ?? undefined;
   const untracked = searchParams.get("untracked") === "1";
-  const projectId = untracked ? undefined : (searchParams.get("projectId") ?? undefined);
+  const projectId = untracked
+    ? undefined
+    : (searchParams.get("projectId") ?? undefined);
 
   const screenshotsQuery = useActivityScreenshots(organisationId, {
     date,
@@ -49,9 +52,13 @@ export function ScreenshotsPageContent({
     untracked,
   });
 
+  console.log(screenshotsQuery);
   return (
     <div className="flex flex-col gap-4">
-      <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
+      <ActivityFilterToolbar
+        organisationId={organisationId}
+        canViewOthers={canViewOthers}
+      />
 
       {screenshotsQuery.isLoading && (
         <p className="flex items-center gap-2 text-slate-900">

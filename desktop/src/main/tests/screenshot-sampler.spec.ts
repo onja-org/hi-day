@@ -59,19 +59,58 @@ describe('ScreenshotSampler', () => {
     expect(captures).toHaveLength(0);
   });
 
-  it('never calls capture() on Linux Wayland — desktopCapturer would otherwise prompt the OS share-screen picker every tick', async () => {
+  it('never calls capture() (desktopCapturer) on Linux Wayland — that would otherwise prompt the OS share-screen picker every tick', async () => {
     const { sink, captures } = makeSink();
     const capture = vi.fn().mockResolvedValue(Buffer.from('fake-jpeg-bytes'));
+    const capturePortal = vi.fn().mockResolvedValue(Buffer.from('fake-jpeg-bytes'));
     const sampler = new ScreenshotSampler({
       sink,
       capture,
+      capturePortal,
       getPlatform: () => 'linux',
       isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
     });
 
     await sampler.tick();
 
     expect(capture).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(1);
+  });
+
+  it('captures via the portal on Linux Wayland once the one-time grant has been given, always non-interactively', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('fake-jpeg-bytes');
+    const capturePortal = vi.fn().mockResolvedValue(buffer);
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).toHaveBeenCalledWith(false);
+    expect(captures).toHaveLength(1);
+    expect(captures[0].buffer).toBe(buffer);
+  });
+
+  it('emits nothing on Linux Wayland when the one-time grant has not been given yet — never even calls the portal', async () => {
+    const { sink, captures } = makeSink();
+    const capturePortal = vi.fn().mockResolvedValue(Buffer.from('fake-jpeg-bytes'));
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).not.toHaveBeenCalled();
     expect(captures).toHaveLength(0);
   });
 

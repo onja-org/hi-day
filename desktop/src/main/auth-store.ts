@@ -15,6 +15,13 @@ export interface StoredSession {
   lastProjectId?: string;
   /** The Task alongside `lastProjectId`, when one was chosen. */
   lastTaskId?: string | null;
+  /**
+   * Whether the one-time Linux/Wayland "Grant Access" portal call (see
+   * screenshot-portal.ts) has ever been approved on this device. Absent
+   * (falsy) until then; there's no OS-level API to check this directly the
+   * way macOS's `getMediaAccessStatus` allows, so this is our own record.
+   */
+  waylandScreenshotGranted?: boolean;
 }
 
 const SESSION_FILE_NAME = 'session.dat';
@@ -66,6 +73,17 @@ export class AuthStore {
     const session = this.load();
     if (!session) return;
     this.save({ ...session, lastProjectId: projectId, lastTaskId: taskId });
+  }
+
+  /**
+   * Records that the person has approved the Linux/Wayland screenshot
+   * portal at least once. A no-op when nothing is stored, matching
+   * `rememberProject`.
+   */
+  rememberWaylandScreenshotGranted(): void {
+    const session = this.load();
+    if (!session) return;
+    this.save({ ...session, waylandScreenshotGranted: true });
   }
 
   clear(): void {
