@@ -19,6 +19,7 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
     taskName: null,
     durationSeconds: 3600,
     canEdit: true,
+    pauses: [],
     ...overrides,
   };
 }

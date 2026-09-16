@@ -13,6 +13,7 @@ import { CaptureSettingsFields } from "./CaptureSettingsFields";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
+import { WorkingHoursField } from "./WorkingHoursField";
 
 const CLOSE_DELAY_MS = 900;
 
@@ -51,6 +52,7 @@ export function OrganisationSettingsForm({
     const formData = new FormData(event.currentTarget);
     const website = formData.get("website");
     const idleThresholdMinutes = Number(formData.get("idleThresholdMinutes"));
+    const workingHoursPerDay = Number(formData.get("workingHoursPerDay"));
     const screenshotFrequencyMinutes = Number(
       formData.get("screenshotFrequencyMinutes"),
     );
@@ -65,6 +67,9 @@ export function OrganisationSettingsForm({
       idleHandling: formData.get("idleHandling") as IdleHandling,
       idleThresholdMinutes: Number.isFinite(idleThresholdMinutes)
         ? idleThresholdMinutes
+        : undefined,
+      workingHoursPerDay: Number.isFinite(workingHoursPerDay)
+        ? workingHoursPerDay
         : undefined,
       windowTrackingEnabled: formData.get("windowTrackingEnabled") === "on",
       screenshotsEnabled: formData.get("screenshotsEnabled") === "on",
@@ -144,6 +149,8 @@ export function OrganisationSettingsForm({
           className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
+
+      <WorkingHoursField organisation={organisation} />
 
       <div className="flex flex-col gap-5 sm:flex-row">
         <label className="flex flex-1 flex-col gap-1.5">

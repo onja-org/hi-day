@@ -12,6 +12,10 @@ import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import { generateSlug } from '../slug.util';
+import {
+  DEFAULT_WORKING_HOURS_POLICY,
+  WorkingHoursPolicy,
+} from '../working-hours-policy';
 
 const DEFAULT_TIMEZONE = 'UTC';
 const DEFAULT_CURRENCY = 'USD';
@@ -36,6 +40,7 @@ export interface OrganisationProfile {
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
   activityTrackingEnabled: boolean;
+  workingHoursPerDay: number;
   userId: string;
 }
 
@@ -49,6 +54,7 @@ interface OrganisationSettings {
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
   activityTrackingEnabled?: boolean;
+  workingHoursPerDay?: number;
 }
 
 @Injectable()
@@ -213,6 +219,9 @@ export class OrganisationsService {
       ...(dto.activityTrackingEnabled !== undefined
         ? { activityTrackingEnabled: dto.activityTrackingEnabled }
         : {}),
+      ...(dto.workingHoursPerDay !== undefined
+        ? { workingHoursPerDay: dto.workingHoursPerDay }
+        : {}),
     };
 
     await this.organisations.save(organisation);
@@ -235,6 +244,26 @@ export class OrganisationsService {
       handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       thresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+    };
+  }
+
+  /**
+   * Read by other services (e.g. the dashboard summary) that need the
+   * daily-hours target without depending on the full `OrganisationProfile`
+   * shape — same rationale as `getIdlePolicy`. Informational only: nothing
+   * enforces this as a cap anywhere.
+   */
+  async getWorkingHoursPolicy(
+    organisationId: string,
+  ): Promise<WorkingHoursPolicy> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return {
+      hoursPerDay:
+        settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
     };
   }
 
@@ -300,6 +329,8 @@ export class OrganisationsService {
       activityTrackingEnabled:
         settings.activityTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled,
+      workingHoursPerDay:
+        settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       userId,
     };
   }

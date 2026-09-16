@@ -7,6 +7,7 @@ import { ProjectColour } from '../../../database/entities/project-colour.enum';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { DashboardService } from '../dashboard.service';
 
 describe('DashboardService', () => {
@@ -69,6 +70,12 @@ describe('DashboardService', () => {
     } as unknown as Repository<Membership>;
   }
 
+  function makeOrganisationsService(hoursPerDay = 8): OrganisationsService {
+    return {
+      getWorkingHoursPolicy: jest.fn().mockResolvedValue({ hoursPerDay }),
+    } as unknown as OrganisationsService;
+  }
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(NOW);
@@ -96,6 +103,7 @@ describe('DashboardService', () => {
       makePausesRepo(),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
+      makeOrganisationsService(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -147,6 +155,7 @@ describe('DashboardService', () => {
       makePausesRepo(),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
+      makeOrganisationsService(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -180,6 +189,7 @@ describe('DashboardService', () => {
       makePausesRepo(),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
+      makeOrganisationsService(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -198,6 +208,7 @@ describe('DashboardService', () => {
       makePausesRepo(),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
+      makeOrganisationsService(),
     );
     const withNoSamples = await serviceWithNoSamples.getSummary(
       'org-1',
@@ -214,6 +225,7 @@ describe('DashboardService', () => {
         [{ activePercentage: 50 }], // last week avg 50
       ),
       makeMembershipsRepo(),
+      makeOrganisationsService(),
     );
     const withSamples = await serviceWithSamples.getSummary('org-1', 'user-1');
     expect(withSamples.weeklyActivityPercentage).toBe(70);
@@ -226,10 +238,25 @@ describe('DashboardService', () => {
       makePausesRepo(),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
+      makeOrganisationsService(),
     );
 
     await expect(service.getSummary('org-1', 'user-1')).rejects.toThrow(
       ForbiddenException,
     );
+  });
+
+  it("includes the organisation's configured daily-hours target", async () => {
+    const service = new DashboardService(
+      makeTimeEntriesRepo([], [], []),
+      makePausesRepo(),
+      makeActivitySamplesRepo([], []),
+      makeMembershipsRepo(),
+      makeOrganisationsService(6),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(summary.workingHoursPerDayTarget).toBe(6);
   });
 });

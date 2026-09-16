@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { formatDuration } from "@/lib/formatDuration";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -9,6 +10,10 @@ import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { DashboardKpiTile } from "./DashboardKpiTile";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
+
+// A daily-hours target only makes sense as a comparison for a single-day
+// view — "12h of 8h target" for a whole week/month would be misleading.
+const SINGLE_DAY_PRESETS: TimesheetDatePreset[] = ["today", "yesterday"];
 
 type TimesheetSummaryTilesProps = {
   organisationId: string;
@@ -27,6 +32,7 @@ export function TimesheetSummaryTiles({
     from: range?.from,
     to: range?.to,
   });
+  const organisationQuery = useCurrentOrganisation();
 
   if (entriesQuery.isLoading) {
     return (
@@ -48,11 +54,18 @@ export function TimesheetSummaryTiles({
     dayGroups.length > 0 ? totalSeconds / dayGroups.length : 0;
   const projectCount = new Set(entries.map((entry) => entry.projectId)).size;
   const hasRunningEntry = entries.some((entry) => entry.durationSeconds === null);
+  const dailyTarget = organisationQuery.data?.workingHoursPerDay;
+  const showDailyTarget =
+    dailyTarget !== undefined && SINGLE_DAY_PRESETS.includes(datePreset);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <DashboardKpiTile label="Total hours" value={formatElapsed(totalSeconds * 1000)} />
+        <DashboardKpiTile
+          label="Total hours"
+          value={formatElapsed(totalSeconds * 1000)}
+          subLabel={showDailyTarget ? `of ${dailyTarget}h target` : undefined}
+        />
         <DashboardKpiTile
           label="Avg / day worked"
           value={formatDuration(Math.round(averageSecondsPerDay / 60))}

@@ -10,6 +10,10 @@ type DashboardKpiTileProps = {
   delta?: number;
   /** Optional trend points (e.g. one per day this week), oldest first. */
   sparkline?: number[];
+  /** Small caption under the value, e.g. "of 8h target" — text only, no bar
+   * (a bar snapped to fractionClass's 13 steps would visibly disagree with
+   * the exact number beside it). */
+  subLabel?: string;
 };
 
 const SPARKLINE_WIDTH = 64;
@@ -21,6 +25,7 @@ export function DashboardKpiTile({
   deltaLabel,
   delta,
   sparkline,
+  subLabel,
 }: DashboardKpiTileProps) {
   const hasDelta = deltaLabel !== undefined && delta !== undefined;
   const isUp = hasDelta && delta! > 0;
@@ -44,6 +49,9 @@ export function DashboardKpiTile({
           <span className="text-2xl font-semibold tabular-nums text-primary-dark">
             {value}
           </span>
+          {subLabel && (
+            <span className="text-xs text-slate-900/60">{subLabel}</span>
+          )}
           {hasDelta && (
             <span
               className={clsx(

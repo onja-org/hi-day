@@ -21,6 +21,12 @@ export type TimeEntry = {
   pausedSeconds: number;
 };
 
+export type PauseSpan = {
+  pausedAt: string;
+  /** null while this particular span is still open (currently paused). */
+  resumedAt: string | null;
+};
+
 export type TimeEntryListItem = TimeEntry & {
   projectName: string;
   projectColour: ProjectColour;
@@ -33,6 +39,8 @@ export type TimeEntryListItem = TimeEntry & {
    * edit anyone's, not even their own.
    */
   canEdit: boolean;
+  /** Every pause span on this entry, oldest first. */
+  pauses: PauseSpan[];
 };
 
 export type GetTimeEntriesResult =

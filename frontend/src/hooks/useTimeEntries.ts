@@ -26,7 +26,11 @@ export const TIME_ENTRIES_QUERY_KEY = (
   filter.to?.toISOString() ?? null,
 ];
 
-export function useTimeEntries(organisationId: string, filter: GetTimeEntriesFilter = {}) {
+export function useTimeEntries(
+  organisationId: string,
+  filter: GetTimeEntriesFilter = {},
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: TIME_ENTRIES_QUERY_KEY(organisationId, filter),
     queryFn: async () => {
@@ -36,5 +40,6 @@ export function useTimeEntries(organisationId: string, filter: GetTimeEntriesFil
       }
       return result.entries;
     },
+    enabled: options.enabled ?? true,
   });
 }

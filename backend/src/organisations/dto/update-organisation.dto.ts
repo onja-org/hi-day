@@ -2,8 +2,10 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -55,4 +57,10 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsBoolean()
   activityTrackingEnabled?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(24)
+  workingHoursPerDay?: number;
 }

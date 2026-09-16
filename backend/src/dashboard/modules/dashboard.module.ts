@@ -7,6 +7,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { DashboardController } from '../controllers/dashboard.controller';
 import { DashboardService } from '../services/dashboard.service';
 
@@ -20,6 +21,7 @@ import { DashboardService } from '../services/dashboard.service';
       Organisation,
     ]),
     JwtAuthModule,
+    OrganisationsModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService, RoleGuard],

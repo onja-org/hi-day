@@ -181,6 +181,7 @@ describe('OrganisationsService', () => {
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
         activityTrackingEnabled: false,
+        workingHoursPerDay: 8,
         userId: 'user-1',
       });
     });
@@ -455,6 +456,68 @@ describe('OrganisationsService', () => {
       });
 
       expect(profile.activityTrackingEnabled).toBe(true);
+    });
+
+    it('updates the workingHoursPerDay field', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        workingHoursPerDay: 6,
+      });
+
+      expect(profile.workingHoursPerDay).toBe(6);
+    });
+  });
+
+  describe('getWorkingHoursPolicy', () => {
+    it('returns the default of 8 hours when the organisation has no explicit setting', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: {},
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
+        hoursPerDay: 8,
+      });
+    });
+
+    it('returns the organisation-configured value when set', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { workingHoursPerDay: 6 },
+          }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
+        hoursPerDay: 6,
+      });
     });
   });
 

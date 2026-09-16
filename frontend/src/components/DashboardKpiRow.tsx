@@ -65,6 +65,7 @@ export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
       <DashboardKpiTile
         label="Worked today"
         value={formatElapsed(summary.workedTodaySeconds * 1000)}
+        subLabel={`of ${summary.workingHoursPerDayTarget}h target`}
         deltaLabel={formatDelta(summary.workedTodayDeltaSeconds)}
         delta={summary.workedTodayDeltaSeconds}
         sparkline={weekTrend}

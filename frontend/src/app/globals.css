@@ -70,6 +70,13 @@ body {
 }
 
 @theme {
+  /* Fixed intrinsic width for the timesheet Calendar grid's SVG (matches
+     the grid's own 960-unit viewBox) — keeps hour labels and gridlines
+     crisp at 1:1 scale instead of stretching non-uniformly to fill a
+     flexible container; the grid scrolls horizontally on a narrower
+     viewport instead (see TimesheetCalendarGrid.tsx). */
+  --width-calendar-grid: 60rem;
+
   --animate-float: float 6s ease-in-out infinite;
   --animate-float-slow: float 8s ease-in-out 1s infinite;
   --animate-fade-in: fade-in 0.5s ease-out both;

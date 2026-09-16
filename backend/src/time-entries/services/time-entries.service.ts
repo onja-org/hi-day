@@ -5,11 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   Between,
   DataSource,
   In,
   IsNull,
+  LessThan,
   LessThanOrEqual,
   MoreThanOrEqual,
   Repository,
@@ -35,6 +37,12 @@ const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 // manager-facing, multi-person view.
 const LIST_LIMIT = 200;
 
+// Caps splitRunningEntriesAcrossDayBoundary's hourly scan, same reasoning as
+// ScreenshotsService.deleteExpired's own RETENTION_CLEANUP_BATCH_SIZE — this
+// query isn't paired with a membershipId like everything else here, so it's
+// the one query in this service that scans across every org at once.
+const DAY_BOUNDARY_SPLIT_BATCH_SIZE = 200;
+
 export interface TimeEntrySummary {
   id: string;
   membershipId: string;
@@ -54,6 +62,12 @@ export interface TimeEntrySummary {
   pausedSeconds: number;
 }
 
+export interface PauseSpan {
+  pausedAt: Date;
+  /** null while this particular span is still open (currently paused). */
+  resumedAt: Date | null;
+}
+
 export interface TimeEntryListItem extends TimeEntrySummary {
   projectName: string;
   projectColour: ProjectColour;
@@ -68,6 +82,14 @@ export interface TimeEntryListItem extends TimeEntrySummary {
    * itself.
    */
   canEdit: boolean;
+  /**
+   * Every pause span on this entry, oldest first — the historical timesheet
+   * view surfaces these (when a person paused and resumed) rather than only
+   * the summed `pausedSeconds`. `TimeEntrySummary`'s live-timer paths
+   * (start/stop/switch/current) don't carry this — only the list view needs
+   * pause history, not just live pause state.
+   */
+  pauses: PauseSpan[];
 }
 
 export interface CurrentTimeEntry {
@@ -89,9 +111,14 @@ interface ValidatedStart {
 interface PauseState {
   pausedAt: Date | null;
   pausedSeconds: number;
+  spans: PauseSpan[];
 }
 
-const NO_PAUSE_STATE: PauseState = { pausedAt: null, pausedSeconds: 0 };
+const NO_PAUSE_STATE: PauseState = {
+  pausedAt: null,
+  pausedSeconds: 0,
+  spans: [],
+};
 
 @Injectable()
 export class TimeEntriesService {
@@ -372,6 +399,131 @@ export class TimeEntriesService {
         pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
       ),
     );
+  }
+
+  /**
+   * Keeps a running timer from silently spanning multiple calendar days —
+   * without this, a timer left running overnight attributes its entire
+   * elapsed time to whichever day it started, corrupting every per-day
+   * aggregate (dashboard, timesheet). Runs hourly, same cadence as
+   * `ScreenshotsService.deleteExpired`. Splits at *this server's* local
+   * midnight — `Organisation.settings.timezone` isn't read by anything else
+   * in the app yet, so there's no per-org boundary to honour here either.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async splitRunningEntriesAcrossDayBoundary(): Promise<void> {
+    const todayStart = this.startOfDay(new Date());
+
+    const running = await this.timeEntries.find({
+      where: { endedAt: IsNull(), startedAt: LessThan(todayStart) },
+      take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
+    });
+
+    for (const entry of running) {
+      await this.splitAcrossDayBoundaries(entry.id, todayStart);
+    }
+  }
+
+  /**
+   * Splits one entry, one calendar day at a time, until its `startedAt` is
+   * within today — so a gap longer than one cron cycle (the server was
+   * down, say) fully catches up in a single call rather than needing one
+   * cron run per missed day. Each day's split is its own transaction (same
+   * pattern as `switchTo`), re-reading the entry fresh each time in case it
+   * was stopped manually in between.
+   */
+  private async splitAcrossDayBoundaries(
+    entryId: string,
+    todayStart: Date,
+  ): Promise<void> {
+    for (;;) {
+      const nextEntryId = await this.dataSource.transaction(async (manager) => {
+        const entry = await manager.findOne(TimeEntry, {
+          where: { id: entryId },
+        });
+        if (!entry || entry.endedAt !== null) {
+          return null; // stopped manually, or already caught up
+        }
+        if (
+          this.startOfDay(entry.startedAt).getTime() >= todayStart.getTime()
+        ) {
+          return null; // already within today
+        }
+
+        const boundary = this.startOfNextDay(entry.startedAt);
+        if (boundary.getTime() <= entry.startedAt.getTime()) {
+          // Should be unreachable — startOfNextDay always lands on the
+          // day *after* startedAt's day — but guard anyway rather than
+          // risk a zero/negative-duration entry.
+          return null;
+        }
+
+        entry.endedAt = boundary;
+        await manager.save(entry);
+
+        const pausesRepo = manager.getRepository(TimeEntryPause);
+        const openPause = await pausesRepo.findOne({
+          where: { timeEntryId: entry.id, resumedAt: IsNull() },
+        });
+        if (openPause) {
+          openPause.resumedAt = boundary;
+          await pausesRepo.save(openPause);
+        }
+
+        const next = await manager.save(
+          manager.create(TimeEntry, {
+            organisationId: entry.organisationId,
+            membershipId: entry.membershipId,
+            projectId: entry.projectId,
+            taskId: entry.taskId,
+            startedAt: boundary,
+            endedAt: null,
+            source: entry.source,
+            deviceId: entry.deviceId,
+          }),
+        );
+
+        if (openPause) {
+          // The person was paused going into midnight — stay paused
+          // after it too, rather than silently resuming them.
+          await pausesRepo.save(
+            pausesRepo.create({
+              organisationId: entry.organisationId,
+              timeEntryId: next.id,
+              pausedAt: boundary,
+              resumedAt: null,
+            }),
+          );
+        }
+
+        await this.auditLogService.record(manager, {
+          action: 'time_entry.day_boundary_split',
+          organisationId: entry.organisationId,
+          metadata: {
+            fromTimeEntryId: entry.id,
+            toTimeEntryId: next.id,
+            boundary: boundary.toISOString(),
+          },
+        });
+
+        return next.id;
+      });
+
+      if (!nextEntryId) return;
+      entryId = nextEntryId;
+    }
+  }
+
+  private startOfDay(date: Date): Date {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  private startOfNextDay(date: Date): Date {
+    const next = this.startOfDay(date);
+    next.setDate(next.getDate() + 1);
+    return next;
   }
 
   /**
@@ -777,6 +929,12 @@ export class TimeEntriesService {
       states.set(timeEntryId, {
         pausedAt: open?.pausedAt ?? null,
         pausedSeconds: Math.round(closedSeconds),
+        spans: [...spans]
+          .sort((a, b) => a.pausedAt.getTime() - b.pausedAt.getTime())
+          .map((span) => ({
+            pausedAt: span.pausedAt,
+            resumedAt: span.resumedAt,
+          })),
       });
     }
     return states;
@@ -825,6 +983,7 @@ export class TimeEntriesService {
           ) - pauseState.pausedSeconds
         : null,
       canEdit: this.canEditEntry(viewerMembership, entry.membershipId),
+      pauses: pauseState.spans,
     };
   }
 

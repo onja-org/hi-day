@@ -7,6 +7,7 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_DAYS = 7;
@@ -51,6 +52,8 @@ export interface DashboardSummary {
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */
   projectsThisWeek: DashboardProjectTime[];
+  /** Admin-configurable, default 8 — informational only, never enforced. */
+  workingHoursPerDayTarget: number;
 }
 
 @Injectable()
@@ -64,6 +67,7 @@ export class DashboardService {
     private readonly activitySamples: Repository<ActivitySample>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
+    private readonly organisationsService: OrganisationsService,
   ) {}
 
   async getSummary(
@@ -171,6 +175,8 @@ export class DashboardService {
       new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS),
       new Date(now.getTime() - WEEK_DAYS * DAY_MS),
     );
+    const workingHoursPolicy =
+      await this.organisationsService.getWorkingHoursPolicy(organisationId);
 
     return {
       workedTodaySeconds,
@@ -190,6 +196,7 @@ export class DashboardService {
       projectsThisWeek: [...projectSeconds.values()].sort(
         (a, b) => b.seconds - a.seconds,
       ),
+      workingHoursPerDayTarget: workingHoursPolicy.hoursPerDay,
     };
   }
 

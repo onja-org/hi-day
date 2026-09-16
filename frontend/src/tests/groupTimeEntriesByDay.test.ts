@@ -19,6 +19,7 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
     pausedSeconds: 0,
     durationSeconds: 3600,
     canEdit: true,
+    pauses: [],
     ...overrides,
   };
 }

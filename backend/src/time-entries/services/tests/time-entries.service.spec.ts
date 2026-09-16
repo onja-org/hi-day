@@ -925,6 +925,77 @@ describe('TimeEntriesService', () => {
       expect(result[0].durationSeconds).toBe(25 * 60);
     });
 
+    it('exposes every pause span (closed and open) on the list item, oldest first', async () => {
+      const completedEntry = {
+        id: 'entry-done',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        startedAt: new Date('2026-01-01T09:00:00Z'),
+        endedAt: new Date('2026-01-01T12:00:00Z'),
+        source: TimeEntrySource.WEB,
+        deviceId: null,
+        project: { name: 'Website', colour: 'blue' },
+        task: { name: 'Design homepage' },
+      } as unknown as TimeEntry;
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([completedEntry]),
+      });
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            id: 'pause-2',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T11:00:00Z'),
+            resumedAt: new Date('2026-01-01T11:10:00Z'),
+          } as TimeEntryPause,
+          {
+            id: 'pause-1',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T09:10:00Z'),
+            resumedAt: new Date('2026-01-01T09:15:00Z'),
+          } as TimeEntryPause,
+        ]),
+      });
+      const service = makeService({ timeEntriesRepo, timeEntryPausesRepo });
+
+      const result = await service.list('org-1', 'user-1');
+
+      expect(result[0].pauses).toEqual([
+        {
+          pausedAt: new Date('2026-01-01T09:10:00Z'),
+          resumedAt: new Date('2026-01-01T09:15:00Z'),
+        },
+        {
+          pausedAt: new Date('2026-01-01T11:00:00Z'),
+          resumedAt: new Date('2026-01-01T11:10:00Z'),
+        },
+      ]);
+    });
+
+    it('returns an empty pauses array for an entry that was never paused', async () => {
+      const completedEntry = {
+        id: 'entry-done',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        startedAt: new Date('2026-01-01T09:00:00Z'),
+        endedAt: new Date('2026-01-01T09:30:00Z'),
+        source: TimeEntrySource.WEB,
+        deviceId: null,
+        project: { name: 'Website', colour: 'blue' },
+        task: { name: 'Design homepage' },
+      } as unknown as TimeEntry;
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([completedEntry]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      const result = await service.list('org-1', 'user-1');
+
+      expect(result[0].pauses).toEqual([]);
+    });
+
     it('leaves durationSeconds null for a still-running entry', async () => {
       const runningWithRelations = {
         ...runningEntry,
@@ -1092,6 +1163,238 @@ describe('TimeEntriesService', () => {
       await expect(
         service.hasRunningEntryForProject('project-1'),
       ).resolves.toBe(false);
+    });
+  });
+
+  describe('splitRunningEntriesAcrossDayBoundary', () => {
+    // A hand-rolled fake transaction/manager backed by a plain in-memory
+    // map — the shared `makeDataSource()` helper always resolves `findOne`
+    // to a single fixed value, but this method re-fetches fresh state once
+    // per day boundary crossed (potentially several times per entry), so it
+    // needs a manager that actually reflects prior saves within the test.
+    function makeFakeDataSource(
+      initialEntries: TimeEntry[],
+      initialPauses: TimeEntryPause[] = [],
+    ) {
+      const entries = new Map(initialEntries.map((e) => [e.id, { ...e }]));
+      const pauses = new Map(initialPauses.map((p) => [p.id, { ...p }]));
+      let nextId = 1;
+
+      const pausesRepo = {
+        findOne: jest.fn(
+          ({
+            where,
+          }: {
+            where: { timeEntryId: string; resumedAt: unknown };
+          }) => {
+            for (const pause of pauses.values()) {
+              if (
+                pause.timeEntryId === where.timeEntryId &&
+                pause.resumedAt === null
+              ) {
+                return Promise.resolve(pause);
+              }
+            }
+            return Promise.resolve(null);
+          },
+        ),
+        save: jest.fn((pause: TimeEntryPause) => {
+          const id = pause.id ?? `pause-${nextId++}`;
+          const saved = { ...pause, id };
+          pauses.set(id, saved);
+          return Promise.resolve(saved);
+        }),
+        create: jest.fn(
+          (input: Partial<TimeEntryPause>) => input as TimeEntryPause,
+        ),
+      };
+
+      const manager = {
+        findOne: jest.fn(
+          (_entity: unknown, { where }: { where: { id: string } }) => {
+            const found = entries.get(where.id);
+            return Promise.resolve(found ? { ...found } : null);
+          },
+        ),
+        save: jest.fn((entity: TimeEntry) => {
+          const id = entity.id ?? `entry-${nextId++}`;
+          const saved = { ...entity, id };
+          entries.set(id, saved);
+          return Promise.resolve(saved);
+        }),
+        create: jest.fn(
+          (_entity: unknown, input: Partial<TimeEntry>) => input as TimeEntry,
+        ),
+        getRepository: jest.fn().mockReturnValue(pausesRepo),
+      };
+
+      const transaction = jest.fn(
+        (fn: (manager: typeof manager) => Promise<unknown>) => fn(manager),
+      );
+
+      return { dataSource: { transaction } as unknown, entries, pauses };
+    }
+
+    function makeRunningEntry(
+      overrides: Partial<TimeEntry> & { id: string; startedAt: Date },
+    ): TimeEntry {
+      return {
+        organisationId: 'org-1',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: 'task-1',
+        endedAt: null,
+        source: TimeEntrySource.WEB,
+        deviceId: null,
+        ...overrides,
+      } as TimeEntry;
+    }
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('closes an overnight entry at local midnight and opens a new one for today', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+      });
+      const fake = makeFakeDataSource([original]);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([original]),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      const oldEntry = fake.entries.get('entry-orig')!;
+      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 6, 0, 0, 0));
+
+      const newEntries = [...fake.entries.values()].filter(
+        (e) => e.id !== 'entry-orig',
+      );
+      expect(newEntries).toHaveLength(1);
+      expect(newEntries[0]).toMatchObject({
+        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+        endedAt: null,
+        projectId: 'project-1',
+        taskId: 'task-1',
+        membershipId: 'm-1',
+      });
+    });
+
+    it('catches a multi-day-old entry fully up in one call', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 8, 12, 0, 0));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+      });
+      const fake = makeFakeDataSource([original]);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([original]),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      // Jan 5 -> Jan 6 -> Jan 7 -> Jan 8 (today, still open) — 3 splits.
+      expect(fake.entries.size).toBe(4);
+      const stillOpen = [...fake.entries.values()].find(
+        (e) => e.endedAt === null,
+      );
+      expect(stillOpen?.startedAt).toEqual(new Date(2026, 0, 8, 0, 0, 0));
+    });
+
+    it('carries an open pause across the split instead of silently resuming it', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+      });
+      const openPause = {
+        id: 'pause-1',
+        organisationId: 'org-1',
+        timeEntryId: 'entry-orig',
+        pausedAt: new Date(2026, 0, 5, 20, 0, 0),
+        resumedAt: null,
+      } as TimeEntryPause;
+      const fake = makeFakeDataSource([original], [openPause]);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([original]),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      const boundary = new Date(2026, 0, 6, 0, 0, 0);
+      const oldPause = fake.pauses.get('pause-1')!;
+      expect(oldPause.resumedAt).toEqual(boundary);
+
+      const newEntry = [...fake.entries.values()].find(
+        (e) => e.id !== 'entry-orig',
+      )!;
+      const newPause = [...fake.pauses.values()].find(
+        (p) => p.timeEntryId === newEntry.id,
+      );
+      expect(newPause).toMatchObject({ pausedAt: boundary, resumedAt: null });
+    });
+
+    it('still splits into a positive-duration entry when startedAt is already exactly a previous midnight', async () => {
+      // The steady-state shape this job's own output takes the night after
+      // it first runs.
+      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 7, 8, 0, 0));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+      });
+      const fake = makeFakeDataSource([original]);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([original]),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      const oldEntry = fake.entries.get('entry-orig')!;
+      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 7, 0, 0, 0));
+      expect(oldEntry.endedAt!.getTime()).toBeGreaterThan(
+        oldEntry.startedAt.getTime(),
+      );
+    });
+
+    it('leaves an entry that started today untouched', async () => {
+      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 15, 0, 0));
+      const original = makeRunningEntry({
+        id: 'entry-today',
+        startedAt: new Date(2026, 0, 6, 9, 0, 0),
+      });
+      const fake = makeFakeDataSource([original]);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([original]),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(fake.entries.size).toBe(1);
+      const entry = fake.entries.get('entry-today')!;
+      expect(entry.endedAt).toBeNull();
     });
   });
 });

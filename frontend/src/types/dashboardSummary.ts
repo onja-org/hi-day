@@ -30,6 +30,8 @@ export type DashboardSummary = {
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */
   projectsThisWeek: DashboardProjectTime[];
+  /** Admin-configurable, default 8 — informational only, never enforced. */
+  workingHoursPerDayTarget: number;
 };
 
 export type GetDashboardSummaryResult =
