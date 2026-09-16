@@ -110,6 +110,66 @@ public sealed class AddressBarReader : IDisposable
     }
 
     /// <summary>
+    /// AutomationProperty&lt;T&gt;.Value THROWS when the underlying property is
+    /// not supported — it does not return null. PatternOrDefault only guards
+    /// the pattern's absence, not an unsupported property on a pattern that
+    /// is present, and that gap is what turned Firefox from no-valid-host
+    /// into [unexpected]: Gecko exposes LegacyIAccessible but not its Value.
+    /// TryGetValue is the non-throwing accessor (verified against FlaUI's
+    /// AutomationProperty source, alongside ValueOrDefault and IsSupported).
+    /// </summary>
+    private static string? ReadPatternValue(AutomationProperty<string>? property)
+    {
+        if (property is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return property.TryGetValue(out var value) ? value : null;
+        }
+        catch
+        {
+            // A provider can still fail mid-call even when the property
+            // reports as supported. One unreadable element must never sink
+            // the whole read — the other candidates may still hold the URL.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ValuePattern first: the five Chromium browsers answer on it in
+    /// 40-85ms and keep that path untouched. LegacyIAccessible second, for
+    /// Gecko — Firefox's accessibility is IAccessible2 behind a UIA bridge,
+    /// and the bridge can surface text there rather than through
+    /// ValuePattern.
+    /// </summary>
+    private static string? ReadValue(FlaUI.Core.AutomationElements.AutomationElement element)
+    {
+        var value = ReadPatternValue(element.Patterns.Value.PatternOrDefault?.Value);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        return ReadPatternValue(element.Patterns.LegacyIAccessible.PatternOrDefault?.Value);
+    }
+
+    /// <summary>Same throwing hazard as ReadPatternValue; absent focus is the safe default.</summary>
+    private static bool ReadHasKeyboardFocus(FlaUI.Core.AutomationElements.AutomationElement element)
+    {
+        try
+        {
+            return element.Properties.HasKeyboardFocus.TryGetValue(out var focused) && focused;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Opt-in structural probe for "this browser reads on Windows but that
     /// one doesn't". Both no-address-bar paths collapse to one wire code,
     /// so from the outside a tree that doesn't match the toolbar/Edit shape
@@ -152,10 +212,28 @@ public sealed class AddressBarReader : IDisposable
                 if (c.HasKeyboardFocus) withFocus++;
             }
 
+            // Which pattern actually carries the text, per Edit. Firefox
+            // reported toolbarEdits=1 withNonEmptyValue=0 — the address bar
+            // was found and gave nothing — and there is more than one way a
+            // UIA provider can expose that text. Booleans only, never the
+            // text: an address bar's value IS the URL.
+            var patterns = new List<string>();
+            foreach (var edit in editsAnywhere)
+            {
+                var viaValue = !string.IsNullOrWhiteSpace(
+                    ReadPatternValue(edit.Patterns.Value.PatternOrDefault?.Value));
+                var viaLegacy = !string.IsNullOrWhiteSpace(
+                    ReadPatternValue(edit.Patterns.LegacyIAccessible.PatternOrDefault?.Value));
+                var hasText = edit.Patterns.Text.PatternOrDefault is not null;
+                var name = !string.IsNullOrWhiteSpace(ReadPatternValue(edit.Properties.Name));
+                patterns.Add($"value={viaValue} legacy={viaLegacy} textPattern={hasText} name={name}");
+            }
+
             Console.Error.WriteLine(
                 $"[tree] {focus.App} stage={stage} toolbars={toolbars.Length} " +
                 $"editsAnywhere={editsAnywhere.Length} documents={docs.Length} " +
-                $"toolbarEdits={candidates.Count} withNonEmptyValue={withValue} withFocus={withFocus}");
+                $"toolbarEdits={candidates.Count} withNonEmptyValue={withValue} withFocus={withFocus} " +
+                $"edits[{string.Join(" | ", patterns)}]");
         }
         catch (Exception ex)
         {
@@ -226,37 +304,9 @@ public sealed class AddressBarReader : IDisposable
         {
             foreach (var element in elements)
             {
-                var hasKeyboardFocus = element.Properties.HasKeyboardFocus.Value;
-                candidates.Add(new AddressBarCandidate(ReadValue(element), hasKeyboardFocus, IsEdit: true));
+                candidates.Add(new AddressBarCandidate(
+                    ReadValue(element), ReadHasKeyboardFocus(element), IsEdit: true));
             }
-        }
-
-        // ValuePattern first — it is what the five Chromium browsers answer
-        // on, at 40-85ms. Firefox implements the pattern but returns nothing
-        // through it:
-        //
-        //   [tree] firefox.exe stage=no-valid-host toolbarEdits=1 withNonEmptyValue=0
-        //
-        // i.e. the address bar was found (the Gecko fallback above works) and
-        // simply had no value to give. Gecko's accessibility is IAccessible2
-        // behind a UIA bridge, and the bridge surfaces that text through
-        // LegacyIAccessible instead.
-        //
-        // Ordered, not merged: Chromium keeps its existing path untouched and
-        // pays nothing, and LegacyIAccessible is consulted only when
-        // ValuePattern yields nothing. Both accessor shapes verified against
-        // FlaUI's own source rather than recalled — ILegacyIAccessiblePattern
-        // exposes `AutomationProperty<string> Value`, and the element-side
-        // accessor is `Patterns.LegacyIAccessible`.
-        static string? ReadValue(FlaUI.Core.AutomationElements.AutomationElement element)
-        {
-            var value = element.Patterns.Value.PatternOrDefault?.Value.Value;
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            return element.Patterns.LegacyIAccessible.PatternOrDefault?.Value.Value;
         }
 
         return candidates;
