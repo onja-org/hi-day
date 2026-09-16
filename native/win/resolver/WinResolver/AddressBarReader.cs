@@ -252,16 +252,24 @@ public sealed class AddressBarReader : IDisposable
             // was found and gave nothing — and there is more than one way a
             // UIA provider can expose that text. Booleans only, never the
             // text: an address bar's value IS the URL.
+            // AutomationId and ClassName are STRUCTURAL identifiers a provider
+            // hard-codes — "urlbar-input", not anything the user typed — so
+            // they are safe to print where a value or a Name is not. Lengths
+            // stand in for the text itself: they distinguish "the pattern
+            // returned nothing" from "the pattern returned something we then
+            // rejected", which booleans could not.
             var patterns = new List<string>();
             foreach (var edit in editsAnywhere)
             {
-                var viaValue = !string.IsNullOrWhiteSpace(
-                    ReadPatternValue(edit.Patterns.Value.PatternOrDefault?.Value));
-                var viaLegacy = !string.IsNullOrWhiteSpace(
-                    ReadPatternValue(edit.Patterns.LegacyIAccessible.PatternOrDefault?.Value));
-                var hasText = edit.Patterns.Text.PatternOrDefault is not null;
-                var name = !string.IsNullOrWhiteSpace(ReadPatternValue(edit.Properties.Name));
-                patterns.Add($"value={viaValue} legacy={viaLegacy} textPattern={hasText} name={name}");
+                var id = ReadPatternValue(edit.Properties.AutomationId) ?? "";
+                var cls = ReadPatternValue(edit.Properties.ClassName) ?? "";
+                var valueLen = (ReadPatternValue(edit.Patterns.Value.PatternOrDefault?.Value) ?? "").Length;
+                var legacyLen = (ReadPatternValue(edit.Patterns.LegacyIAccessible.PatternOrDefault?.Value) ?? "").Length;
+                var textLen = (ReadTextPattern(edit) ?? "").Length;
+                var nameLen = (ReadPatternValue(edit.Properties.Name) ?? "").Length;
+                patterns.Add(
+                    $"id='{id}' class='{cls}' valueLen={valueLen} legacyLen={legacyLen} " +
+                    $"textLen={textLen} nameLen={nameLen}");
             }
 
             Console.Error.WriteLine(
