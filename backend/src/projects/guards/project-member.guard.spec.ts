@@ -9,6 +9,7 @@ import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { ProjectMemberGuard } from './project-member.guard';
 
 describe('ProjectMemberGuard', () => {
@@ -46,6 +47,20 @@ describe('ProjectMemberGuard', () => {
     };
   }
 
+  function makeProjectTeamsRepo(getOne = jest.fn().mockResolvedValue(null)) {
+    const queryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne,
+    };
+    return {
+      repo: {
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      } as unknown as Repository<ProjectTeam>,
+      getOne,
+    };
+  }
+
   it('rejects a non-numeric organisation id without querying the database', async () => {
     const { repo: membershipsRepo, findOne: membershipsFindOne } =
       makeMembershipsRepo();
@@ -53,6 +68,7 @@ describe('ProjectMemberGuard', () => {
       membershipsRepo,
       makeOrganisationsRepo().repo,
       makeProjectMembershipsRepo().repo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
@@ -66,6 +82,7 @@ describe('ProjectMemberGuard', () => {
       makeMembershipsRepo(jest.fn().mockResolvedValue(null)).repo,
       makeOrganisationsRepo().repo,
       makeProjectMembershipsRepo().repo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
@@ -82,6 +99,7 @@ describe('ProjectMemberGuard', () => {
       ).repo,
       makeOrganisationsRepo().repo,
       projectMembershipsRepo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
@@ -101,6 +119,7 @@ describe('ProjectMemberGuard', () => {
       ).repo,
       makeOrganisationsRepo().repo,
       projectMembershipsRepo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
@@ -120,6 +139,7 @@ describe('ProjectMemberGuard', () => {
       makeProjectMembershipsRepo(
         jest.fn().mockResolvedValue({ role: ProjectMembershipRole.MANAGER }),
       ).repo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
@@ -134,10 +154,26 @@ describe('ProjectMemberGuard', () => {
       ).repo,
       makeOrganisationsRepo().repo,
       makeProjectMembershipsRepo(jest.fn().mockResolvedValue(null)).repo,
+      makeProjectTeamsRepo().repo,
     );
 
     await expect(
       guard.canActivate(makeContext('user-1', '100000', 'project-1')),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows an org member with no direct ProjectMembership who reaches the project via a Team', async () => {
+    const guard = new ProjectMemberGuard(
+      makeMembershipsRepo(
+        jest.fn().mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+      ).repo,
+      makeOrganisationsRepo().repo,
+      makeProjectMembershipsRepo(jest.fn().mockResolvedValue(null)).repo,
+      makeProjectTeamsRepo(jest.fn().mockResolvedValue({ id: 'pt-1' })).repo,
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000', 'project-1')),
+    ).resolves.toBe(true);
   });
 });

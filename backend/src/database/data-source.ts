@@ -15,6 +15,7 @@ import { Note } from './entities/note.entity';
 import { Organisation } from './entities/organisation.entity';
 import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
+import { ProjectTeam } from './entities/project-team.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Screenshot } from './entities/screenshot.entity';
 import { Task } from './entities/task.entity';
@@ -36,6 +37,7 @@ export default new DataSource({
     TeamMembership,
     Project,
     ProjectMembership,
+    ProjectTeam,
     Task,
     Invitation,
     AuditLog,

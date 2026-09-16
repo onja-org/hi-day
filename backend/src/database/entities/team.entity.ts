@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Invitation } from './invitation.entity';
 import { Organisation } from './organisation.entity';
+import { ProjectTeam } from './project-team.entity';
 import { TeamMembership } from './team-membership.entity';
 
 @Entity({ name: 'teams' })
@@ -41,4 +42,7 @@ export class Team {
 
   @OneToMany(() => Invitation, (invitation) => invitation.team)
   invitations: Invitation[];
+
+  @OneToMany(() => ProjectTeam, (projectTeam) => projectTeam.team)
+  projectTeams: ProjectTeam[];
 }

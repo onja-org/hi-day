@@ -24,10 +24,12 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
+import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
 
@@ -132,6 +134,8 @@ export class TimeEntriesService {
     private readonly memberships: Repository<Membership>,
     @InjectRepository(ProjectMembership)
     private readonly projectMemberships: Repository<ProjectMembership>,
+    @InjectRepository(ProjectTeam)
+    private readonly projectTeams: Repository<ProjectTeam>,
     @InjectRepository(Project)
     private readonly projects: Repository<Project>,
     @InjectRepository(Task)
@@ -863,7 +867,8 @@ export class TimeEntriesService {
   /**
    * Org admin/manager can always track time on any Project, same as they
    * can always manage one — otherwise the caller needs their own
-   * ProjectMembership, which is what actually grants "permission to log
+   * ProjectMembership (directly, or via a Team assigned to the project —
+   * see ProjectTeam), which is what actually grants "permission to log
    * time against a specific Project" (see CONTEXT.md's Project membership
    * entry).
    */
@@ -878,11 +883,19 @@ export class TimeEntriesService {
     const projectMembership = await this.projectMemberships.findOne({
       where: { projectId, membershipId: membership.id },
     });
-    if (!projectMembership) {
-      throw new ForbiddenException(
-        'You do not have the required role for this project.',
-      );
+    if (projectMembership) {
+      return;
     }
+
+    if (
+      await hasTeamProjectAccess(this.projectTeams, projectId, membership.id)
+    ) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You do not have the required role for this project.',
+    );
   }
 
   /**

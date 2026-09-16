@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import {
   ORGANISATION_TEAMS_QUERY_KEY,
   useOrganisationTeams,
 } from "@/hooks/useOrganisationTeams";
 import { deleteTeam } from "@/lib/deleteTeam";
+import { AddTeamMemberFromListModal } from "./AddTeamMemberFromListModal";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EditTeamModal } from "./EditTeamModal";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
+import { TeamListRow } from "./TeamListRow";
 
 type TeamsListProps = {
   organisationId: string;
@@ -23,6 +25,8 @@ export function TeamsList({ organisationId }: TeamsListProps) {
   const teamsQuery = useOrganisationTeams(organisationId);
   const [search, setSearch] = useState("");
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [addingMemberTeamId, setAddingMemberTeamId] = useState<string | null>(null);
 
   const isAdmin = organisationQuery.data?.role === "admin";
 
@@ -71,6 +75,7 @@ export function TeamsList({ organisationId }: TeamsListProps) {
   const teamPendingDelete = teamsQuery.data.find(
     (team) => team.id === deletingTeamId,
   );
+  const editingTeam = teamsQuery.data.find((team) => team.id === editingTeamId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -99,26 +104,15 @@ export function TeamsList({ organisationId }: TeamsListProps) {
       ) : (
         <ul className="flex flex-col gap-2">
           {teams.map((team) => (
-            <li
+            <TeamListRow
               key={team.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-input-border px-3 py-2 text-slate-900"
-            >
-              <Link
-                href={`/organisations/${organisationId}/teams/${team.id}`}
-                className="hover:underline"
-              >
-                {team.name}
-              </Link>
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setDeletingTeamId(team.id)}
-                  className="cursor-pointer text-error underline"
-                >
-                  Delete
-                </button>
-              )}
-            </li>
+              organisationId={organisationId}
+              team={team}
+              isAdmin={isAdmin}
+              onAddMember={() => setAddingMemberTeamId(team.id)}
+              onEdit={() => setEditingTeamId(team.id)}
+              onDelete={() => setDeletingTeamId(team.id)}
+            />
           ))}
         </ul>
       )}
@@ -132,6 +126,22 @@ export function TeamsList({ organisationId }: TeamsListProps) {
           isPending={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate(teamPendingDelete.id)}
           onClose={() => setDeletingTeamId(null)}
+        />
+      )}
+
+      {editingTeam && (
+        <EditTeamModal
+          organisationId={organisationId}
+          team={editingTeam}
+          onClose={() => setEditingTeamId(null)}
+        />
+      )}
+
+      {addingMemberTeamId && (
+        <AddTeamMemberFromListModal
+          organisationId={organisationId}
+          teamId={addingMemberTeamId}
+          onClose={() => setAddingMemberTeamId(null)}
         />
       )}
     </div>

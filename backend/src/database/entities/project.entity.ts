@@ -12,6 +12,7 @@ import {
 import { Organisation } from './organisation.entity';
 import { ProjectColour } from './project-colour.enum';
 import { ProjectMembership } from './project-membership.entity';
+import { ProjectTeam } from './project-team.entity';
 import { Task } from './task.entity';
 
 @Entity({ name: 'projects' })
@@ -70,4 +71,7 @@ export class Project {
     (projectMembership) => projectMembership.project,
   )
   memberships: ProjectMembership[];
+
+  @OneToMany(() => ProjectTeam, (projectTeam) => projectTeam.project)
+  projectTeams: ProjectTeam[];
 }

@@ -16,6 +16,7 @@ import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { AddProjectMemberDto } from '../dto/add-project-member.dto';
+import { AddProjectTeamDto } from '../dto/add-project-team.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
@@ -23,10 +24,12 @@ import { ProjectRoleGuard } from '../guards/project-role.guard';
 import { ProjectViewGuard } from '../guards/project-view.guard';
 import type {
   AssignableMemberSummary,
+  AssignableTeamSummary,
   ProjectDetail,
   ProjectListItem,
   ProjectMemberSummary,
   ProjectSummary,
+  ProjectTeamSummary,
 } from '../services/projects.service';
 import { ProjectsService } from '../services/projects.service';
 
@@ -103,6 +106,17 @@ export class ProjectsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<AssignableMemberSummary[]> {
     return this.projectsService.listAssignableMembers(request.organisationId!);
+  }
+
+  // Backs the "add team" picker, same rationale as assignable-members but
+  // for AddProjectTeamDto's teamId — every Team in the org, not just ones
+  // the caller belongs to (see ProjectsService.listAssignableTeams).
+  @Get(':projectId/assignable-teams')
+  @UseGuards(ProjectRoleGuard)
+  assignableTeams(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<AssignableTeamSummary[]> {
+    return this.projectsService.listAssignableTeams(request.organisationId!);
   }
 
   @Patch(':projectId')
@@ -189,6 +203,40 @@ export class ProjectsController {
       request.organisationId!,
       projectId,
       membershipId,
+      request.userId,
+    );
+  }
+
+  // Assigning/unassigning a Team grants/revokes project-MEMBER-equivalent
+  // access to every Membership on that Team at once (see ProjectTeam) —
+  // stays behind the same project-manager gate as adding an individual
+  // member.
+  @Post(':projectId/teams')
+  @UseGuards(ProjectRoleGuard)
+  addTeam(
+    @Param('projectId') projectId: string,
+    @Body() dto: AddProjectTeamDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ProjectTeamSummary> {
+    return this.projectsService.addTeam(
+      request.organisationId!,
+      projectId,
+      request.userId,
+      dto,
+    );
+  }
+
+  @Delete(':projectId/teams/:teamId')
+  @UseGuards(ProjectRoleGuard)
+  removeTeam(
+    @Param('projectId') projectId: string,
+    @Param('teamId') teamId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.projectsService.removeTeam(
+      request.organisationId!,
+      projectId,
+      teamId,
       request.userId,
     );
   }

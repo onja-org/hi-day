@@ -5,6 +5,7 @@ import { AppEventsModule } from '../../app-events/modules/app-events.module';
 import { DeviceSession } from '../../database/entities/device-session.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { DeviceSessionGuard } from '../../devices/device-session.guard';
 import { DeviceProjectMemberGuard } from '../../devices/guards/device-project-member.guard';
 import { DisclosureModule } from '../../disclosure/modules/disclosure.module';
@@ -18,7 +19,12 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([DeviceSession, Membership, ProjectMembership]),
+    TypeOrmModule.forFeature([
+      DeviceSession,
+      Membership,
+      ProjectMembership,
+      ProjectTeam,
+    ]),
     ProjectsModule,
     TasksModule,
     TimeEntriesModule,

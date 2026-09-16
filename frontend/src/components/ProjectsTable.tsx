@@ -92,7 +92,9 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Tasks</th>
               <th className="px-3 py-2 font-medium">Rate</th>
-              <th className="px-3 py-2 font-medium" />
+              <th className="px-3 py-2 font-medium">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>

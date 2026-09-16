@@ -142,7 +142,6 @@ export function ProjectMembersSection({
         <AddProjectMemberModal
           organisationId={organisationId}
           projectId={project.id}
-          assignedMembershipIds={project.members.map((member) => member.membershipId)}
           onClose={() => setAddOpen(false)}
         />
       )}

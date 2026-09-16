@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, QueryFailedError, Repository } from 'typeorm';
+import { DataSource, In, IsNull, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -14,9 +14,13 @@ import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
+import { Team } from '../../database/entities/team.entity';
+import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { AddProjectMemberDto } from '../dto/add-project-member.dto';
+import { AddProjectTeamDto } from '../dto/add-project-team.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
@@ -50,8 +54,15 @@ export interface ProjectMemberSummary {
   effectiveRate: string | null;
 }
 
+export interface ProjectTeamSummary {
+  id: string;
+  teamId: string;
+  name: string;
+}
+
 export interface ProjectDetail extends ProjectSummary {
   members: ProjectMemberSummary[];
+  teams: ProjectTeamSummary[];
 }
 
 export interface ProjectListItem extends ProjectSummary {
@@ -70,6 +81,11 @@ export interface AssignableMemberSummary {
   name: string | null;
 }
 
+export interface AssignableTeamSummary {
+  id: string;
+  name: string;
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(
@@ -79,6 +95,12 @@ export class ProjectsService {
     private readonly tasks: Repository<Task>,
     @InjectRepository(ProjectMembership)
     private readonly projectMemberships: Repository<ProjectMembership>,
+    @InjectRepository(ProjectTeam)
+    private readonly projectTeams: Repository<ProjectTeam>,
+    @InjectRepository(Team)
+    private readonly teams: Repository<Team>,
+    @InjectRepository(TeamMembership)
+    private readonly teamMemberships: Repository<TeamMembership>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -89,6 +111,7 @@ export class ProjectsService {
   /**
    * The projects a caller can track time against: every active Project for
    * an org admin/manager, or just the ones they hold a ProjectMembership on
+   * (directly, or via a Team assigned to the Project — see ProjectTeam)
    * otherwise — mirrors the access rule TimeEntriesService.start enforces,
    * so this list never shows a project that starting a timer would then
    * reject.
@@ -113,14 +136,7 @@ export class ProjectsService {
         order: { name: 'ASC' },
       });
     } else {
-      const projectMemberships = await this.projectMemberships.find({
-        where: { membershipId: membership.id },
-        relations: { project: true },
-      });
-      projects = projectMemberships
-        .map((pm) => pm.project)
-        .filter((project) => !project.archivedAt)
-        .sort((a, b) => a.name.localeCompare(b.name));
+      projects = await this.getProjectsAccessibleTo(membership.id);
     }
 
     const taskCounts = await this.getTaskCounts(projects.map((p) => p.id));
@@ -152,12 +168,31 @@ export class ProjectsService {
       .where('project.organisationId = :organisationId', { organisationId });
 
     if (caller.role !== MembershipRole.ADMIN) {
-      query.innerJoin(
-        'project.memberships',
-        'callerMembership',
-        'callerMembership.membershipId = :callerMembershipId',
-        { callerMembershipId: caller.id },
-      );
+      // LeftJoin both access paths (direct ProjectMembership, or via a Team
+      // assigned to the project — ProjectTeam) and OR them together, rather
+      // than innerJoin-ing either alone, since a caller only needs one of
+      // the two to see the project.
+      query
+        .leftJoin(
+          'project.memberships',
+          'callerMembership',
+          'callerMembership.membershipId = :callerMembershipId',
+          { callerMembershipId: caller.id },
+        )
+        .leftJoin('project.projectTeams', 'callerProjectTeam')
+        .leftJoin('callerProjectTeam.team', 'callerProjectTeamTeam')
+        .leftJoin(
+          'callerProjectTeamTeam.teamMemberships',
+          'callerTeamMembership',
+          'callerTeamMembership.membershipId = :callerMembershipId',
+          { callerMembershipId: caller.id },
+        )
+        .andWhere(
+          '(callerMembership.id IS NOT NULL OR callerTeamMembership.id IS NOT NULL)',
+        )
+        // A caller who belongs to more than one Team assigned to the same
+        // project would otherwise get one joined row per matching Team.
+        .distinct(true);
     }
 
     if (filter.status === 'active') {
@@ -179,6 +214,42 @@ export class ProjectsService {
       ...this.toSummary(project),
       taskCount: taskCounts.get(project.id) ?? 0,
     }));
+  }
+
+  /**
+   * Every active Project a non-org-wide Membership can reach: one it holds
+   * a ProjectMembership on directly, plus one reached via any Team the
+   * Membership belongs to that's been assigned to the Project (ProjectTeam)
+   * — see CONTEXT.md's Project membership entry for why the two are
+   * equivalent grants.
+   */
+  private async getProjectsAccessibleTo(
+    membershipId: string,
+  ): Promise<Project[]> {
+    const projectMemberships = await this.projectMemberships.find({
+      where: { membershipId },
+      relations: { project: true },
+    });
+
+    const teamMemberships = await this.teamMemberships.find({
+      where: { membershipId },
+    });
+    const teamIds = teamMemberships.map((tm) => tm.teamId);
+    const projectTeams = teamIds.length
+      ? await this.projectTeams.find({
+          where: { teamId: In(teamIds) },
+          relations: { project: true },
+        })
+      : [];
+
+    const projectsById = new Map<string, Project>();
+    for (const pm of projectMemberships)
+      projectsById.set(pm.project.id, pm.project);
+    for (const pt of projectTeams) projectsById.set(pt.project.id, pt.project);
+
+    return Array.from(projectsById.values())
+      .filter((project) => !project.archivedAt)
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -226,6 +297,22 @@ export class ProjectsService {
     }));
   }
 
+  /**
+   * Backs the "add team" picker — every Team in the Organisation, since a
+   * project manager delegating access to a whole Team needs to see all of
+   * them, not just ones they happen to belong to.
+   */
+  async listAssignableTeams(
+    organisationId: string,
+  ): Promise<AssignableTeamSummary[]> {
+    const teams = await this.teams.find({
+      where: { organisationId },
+      order: { name: 'ASC' },
+    });
+
+    return teams.map((team) => ({ id: team.id, name: team.name }));
+  }
+
   async findOne(
     organisationId: string,
     projectId: string,
@@ -238,11 +325,18 @@ export class ProjectsService {
       order: { createdAt: 'ASC' },
     });
 
+    const teams = await this.projectTeams.find({
+      where: { projectId },
+      relations: { team: true },
+      order: { createdAt: 'ASC' },
+    });
+
     return {
       ...this.toSummary(project),
       members: members.map((projectMembership) =>
         this.toMemberSummary(project, projectMembership),
       ),
+      teams: teams.map((projectTeam) => this.toProjectTeamSummary(projectTeam)),
     };
   }
 
@@ -506,6 +600,88 @@ export class ProjectsService {
     return this.toMemberSummary(project, saved);
   }
 
+  /**
+   * Assigns a whole Team to the project (see ProjectTeam) — every current
+   * and future member of that Team gains project-MEMBER-equivalent access,
+   * as an alternative to adding each Membership individually via addMember.
+   */
+  async addTeam(
+    organisationId: string,
+    projectId: string,
+    actorUserId: string,
+    dto: AddProjectTeamDto,
+  ): Promise<ProjectTeamSummary> {
+    const project = await this.getProjectOrThrow(organisationId, projectId);
+    this.assertNotArchived(project);
+
+    const team = await this.teams.findOne({
+      where: { id: dto.teamId, organisationId },
+    });
+    if (!team) {
+      throw new NotFoundException('Team not found.');
+    }
+
+    const existing = await this.projectTeams.findOne({
+      where: { projectId, teamId: dto.teamId },
+    });
+    if (existing) {
+      throw new ConflictException('This team is already on the project.');
+    }
+
+    const projectTeam = this.projectTeams.create({
+      projectId,
+      teamId: dto.teamId,
+    });
+
+    const saved = await this.projectTeams
+      .save(projectTeam)
+      .catch((error: unknown) => {
+        if (this.isUniqueViolation(error)) {
+          throw new ConflictException('This team is already on the project.');
+        }
+        throw error;
+      });
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'project.team_added',
+        organisationId,
+        actorUserId,
+        metadata: { projectId, teamId: dto.teamId },
+      });
+    });
+
+    return this.toProjectTeamSummary({ ...saved, team });
+  }
+
+  async removeTeam(
+    organisationId: string,
+    projectId: string,
+    teamId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const project = await this.getProjectOrThrow(organisationId, projectId);
+    this.assertNotArchived(project);
+
+    const projectTeam = await this.projectTeams.findOne({
+      where: { projectId, teamId },
+    });
+    if (!projectTeam) {
+      throw new NotFoundException('This team is not on the project.');
+    }
+
+    await this.projectTeams.remove(projectTeam);
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'project.team_removed',
+        organisationId,
+        actorUserId,
+        metadata: { projectId, teamId },
+      });
+    });
+  }
+
   private async getProjectOrThrow(
     organisationId: string,
     projectId: string,
@@ -561,6 +737,16 @@ export class ProjectsService {
       role: projectMembership.role,
       rate: projectMembership.rate,
       effectiveRate: resolveProjectRate(project, projectMembership),
+    };
+  }
+
+  private toProjectTeamSummary(
+    projectTeam: Pick<ProjectTeam, 'id' | 'teamId'> & { team: Team },
+  ): ProjectTeamSummary {
+    return {
+      id: projectTeam.id,
+      teamId: projectTeam.teamId,
+      name: projectTeam.team.name,
     };
   }
 

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import { ArrowSquareOut, CaretDown, CaretRight } from "@phosphor-icons/react";
 import Link from "next/link";
 import type { ProjectListItem } from "@/types/project";
-import { ArchiveProjectButton } from "./ArchiveProjectButton";
 import { ProjectColourBadge } from "./ProjectColourBadge";
+import { ProjectRowActions } from "./ProjectRowActions";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import { ProjectTasksSection } from "./ProjectTasksSection";
 
@@ -24,10 +24,16 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
         <td className="px-3 py-2">
           <Link
             href={`/organisations/${organisationId}/projects/${project.id}`}
-            className="flex items-center gap-2 text-slate-900 hover:text-primary"
+            title="Open project details"
+            className="group flex w-fit items-center gap-2 text-slate-900 hover:text-primary"
           >
             <ProjectColourBadge colour={project.colour} />
             {project.name}
+            <ArrowSquareOut
+              size={14}
+              aria-hidden="true"
+              className="text-primary-dark/40 transition-colors duration-150 group-hover:text-primary"
+            />
           </Link>
         </td>
         <td className="px-3 py-2 text-slate-900">{project.client ?? "—"}</td>
@@ -54,7 +60,7 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {canManage && (
-            <ArchiveProjectButton organisationId={organisationId} project={project} />
+            <ProjectRowActions organisationId={organisationId} project={project} />
           )}
         </td>
       </tr>

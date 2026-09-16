@@ -7,7 +7,10 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
+import { Team } from '../../database/entities/team.entity';
+import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { ProjectsController } from '../controllers/projects.controller';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
@@ -20,6 +23,9 @@ import { ProjectsService } from '../services/projects.service';
       Project,
       Task,
       ProjectMembership,
+      ProjectTeam,
+      Team,
+      TeamMembership,
       Membership,
       Organisation,
     ]),

@@ -37,8 +37,15 @@ export type ProjectMember = {
   effectiveRate: string | null;
 };
 
+export type ProjectTeamMember = {
+  id: string;
+  teamId: string;
+  name: string;
+};
+
 export type ProjectDetail = Project & {
   members: ProjectMember[];
+  teams: ProjectTeamMember[];
 };
 
 export type ProjectListItem = Project & {
@@ -94,5 +101,17 @@ export type UpdateProjectMemberResult =
   | { ok: false; message: string };
 
 export type RemoveProjectMemberResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+export type AddProjectTeamInput = {
+  teamId: string;
+};
+
+export type AddProjectTeamResult =
+  | { ok: true; team: ProjectTeamMember }
+  | { ok: false; message: string };
+
+export type RemoveProjectTeamResult =
   | { ok: true }
   | { ok: false; message: string };

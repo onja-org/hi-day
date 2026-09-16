@@ -12,7 +12,10 @@ import { Project } from '../../../database/entities/project.entity';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
 import { ProjectMembershipRole } from '../../../database/entities/project-membership-role.enum';
+import { ProjectTeam } from '../../../database/entities/project-team.entity';
 import { Task } from '../../../database/entities/task.entity';
+import { Team } from '../../../database/entities/team.entity';
+import { TeamMembership } from '../../../database/entities/team-membership.entity';
 import type { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { ProjectsService } from '../projects.service';
 
@@ -30,11 +33,14 @@ describe('ProjectsService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      distinct: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
     };
     return {
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       create: jest.fn((input: Partial<Project>) => input as Project),
       save: jest.fn((input: Partial<Project>) =>
         Promise.resolve(input as Project),
@@ -89,6 +95,38 @@ describe('ProjectsService', () => {
     } as unknown as Repository<Membership>;
   }
 
+  function makeProjectTeamsRepo(
+    overrides: Partial<Repository<ProjectTeam>> = {},
+  ) {
+    return {
+      findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((input: Partial<ProjectTeam>) => input as ProjectTeam),
+      save: jest.fn((input: Partial<ProjectTeam>) =>
+        Promise.resolve(input as ProjectTeam),
+      ),
+      remove: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    } as unknown as Repository<ProjectTeam>;
+  }
+
+  function makeTeamsRepo(overrides: Partial<Repository<Team>> = {}) {
+    return {
+      findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
+      ...overrides,
+    } as unknown as Repository<Team>;
+  }
+
+  function makeTeamMembershipsRepo(
+    overrides: Partial<Repository<TeamMembership>> = {},
+  ) {
+    return {
+      find: jest.fn().mockResolvedValue([]),
+      ...overrides,
+    } as unknown as Repository<TeamMembership>;
+  }
+
   function makeDataSource() {
     const save = jest.fn().mockResolvedValue(undefined);
     const manager = { save } as unknown as EntityManager;
@@ -122,6 +160,9 @@ describe('ProjectsService', () => {
       projectsRepo?: Repository<Project>;
       tasksRepo?: Repository<Task>;
       projectMembershipsRepo?: Repository<ProjectMembership>;
+      projectTeamsRepo?: Repository<ProjectTeam>;
+      teamsRepo?: Repository<Team>;
+      teamMembershipsRepo?: Repository<TeamMembership>;
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
@@ -132,6 +173,9 @@ describe('ProjectsService', () => {
       overrides.projectsRepo ?? makeProjectsRepo(),
       overrides.tasksRepo ?? makeTasksRepo(),
       overrides.projectMembershipsRepo ?? makeProjectMembershipsRepo(),
+      overrides.projectTeamsRepo ?? makeProjectTeamsRepo(),
+      overrides.teamsRepo ?? makeTeamsRepo(),
+      overrides.teamMembershipsRepo ?? makeTeamMembershipsRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
@@ -698,12 +742,20 @@ describe('ProjectsService', () => {
       const queryBuilder = (
         projectsRepo as unknown as { __queryBuilder: Record<string, jest.Mock> }
       ).__queryBuilder;
-      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+      expect(queryBuilder.leftJoin).toHaveBeenCalledWith(
         'project.memberships',
         'callerMembership',
         'callerMembership.membershipId = :callerMembershipId',
         { callerMembershipId: 'manager-membership' },
       );
+      expect(queryBuilder.leftJoin).toHaveBeenCalledWith(
+        'project.projectTeams',
+        'callerProjectTeam',
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(callerMembership.id IS NOT NULL OR callerTeamMembership.id IS NOT NULL)',
+      );
+      expect(queryBuilder.distinct).toHaveBeenCalledWith(true);
     });
 
     it('throws when the caller has no active membership in the organisation', async () => {
@@ -820,6 +872,36 @@ describe('ProjectsService', () => {
         service.listForTimeTracking('org-1', 'user-1'),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it('includes projects reached only via a Team assigned to them, for a plain member', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        find: jest.fn().mockResolvedValue([]),
+      });
+      const teamMembershipsRepo = makeTeamMembershipsRepo({
+        find: jest.fn().mockResolvedValue([{ teamId: 'team-1' }]),
+      });
+      const projectTeamsFind = jest
+        .fn()
+        .mockResolvedValue([{ project: { ...baseProject, id: 'project-2' } }]);
+      const projectTeamsRepo = makeProjectTeamsRepo({ find: projectTeamsFind });
+      const service = makeService({
+        membershipsRepo,
+        projectMembershipsRepo,
+        teamMembershipsRepo,
+        projectTeamsRepo,
+      });
+
+      const result = await service.listForTimeTracking('org-1', 'user-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('project-2');
+      expect(projectTeamsFind).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('listAssignableMembers', () => {
@@ -849,6 +931,149 @@ describe('ProjectsService', () => {
           where: { organisationId: 'org-1', status: MembershipStatus.ACTIVE },
         }),
       );
+    });
+  });
+
+  describe('listAssignableTeams', () => {
+    it('returns every team in the organisation', async () => {
+      const find = jest
+        .fn()
+        .mockResolvedValue([{ id: 'team-1', name: 'Engineering' }]);
+      const teamsRepo = makeTeamsRepo({ find });
+      const service = makeService({ teamsRepo });
+
+      const result = await service.listAssignableTeams('org-1');
+
+      expect(result).toEqual([{ id: 'team-1', name: 'Engineering' }]);
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organisationId: 'org-1' } }),
+      );
+    });
+  });
+
+  describe('addTeam', () => {
+    it('assigns a team and records an audit log entry', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'team-1', name: 'Eng' }),
+      });
+      const projectTeamsRepo = makeProjectTeamsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        projectsRepo,
+        teamsRepo,
+        projectTeamsRepo,
+        dataSource,
+        auditLogService,
+      });
+
+      const result = await service.addTeam('org-1', 'project-1', 'admin-1', {
+        teamId: 'team-1',
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({ teamId: 'team-1', name: 'Eng' }),
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'project.team_added' }),
+      );
+    });
+
+    it('rejects a team from another organisation', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ projectsRepo, teamsRepo });
+
+      await expect(
+        service.addTeam('org-1', 'project-1', 'admin-1', { teamId: 'team-1' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a team already on the project', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'team-1', name: 'Eng' }),
+      });
+      const projectTeamsRepo = makeProjectTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'pt-1' }),
+      });
+      const service = makeService({
+        projectsRepo,
+        teamsRepo,
+        projectTeamsRepo,
+      });
+
+      await expect(
+        service.addTeam('org-1', 'project-1', 'admin-1', { teamId: 'team-1' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects assigning a team to an archived project', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...baseProject, archivedAt: new Date() }),
+      });
+      const service = makeService({ projectsRepo });
+
+      await expect(
+        service.addTeam('org-1', 'project-1', 'admin-1', { teamId: 'team-1' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('removeTeam', () => {
+    it('removes the team and records an audit log entry', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const remove = jest.fn().mockResolvedValue(undefined);
+      const projectTeamsRepo = makeProjectTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'pt-1', teamId: 'team-1' }),
+        remove,
+      });
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        projectsRepo,
+        projectTeamsRepo,
+        dataSource,
+        auditLogService,
+      });
+
+      await service.removeTeam('org-1', 'project-1', 'team-1', 'admin-1');
+
+      expect(remove).toHaveBeenCalled();
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'project.team_removed' }),
+      );
+    });
+
+    it('throws when the team is not on the project', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const projectTeamsRepo = makeProjectTeamsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ projectsRepo, projectTeamsRepo });
+
+      await expect(
+        service.removeTeam('org-1', 'project-1', 'team-1', 'admin-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

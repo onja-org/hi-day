@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers";
-import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
+import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
 import { addProjectMember } from "@/lib/addProjectMember";
 import type { AddProjectMemberInput, ProjectMembershipRole } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
@@ -14,17 +14,16 @@ import { Spinner } from "./Spinner";
 type AddProjectMemberModalProps = {
   organisationId: string;
   projectId: string;
-  assignedMembershipIds: string[];
   onClose: () => void;
 };
 
 export function AddProjectMemberModal({
   organisationId,
   projectId,
-  assignedMembershipIds,
   onClose,
 }: AddProjectMemberModalProps) {
   const queryClient = useQueryClient();
+  const projectQuery = useProject(organisationId, projectId);
   const membersQuery = useAssignableProjectMembers(organisationId, projectId);
   const [membershipId, setMembershipId] = useState("");
 
@@ -41,9 +40,12 @@ export function AddProjectMemberModal({
     },
   });
 
+  const assignedMembershipIds =
+    projectQuery.data?.members.map((member) => member.membershipId) ?? [];
   const availableMembers = (membersQuery.data ?? []).filter(
     (member) => !assignedMembershipIds.includes(member.id),
   );
+  const isLoading = projectQuery.isLoading || membersQuery.isLoading;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,6 +71,7 @@ export function AddProjectMemberModal({
             value={membershipId}
             onChange={(event) => setMembershipId(event.target.value)}
             required
+            disabled={isLoading}
             className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             <option value="">Select a member</option>
@@ -80,7 +83,7 @@ export function AddProjectMemberModal({
           </select>
         </label>
 
-        {availableMembers.length === 0 && !membersQuery.isLoading && (
+        {availableMembers.length === 0 && !isLoading && (
           <p className="text-sm text-slate-900">
             Every active member is already assigned to this project.
           </p>

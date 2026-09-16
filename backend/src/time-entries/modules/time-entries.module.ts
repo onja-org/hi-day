@@ -6,6 +6,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
@@ -24,6 +25,7 @@ import { TimeEntriesService } from '../services/time-entries.service';
       Organisation,
       Project,
       ProjectMembership,
+      ProjectTeam,
       Task,
     ]),
     AuditLogModule,

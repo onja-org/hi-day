@@ -9,6 +9,7 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Project } from '../../../database/entities/project.entity';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
+import { ProjectTeam } from '../../../database/entities/project-team.entity';
 import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
@@ -64,6 +65,17 @@ describe('TimeEntriesService', () => {
     } as unknown as Repository<ProjectMembership>;
   }
 
+  function makeProjectTeamsRepo(getOne = jest.fn().mockResolvedValue(null)) {
+    const queryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne,
+    };
+    return {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    } as unknown as Repository<ProjectTeam>;
+  }
+
   function makeProjectsRepo(overrides: Partial<Repository<Project>> = {}) {
     return {
       findOne: jest.fn().mockResolvedValue(baseProject),
@@ -117,6 +129,7 @@ describe('TimeEntriesService', () => {
       timeEntryPausesRepo?: Repository<TimeEntryPause>;
       membershipsRepo?: Repository<Membership>;
       projectMembershipsRepo?: Repository<ProjectMembership>;
+      projectTeamsRepo?: Repository<ProjectTeam>;
       projectsRepo?: Repository<Project>;
       tasksRepo?: Repository<Task>;
       dataSource?: unknown;
@@ -128,6 +141,7 @@ describe('TimeEntriesService', () => {
       overrides.timeEntryPausesRepo ?? makeTimeEntryPausesRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       overrides.projectMembershipsRepo ?? makeProjectMembershipsRepo(),
+      overrides.projectTeamsRepo ?? makeProjectTeamsRepo(),
       overrides.projectsRepo ?? makeProjectsRepo(),
       overrides.tasksRepo ?? makeTasksRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
