@@ -21,7 +21,7 @@ import { getOrCreateDeviceFingerprint } from './device-identity';
 import { GnomeWindowFocusTracker } from './gnome-window-focus-tracker';
 import { OfflineQueue } from './offline-queue';
 import { OfflineQueueStore } from './offline-queue-store';
-import { isWaylandSession, toDevicePlatform } from './platform';
+import { toDevicePlatform } from './platform';
 import type { DesktopDevicePlatform } from './platform';
 import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
 import { ScreenshotUploader } from './screenshot-uploader';
@@ -93,7 +93,6 @@ interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
-  waylandUnsupported: boolean;
 }
 
 // Otherwise userData resolves from package.json's "name" ("desktop"),
@@ -596,7 +595,6 @@ async function registerIpcHandlers(): Promise<void> {
             platform === 'macos'
               ? systemPreferences.getMediaAccessStatus('screen') === 'granted'
               : true,
-          waylandUnsupported: isWaylandSession(),
         },
       };
     },
