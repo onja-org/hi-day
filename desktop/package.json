@@ -39,7 +39,7 @@
     "@types/node": "^20",
     "@types/sql.js": "^1.4.11",
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.16.1",
     "eslint": "^9",
     "globals": "^17.0.0",
     "typescript": "^5",
