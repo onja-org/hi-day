@@ -7,6 +7,10 @@ allowBuilds:
   argon2: true
   better-sqlite3: true
   electron: true
+  # Pulled in transitively by electron-builder 26's app-builder-lib. Only the
+  # `squirrel` Windows target uses it and we ship `nsis`, so its postinstall
+  # (which downloads the Squirrel.Windows toolchain) is dead weight here.
+  electron-winstaller: false
   uiohook-napi: true
   unrs-resolver: true
   # dbus-next's optional native dep, used only for ABSTRACT unix sockets.

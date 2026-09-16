@@ -13,6 +13,16 @@ artifactName: workforce-monitor-${os}-${arch}.${ext}
 compression: maximum
 directories:
   output: release
+# electron-builder 26 still defaults `toolsets.appimage` to "0.0.0", the legacy
+# AppImageKit runtime, which dlopen()s libfuse.so.2 at startup. Ubuntu dropped
+# libfuse2 from the default install in 23.10 (and 22.04/24.04 users overwhelmingly
+# don't have it), so that runtime fails before it can even mount the payload:
+#   dlopen(): error loading libfuse.so.2
+# "1.0.3" is the AppImage/type2-runtime bundle, which links libfuse3 *statically*
+# — nothing to dlopen, nothing for the user to apt-install. Becomes the default
+# in electron-builder 27; pinned explicitly here until we're on it.
+toolsets:
+  appimage: "1.0.3"
 # Linux only (see the script itself): wraps the real binary so it always
 # launches with --no-sandbox, working around Chromium's sandbox failing to
 # start on AppArmor-restricted distros (Ubuntu 23.10+) with no packaged
@@ -61,6 +71,12 @@ linux:
       arch: [x64]
   category: Office
   executableName: workforce-monitor
+  # The legacy AppImage toolset appended --no-sandbox to the generated desktop
+  # entry's Exec line on its own; the static runtime (see toolsets above) doesn't.
+  # scripts/afterPack.mjs's wrapper already forces the flag at exec() time, so
+  # this is belt-and-braces — but it keeps the .desktop launchers self-describing
+  # rather than relying on the wrapper alone.
+  executableArgs: ["--no-sandbox"]
 
 deb:
   packageName: workforce-monitor

@@ -21,7 +21,8 @@ const IDLE_POLL_INTERVAL_MS = 10_000;
 // the server's own answer, never this client guessing early.
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 210;
-const DEFAULT_PAIRING_MESSAGE = 'Sign in from your browser to link this device.';
+const DEFAULT_PAIRING_MESSAGE =
+  "Sign in from your browser to link this device.";
 // After "Grant Access" is clicked, macOS gives no callback for when the
 // person actually flips the switch in System Settings — poll a few times
 // a second for a short window to detect it and auto-dismiss the banner.
@@ -30,7 +31,7 @@ const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
-    '#loading-view, #login-view, #status-view',
+    "#loading-view, #login-view, #status-view",
   )) {
     el.hidden = el.id !== viewId;
   }
@@ -42,16 +43,18 @@ function show(viewId: string): void {
  * starting the normal tracking view, not as a gate in front of it.
  */
 function showLoggedIn(organisationName: string): void {
-  document.getElementById('organisation-name')!.textContent = organisationName;
+  document.getElementById("organisation-name")!.textContent = organisationName;
 
-  show('status-view');
+  show("status-view");
   void initTracking();
   void refreshDisclosureBanner();
 }
 
-const pairingStatusEl = document.getElementById('pairing-status')!;
-const pairingErrorEl = document.getElementById('pairing-error')!;
-const loginButton = document.getElementById('login-button') as HTMLButtonElement;
+const pairingStatusEl = document.getElementById("pairing-status")!;
+const pairingErrorEl = document.getElementById("pairing-error")!;
+const loginButton = document.getElementById(
+  "login-button",
+) as HTMLButtonElement;
 
 let pairingPollHandle: ReturnType<typeof setInterval> | null = null;
 let pairingPollAttempts = 0;
@@ -74,17 +77,17 @@ function showLoginView(errorMessage?: string): void {
   timerDisplay.hidden = true;
 
   pairingErrorEl.hidden = !errorMessage;
-  pairingErrorEl.textContent = errorMessage ?? '';
+  pairingErrorEl.textContent = errorMessage ?? "";
   pairingStatusEl.textContent = DEFAULT_PAIRING_MESSAGE;
   loginButton.disabled = false;
-  loginButton.textContent = 'Log in';
-  show('login-view');
+  loginButton.textContent = "Log in";
+  show("login-view");
   stopPolling();
   stopPairingPoll();
 }
 
-const updateBannerEl = document.getElementById('update-banner')!;
-const updateMessageEl = document.getElementById('update-message')!;
+const updateBannerEl = document.getElementById("update-banner")!;
+const updateMessageEl = document.getElementById("update-message")!;
 
 async function checkForUpdate(): Promise<void> {
   const result = await window.api.update.status();
@@ -92,15 +95,15 @@ async function checkForUpdate(): Promise<void> {
 
   updateMessageEl.textContent = result.latestVersion
     ? `Version ${result.latestVersion} is available.`
-    : 'A new version is available.';
+    : "A new version is available.";
   updateBannerEl.hidden = false;
 }
 
-document.getElementById('update-button')!.addEventListener('click', () => {
+document.getElementById("update-button")!.addEventListener("click", () => {
   void window.api.update.openReleasesPage();
 });
 
-document.getElementById('update-dismiss')!.addEventListener('click', () => {
+document.getElementById("update-dismiss")!.addEventListener("click", () => {
   updateBannerEl.hidden = true;
 });
 
@@ -119,19 +122,22 @@ async function pollPairing(): Promise<void> {
   pairingPollAttempts += 1;
   const result = await window.api.auth.pairingStatus();
 
-  if (result.status === 'approved') {
+  if (result.status === "approved") {
     stopPairingPoll();
     showLoggedIn(result.organisationName);
     return;
   }
 
-  if (result.status === 'error') {
+  if (result.status === "error") {
     stopPairingPoll();
     showLoginView(result.message);
     return;
   }
 
-  if (result.status === 'expired' || pairingPollAttempts >= PAIRING_POLL_MAX_ATTEMPTS) {
+  if (
+    result.status === "expired" ||
+    pairingPollAttempts >= PAIRING_POLL_MAX_ATTEMPTS
+  ) {
     stopPairingPoll();
     showLoginView('That login link expired. Click "Log in" to try again.');
     return;
@@ -140,53 +146,67 @@ async function pollPairing(): Promise<void> {
   // status === 'pending' — keep waiting.
 }
 
-loginButton.addEventListener('click', () => {
+loginButton.addEventListener("click", () => {
   void (async () => {
     loginButton.disabled = true;
     pairingErrorEl.hidden = true;
-    pairingStatusEl.textContent = 'Opening your browser…';
+    pairingStatusEl.textContent = "Opening your browser…";
 
     const result = await window.api.auth.startPairing();
     if (!result.ok) {
-      showLoginView(result.message ?? 'Could not start login.');
+      showLoginView(result.message ?? "Could not start login.");
       return;
     }
 
-    pairingStatusEl.textContent = 'Waiting for you to approve in your browser…';
+    pairingStatusEl.textContent = "Waiting for you to approve in your browser…";
     stopPairingPoll();
-    pairingPollHandle = setInterval(() => void pollPairing(), PAIRING_POLL_INTERVAL_MS);
+    pairingPollHandle = setInterval(
+      () => void pollPairing(),
+      PAIRING_POLL_INTERVAL_MS,
+    );
   })();
 });
 
-document.getElementById('logout-button')!.addEventListener('click', () => {
+document.getElementById("logout-button")!.addEventListener("click", () => {
   void window.api.logout().then(() => showLoginView());
 });
 
 // --- Time tracking -----------------------------------------------------
 
-const projectList = document.getElementById('project-list') as HTMLUListElement;
-const taskSelect = document.getElementById('task-select') as HTMLSelectElement;
-const timerDisplay = document.getElementById('timer-display')!;
-const trackingError = document.getElementById('tracking-error')!;
-const timerToggle = document.getElementById('timer-toggle') as HTMLButtonElement;
+const projectList = document.getElementById("project-list") as HTMLUListElement;
+const taskSelect = document.getElementById("task-select") as HTMLSelectElement;
+const timerDisplay = document.getElementById("timer-display")!;
+const trackingError = document.getElementById("tracking-error")!;
+const timerToggle = document.getElementById(
+  "timer-toggle",
+) as HTMLButtonElement;
 // Typed as Element, not HTMLElement: these are SVG nodes, which do not
 // carry the HTML-only `hidden` property — toggleAttribute works on both.
-const timerTogglePath = document.getElementById('timer-toggle-path') as unknown as Element;
-const switchButton = document.getElementById('switch-button') as HTMLButtonElement;
-const idleBanner = document.getElementById('idle-banner')!;
-const idleBannerMessage = document.getElementById('idle-banner-message')!;
-const idleKeepButton = document.getElementById('idle-keep-button') as HTMLButtonElement;
-const idleDiscardButton = document.getElementById('idle-discard-button') as HTMLButtonElement;
-const idleNotice = document.getElementById('idle-notice')!;
-const screenRecordingBanner = document.getElementById('screen-recording-banner')!;
+const timerTogglePath = document.getElementById(
+  "timer-toggle-path",
+) as unknown as Element;
+const switchButton = document.getElementById(
+  "switch-button",
+) as HTMLButtonElement;
+const idleBanner = document.getElementById("idle-banner")!;
+const idleBannerMessage = document.getElementById("idle-banner-message")!;
+const idleKeepButton = document.getElementById(
+  "idle-keep-button",
+) as HTMLButtonElement;
+const idleDiscardButton = document.getElementById(
+  "idle-discard-button",
+) as HTMLButtonElement;
+const idleNotice = document.getElementById("idle-notice")!;
+const screenRecordingBanner = document.getElementById(
+  "screen-recording-banner",
+)!;
 const screenRecordingGrantButton = document.getElementById(
-  'screen-recording-grant-button',
+  "screen-recording-grant-button",
 ) as HTMLButtonElement;
 const screenRecordingSettingsButton = document.getElementById(
-  'screen-recording-settings-button',
+  "screen-recording-settings-button",
 ) as HTMLButtonElement;
-const waylandNotice = document.getElementById('wayland-notice')!;
-const trackingIndicator = document.getElementById('tracking-indicator')!;
+const trackingIndicator = document.getElementById("tracking-indicator")!;
 
 // --- Passive disclosure notice (see docs/adr/0015-...) ------------------
 //
@@ -196,11 +216,11 @@ const trackingIndicator = document.getElementById('tracking-indicator')!;
 // yet, and refreshed on the same cadence as everything else in
 // startPolling — there's no separate gate or full-screen view for it.
 
-const disclosureBannerEl = document.getElementById('disclosure-banner')!;
-const disclosureTextEl = document.getElementById('disclosure-text')!;
-const disclosureErrorEl = document.getElementById('disclosure-error')!;
+const disclosureBannerEl = document.getElementById("disclosure-banner")!;
+const disclosureTextEl = document.getElementById("disclosure-text")!;
+const disclosureErrorEl = document.getElementById("disclosure-error")!;
 const disclosureAcknowledgeButton = document.getElementById(
-  'disclosure-acknowledge-button',
+  "disclosure-acknowledge-button",
 ) as HTMLButtonElement;
 
 /** The version the currently-displayed banner text belongs to — submitted back verbatim on acknowledge. */
@@ -221,13 +241,16 @@ async function refreshDisclosureBanner(): Promise<void> {
   disclosureBannerEl.hidden = false;
 }
 
-disclosureAcknowledgeButton.addEventListener('click', () => {
+disclosureAcknowledgeButton.addEventListener("click", () => {
   void (async () => {
     if (!pendingDisclosureVersionId) return;
     disclosureAcknowledgeButton.disabled = true;
     disclosureErrorEl.hidden = true;
 
-    const result = await window.api.consent.submit(pendingDisclosureVersionId, 'granted');
+    const result = await window.api.consent.submit(
+      pendingDisclosureVersionId,
+      "granted",
+    );
     if (!result.ok) {
       disclosureErrorEl.textContent = result.message;
       disclosureErrorEl.hidden = false;
@@ -265,9 +288,9 @@ let projects: TrackedProject[] = [];
 let todaySecondsByProject = new Map<string, number>();
 // Phosphor Play/Pause (regular), the same glyphs the web console uses.
 const PLAY_PATH =
-  'M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z';
+  "M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z";
 const PAUSE_PATH =
-  'M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z';
+  "M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z";
 
 /** Per-Project total elements, so the 1s tick updates text instead of rebuilding rows. */
 const projectTotalElements = new Map<string, HTMLElement>();
@@ -302,7 +325,10 @@ async function callTracking<T>(
   return result;
 }
 
-function handleTrackingFailure(result: { message: string; unauthorized?: boolean }): void {
+function handleTrackingFailure(result: {
+  message: string;
+  unauthorized?: boolean;
+}): void {
   if (result.unauthorized) {
     showLoginView(result.message);
     return;
@@ -321,7 +347,9 @@ function formatElapsed(ms: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return [hours, minutes, seconds].map((n) => String(n).padStart(2, '0')).join(':');
+  return [hours, minutes, seconds]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
 }
 
 function tick(): void {
@@ -345,16 +373,17 @@ function setRunning(entry: TimeEntry | null): void {
   // "Accumulating", not just "an entry exists": a paused entry is still
   // non-null (endedAt stays null so the one-running-timer rule holds), so
   // keying on null-ness alone let capture accrue straight through a pause.
-  const wasAccumulating = runningEntry !== null && runningEntry.pausedAt == null;
+  const wasAccumulating =
+    runningEntry !== null && runningEntry.pausedAt == null;
   runningEntry = entry;
   const isPaused = entry?.pausedAt != null;
   const isRunning = entry !== null && !isPaused;
   // One control, two faces: pause while running, play otherwise. One path
   // re-pointed, the same swap the project rows use.
-  timerTogglePath.setAttribute('d', isRunning ? PAUSE_PATH : PLAY_PATH);
+  timerTogglePath.setAttribute("d", isRunning ? PAUSE_PATH : PLAY_PATH);
   timerToggle.setAttribute(
-    'aria-label',
-    isRunning ? 'Pause timer' : entry ? 'Resume timer' : 'Start timer',
+    "aria-label",
+    isRunning ? "Pause timer" : entry ? "Resume timer" : "Start timer",
   );
   renderProjects();
   if (!entry) {
@@ -393,7 +422,12 @@ async function checkIdle(): Promise<void> {
   // A manual pause is the person explicitly saying "not tracking right
   // now" — idle detection re-flagging or auto-subtracting on top of that
   // would just be fighting their own choice.
-  if (!runningEntry || runningEntry.pausedAt || !idlePolicy || idlePolicy.handling === 'off') {
+  if (
+    !runningEntry ||
+    runningEntry.pausedAt ||
+    !idlePolicy ||
+    idlePolicy.handling === "off"
+  ) {
     return;
   }
 
@@ -415,13 +449,15 @@ async function checkIdle(): Promise<void> {
     Date.now() + serverOffsetMs - idleSeconds * 1000,
   ).toISOString();
 
-  if (idlePolicy.handling === 'auto_subtract') {
+  if (idlePolicy.handling === "auto_subtract") {
     const result = await callTracking(() =>
       window.api.tracking.stop(idleStartedAtIso),
     );
     if (result.ok) {
       setRunning(null);
-      showIdleNotice(`Timer stopped automatically after ${idleMinutes} min idle.`);
+      showIdleNotice(
+        `Timer stopped automatically after ${idleMinutes} min idle.`,
+      );
     }
     return;
   }
@@ -461,7 +497,10 @@ async function refreshTodayTotals(): Promise<void> {
     // A null duration is the still-running entry; tick() adds its time
     // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
-    totals.set(entry.projectId, (totals.get(entry.projectId) ?? 0) + entry.durationSeconds);
+    totals.set(
+      entry.projectId,
+      (totals.get(entry.projectId) ?? 0) + entry.durationSeconds,
+    );
   }
   todaySecondsByProject = totals;
 }
@@ -474,7 +513,7 @@ async function refreshTodayTotals(): Promise<void> {
  * thing to "pause the other project" the single-open-entry rule allows.
  */
 function renderProjects(): void {
-  projectList.innerHTML = '';
+  projectList.innerHTML = "";
   projectTotalElements.clear();
 
   for (const project of projects) {
@@ -484,37 +523,42 @@ function renderProjects(): void {
     // clicking it does.
     const isRunningHere = isActive && runningEntry?.pausedAt == null;
 
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute('aria-current', String(isActive));
-    button.classList.toggle('is-running', isRunningHere);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-current", String(isActive));
+    button.classList.toggle("is-running", isRunningHere);
 
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('viewBox', '0 0 256 256');
-    icon.setAttribute('width', '32');
-    icon.setAttribute('height', '32');
-    icon.setAttribute('aria-hidden', 'true');
-    icon.setAttribute('class', 'project-play');
-    const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 256 256");
+    icon.setAttribute("width", "32");
+    icon.setAttribute("height", "32");
+    icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("class", "project-play");
+    const iconPath = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "path",
+    );
     // The icon states what the click will do: pause the one that is
     // running, play anything else.
-    iconPath.setAttribute('d', isRunningHere ? PAUSE_PATH : PLAY_PATH);
-    iconPath.setAttribute('fill', 'currentColor');
+    iconPath.setAttribute("d", isRunningHere ? PAUSE_PATH : PLAY_PATH);
+    iconPath.setAttribute("fill", "currentColor");
     icon.appendChild(iconPath);
 
-    const label = document.createElement('span');
-    label.className = 'project-name';
-    label.textContent = project.client ? `${project.name} (${project.client})` : project.name;
+    const label = document.createElement("span");
+    label.className = "project-name";
+    label.textContent = project.client
+      ? `${project.name} (${project.client})`
+      : project.name;
 
-    const total = document.createElement('span');
-    total.className = 'project-total';
+    const total = document.createElement("span");
+    total.className = "project-total";
     total.textContent = formatElapsed(displayedSecondsFor(project.id) * 1000);
 
     projectTotalElements.set(project.id, total);
     button.append(icon, label, total);
-    button.addEventListener('click', () => void selectProject(project.id));
+    button.addEventListener("click", () => void selectProject(project.id));
 
-    const item = document.createElement('li');
+    const item = document.createElement("li");
     item.appendChild(button);
     projectList.appendChild(item);
   }
@@ -565,15 +609,13 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // (see docs/adr/0011-..., docs/adr/0012-...) — one banner covers both,
   // shown whenever either capture feature is on and access isn't granted
   // yet.
-  const captureRequested = status.windowTrackingEnabled || status.screenshotsEnabled;
+  const captureRequested =
+    status.windowTrackingEnabled || status.screenshotsEnabled;
   screenRecordingBanner.hidden = !(
     captureRequested &&
-    status.platform === 'macos' &&
+    status.platform === "macos" &&
     !status.screenRecordingGranted
   );
-  // Wayland has no fix available, so this is informational only — no
-  // "Grant Access"-style call to action, unlike the screen-recording banner.
-  waylandNotice.hidden = !(captureRequested && status.waylandUnsupported);
 
   return status;
 }
@@ -583,7 +625,7 @@ function stopScreenRecordingGrantPolling(): void {
   screenRecordingPollHandle = null;
 }
 
-screenRecordingGrantButton.addEventListener('click', () => {
+screenRecordingGrantButton.addEventListener("click", () => {
   void window.api.tracking.requestScreenRecordingAccess().then(() => {
     // macOS won't re-show its native prompt on repeat calls, so grant
     // detection has to be polled rather than awaited — stop as soon as
@@ -601,7 +643,7 @@ screenRecordingGrantButton.addEventListener('click', () => {
   });
 });
 
-screenRecordingSettingsButton.addEventListener('click', () => {
+screenRecordingSettingsButton.addEventListener("click", () => {
   void window.api.tracking.openScreenRecordingSettings();
 });
 
@@ -634,8 +676,8 @@ async function loadTasks(projectId: string): Promise<void> {
   }
 
   for (const task of result.data.tasks) {
-    if (task.status === 'closed') continue;
-    const option = document.createElement('option');
+    if (task.status === "closed") continue;
+    const option = document.createElement("option");
     option.value = task.id;
     option.textContent = task.name;
     taskSelect.appendChild(option);
@@ -664,7 +706,10 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
     return result.ok;
   }
 
-  const result = await window.api.tracking.switchTo(entry.projectId, entry.taskId);
+  const result = await window.api.tracking.switchTo(
+    entry.projectId,
+    entry.taskId,
+  );
   if (result.ok) setRunning(result.data);
   return result.ok;
 }
@@ -728,11 +773,17 @@ function stopPolling(): void {
  *   2. the first Project in the list.
  * Returns null only when the account has no Projects at all.
  */
-async function resolveProjectToTrack(): Promise<{ projectId: string; taskId: string | null } | null> {
+async function resolveProjectToTrack(): Promise<{
+  projectId: string;
+  taskId: string | null;
+} | null> {
   if (projects.length === 0) return null;
 
   const remembered = await window.api.tracking.lastProject();
-  if (remembered && projects.some((project) => project.id === remembered.projectId)) {
+  if (
+    remembered &&
+    projects.some((project) => project.id === remembered.projectId)
+  ) {
     return remembered;
   }
   return { projectId: projects[0].id, taskId: null };
@@ -743,14 +794,17 @@ async function startTracking(): Promise<void> {
   clearTrackingError();
   const target = await resolveProjectToTrack();
   if (!target) {
-    showTrackingError('No projects are available to track time against.');
+    showTrackingError("No projects are available to track time against.");
     return;
   }
 
   await loadTasks(target.projectId);
   if (target.taskId) taskSelect.value = target.taskId;
 
-  const result = await window.api.tracking.start(target.projectId, target.taskId);
+  const result = await window.api.tracking.start(
+    target.projectId,
+    target.taskId,
+  );
   if (result.ok) {
     setRunning(result.data);
     return;
@@ -763,7 +817,7 @@ async function startTracking(): Promise<void> {
   }
 }
 
-timerToggle.addEventListener('click', () => {
+timerToggle.addEventListener("click", () => {
   void (async () => {
     timerToggle.disabled = true;
     try {
@@ -787,7 +841,7 @@ timerToggle.addEventListener('click', () => {
   })();
 });
 
-switchButton.addEventListener('click', () => {
+switchButton.addEventListener("click", () => {
   void (async () => {
     if (!pendingSwitch) return;
     const { projectId, taskId } = pendingSwitch;
@@ -803,17 +857,19 @@ switchButton.addEventListener('click', () => {
   })();
 });
 
-idleKeepButton.addEventListener('click', () => {
+idleKeepButton.addEventListener("click", () => {
   hideIdleBanner();
 });
 
-idleDiscardButton.addEventListener('click', () => {
+idleDiscardButton.addEventListener("click", () => {
   void (async () => {
     if (!pendingIdleDiscardAt) return;
     const discardAt = pendingIdleDiscardAt;
     hideIdleBanner();
 
-    const result = await callTracking(() => window.api.tracking.stop(discardAt));
+    const result = await callTracking(() =>
+      window.api.tracking.stop(discardAt),
+    );
     if (result.ok) {
       setRunning(null);
     } else {
