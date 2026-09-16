@@ -2,7 +2,11 @@ import { type DebugSink, NullDebugHarness } from './debug-harness';
 import { HeartbeatScheduler } from './heartbeat-scheduler';
 import { normalizeAddressBarReading, type NormalizePipelineOptions } from './normalization/normalize';
 import { realClock } from './real-clock';
-import { ResolverHealthTracker, type ResolverHealthSnapshot } from './resolver-health';
+import {
+  extractResolverErrorCode,
+  ResolverHealthTracker,
+  type ResolverHealthSnapshot,
+} from './resolver-health';
 import { ResolverManager, type ResolverSpawnConfig } from './resolver-manager';
 import type { EngineEvent } from './session-types';
 
@@ -109,6 +113,29 @@ export class ResolverOrchestrator {
       // extractResolverErrorCode), never the message itself — safe to
       // record unconditionally.
       this.health.onResolveFailure(outcome.message);
+
+      // A failed read used to leave no trace anywhere: not in the logger
+      // (the rule above), and not in the debug log either, because the
+      // old early return sat in front of debugSink.record(). That made an
+      // absent url-capture-debug.jsonl mean either "no resolve was ever
+      // sent" or "every resolve failed", with no way to tell which — the
+      // exact ambiguity that stalled first-contact Windows debugging.
+      //
+      // Recording the failure through the same opt-in sink fixes that
+      // without weakening the rule: only the leading [code] tag is kept,
+      // via the extractor the health tracker already uses and documents as
+      // safe to record unconditionally. The message itself — which can
+      // echo raw address-bar text back from some resolver error paths —
+      // is dropped, and `raw` stays empty precisely because there is no
+      // reading to record.
+      this.debugSink.record({
+        ts: realClock().wallClockMs,
+        raw: '',
+        source: 'none',
+        confidence: 'none',
+        latencyMs: 0,
+        decision: `resolve-failed:${extractResolverErrorCode(outcome.message)}`,
+      });
       return;
     }
 
