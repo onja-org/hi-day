@@ -144,11 +144,26 @@ func dump(pid: pid_t) {
         fail("permission-denied", "Accessibility permission has not been granted.")
     }
     let app = AXUIElementCreateApplication(pid)
-    guard let windowValue = axValue(app, kAXFocusedWindowAttribute as String) else {
-        fail("no-window", "Firefox has no focused window.")
+
+    // Unlike resolve(), this falls back to the first of AXWindows when there is
+    // no focused window. Running this from a terminal makes the TERMINAL
+    // frontmost, so the browser being inspected has no focused window by
+    // definition — requiring one would make the tool unusable for the only
+    // thing it is for. resolve() keeps the focus requirement, where it is
+    // correct: a reading must come from the window the user is actually on.
+    var windowValue = axValue(app, kAXFocusedWindowAttribute as String)
+    if windowValue == nil,
+       let windows = axValue(app, kAXWindowsAttribute as String) as? [AXUIElement],
+       let first = windows.first {
+        FileHandle.standardError.write(
+            "(no focused window — dumping the first of \(windows.count))\n".data(using: .utf8)!)
+        windowValue = first as AnyObject
+    }
+    guard let window = windowValue else {
+        fail("no-window", "Firefox has no windows at all.")
     }
     // swiftlint:disable:next force_cast
-    dumpTree(windowValue as! AXUIElement, depth: 0, maxDepth: 5, indent: "")
+    dumpTree(window as! AXUIElement, depth: 0, maxDepth: 5, indent: "")
     printJSON(["ok": true, "value": "", "title": ""])
 }
 
