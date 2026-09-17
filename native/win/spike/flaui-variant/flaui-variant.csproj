@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net8.0-windows (not plain net8.0): FlaUI.Core/FlaUI.UIA3 reference
+         WinForms/WPF-adjacent packages, which NETSDK1136 refuses to build
+         against a non-Windows-suffixed TFM. Confirmed via a real CI build
+         failure, not guessed in advance. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Version unverified — I have no way to compile/resolve this locally.
+         If CI reports a resolution failure, bump to whatever the latest
+         stable 4.x release actually is. -->
+    <PackageReference Include="FlaUI.Core" Version="4.0.0" />
+    <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
+  </ItemGroup>
+
+</Project>

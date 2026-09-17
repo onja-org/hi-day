@@ -176,7 +176,7 @@ describe('OrganisationsService', () => {
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
-        windowTrackingEnabled: false,
+        windowTrackingEnabled: true,
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
@@ -562,7 +562,7 @@ describe('OrganisationsService', () => {
   });
 
   describe('getCaptureSettings', () => {
-    it('defaults to disabled when the organisation has no explicit capture settings', async () => {
+    it('defaults window tracking on, and everything else off, when the organisation has no explicit capture settings', async () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo({
           findOneOrFail: jest.fn().mockResolvedValue({
@@ -576,7 +576,7 @@ describe('OrganisationsService', () => {
       );
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
-        windowTrackingEnabled: false,
+        windowTrackingEnabled: true,
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,

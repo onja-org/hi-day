@@ -17,11 +17,12 @@ export const DEFAULT_SCREENSHOT_RETENTION_DAYS = 30;
 
 /**
  * Applied whenever an Organisation hasn't explicitly set this (including
- * every org created before this existed) — off by default, so nothing is
- * captured until an admin opts in (see docs/adr/0009-..., docs/adr/0012-...).
+ * every org created before this existed). `windowTrackingEnabled` defaults
+ * on; the other capture settings stay off until an admin opts in (see
+ * docs/adr/0009-..., docs/adr/0012-...).
  */
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
-  windowTrackingEnabled: false,
+  windowTrackingEnabled: true,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: DEFAULT_SCREENSHOT_FREQUENCY_SECONDS,
   screenshotRetentionDays: DEFAULT_SCREENSHOT_RETENTION_DAYS,

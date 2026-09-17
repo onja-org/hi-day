@@ -1,6 +1,7 @@
 import { desktopCapturer, screen } from 'electron';
 import type { DesktopDevicePlatform } from './platform';
 import { isWaylandSession, toDevicePlatform } from './platform';
+import { captureScreenViaPortal } from './screenshot-portal';
 
 export const DEFAULT_SCREENSHOT_INTERVAL_MS = 600_000; // 10 minutes — matches the backend's DEFAULT_SCREENSHOT_FREQUENCY_SECONDS.
 
@@ -57,6 +58,16 @@ export interface ScreenshotSamplerDeps {
   capture?: () => Promise<Buffer | null>;
   getPlatform?: () => DesktopDevicePlatform;
   isWayland?: () => boolean;
+  /** The Wayland-only portal capture path — see screenshot-portal.ts. */
+  capturePortal?: (interactive: boolean) => Promise<Buffer | null>;
+  /**
+   * Whether the one-time "Grant Access" portal call has already been
+   * approved (persisted in AuthStore, see main.ts's wiring) — periodic
+   * ticks only ever call `capturePortal(false)`, so until this is true
+   * there's nothing for a silent call to reuse and a tick emits nothing,
+   * same as macOS before Screen Recording is granted.
+   */
+  isWaylandScreenshotGranted?: () => boolean;
 }
 
 /**
@@ -64,9 +75,9 @@ export interface ScreenshotSamplerDeps {
  * `screenshotsEnabled` and a running timer (main.ts's `recomputeSampling`
  * combines both, same Hubstaff-style rule as WindowSampler). Unlike
  * WindowSampler, a tick that produces nothing (capture failed, the image
- * came back empty — e.g. macOS Screen Recording not yet granted — or the
- * session is Wayland, see `tick()`'s guard) simply emits no sample —
- * there's no "reason unavailable" row to write for a screenshot.
+ * came back empty — e.g. macOS Screen Recording or the Wayland portal grant
+ * not yet given, see `captureBuffer()`) simply emits no sample — there's no
+ * "reason unavailable" row to write for a screenshot.
  *
  * `setIntervalMs` lets main.ts apply an org's `screenshotFrequencySeconds`
  * without tearing down and recreating the sampler every time
@@ -79,6 +90,8 @@ export class ScreenshotSampler {
   private readonly capture: () => Promise<Buffer | null>;
   private readonly getPlatform: () => DesktopDevicePlatform;
   private readonly isWayland: () => boolean;
+  private readonly capturePortal: (interactive: boolean) => Promise<Buffer | null>;
+  private readonly isWaylandScreenshotGranted: () => boolean;
   private intervalMs: number;
   private handle: ReturnType<typeof setInterval> | null = null;
 
@@ -89,6 +102,8 @@ export class ScreenshotSampler {
     this.getPlatform =
       deps.getPlatform ?? (() => toDevicePlatform(process.platform));
     this.isWayland = deps.isWayland ?? isWaylandSession;
+    this.capturePortal = deps.capturePortal ?? captureScreenViaPortal;
+    this.isWaylandScreenshotGranted = deps.isWaylandScreenshotGranted ?? (() => false);
   }
 
   start(): void {
@@ -120,26 +135,37 @@ export class ScreenshotSampler {
   }
 
   async tick(): Promise<void> {
-    // Electron's desktopCapturer goes through the xdg-desktop-portal
-    // ScreenCast API under Wayland (unlike X11, where it needs no such
-    // round-trip) — that means every single tick would pop the OS's own
-    // "share your screen" picker in front of the person, forever, and
-    // canceling it has been observed to take the whole app down with it.
-    // Checked up front and skipped entirely, the same way WindowSampler
-    // never calls into its native module under Wayland — never even
-    // reaching `this.capture()` here, so the picker never appears.
-    if (this.getPlatform() === 'linux' && this.isWayland()) return;
-
     const capturedAt = new Date().toISOString();
 
     let buffer: Buffer | null;
     try {
-      buffer = await this.capture();
+      buffer = await this.captureBuffer();
     } catch {
       buffer = null;
     }
     if (!buffer) return;
 
     await this.sink({ buffer, capturedAt });
+  }
+
+  /**
+   * Electron's `desktopCapturer` (`this.capture`) goes through the
+   * xdg-desktop-portal ScreenCast API under Wayland (unlike X11, where it
+   * needs no such round-trip) — that means every single tick would pop the
+   * OS's own "share your screen" picker in front of the person, forever,
+   * and canceling it has been observed to take the whole app down with it.
+   * `desktopCapturer` is never even called here on Wayland; the separate
+   * portal `Screenshot` interface (see screenshot-portal.ts) is used
+   * instead, which has no live stream to cancel out from under and so
+   * doesn't share that crash. It still only ever captures silently
+   * (`interactive: false`) once the one-time "Grant Access" flow has run —
+   * see `isWaylandScreenshotGranted`'s doc comment.
+   */
+  private captureBuffer(): Promise<Buffer | null> {
+    if (this.getPlatform() === 'linux' && this.isWayland()) {
+      if (!this.isWaylandScreenshotGranted()) return Promise.resolve(null);
+      return this.capturePortal(false);
+    }
+    return this.capture();
   }
 }

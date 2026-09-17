@@ -170,3 +170,36 @@ Decision: where a browser's private-mode state can't be detected at all (`privat
 is disclosed in user-facing privacy documentation instead of suppressing capture for that
 browser. This keeps full coverage everywhere else at the cost of Safari private windows not
 being distinguishable from normal ones — a deliberate tradeoff, not a bug.
+### Amendment: `private === null` is now the norm, not the Safari exception
+
+The decision above was written when Safari was expected to be the only browser without an
+incognito signal. In practice the platforms diverged, and the same `null` value now covers two
+materially different situations:
+
+| Situation | Meaning | Where |
+|---|---|---|
+| **No signal exists** | The browser genuinely exposes no incognito marker | Safari (Apple Events) |
+| **Signal not read** | A marker exists but this resolver does not attempt it | Linux (AT-SPI), Windows (UIA) |
+
+Resulting behaviour per platform, as shipped:
+
+- **Linux** — declares no `private` capability at all (`resolvers/linux/index.ts`) and always
+  reports `null`. Its own comment concedes this is "the failure direction that leaks a private
+  URL". Private-window URLs **are** captured.
+- **Windows** — the same, by decision: reading Chromium's incognito indicator depends on an
+  AutomationId that could not be confirmed without real hardware, so Windows is not to rely on it.
+  Private-window URLs **are** captured. Note the code has not caught up yet — `AddressBarReader.cs`
+  still contains the unverified `IncognitoIndicatorAutomationId` attempt. It must be removed or
+  confirmed on real hardware before release: left as-is, a false positive would redact a *normal*
+  window's URL, which is the opposite failure and loses legitimate data.
+- **macOS** — the only platform that does detect it: Chromium browsers report real `true`/`false`
+  via Apple Events; Safari reports `null` per the original decision above.
+
+So `private === true` — the only value that triggers redaction in `session-engine.ts` and the
+storage invariant in `store.ts` — is currently reachable **only on macOS**. The anti-goal "do not
+store private-window URLs where `private === true`" still holds exactly as written; it is simply
+inert on two of the three platforms.
+
+This is deliberate and interim, not a bug to be fixed opportunistically. Anyone adding private
+detection to Linux or Windows is changing product behaviour, not filling in a gap — the user-facing
+privacy documentation describes what is captured today, and has to change with it.

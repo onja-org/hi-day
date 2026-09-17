@@ -22,6 +22,11 @@ release/
 desktop/native/darwin/firefox-ax-helper-swift/.build/
 desktop/native/darwin/firefox-ax-helper
 
+# .NET build output. Scoped to native/win so a directory legitimately named
+# bin elsewhere is unaffected.
+native/win/**/bin/
+native/win/**/obj/
+
 # turborepo
 .turbo/
 

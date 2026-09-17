@@ -1,0 +1,10 @@
+{
+  "chromium-incognito": "https://example.com/page\tExample Page\tincognito\n",
+  "chromium-normal": "https://example.com/page\tExample Page\tnormal\n",
+  "safari-normal": "https://example.com/page\tExample Page\n",
+  "stderr-consent-denied": "31:41: execution error: Not authorized to send Apple events to Google Chrome. (-1743)\n",
+  "stderr-no-window": "28:36: execution error: no-window\n",
+  "stderr-not-frontmost": "18:26: execution error: not-frontmost\n",
+  "stderr-not-running": "12:20: execution error: not-running\n",
+  "stderr-unsupported-dictionary": "40:52: execution error: Google Chrome got an error: Application doesn't understand the mode message. (-1708)\n"
+}

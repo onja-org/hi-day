@@ -2,7 +2,11 @@ import { type DebugSink, NullDebugHarness } from './debug-harness';
 import { HeartbeatScheduler } from './heartbeat-scheduler';
 import { normalizeAddressBarReading, type NormalizePipelineOptions } from './normalization/normalize';
 import { realClock } from './real-clock';
-import { ResolverHealthTracker, type ResolverHealthSnapshot } from './resolver-health';
+import {
+  extractResolverErrorCode,
+  ResolverHealthTracker,
+  type ResolverHealthSnapshot,
+} from './resolver-health';
 import { ResolverManager, type ResolverSpawnConfig } from './resolver-manager';
 import type { EngineEvent } from './session-types';
 
@@ -39,7 +43,7 @@ export class ResolverOrchestrator {
   private readonly logger: (line: string) => void;
   private readonly health = new ResolverHealthTracker();
   private readonly debugSink: DebugSink;
-  private currentFocus: { pid: number; hwnd: number } | null = null;
+  private currentFocus: { pid: number; hwnd: number; app: string } | null = null;
 
   constructor(options: ResolverOrchestratorOptions) {
     this.reportEvent = options.reportEvent;
@@ -58,7 +62,7 @@ export class ResolverOrchestrator {
       this.health.onReady(realClock().wallClockMs);
     });
     this.manager.on('focus', (event) => {
-      this.currentFocus = { pid: event.pid, hwnd: event.hwnd };
+      this.currentFocus = { pid: event.pid, hwnd: event.hwnd, app: event.app };
       this.reportEvent({
         type: 'focusChanged',
         target: { browser: event.app, pid: event.pid, hwnd: event.hwnd },
@@ -109,6 +113,20 @@ export class ResolverOrchestrator {
       // extractResolverErrorCode), never the message itself — safe to
       // record unconditionally.
       this.health.onResolveFailure(outcome.message);
+
+      // Recorded through the same opt-in sink as successes, so an absent
+      // debug log means "no resolve was sent" rather than "every resolve
+      // failed". Only the [code] tag is kept — the message can echo raw
+      // address-bar text — and `raw` stays empty because there is no reading.
+      this.debugSink.record({
+        ts: realClock().wallClockMs,
+        raw: '',
+        source: 'none',
+        confidence: 'none',
+        latencyMs: 0,
+        decision: `resolve-failed:${extractResolverErrorCode(outcome.message)}`,
+        app: focus.app,
+      });
       return;
     }
 
@@ -128,6 +146,7 @@ export class ResolverOrchestrator {
       normalized: normalized.ok ? normalized.url : undefined,
       source: outcome.source,
       confidence: outcome.confidence,
+      app: focus.app,
       latencyMs: outcome.ms,
       decision: normalized.ok ? 'accepted' : `rejected:${normalized.reason}`,
     });
