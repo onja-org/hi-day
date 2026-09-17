@@ -103,9 +103,58 @@ func resolve(pid: pid_t) {
     printJSON(["ok": true, "value": rawValue, "title": titleValue])
 }
 
+/// Prints the accessibility tree's SHAPE to stderr: roles, subroles and
+/// identifiers, plus whether a node holds a value — never the value itself,
+/// nor any title, since on an address bar that text IS the URL.
+///
+/// Exists because findAddressField encodes a guess — an AXTextField inside an
+/// AXToolbar — and a wrong guess is indistinguishable from an empty field. The
+/// same assumption proved wrong on Windows, where Gecko's URL bar turned out
+/// not to be an Edit inside a toolbar at all. Run this against a real Firefox
+/// window rather than guessing again.
+func dumpTree(_ element: AXUIElement, depth: Int, maxDepth: Int, indent: String) {
+    guard depth <= maxDepth else { return }
+
+    let role = axValue(element, kAXRoleAttribute as String) as? String ?? "?"
+    var line = "\(indent)\(role)"
+    if let subrole = axValue(element, "AXSubrole") as? String {
+        line += " subrole=\(subrole)"
+    }
+    if let identifier = axValue(element, "AXIdentifier") as? String {
+        line += " id=\(identifier)"
+    }
+    // Presence only. The value of an address bar is the URL.
+    if let value = axValue(element, kAXValueAttribute as String) as? String {
+        line += " hasValue=\(value.isEmpty ? "empty" : "yes")"
+    }
+
+    let children = (axValue(element, kAXChildrenAttribute as String) as? [AXUIElement]) ?? []
+    line += " children=\(children.count)"
+    FileHandle.standardError.write((line + "\n").data(using: .utf8)!)
+
+    // Capped: a Firefox window's full tree includes rendered page content and
+    // is enormous. The chrome we care about sits near the top.
+    for child in children.prefix(12) {
+        dumpTree(child, depth: depth + 1, maxDepth: maxDepth, indent: indent + "  ")
+    }
+}
+
+func dump(pid: pid_t) {
+    guard AXIsProcessTrusted() else {
+        fail("permission-denied", "Accessibility permission has not been granted.")
+    }
+    let app = AXUIElementCreateApplication(pid)
+    guard let windowValue = axValue(app, kAXFocusedWindowAttribute as String) else {
+        fail("no-window", "Firefox has no focused window.")
+    }
+    // swiftlint:disable:next force_cast
+    dumpTree(windowValue as! AXUIElement, depth: 0, maxDepth: 5, indent: "")
+    printJSON(["ok": true, "value": "", "title": ""])
+}
+
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
-    fail("bad-invocation", "Usage: firefox-ax-helper resolve <pid>")
+    fail("bad-invocation", "Usage: firefox-ax-helper resolve|dump <pid>")
 }
 
 switch arguments[1] {
@@ -114,6 +163,11 @@ case "resolve":
         fail("bad-invocation", "resolve requires a numeric pid argument.")
     }
     resolve(pid: pid)
+case "dump":
+    guard arguments.count >= 3, let pid = pid_t(arguments[2]) else {
+        fail("bad-invocation", "dump requires a numeric pid argument.")
+    }
+    dump(pid: pid)
 default:
     fail("bad-invocation", "Unknown command: \(arguments[1])")
 }
