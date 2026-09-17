@@ -14,6 +14,12 @@ export interface DebugRecord {
   confidence: string;
   latencyMs: number;
   decision?: string;
+  /**
+   * Executable name of the focused window (`chrome.exe`). Not URL or title
+   * text. Without it, `no-address-bar` against a chat app (correct) is
+   * indistinguishable from the same code against a browser (a bug).
+   */
+  app?: string;
 }
 
 export interface DebugSink {

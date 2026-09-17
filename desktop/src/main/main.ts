@@ -28,7 +28,8 @@ import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-
 import { ScreenshotUploader } from './screenshot-uploader';
 import { TimerStatusGate } from './timer-status-gate';
 import { loadActiveWindowModule, WindowSampler } from './window-sampler';
-import { resolveLinuxResolverPath } from './resolvers/resolver-paths';
+import { resolveLinuxResolverPath,  resolveDarwinResolverPath,
+  resolveWinResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
@@ -37,21 +38,40 @@ import type { UploadFn } from './url-capture/sync-contract';
 import { UrlCaptureService } from './url-capture/url-capture-service';
 
 /**
- * Linux is the only platform with a resolver on this branch — macOS and
- * Windows live on sandy/feat/url-tracking-on-remaining-os. Returning null
- * elsewhere makes startUrlCapture degrade to timer/idle tracking rather
+ * All three platforms now have a resolver. Returns null only on a platform
+ * with none, so startUrlCapture degrades to timer/idle tracking rather
  * than throwing or spawning nothing usable.
  */
 function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
+  if (process.platform === 'darwin') {
+    return {
+      command: process.execPath,
+      args: [resolveDarwinResolverPath()],
+      env: {
+        // The darwin resolver is compiled JS, not a native binary, so it runs
+        // on Electron's own executable as a plain Node process — no system
+        // Node required.
+        ELECTRON_RUN_AS_NODE: '1',
+        // Which also means it can't read app.isPackaged/resourcesPath itself
+        // to locate firefox-ax-helper — see firefox-ax-helper-path.ts.
+        RESOLVER_IS_PACKAGED: app.isPackaged ? '1' : '0',
+        RESOLVER_RESOURCES_PATH: process.resourcesPath,
+      },
+    };
+  }
+
+  if (process.platform === 'win32') {
+    return {
+      command: resolveWinResolverPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+    };
+  }
+
   if (process.platform === 'linux') {
     return {
       command: process.execPath,
       args: [resolveLinuxResolverPath()],
-      // The resolver is compiled TypeScript inside the app's own dist/, not
-      // a separate binary, so it runs on Electron's executable acting as a
-      // plain Node process — no system Node install required. It needs no
-      // resourcesPath hints: it spawns no child of its own, talking to the
-      // accessibility bus directly over D-Bus.
+      // Same trick as darwin. No resourcesPath hints needed: this one spawns
+      // no child, talking to the accessibility bus directly over D-Bus.
       env: { ELECTRON_RUN_AS_NODE: '1' },
     };
   }
