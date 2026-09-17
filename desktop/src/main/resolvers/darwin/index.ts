@@ -73,12 +73,17 @@ function main(): void {
   }
 
   async function resolveViaAppleEvents(entry: BrowserRegistryEntry): Promise<ResolvedUrl | ResolveFailed> {
-    // A resolve racing the focus poller's own osascript call gets `busy`
-    // once immediately; retry a couple of times with a short backoff
-    // rather than surfacing a spurious failure for something this common.
+    // A resolve racing the focus poller's own osascript call gets `busy`, and
+    // only one osascript may be in flight at a time. The retry budget has to
+    // outlast a poll or the race is simply lost: measured on an Intel Air, a
+    // poll takes 270-460ms, while 3 attempts at 75ms waited 225ms — less than
+    // half of it. Chrome duly reported busy on roughly every other heartbeat.
+    //
+    // 6 attempts at 150ms waits up to 900ms, comfortably past the slowest poll
+    // observed and still inside osascript-runner's own 1200ms deadline.
     let outcome = await appleEventsResolver.resolve(entry);
-    for (let attempt = 0; outcome.ok === false && outcome.error.code === 'busy' && attempt < 3; attempt += 1) {
-      await new Promise((r) => setTimeout(r, 75));
+    for (let attempt = 0; outcome.ok === false && outcome.error.code === 'busy' && attempt < 6; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 150));
       outcome = await appleEventsResolver.resolve(entry);
     }
     if (!outcome.ok) return { ok: false, message: `[${outcome.error.code}] ${outcome.error.message}` };
