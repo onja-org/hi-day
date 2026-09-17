@@ -164,6 +164,35 @@ describe('DashboardService', () => {
     expect(summary.workedThisWeekDeltaSeconds).toBe(2 * 3600 - 0.5 * 3600);
   });
 
+  it("excludes today's still-running entry from projectsToday but includes it in workedTodaySeconds", async () => {
+    const thisWeekEntries = [
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 10, 30, 0), // 1.5h, completed
+      }),
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 14, 0, 0),
+        endedAt: null, // still running at NOW (15:00) => 1h so far
+      }),
+    ];
+    const service = new DashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makePausesRepo(),
+      makeActivitySamplesRepo([], []),
+      makeMembershipsRepo(),
+      makeOrganisationsService(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(summary.workedTodaySeconds).toBe(1.5 * 3600 + 1 * 3600);
+    expect(summary.projectsToday).toEqual([
+      expect.objectContaining({ projectId: 'p-1', seconds: 1.5 * 3600 }),
+    ]);
+  });
+
   it('reports a projects-worked delta against the same-span last week', async () => {
     const thisWeekEntries = [
       entry({

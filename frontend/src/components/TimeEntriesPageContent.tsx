@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ClockIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
@@ -13,9 +14,7 @@ import { ExportCsvButton } from "./ExportCsvButton";
 import { Spinner } from "./Spinner";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
 import { TimesheetCalendarGrid } from "./TimesheetCalendarGrid";
-import { TimesheetProjectBreakdown } from "./TimesheetProjectBreakdown";
-import { TimesheetSummaryTiles } from "./TimesheetSummaryTiles";
-import { TimesheetTable } from "./TimesheetTable";
+import { TimesheetDailyView } from "./TimesheetDailyView";
 import { TimesheetWeeklyMatrix } from "./TimesheetWeeklyMatrix";
 import { WeekNavigator } from "./WeekNavigator";
 
@@ -29,14 +28,6 @@ const VIEW_MODE_LABELS: Record<TimesheetViewMode, string> = {
   daily: "Daily",
   weekly: "Weekly",
   calendar: "Calendar",
-};
-
-const DATE_PRESET_LABELS: Record<TimesheetDatePreset, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  this_week: "This week",
-  this_month: "This month",
-  all: "All time",
 };
 
 export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageContentProps) {
@@ -73,10 +64,21 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
     { enabled: viewMode === "weekly" || viewMode === "calendar" },
   );
 
+  const activeEntries = viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data;
+  const activeFilename =
+    viewMode === "daily"
+      ? `timesheet-${datePreset}.csv`
+      : `timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}.csv`;
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white">
+            <ClockIcon size={18} aria-hidden="true" />
+          </span>
+          <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           {canViewOthers && membersQuery.data && (
             <select
@@ -101,6 +103,7 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
               Add time
             </button>
           )}
+          <ExportCsvButton entries={activeEntries ?? []} filename={activeFilename} />
         </div>
       </div>
 
@@ -125,82 +128,24 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
       </nav>
 
       {viewMode === "daily" && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div
-              role="group"
-              aria-label="Date range"
-              className="inline-flex rounded-lg border border-input-border p-1"
-            >
-              {Object.entries(DATE_PRESET_LABELS).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={datePreset === value}
-                  onClick={() => setDatePreset(value as TimesheetDatePreset)}
-                  className={clsx(
-                    "cursor-pointer rounded-md px-3 py-1 text-sm font-medium transition-colors duration-150",
-                    datePreset === value
-                      ? "bg-primary text-white"
-                      : "text-slate-900 hover:bg-cream",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <ExportCsvButton
-              entries={dailyEntriesQuery.data ?? []}
-              filename={`timesheet-${datePreset}.csv`}
-            />
-          </div>
-
-          {dailyEntriesQuery.isLoading && (
-            <p className="flex items-center gap-2 text-slate-900">
-              <Spinner className="text-primary-dark" />
-              Loading timesheet…
-            </p>
-          )}
-
-          {dailyEntriesQuery.isError && (
-            <ErrorMessage
-              message={
-                dailyEntriesQuery.error instanceof Error
-                  ? dailyEntriesQuery.error.message
-                  : "Could not load this timesheet."
-              }
-            />
-          )}
-
-          {dailyEntriesQuery.data && (
-            <>
-              <TimesheetSummaryTiles entries={dailyEntriesQuery.data} datePreset={datePreset} />
-
-              <TimesheetProjectBreakdown entries={dailyEntriesQuery.data} />
-
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-primary-dark">Entries</h2>
-                <TimesheetTable
-                  organisationId={organisationId}
-                  entries={dailyEntriesQuery.data}
-                  isOwnTimesheet={isOwnTimesheet}
-                  datePreset={datePreset}
-                />
-              </div>
-            </>
-          )}
-        </>
+        <TimesheetDailyView
+          organisationId={organisationId}
+          isOwnTimesheet={isOwnTimesheet}
+          datePreset={datePreset}
+          onDatePresetChange={setDatePreset}
+          range={dailyRange}
+          entries={dailyEntriesQuery.data}
+          isLoading={dailyEntriesQuery.isLoading}
+          isError={dailyEntriesQuery.isError}
+          errorMessage={
+            dailyEntriesQuery.error instanceof Error ? dailyEntriesQuery.error.message : undefined
+          }
+        />
       )}
 
       {(viewMode === "weekly" || viewMode === "calendar") && (
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
-            <ExportCsvButton
-              entries={weekEntriesQuery.data ?? []}
-              filename={`timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}.csv`}
-            />
-          </div>
+          <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
 
           {weekEntriesQuery.isLoading && (
             <p className="flex items-center gap-2 text-slate-900">

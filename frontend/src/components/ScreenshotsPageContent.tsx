@@ -80,7 +80,7 @@ export function ScreenshotsPageContent({
 
       {screenshotsQuery.data && screenshotsQuery.data.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {screenshotsQuery.data.map((screenshot) => (
+          {screenshotsQuery.data.map((screenshot, index) => (
             <figure
               key={screenshot.id}
               className="flex flex-col gap-1.5 overflow-hidden rounded-md border border-input-border bg-white"
@@ -92,6 +92,7 @@ export function ScreenshotsPageContent({
                   alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
                   fill
                   unoptimized
+                  priority={index < 3}
                   className="object-cover"
                 />
               </div>

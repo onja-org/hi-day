@@ -54,11 +54,12 @@ export function TimesheetTable({
             <th className="px-3 py-2 font-medium" />
           </tr>
         </thead>
-        {dayGroups.map((group) => (
+        {dayGroups.map((group, index) => (
           <TimesheetDayGroupSection
             key={group.dateKey}
             group={group}
             onEdit={setEditingEntry}
+            defaultOpen={index === 0}
           />
         ))}
       </table>

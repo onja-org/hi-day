@@ -143,6 +143,15 @@ export class AuthController {
     return this.authService.logout(request, response);
   }
 
+  @Post('logout-everywhere')
+  @HttpCode(200)
+  logoutEverywhere(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ message: string }> {
+    return this.authService.logoutEverywhere(request, response);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getProfile(@Req() request: AuthenticatedRequest): Promise<UserProfile> {

@@ -999,7 +999,7 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('revokes the refresh token, signs out every device, and clears both session cookies', async () => {
+    it('revokes the refresh token and clears both session cookies, without touching paired devices', async () => {
       const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
@@ -1011,6 +1011,58 @@ describe('AuthService', () => {
       const request = makeRequest('refresh_token=some-refresh-token');
 
       const result = await service.logout(request, response);
+
+      expect(revokeByValue).toHaveBeenCalledWith(
+        expect.anything(),
+        'some-refresh-token',
+      );
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+      expect(result.message).toContain('Logged out');
+    });
+
+    it('still clears cookies when there is no refresh-token cookie to revoke', async () => {
+      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+      const { deviceSessionService, revokeAllForUser } =
+        makeDeviceSessionService();
+      const service = makeService({
+        refreshTokenService,
+        deviceSessionService,
+      });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest(undefined);
+
+      await service.logout(request, response);
+
+      expect(revokeByValue).not.toHaveBeenCalled();
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+  });
+
+  describe('logoutEverywhere', () => {
+    it('revokes the refresh token, signs out every device, and clears both session cookies', async () => {
+      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+      const { deviceSessionService, revokeAllForUser } =
+        makeDeviceSessionService();
+      const service = makeService({
+        refreshTokenService,
+        deviceSessionService,
+      });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest('refresh_token=some-refresh-token');
+
+      const result = await service.logoutEverywhere(request, response);
 
       expect(revokeByValue).toHaveBeenCalledWith(
         expect.anything(),
@@ -1041,7 +1093,7 @@ describe('AuthService', () => {
       });
       const request = makeRequest('refresh_token=some-refresh-token');
 
-      await service.logout(request, makeResponse().response);
+      await service.logoutEverywhere(request, makeResponse().response);
 
       expect(stop).toHaveBeenCalledWith('org-1', 'user-1');
       expect(stop).toHaveBeenCalledWith('org-2', 'user-1');
@@ -1062,7 +1114,7 @@ describe('AuthService', () => {
       const request = makeRequest('refresh_token=some-refresh-token');
 
       await expect(
-        service.logout(request, makeResponse().response),
+        service.logoutEverywhere(request, makeResponse().response),
       ).resolves.toEqual(
         expect.objectContaining({
           message: expect.stringContaining('Logged out') as string,
@@ -1081,7 +1133,7 @@ describe('AuthService', () => {
       const { response, clearCookie } = makeResponse();
       const request = makeRequest(undefined);
 
-      await service.logout(request, response);
+      await service.logoutEverywhere(request, response);
 
       expect(revokeByValue).not.toHaveBeenCalled();
       expect(revokeAllForUser).not.toHaveBeenCalled();

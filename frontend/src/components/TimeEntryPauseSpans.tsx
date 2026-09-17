@@ -13,40 +13,43 @@ function formatTime(iso: string): string {
   });
 }
 
-/** Surfaces exactly when an entry was paused and resumed — the historical
- * timesheet view otherwise only shows the net duration, with no sign a
- * pause ever happened. */
+function pauseTitle(pause: PauseSpan): string {
+  if (!pause.resumedAt) {
+    return `Paused ${formatTime(pause.pausedAt)} – still paused`;
+  }
+  return `Paused ${formatTime(pause.pausedAt)} – ${formatTime(pause.resumedAt)}`;
+}
+
+/** Surfaces that an entry was paused — the historical timesheet view
+ * otherwise only shows the net duration, with no sign a pause ever
+ * happened. Each pause is a compact badge (exact start/end times are
+ * still available on hover, via the badge's title) rather than a
+ * full sentence per pause, so a row with several short pauses stays scannable. */
 export function TimeEntryPauseSpans({ pauses }: TimeEntryPauseSpansProps) {
   if (pauses.length === 0) {
     return null;
   }
 
   return (
-    <ul className="flex flex-col gap-0.5 pl-0.5">
+    <div className="flex flex-wrap items-center gap-1 pl-0.5">
       {pauses.map((pause, index) => (
-        <li
+        <span
           key={index}
-          className="flex items-center gap-1.5 text-xs text-slate-900/60"
+          title={pauseTitle(pause)}
+          className="inline-flex items-center gap-1 rounded-full bg-sidebar px-2 py-0.5 text-xs text-slate-900/70"
         >
-          <PauseIcon size={12} weight="fill" aria-hidden="true" />
-          {pause.resumedAt ? (
-            <span>
-              Paused {formatTime(pause.pausedAt)} – {formatTime(pause.resumedAt)}{" "}
-              (
-              {formatDuration(
+          <PauseIcon size={10} weight="fill" aria-hidden="true" />
+          {pause.resumedAt
+            ? `paused ${formatDuration(
                 Math.round(
                   (new Date(pause.resumedAt).getTime() -
                     new Date(pause.pausedAt).getTime()) /
                     60000,
                 ),
-              )}
-              )
-            </span>
-          ) : (
-            <span>Paused {formatTime(pause.pausedAt)} – still paused</span>
-          )}
-        </li>
+              )}`
+            : "still paused"}
+        </span>
       ))}
-    </ul>
+    </div>
   );
 }

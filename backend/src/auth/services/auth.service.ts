@@ -414,7 +414,41 @@ export class AuthService {
     return { message: 'Session refreshed.' };
   }
 
+  /**
+   * Ends only *this* web session — the refresh token this browser was
+   * carrying. Deliberately does not touch paired devices (see
+   * `logoutEverywhere` for that): device pairing is meant to survive
+   * ordinary logout, since otherwise logging out on any one browser (even
+   * a different device entirely) would silently force the desktop app
+   * through its whole re-pairing flow again. See ADR-0017.
+   */
   async logout(
+    request: Request,
+    response: Response,
+  ): Promise<{ message: string }> {
+    const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
+
+    if (refreshToken) {
+      await this.refreshTokenService.revokeByValue(
+        this.dataSource.manager,
+        refreshToken,
+      );
+    }
+
+    response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
+    response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+
+    return { message: 'Logged out.' };
+  }
+
+  /**
+   * The explicit "sign out everywhere" action: ends this web session *and*
+   * every paired device (desktop app, etc.), stopping whatever timer each
+   * revoked device had running. Use when the account may be compromised or
+   * a device needs to be cut off — ordinary `logout` no longer implies this
+   * (see ADR-0017).
+   */
+  async logoutEverywhere(
     request: Request,
     response: Response,
   ): Promise<{ message: string }> {
@@ -433,7 +467,7 @@ export class AuthService {
     response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
     response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
 
-    return { message: 'Logged out.' };
+    return { message: 'Logged out everywhere.' };
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
@@ -491,12 +525,14 @@ export class AuthService {
   }
 
   /**
-   * Logging out (or resetting a password) is a sign-out-*everywhere* action
-   * (ADR-0009, "only log in/out from the web app") — every device the user
-   * was paired on gets signed out too. A revoked device can no longer stop
-   * its own running timer, so this stops whatever's running in each
-   * affected organisation, the same way idle auto-discard does, rather
-   * than leaving it open forever (ADR-0006's one-running-timer rule).
+   * Resetting a password, or an explicit `logoutEverywhere`, is a
+   * sign-out-*everywhere* action (ADR-0017, amending ADR-0009) — every
+   * device the user was paired on gets signed out too. Ordinary `logout`
+   * deliberately does *not* call this (ADR-0017). A revoked device can no
+   * longer stop its own running timer, so this stops whatever's running in
+   * each affected organisation, the same way idle auto-discard does,
+   * rather than leaving it open forever (ADR-0006's one-running-timer
+   * rule).
    */
   private async signOutAllDevices(userId: string): Promise<void> {
     const organisationIds =

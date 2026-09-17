@@ -1,4 +1,5 @@
 import { AccountEditForm } from "@/components/AccountEditForm";
+import { SignOutEverywhereButton } from "@/components/SignOutEverywhereButton";
 
 export default function AccountEditPage() {
   return (
@@ -7,8 +8,9 @@ export default function AccountEditPage() {
         Your account
       </h1>
 
-      <div className="animate-fade-in-up-delay">
+      <div className="animate-fade-in-up-delay flex flex-col gap-8">
         <AccountEditForm />
+        <SignOutEverywhereButton />
       </div>
     </main>
   );

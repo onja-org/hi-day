@@ -14,6 +14,9 @@ type DashboardKpiTileProps = {
    * (a bar snapped to fractionClass's 13 steps would visibly disagree with
    * the exact number beside it). */
   subLabel?: string;
+  /** A small circular indicator before the label, e.g. "bg-primary" — purely
+   * decorative, omit for the plain (dashboard) tile look. */
+  dotClassName?: string;
 };
 
 const SPARKLINE_WIDTH = 64;
@@ -26,6 +29,7 @@ export function DashboardKpiTile({
   delta,
   sparkline,
   subLabel,
+  dotClassName,
 }: DashboardKpiTileProps) {
   const hasDelta = deltaLabel !== undefined && delta !== undefined;
   const isUp = hasDelta && delta! > 0;
@@ -39,7 +43,10 @@ export function DashboardKpiTile({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-input-border bg-white p-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium tracking-wide text-slate-900/70 uppercase">
+        <span className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-slate-900/70 uppercase">
+          {dotClassName && (
+            <span aria-hidden="true" className={clsx("h-1.5 w-1.5 rounded-full", dotClassName)} />
+          )}
           {label}
         </span>
       </div>

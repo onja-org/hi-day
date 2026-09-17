@@ -3,6 +3,7 @@
 import { ArrowsClockwiseIcon, PlayIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
+import { formatElapsed } from "@/lib/formatElapsed";
 import type { ProjectListItem } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
 
@@ -11,6 +12,10 @@ type TimerPickerProps = {
   projects: ProjectListItem[];
   projectId: string;
   taskId: string;
+  /** Today's already-tracked seconds per project (completed entries only) —
+   * see useRunningTimer's projectSecondsToday. Previews how much a project
+   * has today before its timer is even started. */
+  projectSecondsToday: Map<string, number>;
   conflictMessage: string | null;
   isStarting: boolean;
   isSwitching: boolean;
@@ -34,6 +39,7 @@ export function TimerPicker({
   projects,
   projectId,
   taskId,
+  projectSecondsToday,
   conflictMessage,
   isStarting,
   isSwitching,
@@ -47,6 +53,9 @@ export function TimerPicker({
     enabled: projectId !== "",
   });
   const tasks = tasksQuery.data?.tasks.filter((task) => task.status === "open") ?? [];
+  const selectedProjectSecondsToday = projectId
+    ? (projectSecondsToday.get(projectId) ?? 0)
+    : 0;
 
   if (projects.length === 0) {
     return (
@@ -93,6 +102,11 @@ export function TimerPicker({
               </option>
             ))}
           </select>
+          {projectId && selectedProjectSecondsToday > 0 && (
+            <span className="text-xs text-slate-900/70">
+              {formatElapsed(selectedProjectSecondsToday * 1000)} tracked today
+            </span>
+          )}
         </label>
 
         <label className="flex flex-1 flex-col gap-1">

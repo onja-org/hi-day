@@ -1,6 +1,6 @@
 "use client";
 
-import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
+import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { getWeekRange } from "@/lib/getWeekRange";
 
 type WeekNavigatorProps = {
@@ -28,7 +28,8 @@ export function WeekNavigator({ weekOffset, onChange }: WeekNavigatorProps) {
       >
         <CaretLeftIcon size={16} aria-hidden="true" />
       </button>
-      <span className="min-w-40 text-center text-sm font-medium text-slate-900">
+      <span className="flex min-w-44 items-center justify-center gap-1.5 text-sm font-medium text-slate-900">
+        <CalendarBlankIcon size={14} aria-hidden="true" className="text-slate-900/60" />
         {formatRangeLabel(start, end)}
         {weekOffset === 0 && <span className="text-primary"> · This week</span>}
       </span>

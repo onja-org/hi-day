@@ -30,6 +30,14 @@ export type DashboardSummary = {
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */
   projectsThisWeek: DashboardProjectTime[];
+  /**
+   * Today's per-project totals from *completed* entries only — excludes
+   * whatever's still running. Add a live-ticking timer's own elapsed time
+   * on top of this rather than trusting it alone, or a running project's
+   * total double-counts (once from here, once from the tick) or goes stale
+   * between polls.
+   */
+  projectsToday: DashboardProjectTime[];
   /** Admin-configurable, default 8 — informational only, never enforced. */
   workingHoursPerDayTarget: number;
 };

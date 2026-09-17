@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
 import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
@@ -6,6 +6,7 @@ import { startTimeEntry } from "@/lib/startTimeEntry";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
+import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboardSummary";
 import { useMyProjects } from "./useMyProjects";
 import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 
@@ -20,6 +21,7 @@ export function useRunningTimer(organisationId: string) {
   const queryClient = useQueryClient();
   const currentQuery = useCurrentTimeEntry(organisationId);
   const projectsQuery = useMyProjects(organisationId);
+  const dashboardQuery = useDashboardSummary(organisationId);
 
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -31,6 +33,15 @@ export function useRunningTimer(organisationId: string) {
   const activeProject = entry
     ? (projectsQuery.data?.find((project) => project.id === entry.projectId) ?? null)
     : null;
+
+  // Today's *completed* seconds per project (see DashboardSummary.projectsToday)
+  // — the baseline a project "resumes from" when its timer is started/
+  // restarted, so switching projects (or platforms, or logging back in)
+  // never shows a bare 0 for time already tracked today.
+  const projectSecondsToday = useMemo(
+    () => new Map(dashboardQuery.data?.projectsToday.map((p) => [p.projectId, p.seconds])),
+    [dashboardQuery.data],
+  );
 
   const invalidate = () => {
     void queryClient.invalidateQueries({
@@ -45,6 +56,13 @@ export function useRunningTimer(organisationId: string) {
     // invalidates by key prefix.
     void queryClient.invalidateQueries({
       queryKey: TIME_ENTRIES_QUERY_KEY_PREFIX(organisationId),
+    });
+    // Starting/stopping/switching changes both "worked today" and
+    // projectsToday's completed-entries baseline (see above) — without
+    // this, the dashboard KPI and the picker's "already tracked" figure
+    // would only catch up on the next unrelated remount/window-focus.
+    void queryClient.invalidateQueries({
+      queryKey: DASHBOARD_SUMMARY_QUERY_KEY(organisationId),
     });
   };
 
@@ -115,16 +133,28 @@ export function useRunningTimer(organisationId: string) {
     return () => clearInterval(interval);
   }, [entry, serverNow]);
 
+  // The baseline this project already has today (completed entries only,
+  // see projectSecondsToday above) plus however much of the *current*
+  // entry has ticked — never just the current entry alone, or restarting a
+  // project the same day would visibly reset to 0.
+  const todaySecondsBeforeThisEntry = entry
+    ? projectSecondsToday.get(entry.projectId) ?? 0
+    : 0;
+
   return {
     isLoading: currentQuery.isLoading || projectsQuery.isLoading,
     isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
     entry,
     activeProject,
-    elapsedMs: frozenElapsedMs ?? elapsedMs,
+    elapsedMs: todaySecondsBeforeThisEntry * 1000 + (frozenElapsedMs ?? elapsedMs),
     isPaused,
     projects: projectsQuery.data ?? [],
     projectId,
     taskId,
+    // For the picker: how much of *this* (not-yet-started) project is
+    // already tracked today, so choosing a project previews its running
+    // total before the person even presses Start.
+    projectSecondsToday,
     conflictMessage,
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,

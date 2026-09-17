@@ -36,7 +36,7 @@ export function RecentActivityScreenshots({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-input-border p-4">
       <div className="grid grid-cols-3 gap-2">
-        {screenshots.map((screenshot) => (
+        {screenshots.map((screenshot, index) => (
           <div
             key={screenshot.id}
             className="relative aspect-video overflow-hidden rounded-lg bg-cream"
@@ -47,6 +47,7 @@ export function RecentActivityScreenshots({
               alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
               fill
               unoptimized
+              priority={index < 3}
               className="object-cover"
             />
           </div>

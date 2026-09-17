@@ -52,6 +52,16 @@ export interface DashboardSummary {
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */
   projectsThisWeek: DashboardProjectTime[];
+  /**
+   * Today's per-project totals from *completed* entries only — deliberately
+   * excludes whatever's still running, unlike `workedTodaySeconds`/
+   * `projectsThisWeek` (which cap a running entry's seconds at "now"). A
+   * caller showing a live-ticking timer must add its own elapsed time on
+   * top of this instead of trusting a snapshot that's already stale by the
+   * time it renders; keeping the open entry out entirely avoids double-
+   * counting it once from here and again from the live tick.
+   */
+  projectsToday: DashboardProjectTime[];
   /** Admin-configurable, default 8 — informational only, never enforced. */
   workingHoursPerDayTarget: number;
 }
@@ -122,6 +132,7 @@ export class DashboardService {
     let workedTodaySeconds = 0;
     let workedThisWeekSeconds = 0;
     const projectSeconds = new Map<string, DashboardProjectTime>();
+    const projectSecondsToday = new Map<string, DashboardProjectTime>();
 
     for (const entry of thisWeekEntries) {
       const seconds = this.activeSeconds(entry, pauseStates, now);
@@ -134,6 +145,20 @@ export class DashboardService {
       }
       if (key === todayKey) {
         workedTodaySeconds += seconds;
+
+        if (entry.endedAt) {
+          const existingToday = projectSecondsToday.get(entry.projectId);
+          if (existingToday) {
+            existingToday.seconds += seconds;
+          } else {
+            projectSecondsToday.set(entry.projectId, {
+              projectId: entry.projectId,
+              projectName: entry.project.name,
+              projectColour: entry.project.colour,
+              seconds,
+            });
+          }
+        }
       }
 
       const existingProject = projectSeconds.get(entry.projectId);
@@ -194,6 +219,9 @@ export class DashboardService {
           : null,
       thisWeekByDay: byDay,
       projectsThisWeek: [...projectSeconds.values()].sort(
+        (a, b) => b.seconds - a.seconds,
+      ),
+      projectsToday: [...projectSecondsToday.values()].sort(
         (a, b) => b.seconds - a.seconds,
       ),
       workingHoursPerDayTarget: workingHoursPolicy.hoursPerDay,
