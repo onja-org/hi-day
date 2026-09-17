@@ -15,7 +15,7 @@ type AddTeamMemberFromListModalProps = {
 /** AddTeamMemberModal needs the team's current members to exclude them from
  * the candidate list — the detail page already has those loaded, but the
  * Teams list only has team id/name. This loads the team's detail first so
- * "Add member" can be triggered straight from the list. */
+ * "Add members" can be triggered straight from the list. */
 export function AddTeamMemberFromListModal({
   organisationId,
   teamId,
@@ -25,7 +25,7 @@ export function AddTeamMemberFromListModal({
 
   if (teamQuery.isLoading) {
     return (
-      <Modal title="Add member" onClose={onClose}>
+      <Modal title="Add members" onClose={onClose}>
         <p className="flex items-center gap-2 text-slate-900">
           <Spinner className="text-primary-dark" />
           Loading team…
@@ -36,7 +36,7 @@ export function AddTeamMemberFromListModal({
 
   if (teamQuery.isError || !teamQuery.data) {
     return (
-      <Modal title="Add member" onClose={onClose}>
+      <Modal title="Add members" onClose={onClose}>
         <ErrorMessage
           message={
             teamQuery.error instanceof Error

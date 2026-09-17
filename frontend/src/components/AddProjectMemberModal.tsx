@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers";
 import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
-import { addProjectMember } from "@/lib/addProjectMember";
-import type { AddProjectMemberInput, ProjectMembershipRole } from "@/types/project";
+import { addProjectMembers } from "@/lib/addProjectMembers";
+import type { ProjectMembershipRole } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
+import { MemberSearchChecklist } from "./MemberSearchChecklist";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 
@@ -25,18 +25,40 @@ export function AddProjectMemberModal({
   const queryClient = useQueryClient();
   const projectQuery = useProject(organisationId, projectId);
   const membersQuery = useAssignableProjectMembers(organisationId, projectId);
-  const [membershipId, setMembershipId] = useState("");
+  const [rate, setRate] = useState("");
+  // membershipId -> role, for every currently-checked candidate. Presence in
+  // the map is "checked"; the value is that row's own role choice, so one
+  // batch can add some people as members and others as managers together.
+  const [selected, setSelected] = useState<Map<string, ProjectMembershipRole>>(new Map());
+  const [failures, setFailures] = useState<{ membershipId: string; message: string }[]>([]);
 
   const mutation = useMutation({
-    mutationFn: (input: AddProjectMemberInput) =>
-      addProjectMember(organisationId, projectId, input),
+    mutationFn: () =>
+      addProjectMembers(
+        organisationId,
+        projectId,
+        [...selected.entries()].map(([membershipId, role]) => ({
+          membershipId,
+          role,
+          rate: rate.trim() || undefined,
+        })),
+      ),
     onSuccess: (result) => {
-      if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: PROJECT_QUERY_KEY(organisationId, projectId),
-        });
+      queryClient.invalidateQueries({
+        queryKey: PROJECT_QUERY_KEY(organisationId, projectId),
+      });
+      if (result.failed.length === 0) {
         onClose();
+        return;
       }
+      setFailures(result.failed);
+      setSelected((current) => {
+        const next = new Map(current);
+        for (const id of result.succeededMembershipIds) {
+          next.delete(id);
+        }
+        return next;
+      });
     },
   });
 
@@ -47,81 +69,78 @@ export function AddProjectMemberModal({
   );
   const isLoading = projectQuery.isLoading || membersQuery.isLoading;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!membershipId) {
-      return;
-    }
-    const formData = new FormData(event.currentTarget);
-    const rate = String(formData.get("rate") ?? "").trim();
-    const role = String(formData.get("role") ?? "member") as ProjectMembershipRole;
-    mutation.mutate({ membershipId, rate: rate || undefined, role });
+  function nameFor(membershipId: string): string {
+    const member = (membersQuery.data ?? []).find((candidate) => candidate.id === membershipId);
+    return member ? (member.name ?? member.email) : membershipId;
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
+  function handleSubmit() {
+    if (selected.size === 0) return;
+    setFailures([]);
+    mutation.mutate();
+  }
 
   return (
-    <Modal title="Add member to project" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-        {submitError && <ErrorMessage message={submitError} />}
+    <Modal title="Add members to project" onClose={onClose}>
+      <div className="flex w-full max-w-lg flex-col gap-4">
+        <p className="text-sm text-slate-900/70">
+          Check as many people as you like, set each one&apos;s role, then add them all at once.
+        </p>
 
-        <label className="flex flex-col gap-1.5">
-          Member
-          <select
-            value={membershipId}
-            onChange={(event) => setMembershipId(event.target.value)}
-            required
-            disabled={isLoading}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="">Select a member</option>
-            {availableMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name ?? member.email}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {availableMembers.length === 0 && !isLoading && (
-          <p className="text-sm text-slate-900">
-            Every active member is already assigned to this project.
-          </p>
+        {failures.length > 0 && (
+          <ErrorMessage
+            message={`Couldn't add ${failures.length} member${failures.length === 1 ? "" : "s"}: ${failures
+              .map((failure) => `${nameFor(failure.membershipId)} (${failure.message})`)
+              .join(", ")}`}
+          />
         )}
 
-        <label className="flex flex-col gap-1.5">
-          Role
-          <select
-            name="role"
-            defaultValue="member"
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="member">Member — can be assigned and logged against</option>
-            <option value="manager">Manager — can manage this project</option>
-          </select>
-        </label>
+        <MemberSearchChecklist
+          candidates={availableMembers}
+          selected={selected}
+          isLoading={isLoading}
+          emptyMessage="Every active member is already assigned to this project."
+          onToggle={(id, checked) =>
+            setSelected((current) => {
+              const next = new Map(current);
+              if (checked) {
+                next.set(id, next.get(id) ?? "member");
+              } else {
+                next.delete(id);
+              }
+              return next;
+            })
+          }
+          onRoleChange={(id, role) =>
+            setSelected((current) => new Map(current).set(id, role))
+          }
+        />
 
         <label className="flex flex-col gap-1.5">
           Rate override (optional)
           <input
-            name="rate"
+            value={rate}
+            onChange={(event) => setRate(event.target.value)}
             type="number"
             min="0"
             step="0.01"
-            placeholder="Uses the project's default rate if left blank"
+            placeholder="Uses the project's default rate if left blank — applies to everyone added below"
             className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
         <button
-          type="submit"
-          disabled={mutation.isPending || !membershipId}
+          type="button"
+          onClick={handleSubmit}
+          disabled={mutation.isPending || selected.size === 0}
           className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
         >
           {mutation.isPending && <Spinner />}
-          Add to project
+          {selected.size === 0
+            ? "Add to project"
+            : `Add ${selected.size} member${selected.size === 1 ? "" : "s"} to project`}
         </button>
-      </form>
+      </div>
     </Modal>
   );
 }

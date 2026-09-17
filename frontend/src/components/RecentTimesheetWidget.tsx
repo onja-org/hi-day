@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
@@ -13,6 +12,31 @@ type RecentTimesheetWidgetProps = {
   organisationId: string;
 };
 
+function formatTimeRange(startedAt: string, endedAt: string | null): string {
+  const start = new Date(startedAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (!endedAt) {
+    return `${start} → now`;
+  }
+  const end = new Date(endedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${start} → ${end}`;
+}
+
+function isToday(iso: string): boolean {
+  const date = new Date(iso);
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+/** A compact preview of the caller's most recent entries — a scannable
+ * list rather than a full multi-column table, which doesn't fit a
+ * half-width dashboard card. The full table lives on the Timesheets page. */
 export function RecentTimesheetWidget({ organisationId }: RecentTimesheetWidgetProps) {
   const entriesQuery = useTimeEntries(organisationId);
 
@@ -31,69 +55,54 @@ export function RecentTimesheetWidget({ organisationId }: RecentTimesheetWidgetP
 
   const entries = entriesQuery.data.slice(0, PREVIEW_COUNT);
 
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-input-border p-4">
-      {entries.length === 0 ? (
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-input-border p-4">
         <p className="text-slate-900">You haven&apos;t logged any hours yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-slate-900/70">
-                <th className="pb-2 font-medium">Project</th>
-                <th className="pb-2 font-medium">Date</th>
-                <th className="pb-2 font-medium">Start</th>
-                <th className="pb-2 font-medium">Stop</th>
-                <th className="pb-2 text-right font-medium">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} className="border-t border-input-border">
-                  <td className="py-2 text-slate-900">
-                    <span className="flex items-center gap-2">
-                      <ProjectColourBadge colour={entry.projectColour} />
-                      {entry.projectName}
-                    </span>
-                  </td>
-                  <td className="py-2 whitespace-nowrap text-slate-900">
-                    {new Date(entry.startedAt).toLocaleDateString([], {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </td>
-                  <td className="py-2 whitespace-nowrap text-slate-900">
-                    {new Date(entry.startedAt).toLocaleTimeString([], {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="py-2 whitespace-nowrap text-slate-900">
-                    {entry.endedAt
-                      ? new Date(entry.endedAt).toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums text-slate-900">
-                    {entry.durationSeconds === null
-                      ? "In progress"
-                      : formatElapsed(entry.durationSeconds * 1000)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      </div>
+    );
+  }
 
-      <Link
-        href={`/organisations/${organisationId}/time_entries`}
-        className="self-start text-sm text-primary underline-offset-2 hover:underline"
-      >
-        View timesheets →
-      </Link>
+  const mostRecentIsToday = isToday(entries[0].startedAt);
+
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-input-border p-4">
+      {mostRecentIsToday && (
+        <span className="pb-1 text-xs font-medium tracking-wide text-slate-900/60 uppercase">
+          Today ·{" "}
+          {new Date(entries[0].startedAt).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
+      )}
+      <ul className="flex flex-col">
+        {entries.map((entry) => (
+          <li
+            key={entry.id}
+            className="flex items-center justify-between gap-3 border-t border-input-border py-2 first:border-t-0 text-sm"
+          >
+            <span className="flex items-center gap-2 text-slate-900">
+              <ProjectColourBadge colour={entry.projectColour} />
+              <span className="font-mono tabular-nums">
+                {formatTimeRange(entry.startedAt, entry.endedAt)}
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              {entry.durationSeconds === null && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  Live
+                </span>
+              )}
+              <span className="font-mono tabular-nums text-slate-900">
+                {entry.durationSeconds === null
+                  ? formatElapsed(new Date().getTime() - new Date(entry.startedAt).getTime())
+                  : formatElapsed(entry.durationSeconds * 1000)}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

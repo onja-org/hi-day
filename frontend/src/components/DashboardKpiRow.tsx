@@ -10,10 +10,6 @@ type DashboardKpiRowProps = {
   organisationId: string;
 };
 
-function formatDelta(seconds: number): string {
-  return `${seconds < 0 ? "-" : ""}${formatElapsed(Math.abs(seconds) * 1000)}`;
-}
-
 export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
   const summaryQuery = useDashboardSummary(organisationId);
 
@@ -31,44 +27,49 @@ export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
   }
 
   const summary = summaryQuery.data;
-  const weekTrend = summary.thisWeekByDay.map((day) => day.seconds);
+  const activeDayCount = summary.thisWeekByDay.filter((day) => day.seconds > 0).length;
+  const soleProject =
+    summary.projectsThisWeek.length === 1 ? summary.projectsThisWeek[0] : undefined;
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <DashboardKpiTile
-        label="Weekly activity"
+        dotClassName="bg-primary"
+        label="Worked today"
+        value={formatElapsed(summary.workedTodaySeconds * 1000)}
+        subLabel={`of ${summary.workingHoursPerDayTarget}h daily target`}
+        progressRatio={summary.workedTodaySeconds / (summary.workingHoursPerDayTarget * 3600)}
+      />
+      <DashboardKpiTile
+        dotClassName="bg-primary"
+        label="Worked this week"
+        value={formatElapsed(summary.workedThisWeekSeconds * 1000)}
+        subLabel={
+          activeDayCount > 0
+            ? `across ${activeDayCount} active day${activeDayCount === 1 ? "" : "s"}`
+            : undefined
+        }
+      />
+      <DashboardKpiTile
+        dotClassName="bg-primary"
+        label="Activity"
         value={
           summary.weeklyActivityPercentage !== null
             ? `${summary.weeklyActivityPercentage}%`
             : "—"
         }
-        deltaLabel={
-          summary.weeklyActivityDeltaPercentage !== null
-            ? `${Math.abs(summary.weeklyActivityDeltaPercentage)}%`
+        subLabel="avg keyboard & mouse input"
+        progressRatio={
+          summary.weeklyActivityPercentage !== null
+            ? summary.weeklyActivityPercentage / 100
             : undefined
         }
-        delta={summary.weeklyActivityDeltaPercentage ?? undefined}
       />
       <DashboardKpiTile
-        label="Worked this week"
-        value={formatElapsed(summary.workedThisWeekSeconds * 1000)}
-        deltaLabel={formatDelta(summary.workedThisWeekDeltaSeconds)}
-        delta={summary.workedThisWeekDeltaSeconds}
-        sparkline={weekTrend}
-      />
-      <DashboardKpiTile
-        label="Projects worked"
+        dotClassName="bg-primary"
+        label="Active projects"
         value={String(summary.projectsWorkedThisWeek)}
-        deltaLabel={`${Math.abs(summary.projectsWorkedDelta)}`}
-        delta={summary.projectsWorkedDelta}
-      />
-      <DashboardKpiTile
-        label="Worked today"
-        value={formatElapsed(summary.workedTodaySeconds * 1000)}
-        subLabel={`of ${summary.workingHoursPerDayTarget}h target`}
-        deltaLabel={formatDelta(summary.workedTodayDeltaSeconds)}
-        delta={summary.workedTodayDeltaSeconds}
-        sparkline={weekTrend}
+        subLabel={soleProject?.projectName}
       />
     </div>
   );

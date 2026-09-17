@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
-import { addTeamMember } from "@/lib/addTeamMember";
+import { addTeamMembers } from "@/lib/addTeamMembers";
 import type { TeamMember } from "@/types/team";
-import { AddTeamMemberCandidateRow } from "./AddTeamMemberCandidateRow";
 import { ErrorMessage } from "./ErrorMessage";
+import { MemberSearchChecklist } from "./MemberSearchChecklist";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 
@@ -26,80 +26,107 @@ export function AddTeamMemberModal({
 }: AddTeamMemberModalProps) {
   const queryClient = useQueryClient();
   const membersQuery = useActiveMembers(organisationId);
-  const [search, setSearch] = useState("");
+  // membershipId -> role, for every currently-checked candidate — presence
+  // in the map is "checked", the value is that row's own role choice, so
+  // one batch can add both plain members and team managers together.
+  const [selected, setSelected] = useState<Map<string, "member" | "manager">>(new Map());
+  const [failures, setFailures] = useState<{ membershipId: string; message: string }[]>([]);
 
   const addMutation = useMutation({
-    mutationFn: (variables: { membershipId: string; isManager: boolean }) =>
-      addTeamMember(organisationId, teamId, variables),
+    mutationFn: () =>
+      addTeamMembers(
+        organisationId,
+        teamId,
+        [...selected.entries()].map(([membershipId, role]) => ({
+          membershipId,
+          isManager: role === "manager",
+        })),
+      ),
     onSuccess: (result) => {
-      if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: TEAM_DETAIL_QUERY_KEY(organisationId, teamId),
-        });
+      queryClient.invalidateQueries({
+        queryKey: TEAM_DETAIL_QUERY_KEY(organisationId, teamId),
+      });
+      if (result.failed.length === 0) {
+        onClose();
+        return;
       }
+      setFailures(result.failed);
+      setSelected((current) => {
+        const next = new Map(current);
+        for (const id of result.succeededMembershipIds) {
+          next.delete(id);
+        }
+        return next;
+      });
     },
   });
 
   const existingMembershipIds = new Set(
     existingMembers.map((member) => member.membershipId),
   );
-  const search_ = search.trim().toLowerCase();
-  const candidates = (membersQuery.data ?? [])
-    .filter((member) => !existingMembershipIds.has(member.id))
-    .filter((member) => {
-      if (!search_) {
-        return true;
-      }
-      return [member.name, member.email]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(search_));
-    });
+  const candidates = (membersQuery.data ?? []).filter(
+    (member) => !existingMembershipIds.has(member.id),
+  );
+
+  function nameFor(membershipId: string): string {
+    const member = (membersQuery.data ?? []).find((candidate) => candidate.id === membershipId);
+    return member ? (member.name ?? member.email) : membershipId;
+  }
+
+  function handleSubmit() {
+    if (selected.size === 0) return;
+    setFailures([]);
+    addMutation.mutate();
+  }
 
   return (
-    <Modal title="Add member" onClose={onClose}>
+    <Modal title="Add members" onClose={onClose}>
       <div className="flex flex-col gap-4">
-        <label className="sr-only" htmlFor="add-member-search">
-          Search members
-        </label>
-        <input
-          id="add-member-search"
-          type="search"
-          placeholder="Search by name or email"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900"
+        <p className="text-sm text-slate-900/70">
+          Check as many people as you like, set each one&apos;s role, then add them all at once.
+        </p>
+
+        {failures.length > 0 && (
+          <ErrorMessage
+            message={`Couldn't add ${failures.length} member${failures.length === 1 ? "" : "s"}: ${failures
+              .map((failure) => `${nameFor(failure.membershipId)} (${failure.message})`)
+              .join(", ")}`}
+          />
+        )}
+
+        <MemberSearchChecklist
+          candidates={candidates}
+          selected={selected}
+          isLoading={membersQuery.isLoading}
+          emptyMessage="Every active member is already on this team."
+          managerLabel="Team manager"
+          onToggle={(id, checked) =>
+            setSelected((current) => {
+              const next = new Map(current);
+              if (checked) {
+                next.set(id, next.get(id) ?? "member");
+              } else {
+                next.delete(id);
+              }
+              return next;
+            })
+          }
+          onRoleChange={(id, role) =>
+            setSelected((current) => new Map(current).set(id, role))
+          }
         />
 
-        {addMutation.data && !addMutation.data.ok && (
-          <ErrorMessage message={addMutation.data.message} />
-        )}
-
-        {membersQuery.isLoading ? (
-          <p className="flex items-center gap-2 text-slate-900">
-            <Spinner className="text-primary-dark" />
-            Loading members…
-          </p>
-        ) : (
-          <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-            {candidates.map((member) => (
-              <AddTeamMemberCandidateRow
-                key={member.id}
-                member={member}
-                isPending={addMutation.isPending}
-                onAdd={(membershipId, isManager) =>
-                  addMutation.mutate({ membershipId, isManager })
-                }
-              />
-            ))}
-            {candidates.length === 0 && (
-              <li className="text-slate-900">
-                {search_
-                  ? "No members match your search."
-                  : "Every active member is already on this team."}
-              </li>
-            )}
-          </ul>
-        )}
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={addMutation.isPending || selected.size === 0}
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        >
+          {addMutation.isPending && <Spinner />}
+          {selected.size === 0
+            ? "Add members"
+            : `Add ${selected.size} member${selected.size === 1 ? "" : "s"}`}
+        </button>
       </div>
     </Modal>
   );

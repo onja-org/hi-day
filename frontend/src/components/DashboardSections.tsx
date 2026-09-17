@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useDashboardSummary } from "@/hooks/useDashboardSummary";
+import { formatElapsed } from "@/lib/formatElapsed";
 import { CurrentProjectActivity } from "./CurrentProjectActivity";
 import { DashboardKpiRow } from "./DashboardKpiRow";
 import { ErrorMessage } from "./ErrorMessage";
@@ -12,6 +15,9 @@ import { UrlSessionList } from "./UrlSessionList";
 
 export function DashboardSections() {
   const organisationQuery = useCurrentOrganisation();
+  const summaryQuery = useDashboardSummary(String(organisationQuery.data?.id ?? ""), {
+    enabled: organisationQuery.data !== undefined,
+  });
 
   if (organisationQuery.isLoading) {
     return (
@@ -38,43 +44,83 @@ export function DashboardSections() {
 
   return (
     <div className="flex flex-col gap-6">
+      <p className="text-sm text-slate-900/60">
+        {new Date().toLocaleDateString([], {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+        })}
+      </p>
+
       <DashboardKpiRow organisationId={organisationId} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">
-            Recent activity
-          </h2>
-          <RecentActivityScreenshots organisationId={organisationId} />
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">This week</h2>
+            {summaryQuery.data && (
+              <span className="text-sm text-slate-900/60">
+                Total{" "}
+                <span className="font-semibold tabular-nums text-primary-dark">
+                  {formatElapsed(summaryQuery.data.workedThisWeekSeconds * 1000)}
+                </span>
+              </span>
+            )}
+          </div>
+          <ThisWeekPanel organisationId={organisationId} />
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">
-            Timesheet
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">Recent entries</h2>
+            <Link
+              href={`/organisations/${organisationId}/time_entries`}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              View timesheets →
+            </Link>
+          </div>
           <RecentTimesheetWidget organisationId={organisationId} />
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">
-            Current project activity
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">Where time went</h2>
+            <Link
+              href={`/organisations/${organisationId}/projects`}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              View projects →
+            </Link>
+          </div>
           <CurrentProjectActivity organisationId={organisationId} />
         </section>
 
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">
-            This week
-          </h2>
-          <ThisWeekPanel organisationId={organisationId} />
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">Apps &amp; URLs</h2>
+            <Link
+              href={`/organisations/${organisationId}/activities/apps`}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              View activity →
+            </Link>
+          </div>
+          <UrlSessionList organisationId={organisationId} maxEntries={3} />
         </section>
       </div>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-primary-dark">
-          Apps &amp; URLs
-        </h2>
-        <UrlSessionList organisationId={organisationId} maxEntries={3} />
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-primary-dark">Screenshots</h2>
+          <Link
+            href={`/organisations/${organisationId}/activities/screenshots`}
+            className="text-sm text-primary underline-offset-2 hover:underline"
+          >
+            View activity →
+          </Link>
+        </div>
+        <RecentActivityScreenshots organisationId={organisationId} />
       </section>
     </div>
   );

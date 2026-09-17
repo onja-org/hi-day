@@ -36,8 +36,8 @@ export function ProjectRowActions({ organisationId, project }: ProjectRowActions
         type="button"
         onClick={() => setAddMemberOpen(true)}
         disabled={isArchived}
-        title={archivedTitle ?? "Add member"}
-        aria-label="Add member"
+        title={archivedTitle ?? "Add members"}
+        aria-label="Add members"
         className="cursor-pointer text-primary-dark transition-colors duration-150 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
       >
         <UserPlus size={18} aria-hidden="true" />

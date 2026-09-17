@@ -35,7 +35,7 @@ export function TeamListRow({
             onClick={onAddMember}
             className="cursor-pointer text-primary hover:underline"
           >
-            Add member
+            Add members
           </button>
           <button
             type="button"

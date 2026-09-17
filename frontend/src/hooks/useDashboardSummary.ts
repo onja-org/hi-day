@@ -7,7 +7,10 @@ export const DASHBOARD_SUMMARY_QUERY_KEY = (organisationId: string) => [
   organisationId,
 ];
 
-export function useDashboardSummary(organisationId: string) {
+export function useDashboardSummary(
+  organisationId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: DASHBOARD_SUMMARY_QUERY_KEY(organisationId),
     queryFn: async () => {
@@ -17,5 +20,6 @@ export function useDashboardSummary(organisationId: string) {
       }
       return result.summary;
     },
+    enabled: options.enabled ?? true,
   });
 }

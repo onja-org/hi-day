@@ -1,5 +1,6 @@
 import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import { fractionClass } from "@/lib/fractionClass";
 
 type DashboardKpiTileProps = {
   label: string;
@@ -10,13 +11,19 @@ type DashboardKpiTileProps = {
   delta?: number;
   /** Optional trend points (e.g. one per day this week), oldest first. */
   sparkline?: number[];
-  /** Small caption under the value, e.g. "of 8h target" — text only, no bar
-   * (a bar snapped to fractionClass's 13 steps would visibly disagree with
-   * the exact number beside it). */
+  /** Small caption under the value, e.g. "of 8h target". */
   subLabel?: string;
   /** A small circular indicator before the label, e.g. "bg-primary" — purely
    * decorative, omit for the plain (dashboard) tile look. */
   dotClassName?: string;
+  /**
+   * 0-1 progress toward some target (e.g. hours worked vs. daily target) —
+   * rendered as a thin track. Snapped to `fractionClass`'s 13-step scale, so
+   * it's a glance-level indicator, not a pixel-exact rendering of the value
+   * beside it — the same tradeoff this app already accepts for every other
+   * proportional bar (e.g. `TimesheetProjectBreakdown`'s per-project bars).
+   */
+  progressRatio?: number;
 };
 
 const SPARKLINE_WIDTH = 64;
@@ -30,6 +37,7 @@ export function DashboardKpiTile({
   sparkline,
   subLabel,
   dotClassName,
+  progressRatio,
 }: DashboardKpiTileProps) {
   const hasDelta = deltaLabel !== undefined && delta !== undefined;
   const isUp = hasDelta && delta! > 0;
@@ -96,6 +104,12 @@ export function DashboardKpiTile({
           </svg>
         )}
       </div>
+
+      {progressRatio !== undefined && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-sidebar">
+          <div className={clsx("h-full rounded-full bg-primary", fractionClass("w", progressRatio))} />
+        </div>
+      )}
     </div>
   );
 }
