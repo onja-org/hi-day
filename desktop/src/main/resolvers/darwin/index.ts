@@ -107,10 +107,15 @@ function main(): void {
 
   async function handleResolve(request: ResolveRequest): Promise<void> {
     if (!lastFocus || lastFocus.pid !== request.pid) {
+      // Tagged like every other failure here. Untagged, this bucketed as
+      // "unknown" on the agent side — indistinguishable from the manager's own
+      // 'No response from resolver.' timeout, which is also untagged. Those
+      // need opposite fixes, and Chrome hitting one of them looked identical
+      // to it hitting the other.
       const failure: ErrorResponse = {
         id: request.id,
         ok: false,
-        message: 'Resolve request does not match the currently focused app.',
+        message: '[focus-mismatch] Resolve request does not match the currently focused app.',
       };
       writeLine(failure);
       return;
