@@ -167,15 +167,6 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     return id;
   }
 
-  /**
-   * Every failure message this class produces carries a leading [code], the
-   * same convention the side-cars follow — extractResolverErrorCode buckets
-   * anything without one as "unknown". These are the agent's OWN failures, not
-   * a resolver's, and they were the last untagged surface: a resolver that
-   * never started, a request that timed out, a dead pipe and a malformed reply
-   * all reported identically, which made a macOS Chrome failure impossible to
-   * tell apart from four unrelated faults.
-   */
   private send(request: ResolverRequest, onSettle: PendingEntry['onSettle']): void {
     if (!this.child) {
       onSettle(undefined, '[resolver-not-running] Resolver is not running.');

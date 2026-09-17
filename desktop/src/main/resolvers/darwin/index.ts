@@ -73,14 +73,6 @@ function main(): void {
   }
 
   async function resolveViaAppleEvents(entry: BrowserRegistryEntry): Promise<ResolvedUrl | ResolveFailed> {
-    // A resolve racing the focus poller's own osascript call gets `busy`, and
-    // only one osascript may be in flight at a time. The retry budget has to
-    // outlast a poll or the race is simply lost: measured on an Intel Air, a
-    // poll takes 270-460ms, while 3 attempts at 75ms waited 225ms — less than
-    // half of it. Chrome duly reported busy on roughly every other heartbeat.
-    //
-    // 6 attempts at 150ms waits up to 900ms, comfortably past the slowest poll
-    // observed and still inside osascript-runner's own 1200ms deadline.
     let outcome = await appleEventsResolver.resolve(entry);
     for (let attempt = 0; outcome.ok === false && outcome.error.code === 'busy' && attempt < 6; attempt += 1) {
       await new Promise((r) => setTimeout(r, 150));
@@ -112,18 +104,6 @@ function main(): void {
 
   async function handleResolve(request: ResolveRequest): Promise<void> {
     if (!lastFocus || lastFocus.pid !== request.pid) {
-      // Tagged like every other failure here. Untagged, this bucketed as
-      // "unknown" on the agent side — indistinguishable from the manager's own
-      // 'No response from resolver.' timeout, which is also untagged. Those
-      // need opposite fixes, and Chrome hitting one of them looked identical
-      // to it hitting the other.
-      //
-      // The detail goes to stderr, not into the message: the agent keeps only
-      // the [code] tag from a failure message, so anything else there is
-      // discarded. The tag alone says the guard rejected the request, not why
-      // — a stale pid, a pid that moved, and no focus at all are three
-      // different faults. Pids and app names are process identity, never page
-      // content.
       process.stderr.write(
         `[focus-mismatch] requested pid ${request.pid}, focused ${
           lastFocus ? `${lastFocus.pid} (${lastFocus.appName})` : 'none'

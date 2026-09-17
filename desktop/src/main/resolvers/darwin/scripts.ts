@@ -12,12 +12,6 @@ import { join } from 'node:path';
  * variable compiles against no dictionary at all, so `active tab` is not a
  * class and `tab` falls back to AppleScript's built-in tab character:
  *
- *   script error: Expected end of line, etc. but found property. (-2741)
- *
- * The script never compiled, so no Apple Event ever reached Chrome — which is
- * also why macOS never raised an Automation prompt for it. Safari was
- * unaffected because its script names "Safari" literally.
- *
  * `using terms from application "Google Chrome"` would also fix the compile,
  * but it requires Chrome to be INSTALLED to compile at all — which would break
  * a machine that has only Brave. Templating keeps each browser independent.

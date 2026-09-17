@@ -64,12 +64,6 @@ export class OsascriptRunner {
       }
       const error = classifyAppleEventsFailure(result.stderr, result.timedOut);
 
-      // 'unknown' means the classifier met an osascript error it has no rule
-      // for, and its own header says that table was never validated against a
-      // real Mac. The agent keeps only the [code] tag from a failure, so the
-      // text that would identify the rule to add is otherwise discarded.
-      // stderr is forwarded to the agent's logger; osascript errors name a
-      // command and an error number, not page content.
       if (error.code === 'unknown') {
         process.stderr.write(
           `[osascript-unclassified] ${result.stderr.trim().slice(0, 300) || '(no stderr)'}\n`,
