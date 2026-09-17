@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { getDayRangeDateString } from "@/lib/getDayRange";
 import type { ScreenshotSummaryItem } from "@/types/screenshot";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityMeter } from "./ActivityMeter";
@@ -38,7 +39,8 @@ export function ScreenshotsPageContent({
     organisationQuery.data?.role === "admin" ||
     organisationQuery.data?.role === "manager";
 
-  const date = searchParams.get("date") ?? undefined;
+  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
+  const date = getDayRangeDateString(new Date(), dayOffset);
   const membershipId = searchParams.get("membershipId") ?? undefined;
   const untracked = searchParams.get("untracked") === "1";
   const projectId = untracked
@@ -52,7 +54,6 @@ export function ScreenshotsPageContent({
     untracked,
   });
 
-  console.log(screenshotsQuery);
   return (
     <div className="flex flex-col gap-4">
       <ActivityFilterToolbar

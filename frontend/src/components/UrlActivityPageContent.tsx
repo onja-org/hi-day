@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useUrlActivityDay } from "@/hooks/useUrlActivityDay";
+import { getDayRangeDateString } from "@/lib/getDayRange";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -22,7 +23,8 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
   const canViewOthers =
     organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
 
-  const date = searchParams.get("date") ?? undefined;
+  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
+  const date = getDayRangeDateString(new Date(), dayOffset);
   const membershipId = searchParams.get("membershipId") ?? undefined;
   const untracked = searchParams.get("untracked") === "1";
   const projectId = untracked ? undefined : (searchParams.get("projectId") ?? undefined);
