@@ -112,6 +112,18 @@ function main(): void {
       // 'No response from resolver.' timeout, which is also untagged. Those
       // need opposite fixes, and Chrome hitting one of them looked identical
       // to it hitting the other.
+      //
+      // The detail goes to stderr, not into the message: the agent keeps only
+      // the [code] tag from a failure message, so anything else there is
+      // discarded. The tag alone says the guard rejected the request, not why
+      // — a stale pid, a pid that moved, and no focus at all are three
+      // different faults. Pids and app names are process identity, never page
+      // content.
+      process.stderr.write(
+        `[focus-mismatch] requested pid ${request.pid}, focused ${
+          lastFocus ? `${lastFocus.pid} (${lastFocus.appName})` : 'none'
+        }\n`,
+      );
       const failure: ErrorResponse = {
         id: request.id,
         ok: false,
