@@ -1,20 +1,5 @@
 #!/usr/bin/env bash
-# Builds firefox-ax-helper and copies it to native/darwin/firefox-ax-helper —
-# the path the TypeScript resolver spawns and electron-builder bundles.
-#
-# Compiles with swiftc directly rather than through SwiftPM. This is one source
-# file linking one framework, so a package manager buys nothing, and SwiftPM
-# brought three separate failures on a Command-Line-Tools-only machine: a
-# tools-version gate, XCBuild (full Xcode only) for multi-arch, and a manifest
-# that would not compile at all —
-#
-#   error: no such module 'PackageDescription'
-#
-# swiftc needs none of that. Package.swift stays for editor/SwiftPM users but
-# is not on this path.
-#
-# Default is universal (arm64 + x86_64), which is what a release must ship.
-# --native builds only for this machine: enough to test, NOT enough to ship.
+
 set -euo pipefail
 cd "$(dirname "$0")"
 

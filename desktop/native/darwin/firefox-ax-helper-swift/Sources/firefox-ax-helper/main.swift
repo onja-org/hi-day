@@ -45,24 +45,7 @@ func axValue(_ element: AXUIElement, _ attribute: String) -> AnyObject? {
     return result == .success ? value : nil
 }
 
-/// Asks the target application to turn its accessibility layer on.
-///
-/// Firefox reports `Activated: false` in about:support and exposes a window
-/// with children=0 — a stub. Gecko builds its tree lazily and had not
-/// recognised us as an assistive client, because every call until now only
-/// READ attributes. Setting AXEnhancedUserInterface is the handshake an AT
-/// actually performs; VoiceOver does it, and both Gecko and Chromium enable
-/// their accessibility layers in response. AXManualAccessibility is the newer
-/// Chromium-specific equivalent, set too since it is harmless where unsupported.
-///
-/// Scoped to one process: this is an attribute on Firefox's own application
-/// element, not a system-wide screen-reader switch, and it affects no other
-/// app. It does have a real cost — an accessibility tree is work the browser
-/// would not otherwise do — which is why it is set only for a browser being
-/// resolved, never at startup or across the machine.
-///
-/// Return values are ignored on purpose: an app that does not support the
-/// attribute answers with an error, which is not a failure worth reporting.
+
 func enableAccessibility(for app: AXUIElement) {
     AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, true as CFTypeRef)
     AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, true as CFTypeRef)
@@ -92,20 +75,6 @@ func descendants(
     return found
 }
 
-/// Measured against a real Firefox window on macOS 12:
-///
-///   AXToolbar children=3     ← tab bar, no address field
-///   AXToolbar children=11
-///     AXGroup > AXGroup subrole=AXApplicationGroup
-///       AXComboBox hasValue=yes   ← the address bar
-///
-/// Two things this corrects. The bar is an AXComboBox, not an AXTextField —
-/// Gecko's URL bar carries the autocomplete dropdown, the same reason it is a
-/// ComboBox rather than an Edit on Windows. And it is not in the FIRST toolbar,
-/// so taking only that one would have missed it even with the right role.
-///
-/// Every toolbar is scanned, and a candidate only wins with a non-empty value,
-/// which keeps an empty decoration from shadowing the real field.
 func findAddressField(in window: AXUIElement) -> AXUIElement? {
     for toolbar in descendants(of: window, matching: ["AXToolbar"]) {
         for candidate in descendants(of: toolbar, matching: ["AXComboBox", "AXTextField"]) {
@@ -128,9 +97,7 @@ func resolve(pid: pid_t) {
     guard let windowValue = axValue(app, kAXFocusedWindowAttribute as String) else {
         fail("no-window", "Firefox has no focused window.")
     }
-    // AXUIElement is a CFType; AXUIElementCopyAttributeValue for a window
-    // attribute always yields one on success.
-    // swiftlint:disable:next force_cast
+
     let window = windowValue as! AXUIElement
 
     guard let titleValue = axValue(window, kAXTitleAttribute as String) as? String else {
@@ -139,9 +106,6 @@ func resolve(pid: pid_t) {
 
     var field = findAddressField(in: window)
     if field == nil {
-        // Gecko builds the tree asynchronously once enabled, so the first read
-        // after the handshake can still be empty. One short retry rather than a
-        // spurious field-not-found on the very call that switched it on.
         Thread.sleep(forTimeInterval: 0.4)
         field = findAddressField(in: window)
     }
@@ -156,15 +120,6 @@ func resolve(pid: pid_t) {
     printJSON(["ok": true, "value": rawValue, "title": titleValue])
 }
 
-/// Prints the accessibility tree's SHAPE to stderr: roles, subroles and
-/// identifiers, plus whether a node holds a value — never the value itself,
-/// nor any title, since on an address bar that text IS the URL.
-///
-/// Exists because findAddressField encodes a guess — an AXTextField inside an
-/// AXToolbar — and a wrong guess is indistinguishable from an empty field. The
-/// same assumption proved wrong on Windows, where Gecko's URL bar turned out
-/// not to be an Edit inside a toolbar at all. Run this against a real Firefox
-/// window rather than guessing again.
 func dumpTree(_ element: AXUIElement, depth: Int, maxDepth: Int, indent: String) {
     guard depth <= maxDepth else { return }
 
@@ -194,12 +149,6 @@ func dumpTree(_ element: AXUIElement, depth: Int, maxDepth: Int, indent: String)
 
 func dump(pid: pid_t, delaySeconds: Double) {
     if delaySeconds > 0 {
-        // Gecko builds its accessibility tree on demand and a background window
-        // can report children=0. Running this from a terminal makes the terminal
-        // frontmost, so the delay is the only way to inspect the browser in the
-        // state a real reading happens in — the same problem Windows had, where
-        // a resolve could only be tested by holding the request until the
-        // browser was focused again.
         FileHandle.standardError.write(
             "Waiting \(Int(delaySeconds))s — click the browser now.\n".data(using: .utf8)!)
         Thread.sleep(forTimeInterval: delaySeconds)
@@ -211,12 +160,6 @@ func dump(pid: pid_t, delaySeconds: Double) {
     enableAccessibility(for: app)
     Thread.sleep(forTimeInterval: 0.5)
 
-    // Unlike resolve(), this falls back to the first of AXWindows when there is
-    // no focused window. Running this from a terminal makes the TERMINAL
-    // frontmost, so the browser being inspected has no focused window by
-    // definition — requiring one would make the tool unusable for the only
-    // thing it is for. resolve() keeps the focus requirement, where it is
-    // correct: a reading must come from the window the user is actually on.
     var windowValue = axValue(app, kAXFocusedWindowAttribute as String)
     if windowValue == nil,
        let windows = axValue(app, kAXWindowsAttribute as String) as? [AXUIElement],
