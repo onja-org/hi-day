@@ -8,7 +8,6 @@ import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import type { MembershipRole } from "@/types/membership";
-import { ErrorMessage } from "./ErrorMessage";
 import { InviteEmailsField } from "./InviteEmailsField";
 import { InviteResultsList } from "./InviteResultsList";
 import { Spinner } from "./Spinner";
@@ -65,11 +64,9 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
   }
 
   const results = mutation.data?.ok ? mutation.data.results : null;
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-6">
-      {submitError && <ErrorMessage message={submitError} />}
       {results && <InviteResultsList results={results} />}
 
       <InviteEmailsField value={emailsText} onChange={setEmailsText} />

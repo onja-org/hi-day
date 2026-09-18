@@ -65,7 +65,11 @@ describe("createAccount", () => {
   it("returns a generic error message on an unexpected server error", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("no body")),
+      }),
     );
 
     const result = await createAccount(validInput);

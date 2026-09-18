@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
-import { ErrorMessage } from "./ErrorMessage";
 import { PasswordInput } from "./PasswordInput";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 const REDIRECT_DELAY_MS = 900;
 
@@ -43,11 +41,6 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
       onSubmit={handleSubmit}
       className="flex w-full max-w-4xl flex-col gap-6"
     >
-      {mutation.data?.ok && <SuccessMessage message={mutation.data.message} />}
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
-      )}
-
       <label className="flex flex-col gap-1.5">
         Password
         <PasswordInput

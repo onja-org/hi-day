@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type MyProfile = {
   email: string;
   name: string | null;
@@ -16,6 +18,4 @@ export type UpdateMyProfileInput = {
   avatarUrl?: string;
 };
 
-export type UpdateMyProfileResult =
-  | { ok: true; profile: MyProfile }
-  | { ok: false; message: string };
+export type UpdateMyProfileResult = ApiResult<{ profile: MyProfile }>;

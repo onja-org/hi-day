@@ -10,7 +10,10 @@ describe("addProjectMember", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve({ membershipId: "m-1", effectiveRate: "75.00" }),
+        Promise.resolve({
+          member: { membershipId: "m-1", effectiveRate: "75.00" },
+          message: "Project member added",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 

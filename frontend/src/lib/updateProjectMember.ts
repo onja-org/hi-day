@@ -1,10 +1,9 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
 import type {
   UpdateProjectMemberInput,
   UpdateProjectMemberResult,
 } from "@/types/project";
-
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function updateProjectMember(
   organisationId: string,
@@ -28,15 +27,8 @@ export async function updateProjectMember(
   }
 
   if (response.ok) {
-    const member = await response.json();
-    return { ok: true, member };
+    const body = await response.json();
+    return { ok: true, ...body };
   }
-
-  const data = (await response.json().catch(() => null)) as {
-    message?: string[] | string;
-  } | null;
-  const message = Array.isArray(data?.message)
-    ? data.message[0]
-    : data?.message;
-  return { ok: false, message: message ?? GENERIC_ERROR_MESSAGE };
+  return { ok: false, message: await parseApiErrorMessage(response) };
 }

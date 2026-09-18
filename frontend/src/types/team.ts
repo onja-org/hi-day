@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type OrganisationTeam = {
   id: string;
   name: string;
@@ -25,13 +27,11 @@ export type GetTeamDetailResult =
   | { ok: true; team: TeamDetail }
   | { ok: false; message: string };
 
-export type CreateTeamResult =
-  | { ok: true; team: OrganisationTeam }
-  | { ok: false; message: string };
+export type CreateTeamResult = ApiResult<{ team: OrganisationTeam }>;
 
 export type UpdateTeamResult = CreateTeamResult;
 
-export type TeamActionResult = { ok: true } | { ok: false; message: string };
+export type TeamActionResult = ApiResult;
 
 export type AddTeamMemberInput = {
   membershipId: string;

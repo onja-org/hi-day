@@ -7,13 +7,19 @@ describe("addTeamMember", () => {
   });
 
   it("returns ok on success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ message: "Team member added" }),
+      }),
+    );
 
     const result = await addTeamMember("org-1", "team-1", {
       membershipId: "m-1",
     });
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, message: "Team member added" });
   });
 
   it("surfaces the backend's error message on failure", async () => {

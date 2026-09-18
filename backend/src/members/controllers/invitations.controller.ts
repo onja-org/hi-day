@@ -39,15 +39,16 @@ export class InvitationsController {
       ttl: INVITE_CREATE_THROTTLE_TTL_MS,
     },
   })
-  create(
+  async create(
     @Body() dto: CreateInvitationsDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<InvitationEntryResult[]> {
-    return this.invitationsService.createMany(
+  ): Promise<{ results: InvitationEntryResult[]; message: string }> {
+    const results = await this.invitationsService.createMany(
       request.organisationId!,
       request.userId,
       dto.invitations,
     );
+    return { results, message: 'Invitations sent' };
   }
 
   @Get()
@@ -56,26 +57,28 @@ export class InvitationsController {
   }
 
   @Post(':invitationId/resend')
-  resend(
+  async resend(
     @Param('invitationId') invitationId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<InvitationEntryResult> {
-    return this.invitationsService.resend(
+  ): Promise<{ message: string }> {
+    await this.invitationsService.resend(
       request.organisationId!,
       invitationId,
       request.userId,
     );
+    return { message: 'Invitation resent' };
   }
 
   @Delete(':invitationId')
-  revoke(
+  async revoke(
     @Param('invitationId') invitationId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.invitationsService.revoke(
+  ): Promise<{ message: string }> {
+    await this.invitationsService.revoke(
       request.organisationId!,
       invitationId,
       request.userId,
     );
+    return { message: 'Invitation revoked' };
   }
 }

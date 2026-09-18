@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type UrlSessionGroup = {
   url: string;
   host: string;
@@ -13,9 +15,7 @@ export type GetUrlSessionsResult =
   | { ok: true; groups: UrlSessionGroup[] }
   | { ok: false; message: string };
 
-export type DeleteUrlSessionResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type DeleteUrlSessionResult = ApiResult;
 
 export type UrlHourBucketPage = {
   projectId: string | null;

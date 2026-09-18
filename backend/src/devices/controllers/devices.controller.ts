@@ -34,14 +34,15 @@ export class DevicesController {
   }
 
   @Post(':deviceId/sign-out')
-  signOut(
+  async signOut(
     @Param('deviceId') deviceId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<DeviceSummary> {
-    return this.devicesService.signOutAsAdmin(
+  ): Promise<{ device: DeviceSummary; message: string }> {
+    const device = await this.devicesService.signOutAsAdmin(
       request.organisationId!,
       deviceId,
       request.userId,
     );
+    return { device, message: 'Device signed out' };
   }
 }

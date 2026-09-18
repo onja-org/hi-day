@@ -9,13 +9,21 @@ describe("switchTimeEntry", () => {
   it("stops the running entry and starts the new one", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "te-2", projectId: "p-2" }),
+      json: () =>
+        Promise.resolve({
+          entry: { id: "te-2", projectId: "p-2" },
+          message: "Timer switched",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await switchTimeEntry("org-1", "p-2", "task-2");
 
-    expect(result).toEqual({ ok: true, entry: { id: "te-2", projectId: "p-2" } });
+    expect(result).toEqual({
+      ok: true,
+      entry: { id: "te-2", projectId: "p-2" },
+      message: "Timer switched",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/time-entries/switch",
       expect.objectContaining({

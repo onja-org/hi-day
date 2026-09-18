@@ -9,7 +9,11 @@ describe("unarchiveProject", () => {
   it("returns ok with the reactivated project on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "p-1", status: "active" }),
+      json: () =>
+        Promise.resolve({
+          project: { id: "p-1", status: "active" },
+          message: "Project unarchived",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 

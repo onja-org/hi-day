@@ -6,7 +6,6 @@ import { archiveProject } from "@/lib/archiveProject";
 import { unarchiveProject } from "@/lib/unarchiveProject";
 import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
 import type { Project } from "@/types/project";
-import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 
@@ -79,10 +78,6 @@ export function ArchiveProjectButton({
               new time. Its history and reports stay intact, and you can
               unarchive it again later.
             </p>
-
-            {archiveMutation.data && !archiveMutation.data.ok && (
-              <ErrorMessage message={archiveMutation.data.message} />
-            )}
 
             <div className="flex justify-end gap-3">
               <button

@@ -14,7 +14,6 @@ import { updateDisclosureDraft } from "@/lib/updateDisclosureDraft";
 import { DisclosureVersionHistory } from "./DisclosureVersionHistory";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 const PUBLISH_CONFIRM_MESSAGE =
   "Publishing re-prompts every device that needs to consent to this region's disclosure text before it can keep capturing. Continue?";
@@ -120,17 +119,6 @@ export function DisclosureDraftForm() {
         onSubmit={handleSaveDraft}
         className="flex flex-col gap-4"
       >
-        {saveDraftMutation.data?.ok && <SuccessMessage message="Draft saved." />}
-        {saveDraftMutation.data && !saveDraftMutation.data.ok && (
-          <ErrorMessage message={saveDraftMutation.data.message} />
-        )}
-        {publishMutation.data?.ok && (
-          <SuccessMessage message="Published — affected devices will be re-prompted." />
-        )}
-        {publishMutation.data && !publishMutation.data.ok && (
-          <ErrorMessage message={publishMutation.data.message} />
-        )}
-
         <label className="flex flex-col gap-1.5">
           Disclosure text
           <textarea

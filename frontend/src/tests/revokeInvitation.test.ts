@@ -7,11 +7,17 @@ describe("revokeInvitation", () => {
   });
 
   it("returns ok on success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ message: "Invitation revoked" }),
+      }),
+    );
 
     const result = await revokeInvitation("org-1", "invitation-1");
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, message: "Invitation revoked" });
   });
 
   it("surfaces the backend's error message on failure", async () => {

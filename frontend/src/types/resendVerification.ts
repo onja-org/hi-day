@@ -2,6 +2,6 @@ export type ResendVerificationInput = {
   email: string;
 };
 
-export type ResendVerificationResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string };
+import type { ApiResult } from "./api";
+
+export type ResendVerificationResult = ApiResult;

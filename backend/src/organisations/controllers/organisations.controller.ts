@@ -23,15 +23,16 @@ export class OrganisationsController {
   @Patch(':id')
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN)
-  update(
+  async update(
     @Body() dto: UpdateOrganisationDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<OrganisationProfile> {
-    return this.organisationsService.updateProfile(
+  ): Promise<{ organisation: OrganisationProfile; message: string }> {
+    const organisation = await this.organisationsService.updateProfile(
       request.organisationId!,
       request.userId,
       dto,
     );
+    return { organisation, message: 'Organisation updated' };
   }
 
   @Get(':id/teams')

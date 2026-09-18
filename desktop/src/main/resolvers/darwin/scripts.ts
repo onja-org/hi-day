@@ -3,29 +3,36 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * One parameterized script for the whole Chromium family — Chrome, Edge,
- * Brave, Vivaldi, Opera all share this AppleScript dictionary (see
- * docs/url-tracking-plan.md Step 8). `appName` (argv[1]) is the process/app
- * name from the browser registry's `darwinAppName`, never a bundle id.
+ * One script shape for the whole Chromium family — Chrome, Edge, Brave,
+ * Vivaldi and Opera share an AppleScript dictionary — but the app name is
+ * templated in as a LITERAL rather than passed as argv.
  *
- * The not-running/not-frontmost/no-window checks run inside System Events
- * before any `tell application appName`, which is what guarantees this never
- * launches the browser — `tell application X` only auto-launches X when it is
- * not already running.
+ * AppleScript resolves an application's terminology at COMPILE time, and only
+ * when the application is named literally. `tell application appName` with a
+ * variable compiles against no dictionary at all, so `active tab` is not a
+ * class and `tab` falls back to AppleScript's built-in tab character:
+ *
+ * `using terms from application "Google Chrome"` would also fix the compile,
+ * but it requires Chrome to be INSTALLED to compile at all — which would break
+ * a machine that has only Brave. Templating keeps each browser independent.
+ *
+ * appName comes from the registry's darwinAppName, never user input. It is
+ * quoted defensively all the same.
  */
-export const CHROMIUM_FAMILY_SCRIPT = `
+export function buildChromiumFamilyScript(appName: string): string {
+  const literal = appName.replace(/["\\]/g, '\\$&');
+  return `
 on run argv
-  set appName to item 1 of argv
   tell application "System Events"
-    if not (exists process appName) then
+    if not (exists process "${literal}") then
       error "not-running"
     end if
-    set isFrontmost to frontmost of process appName
+    set isFrontmost to frontmost of process "${literal}"
   end tell
   if not isFrontmost then
     error "not-frontmost"
   end if
-  tell application appName
+  tell application "${literal}"
     if (count of windows) = 0 then
       error "no-window"
     end if
@@ -36,7 +43,8 @@ on run argv
   end tell
   return theURL & tab & theTitle & tab & theMode
 end run
-`;
+`.trimStart();
+}
 
 /**
  * Safari has its own dictionary and, critically, no `mode of window` (or

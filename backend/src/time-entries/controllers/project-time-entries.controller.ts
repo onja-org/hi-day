@@ -19,26 +19,27 @@ export class ProjectTimeEntriesController {
   constructor(private readonly timeEntriesService: TimeEntriesService) {}
 
   @Post()
-  createManual(
+  async createManual(
     @Param('projectId') projectId: string,
     @Body() dto: CreateManualTimeEntryDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.createManual(
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.createManual(
       request.organisationId!,
       request.userId,
       projectId,
       dto,
     );
+    return { entry, message: 'Time entry created' };
   }
 
   @Post('start')
-  start(
+  async start(
     @Param('projectId') projectId: string,
     @Body() dto: StartTimeEntryDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.start(
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.start(
       request.organisationId!,
       request.userId,
       projectId,
@@ -46,5 +47,6 @@ export class ProjectTimeEntriesController {
       TimeEntrySource.WEB,
       null,
     );
+    return { entry, message: 'Timer started' };
   }
 }

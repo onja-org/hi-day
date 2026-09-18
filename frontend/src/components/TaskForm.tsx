@@ -7,7 +7,6 @@ import { useProject } from "@/hooks/useProject";
 import { createTask } from "@/lib/createTask";
 import { updateTask } from "@/lib/updateTask";
 import type { Task, TaskFormInput, UpdateTaskInput } from "@/types/task";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 type TaskFormProps =
@@ -83,13 +82,10 @@ export function TaskForm({
     }
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
   const members = projectQuery.data?.members ?? [];
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      {submitError && <ErrorMessage message={submitError} />}
-
       <label className="flex flex-col gap-1.5">
         Name
         <input

@@ -8,7 +8,6 @@ import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { forgotPassword } from "@/lib/forgotPassword";
 import { markResetEmailSent } from "@/lib/resetEmailSentNotice";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 export function ForgotPasswordForm() {
@@ -32,10 +31,6 @@ export function ForgotPasswordForm() {
       onSubmit={handleSubmit}
       className="flex w-full sm:px-20 lg:px-0 flex-col gap-6"
     >
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
-      )}
-
       <label className="flex flex-col gap-1.5">
         Email address
         <input

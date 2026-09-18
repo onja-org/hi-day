@@ -9,7 +9,11 @@ describe("archiveProject", () => {
   it("returns ok with the archived project on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "p-1", status: "archived" }),
+      json: () =>
+        Promise.resolve({
+          project: { id: "p-1", status: "archived" },
+          message: "Project archived",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 

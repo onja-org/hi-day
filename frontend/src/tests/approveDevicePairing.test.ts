@@ -7,11 +7,17 @@ describe("approveDevicePairing", () => {
   });
 
   it("returns ok on success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ message: "Device approved" }),
+      }),
+    );
 
     const result = await approveDevicePairing("the-code");
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, message: "Device approved" });
   });
 
   it("returns an invalid-link message on failure", async () => {

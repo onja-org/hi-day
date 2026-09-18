@@ -79,10 +79,6 @@ export function ActivityFeed({ organisationId, maxEntries }: ActivityFeedProps) 
         </button>
       </form>
 
-      {createMutation.data && !createMutation.data.ok && (
-        <ErrorMessage message={createMutation.data.message} />
-      )}
-
       {activityQuery.isLoading && (
         <p className="flex items-center gap-2 text-slate-900">
           <Spinner className="text-primary-dark" />

@@ -7,7 +7,6 @@ import { ORGANISATION_TEAMS_QUERY_KEY } from "@/hooks/useOrganisationTeams";
 import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
 import { updateTeam } from "@/lib/updateTeam";
 import type { OrganisationTeam } from "@/types/team";
-import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 
@@ -45,13 +44,9 @@ export function EditTeamModal({ organisationId, team, onClose }: EditTeamModalPr
     mutation.mutate(trimmed);
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
-
   return (
     <Modal title="Edit team" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-5">
-        {submitError && <ErrorMessage message={submitError} />}
-
         <label className="flex flex-col gap-1.5">
           Name
           <input

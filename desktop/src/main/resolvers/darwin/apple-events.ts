@@ -1,7 +1,7 @@
 import type { BrowserRegistryEntry } from '../../url-capture/browser-registry';
 import type { ClassifiedAppleEventsError } from './errors';
 import type { OsascriptRunner } from './osascript-runner';
-import { CHROMIUM_FAMILY_SCRIPT, SAFARI_SCRIPT, materializeScript } from './scripts';
+import { SAFARI_SCRIPT, buildChromiumFamilyScript, materializeScript } from './scripts';
 
 export interface AppleEventsResolveSuccess {
   ok: true;
@@ -69,8 +69,13 @@ export class AppleEventsResolver {
       return parseSafariOutput(outcome.stdout);
     }
 
-    const scriptPath = materializeScript('chromium-family', CHROMIUM_FAMILY_SCRIPT);
-    const outcome = await this.runner.run(scriptPath, [entry.darwinAppName]);
+    // One materialized script per browser: the app name is compiled into each
+    // as a literal, so they cannot share a file (see buildChromiumFamilyScript).
+    const scriptPath = materializeScript(
+      `chromium-${entry.darwinAppName}`,
+      buildChromiumFamilyScript(entry.darwinAppName),
+    );
+    const outcome = await this.runner.run(scriptPath);
     if (!outcome.ok) return outcome;
     return parseChromiumOutput(outcome.stdout);
   }

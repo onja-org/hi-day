@@ -9,13 +9,21 @@ describe("updateTask", () => {
   it("returns ok with the updated task on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "t-1", name: "Renamed" }),
+      json: () =>
+        Promise.resolve({
+          task: { id: "t-1", name: "Renamed" },
+          message: "Task updated",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await updateTask("org-1", "p-1", "t-1", { name: "Renamed" });
 
-    expect(result).toEqual({ ok: true, task: { id: "t-1", name: "Renamed" } });
+    expect(result).toEqual({
+      ok: true,
+      task: { id: "t-1", name: "Renamed" },
+      message: "Task updated",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/tasks/t-1",
       expect.objectContaining({

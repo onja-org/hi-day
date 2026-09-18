@@ -13,10 +13,13 @@ describe("createActivity", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            id: "activity-1",
-            userId: "user-1",
-            content: "Working on the report.",
-            createdAt: "2026-01-01T00:00:00.000Z",
+            entry: {
+              id: "activity-1",
+              userId: "user-1",
+              content: "Working on the report.",
+              createdAt: "2026-01-01T00:00:00.000Z",
+            },
+            message: "Activity posted",
           }),
       }),
     );
@@ -33,6 +36,7 @@ describe("createActivity", () => {
         content: "Working on the report.",
         createdAt: "2026-01-01T00:00:00.000Z",
       },
+      message: "Activity posted",
     });
   });
 

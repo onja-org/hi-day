@@ -11,7 +11,11 @@ describe("createTeam", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "team-1", name: "Engineering" }),
+        json: () =>
+          Promise.resolve({
+            team: { id: "team-1", name: "Engineering" },
+            message: "Team created",
+          }),
       }),
     );
 
@@ -20,6 +24,7 @@ describe("createTeam", () => {
     expect(result).toEqual({
       ok: true,
       team: { id: "team-1", name: "Engineering" },
+      message: "Team created",
     });
   });
 

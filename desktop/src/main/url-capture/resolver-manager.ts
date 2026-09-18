@@ -114,7 +114,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     this.intentionalStop = true;
     this.state = 'idle';
     this.stopPingWatchdog();
-    this.failAllPending('Resolver manager was stopped.');
+    this.failAllPending('[manager-stopped] Resolver manager was stopped.');
     const child = this.child;
     this.child = null;
     child?.kill();
@@ -124,7 +124,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     return new Promise((settlePromise) => {
       this.send({ id: this.nextId(), op: 'resolve', pid, hwnd }, (response, failureMessage) => {
         if (response === undefined) {
-          settlePromise({ ok: false, message: failureMessage ?? 'No response from resolver.' });
+          settlePromise({ ok: false, message: failureMessage ?? '[no-response] No response from resolver.' });
           return;
         }
         if (response.ok === false) {
@@ -134,7 +134,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
         if (!isResolveOkResponse(response)) {
           settlePromise({
             ok: false,
-            message: 'Resolver replied to a resolve request with a non-resolve response.',
+            message: '[bad-response] Resolver replied to a resolve request with a non-resolve response.',
           });
           return;
         }
@@ -149,7 +149,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
     return new Promise((settlePromise) => {
       this.send({ id: this.nextId(), op: 'ping' }, (response, failureMessage) => {
         if (response === undefined) {
-          settlePromise({ ok: false, message: failureMessage ?? 'No response from resolver.' });
+          settlePromise({ ok: false, message: failureMessage ?? '[no-response] No response from resolver.' });
           return;
         }
         if (response.ok === false) {
@@ -169,13 +169,13 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
 
   private send(request: ResolverRequest, onSettle: PendingEntry['onSettle']): void {
     if (!this.child) {
-      onSettle(undefined, 'Resolver is not running.');
+      onSettle(undefined, '[resolver-not-running] Resolver is not running.');
       return;
     }
 
     const timer = setTimeout(() => {
       this.pending.delete(request.id);
-      onSettle(undefined, `Timed out waiting for a response to "${request.op}".`);
+      onSettle(undefined, `[agent-timeout] Timed out waiting for a response to "${request.op}".`);
     }, this.options.requestTimeoutMs);
 
     this.pending.set(request.id, { onSettle, timer });
@@ -196,7 +196,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
       if (entry) {
         clearTimeout(entry.timer);
         this.pending.delete(request.id);
-        entry.onSettle(undefined, `Failed to write to resolver: ${(err as Error).message}`);
+        entry.onSettle(undefined, `[write-failed] Failed to write to resolver: ${(err as Error).message}`);
       }
     }
   }
@@ -224,7 +224,7 @@ export class ResolverManager extends TypedEmitter<ResolverManagerEvents> {
         this.child = null;
       }
       this.stopPingWatchdog();
-      this.failAllPending('Resolver process is no longer running.');
+      this.failAllPending('[resolver-exited] Resolver process is no longer running.');
       if (this.intentionalStop || this.state === 'degraded') return;
       this.scheduleRestart();
     };

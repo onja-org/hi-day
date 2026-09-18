@@ -7,7 +7,6 @@ import { ORGANISATION_TEAMS_QUERY_KEY } from "@/hooks/useOrganisationTeams";
 import { addTeamMember } from "@/lib/addTeamMember";
 import { createTeam } from "@/lib/createTeam";
 import type { CreateTeamResult, OrganisationTeam } from "@/types/team";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 type TeamFormProps = {
@@ -66,13 +65,10 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
     mutation.mutate({ name, managerMembershipId });
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
   const members = membersQuery.data ?? [];
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      {submitError && <ErrorMessage message={submitError} />}
-
       <label className="flex flex-col gap-1.5">
         Name
         <input

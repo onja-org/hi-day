@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type DisclosureVersionRowStatus = "draft" | "published";
 
 export type DisclosureDraft = {
@@ -22,13 +24,11 @@ export type GetDisclosureDraftResult =
   | { ok: true; draft: DisclosureDraft }
   | { ok: false; message: string };
 
-export type UpdateDisclosureDraftResult =
-  | { ok: true; draft: DisclosureDraft }
-  | { ok: false; message: string };
+export type UpdateDisclosureDraftResult = ApiResult<{ draft: DisclosureDraft }>;
 
-export type PublishDisclosureVersionResult =
-  | { ok: true; version: DisclosureDraft }
-  | { ok: false; message: string };
+export type PublishDisclosureVersionResult = ApiResult<{
+  version: DisclosureDraft;
+}>;
 
 export type GetDisclosureVersionHistoryResult =
   | { ok: true; versions: DisclosureVersionSummary[] }

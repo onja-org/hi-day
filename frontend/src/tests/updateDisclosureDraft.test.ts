@@ -17,14 +17,20 @@ describe("updateDisclosureDraft", () => {
   });
 
   it("PATCHes the draft text and returns ok with the updated draft", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true, json: () => Promise.resolve(draft) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ draft, message: "Disclosure draft updated" }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await updateDisclosureDraft(100000, "FR", "Updated text");
 
-    expect(result).toEqual({ ok: true, draft });
+    expect(result).toEqual({
+      ok: true,
+      draft,
+      message: "Disclosure draft updated",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/100000/disclosure-versions/draft?region=FR",
       {
