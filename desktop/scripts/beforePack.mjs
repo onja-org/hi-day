@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,5 +50,24 @@ export default function beforePack(context) {
         `Build it first:\n  ${expected.build}\n` +
         'Packaging without it produces an installer whose URL tracking cannot start.',
     );
+  }
+
+  // The same helper file is bundled into both the x64 and arm64 builds, so an
+  // Intel-only binary means Firefox tracking is dead for every Apple Silicon
+  // user — the majority. build.sh's --native mode produces exactly that, and
+  // it is the obvious thing to have run while testing locally, so the stale
+  // output is easy to ship by accident. Caught here rather than by remembering
+  // to run lipo by hand.
+  if (context.electronPlatformName === 'darwin') {
+    const info = execFileSync('lipo', ['-info', expected.path], { encoding: 'utf-8' });
+    const missing = ['x86_64', 'arm64'].filter((arch) => !info.includes(arch));
+    if (missing.length > 0) {
+      throw new Error(
+        `firefox-ax-helper is not universal — missing ${missing.join(' and ')}.\n` +
+          `  ${info.trim()}\n` +
+          `Rebuild without --native:\n  ${expected.build}\n` +
+          'Shipping this would break Firefox URL tracking on the architectures it omits.',
+      );
+    }
   }
 }
