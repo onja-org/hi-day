@@ -73,12 +73,9 @@ function main(): void {
   }
 
   async function resolveViaAppleEvents(entry: BrowserRegistryEntry): Promise<ResolvedUrl | ResolveFailed> {
-    // A resolve racing the focus poller's own osascript call gets `busy`
-    // once immediately; retry a couple of times with a short backoff
-    // rather than surfacing a spurious failure for something this common.
     let outcome = await appleEventsResolver.resolve(entry);
-    for (let attempt = 0; outcome.ok === false && outcome.error.code === 'busy' && attempt < 3; attempt += 1) {
-      await new Promise((r) => setTimeout(r, 75));
+    for (let attempt = 0; outcome.ok === false && outcome.error.code === 'busy' && attempt < 6; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 150));
       outcome = await appleEventsResolver.resolve(entry);
     }
     if (!outcome.ok) return { ok: false, message: `[${outcome.error.code}] ${outcome.error.message}` };
@@ -107,10 +104,15 @@ function main(): void {
 
   async function handleResolve(request: ResolveRequest): Promise<void> {
     if (!lastFocus || lastFocus.pid !== request.pid) {
+      process.stderr.write(
+        `[focus-mismatch] requested pid ${request.pid}, focused ${
+          lastFocus ? `${lastFocus.pid} (${lastFocus.appName})` : 'none'
+        }\n`,
+      );
       const failure: ErrorResponse = {
         id: request.id,
         ok: false,
-        message: 'Resolve request does not match the currently focused app.',
+        message: '[focus-mismatch] Resolve request does not match the currently focused app.',
       };
       writeLine(failure);
       return;

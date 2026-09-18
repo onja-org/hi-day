@@ -105,7 +105,10 @@ describe('ResolverManager', () => {
     manager.start();
 
     const outcome = await manager.resolve(1, 1);
-    expect(outcome).toEqual({ ok: false, message: 'Timed out waiting for a response to "resolve".' });
+    expect(outcome).toEqual({
+      ok: false,
+      message: '[agent-timeout] Timed out waiting for a response to "resolve".',
+    });
   });
 
   it('drops a malformed JSON line and keeps handling subsequent requests', async () => {
