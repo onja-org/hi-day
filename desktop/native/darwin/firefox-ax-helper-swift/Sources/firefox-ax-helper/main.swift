@@ -68,6 +68,29 @@ func firstDescendant(of element: AXUIElement, role: String) -> AXUIElement? {
     return nil
 }
 
+/// Asks the target application to turn its accessibility layer on.
+///
+/// Firefox reports `Activated: false` in about:support and exposes a window
+/// with children=0 — a stub. Gecko builds its tree lazily and had not
+/// recognised us as an assistive client, because every call until now only
+/// READ attributes. Setting AXEnhancedUserInterface is the handshake an AT
+/// actually performs; VoiceOver does it, and both Gecko and Chromium enable
+/// their accessibility layers in response. AXManualAccessibility is the newer
+/// Chromium-specific equivalent, set too since it is harmless where unsupported.
+///
+/// Scoped to one process: this is an attribute on Firefox's own application
+/// element, not a system-wide screen-reader switch, and it affects no other
+/// app. It does have a real cost — an accessibility tree is work the browser
+/// would not otherwise do — which is why it is set only for a browser being
+/// resolved, never at startup or across the machine.
+///
+/// Return values are ignored on purpose: an app that does not support the
+/// attribute answers with an error, which is not a failure worth reporting.
+func enableAccessibility(for app: AXUIElement) {
+    AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, true as CFTypeRef)
+    AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, true as CFTypeRef)
+}
+
 func findAddressField(in window: AXUIElement) -> AXUIElement? {
     guard let toolbar = firstDescendant(of: window, role: "AXToolbar") else { return nil }
     return firstDescendant(of: toolbar, role: "AXTextField")
@@ -79,6 +102,7 @@ func resolve(pid: pid_t) {
     }
 
     let app = AXUIElementCreateApplication(pid)
+    enableAccessibility(for: app)
 
     guard let windowValue = axValue(app, kAXFocusedWindowAttribute as String) else {
         fail("no-window", "Firefox has no focused window.")
@@ -92,7 +116,15 @@ func resolve(pid: pid_t) {
         fail("no-window", "Could not read the window title.")
     }
 
-    guard let field = findAddressField(in: window) else {
+    var field = findAddressField(in: window)
+    if field == nil {
+        // Gecko builds the tree asynchronously once enabled, so the first read
+        // after the handshake can still be empty. One short retry rather than a
+        // spurious field-not-found on the very call that switched it on.
+        Thread.sleep(forTimeInterval: 0.4)
+        field = findAddressField(in: window)
+    }
+    guard let field = field else {
         fail("field-not-found", "Could not locate the address bar field in the toolbar.")
     }
 
@@ -155,6 +187,8 @@ func dump(pid: pid_t, delaySeconds: Double) {
         fail("permission-denied", "Accessibility permission has not been granted.")
     }
     let app = AXUIElementCreateApplication(pid)
+    enableAccessibility(for: app)
+    Thread.sleep(forTimeInterval: 0.5)
 
     // Unlike resolve(), this falls back to the first of AXWindows when there is
     // no focused window. Running this from a terminal makes the TERMINAL
