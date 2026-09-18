@@ -27,6 +27,9 @@ toolsets:
 # launches with --no-sandbox, working around Chromium's sandbox failing to
 # start on AppArmor-restricted distros (Ubuntu 23.10+) with no packaged
 # AppArmor profile.
+# Refuses to package when the platform's resolver side-car is missing, rather
+# than shipping an installer whose URL tracking cannot start.
+beforePack: scripts/beforePack.mjs
 afterPack: scripts/afterPack.mjs
 files:
   - dist/**/*
@@ -72,6 +75,9 @@ win:
   # on Windows — confirmed from CI's dist:win logs, which show no copy and
   # no failure for the missing source.
   extraResources:
+    # ../ because the Windows resolver lives at the REPO ROOT, while the
+    # darwin helper lives under desktop/ — extraResources resolves `from`
+    # against desktop/, so the two are not symmetrical.
     - from: ../native/win/resolver/WinResolver/bin/Release/net8.0-windows/win-x64/publish
       to: native/win/resolver
 nsis:
