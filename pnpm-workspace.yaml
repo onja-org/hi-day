@@ -6,6 +6,7 @@ allowBuilds:
   '@paymoapp/active-window': true
   argon2: true
   better-sqlite3: true
+  core-js: true
   electron: true
   # Pulled in transitively by electron-builder 26's app-builder-lib. Only the
   # `squirrel` Windows target uses it and we ship `nsis`, so its postinstall
