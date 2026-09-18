@@ -68,6 +68,10 @@ declare global {
     screenshotsEnabled: boolean;
     platform: DesktopDevicePlatformName;
     screenRecordingGranted: boolean;
+    /** macOS + Firefox only — the AX helper that reads Firefox's address bar. */
+    accessibilityGranted: boolean;
+    /** Sent from main so permission-copy.ts stays the single source of wording. */
+    accessibilityGuidance: string;
     waylandUnsupported: boolean;
   }
 
@@ -128,6 +132,7 @@ declare global {
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;
         openScreenRecordingSettings: () => Promise<void>;
+        openAccessibilitySettings: () => Promise<void>;
         indicatorStatus: () => Promise<TrackingIndicatorStatus>;
       };
       consent: {

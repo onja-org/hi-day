@@ -31,6 +31,7 @@ import { loadActiveWindowModule, WindowSampler } from './window-sampler';
 import { resolveLinuxResolverPath,  resolveDarwinResolverPath,
   resolveWinResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
+import { ACCESSIBILITY_COPY, SETTINGS_DEEP_LINKS } from './resolvers/darwin/permission-copy';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
@@ -115,6 +116,25 @@ interface CapturePermissionStatus {
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
+  /**
+   * macOS only, and Firefox only: the AX helper that reads Firefox's address
+   * bar needs Accessibility. Every other browser goes through Apple Events,
+   * which is a separate grant, so losing this degrades exactly one browser.
+   *
+   * Reported on every poll rather than once at launch because the user can
+   * revoke it at any moment. Without that, a revocation stopped Firefox
+   * tracking silently: the helper returned permission-denied, the resolver
+   * recorded it only in the opt-in debug log, and nothing surfaced.
+   *
+   * `true` off macOS so no other platform ever shows the banner.
+   */
+  accessibilityGranted: boolean;
+  /**
+   * Sent rather than duplicated in the renderer, which cannot import main-process
+   * modules (tsconfig.renderer.json pins rootDir to src/renderer). Keeps
+   * permission-copy.ts the single source for user-facing wording.
+   */
+  accessibilityGuidance: string;
 }
 
 // Otherwise userData resolves from package.json's "name" ("desktop"),
@@ -626,6 +646,14 @@ async function registerIpcHandlers(): Promise<void> {
                 ? (session.waylandScreenshotGranted ?? false)
                 : true,
           waylandUnsupported: isWaylandSession(),
+          // Non-prompting, like the screen-recording check above: passing
+          // false means "tell me the answer", never "ask the user". The
+          // prompt only ever comes from an explicit button.
+          accessibilityGranted:
+            platform === 'macos'
+              ? systemPreferences.isTrustedAccessibilityClient(false)
+              : true,
+          accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
         },
       };
     },
@@ -702,6 +730,18 @@ async function registerIpcHandlers(): Promise<void> {
         await shell.openExternal(
           'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
         );
+      }
+    },
+  );
+
+  // Accessibility has no native prompt the way Automation does — macOS only
+  // ever shows it in System Settings — so opening the pane is the whole of
+  // what the app can do to help.
+  ipcMain.handle(
+    'tracking:openAccessibilitySettings',
+    async (): Promise<void> => {
+      if (process.platform === 'darwin') {
+        await shell.openExternal(SETTINGS_DEEP_LINKS.accessibility);
       }
     },
   );
