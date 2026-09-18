@@ -45,29 +45,6 @@ func axValue(_ element: AXUIElement, _ attribute: String) -> AnyObject? {
     return result == .success ? value : nil
 }
 
-/// Identifies the address bar by AX role and position in the toolbar
-/// subtree — NEVER by an English label, since Firefox's UI is localized and
-/// a label-based match would silently fail (or worse, match the wrong
-/// field) on any non-English build.
-func firstDescendant(of element: AXUIElement, role: String) -> AXUIElement? {
-    guard let childrenValue = axValue(element, kAXChildrenAttribute as String),
-          let children = childrenValue as? [AXUIElement] else {
-        return nil
-    }
-
-    for child in children {
-        if let childRole = axValue(child, kAXRoleAttribute as String) as? String, childRole == role {
-            return child
-        }
-    }
-    for child in children {
-        if let found = firstDescendant(of: child, role: role) {
-            return found
-        }
-    }
-    return nil
-}
-
 /// Asks the target application to turn its accessibility layer on.
 ///
 /// Firefox reports `Activated: false` in about:support and exposes a window
@@ -91,9 +68,53 @@ func enableAccessibility(for app: AXUIElement) {
     AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, true as CFTypeRef)
 }
 
+/// Every descendant matching one of `roles`, depth-capped — a Firefox window's
+/// tree includes rendered page content and is enormous.
+func descendants(
+    of element: AXUIElement,
+    matching roles: Set<String>,
+    depth: Int = 0,
+    limit: Int = 6
+) -> [AXUIElement] {
+    guard depth <= limit,
+          let childrenValue = axValue(element, kAXChildrenAttribute as String),
+          let children = childrenValue as? [AXUIElement] else {
+        return []
+    }
+
+    var found: [AXUIElement] = []
+    for child in children {
+        if let role = axValue(child, kAXRoleAttribute as String) as? String, roles.contains(role) {
+            found.append(child)
+        }
+        found.append(contentsOf: descendants(of: child, matching: roles, depth: depth + 1, limit: limit))
+    }
+    return found
+}
+
+/// Measured against a real Firefox window on macOS 12:
+///
+///   AXToolbar children=3     ← tab bar, no address field
+///   AXToolbar children=11
+///     AXGroup > AXGroup subrole=AXApplicationGroup
+///       AXComboBox hasValue=yes   ← the address bar
+///
+/// Two things this corrects. The bar is an AXComboBox, not an AXTextField —
+/// Gecko's URL bar carries the autocomplete dropdown, the same reason it is a
+/// ComboBox rather than an Edit on Windows. And it is not in the FIRST toolbar,
+/// so taking only that one would have missed it even with the right role.
+///
+/// Every toolbar is scanned, and a candidate only wins with a non-empty value,
+/// which keeps an empty decoration from shadowing the real field.
 func findAddressField(in window: AXUIElement) -> AXUIElement? {
-    guard let toolbar = firstDescendant(of: window, role: "AXToolbar") else { return nil }
-    return firstDescendant(of: toolbar, role: "AXTextField")
+    for toolbar in descendants(of: window, matching: ["AXToolbar"]) {
+        for candidate in descendants(of: toolbar, matching: ["AXComboBox", "AXTextField"]) {
+            if let value = axValue(candidate, kAXValueAttribute as String) as? String, !value.isEmpty {
+                return candidate
+            }
+        }
+    }
+    return nil
 }
 
 func resolve(pid: pid_t) {
