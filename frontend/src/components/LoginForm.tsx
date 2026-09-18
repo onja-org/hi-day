@@ -8,7 +8,6 @@ import type { FormEvent } from "react";
 import type { LoginInput } from "@/types/login";
 import { login } from "@/lib/login";
 import { consumeResetEmailSent } from "@/lib/resetEmailSentNotice";
-import { ErrorMessage } from "./ErrorMessage";
 import { PasswordInput } from "./PasswordInput";
 import { RobotCheckScreen } from "./RobotCheckScreen";
 import { Spinner } from "./Spinner";
@@ -91,10 +90,6 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
     >
       {!mutation.data && resetEmailSent && (
         <SuccessMessage message={RESET_EMAIL_SENT_MESSAGE} />
-      )}
-      {mutation.data?.ok && <SuccessMessage message={mutation.data.message} />}
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
       )}
 
       <label className="flex flex-col gap-1.5">

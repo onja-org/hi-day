@@ -1,3 +1,4 @@
+import type { ApiResult } from "./api";
 import type { MembershipRole } from "./membership";
 
 export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -30,13 +31,9 @@ export type InviteEntryResult = {
   message?: string;
 };
 
-export type InviteMembersResult =
-  | { ok: true; results: InviteEntryResult[] }
-  | { ok: false; message: string };
+export type InviteMembersResult = ApiResult<{ results: InviteEntryResult[] }>;
 
-export type InvitationActionResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type InvitationActionResult = ApiResult;
 
 export type InvitationPreview = {
   status: InvitationStatus | "not_found";
@@ -57,7 +54,8 @@ export type AcceptInvitationInput = {
   lastName?: string;
 };
 
-export type AcceptInvitationResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string; accountExists?: boolean };
+export type AcceptInvitationResult = ApiResult<
+  object,
+  { accountExists?: boolean }
+>;
 

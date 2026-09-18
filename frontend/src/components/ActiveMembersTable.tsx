@@ -72,7 +72,6 @@ export function ActiveMembersTable({ organisationId }: ActiveMembersTableProps) 
               member={member}
               callerRole={callerRole}
               callerUserId={callerUserId}
-              columnCount={COLUMN_COUNT}
             />
           ))}
           {membersQuery.data.length === 0 && (

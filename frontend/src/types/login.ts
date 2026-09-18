@@ -1,9 +1,9 @@
+import type { ApiResult } from "./api";
+
 export type LoginInput = {
   email: string;
   password: string;
   captchaToken?: string;
 };
 
-export type LoginResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string; captchaRequired?: boolean };
+export type LoginResult = ApiResult<object, { captchaRequired?: boolean }>;

@@ -4,7 +4,6 @@ import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { createAccount } from "@/lib/createAccount";
 import { parseSignUpFormData } from "@/lib/parseSignUpFormData";
-import { ErrorMessage } from "./ErrorMessage";
 import { SignUpSuccess } from "./SignUpSuccess";
 import { Spinner } from "./Spinner";
 import Link from "next/link";
@@ -27,10 +26,6 @@ export function SignUpForm() {
       onSubmit={handleSubmit}
       className="flex w-full max-w-4xl mx-auto md:px-20 lg:px-0 flex-col gap-6"
     >
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
-      )}
-
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           First name

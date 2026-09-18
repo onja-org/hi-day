@@ -12,7 +12,6 @@ import type { IdleHandling, UpdateOrganisationInput } from "@/types/organisation
 import { CaptureSettingsFields } from "./CaptureSettingsFields";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 import { WorkingHoursField } from "./WorkingHoursField";
 
 const CLOSE_DELAY_MS = 900;
@@ -112,11 +111,6 @@ export function OrganisationSettingsForm({
       onSubmit={handleSubmit}
       className="flex w-full max-w-4xl flex-col gap-6"
     >
-      {updateMutation.data?.ok && <SuccessMessage message="Settings saved." />}
-      {updateMutation.data && !updateMutation.data.ok && (
-        <ErrorMessage message={updateMutation.data.message} />
-      )}
-
       <label className="flex flex-col gap-1.5">
         Company name
         <input

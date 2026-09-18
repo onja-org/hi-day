@@ -54,16 +54,17 @@ export class UrlSessionsController {
   // editing, there's no "manager can't delete their own" nuance here).
   @Delete()
   @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
-  delete(
+  async delete(
     @Query('membershipId') membershipId: string,
     @Query('url') url: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.urlSessionsService.deleteByUrl(
+  ): Promise<{ message: string }> {
+    await this.urlSessionsService.deleteByUrl(
       request.organisationId!,
       request.userId,
       membershipId,
       url,
     );
+    return { message: 'URL session deleted' };
   }
 }

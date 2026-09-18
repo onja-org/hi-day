@@ -74,15 +74,16 @@ export class ProjectsController {
   @Post()
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
-  create(
+  async create(
     @Body() dto: CreateProjectDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectSummary> {
-    return this.projectsService.create(
+  ): Promise<{ project: ProjectSummary; message: string }> {
+    const project = await this.projectsService.create(
       request.organisationId!,
       request.userId,
       dto,
     );
+    return { project, message: 'Project created' };
   }
 
   // Read-only: an org admin/manager, or anyone holding a ProjectMembership
@@ -121,90 +122,96 @@ export class ProjectsController {
 
   @Patch(':projectId')
   @UseGuards(ProjectRoleGuard)
-  update(
+  async update(
     @Param('projectId') projectId: string,
     @Body() dto: UpdateProjectDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectSummary> {
-    return this.projectsService.update(
+  ): Promise<{ project: ProjectSummary; message: string }> {
+    const project = await this.projectsService.update(
       request.organisationId!,
       projectId,
       request.userId,
       dto,
     );
+    return { project, message: 'Project updated' };
   }
 
   @Post(':projectId/archive')
   @UseGuards(ProjectRoleGuard)
-  archive(
+  async archive(
     @Param('projectId') projectId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectSummary> {
-    return this.projectsService.archive(
+  ): Promise<{ project: ProjectSummary; message: string }> {
+    const project = await this.projectsService.archive(
       request.organisationId!,
       projectId,
       request.userId,
     );
+    return { project, message: 'Project archived' };
   }
 
   @Post(':projectId/unarchive')
   @UseGuards(ProjectRoleGuard)
-  unarchive(
+  async unarchive(
     @Param('projectId') projectId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectSummary> {
-    return this.projectsService.unarchive(
+  ): Promise<{ project: ProjectSummary; message: string }> {
+    const project = await this.projectsService.unarchive(
       request.organisationId!,
       projectId,
       request.userId,
     );
+    return { project, message: 'Project unarchived' };
   }
 
   @Post(':projectId/members')
   @UseGuards(ProjectRoleGuard)
-  addMember(
+  async addMember(
     @Param('projectId') projectId: string,
     @Body() dto: AddProjectMemberDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectMemberSummary> {
-    return this.projectsService.addMember(
+  ): Promise<{ member: ProjectMemberSummary; message: string }> {
+    const member = await this.projectsService.addMember(
       request.organisationId!,
       projectId,
       request.userId,
       dto,
     );
+    return { member, message: 'Project member added' };
   }
 
   @Patch(':projectId/members/:membershipId')
   @UseGuards(ProjectRoleGuard)
-  updateMember(
+  async updateMember(
     @Param('projectId') projectId: string,
     @Param('membershipId') membershipId: string,
     @Body() dto: UpdateProjectMemberDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectMemberSummary> {
-    return this.projectsService.updateMember(
+  ): Promise<{ member: ProjectMemberSummary; message: string }> {
+    const member = await this.projectsService.updateMember(
       request.organisationId!,
       projectId,
       membershipId,
       request.userId,
       dto,
     );
+    return { member, message: 'Project member updated' };
   }
 
   @Delete(':projectId/members/:membershipId')
   @UseGuards(ProjectRoleGuard)
-  removeMember(
+  async removeMember(
     @Param('projectId') projectId: string,
     @Param('membershipId') membershipId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.projectsService.removeMember(
+  ): Promise<{ message: string }> {
+    await this.projectsService.removeMember(
       request.organisationId!,
       projectId,
       membershipId,
       request.userId,
     );
+    return { message: 'Project member removed' };
   }
 
   // Assigning/unassigning a Team grants/revokes project-MEMBER-equivalent
@@ -213,31 +220,33 @@ export class ProjectsController {
   // member.
   @Post(':projectId/teams')
   @UseGuards(ProjectRoleGuard)
-  addTeam(
+  async addTeam(
     @Param('projectId') projectId: string,
     @Body() dto: AddProjectTeamDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ProjectTeamSummary> {
-    return this.projectsService.addTeam(
+  ): Promise<{ team: ProjectTeamSummary; message: string }> {
+    const team = await this.projectsService.addTeam(
       request.organisationId!,
       projectId,
       request.userId,
       dto,
     );
+    return { team, message: 'Team added to project' };
   }
 
   @Delete(':projectId/teams/:teamId')
   @UseGuards(ProjectRoleGuard)
-  removeTeam(
+  async removeTeam(
     @Param('projectId') projectId: string,
     @Param('teamId') teamId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.projectsService.removeTeam(
+  ): Promise<{ message: string }> {
+    await this.projectsService.removeTeam(
       request.organisationId!,
       projectId,
       teamId,
       request.userId,
     );
+    return { message: 'Team removed from project' };
   }
 }

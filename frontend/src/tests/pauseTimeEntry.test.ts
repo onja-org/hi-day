@@ -9,7 +9,11 @@ describe("pauseTimeEntry", () => {
   it("returns ok with the paused entry on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "te-1", pausedAt: "2026-01-01T00:00:00Z" }),
+      json: () =>
+        Promise.resolve({
+          entry: { id: "te-1", pausedAt: "2026-01-01T00:00:00Z" },
+          message: "Timer paused",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -18,6 +22,7 @@ describe("pauseTimeEntry", () => {
     expect(result).toEqual({
       ok: true,
       entry: { id: "te-1", pausedAt: "2026-01-01T00:00:00Z" },
+      message: "Timer paused",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/time-entries/pause",

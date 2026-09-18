@@ -56,65 +56,69 @@ export class TasksController {
   // managing the project itself.
   @Post()
   @UseGuards(ProjectRoleGuard)
-  create(
+  async create(
     @Param('projectId') projectId: string,
     @Body() dto: CreateTaskDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TaskSummary> {
-    return this.tasksService.create(
+  ): Promise<{ task: TaskSummary; message: string }> {
+    const task = await this.tasksService.create(
       request.organisationId!,
       projectId,
       request.userId,
       dto,
     );
+    return { task, message: 'Task created' };
   }
 
   @Patch(':taskId')
   @UseGuards(ProjectRoleGuard)
-  update(
+  async update(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
     @Body() dto: UpdateTaskDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TaskSummary> {
-    return this.tasksService.update(
+  ): Promise<{ task: TaskSummary; message: string }> {
+    const task = await this.tasksService.update(
       request.organisationId!,
       projectId,
       taskId,
       request.userId,
       dto,
     );
+    return { task, message: 'Task updated' };
   }
 
   // Close/reopen use the looser member gate — TasksService itself enforces
   // that only the task's own assignee or a project admin can act.
   @Post(':taskId/close')
   @UseGuards(ProjectMemberGuard)
-  close(
+  async close(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TaskSummary> {
-    return this.tasksService.close(
+  ): Promise<{ task: TaskSummary; message: string }> {
+    const task = await this.tasksService.close(
       request.organisationId!,
       projectId,
       taskId,
       request.userId,
     );
+    return { task, message: 'Task closed' };
   }
 
   @Post(':taskId/reopen')
   @UseGuards(ProjectMemberGuard)
-  reopen(
+  async reopen(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TaskSummary> {
-    return this.tasksService.reopen(
+  ): Promise<{ task: TaskSummary; message: string }> {
+    const task = await this.tasksService.reopen(
       request.organisationId!,
       projectId,
       taskId,
       request.userId,
     );
+    return { task, message: 'Task reopened' };
   }
 }

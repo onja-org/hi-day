@@ -1,3 +1,4 @@
+import type { ApiResult } from "./api";
 import type { ProjectColour } from "./project";
 
 export type TimeEntrySource = "web" | "agent" | "manual";
@@ -56,9 +57,10 @@ export type GetCurrentTimeEntryResult =
   | { ok: true; data: CurrentTimeEntry }
   | { ok: false; message: string };
 
-export type TimeEntryActionResult =
-  | { ok: true; entry: TimeEntry }
-  | { ok: false; message: string; runningEntry?: TimeEntry };
+export type TimeEntryActionResult = ApiResult<
+  { entry: TimeEntry },
+  { runningEntry?: TimeEntry }
+>;
 
 export type TimeEntryFormInput = {
   projectId: string;
@@ -75,10 +77,6 @@ export type UpdateTimeEntryInput = {
   endedAt?: string;
 };
 
-export type CreateManualTimeEntryResult =
-  | { ok: true; entry: TimeEntry }
-  | { ok: false; message: string };
+export type CreateManualTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
 
-export type UpdateTimeEntryResult =
-  | { ok: true; entry: TimeEntry }
-  | { ok: false; message: string };
+export type UpdateTimeEntryResult = ApiResult<{ entry: TimeEntry }>;

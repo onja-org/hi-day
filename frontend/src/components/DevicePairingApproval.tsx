@@ -64,10 +64,6 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
         {summary.hostname ? ` (${summary.hostname})` : ""}?
       </p>
 
-      {approveMutation.data && !approveMutation.data.ok && (
-        <ErrorMessage message={approveMutation.data.message} />
-      )}
-
       <button
         type="button"
         onClick={() => approveMutation.mutate()}

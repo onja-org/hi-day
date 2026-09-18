@@ -4,9 +4,7 @@ import { CheckCircle } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { resendVerification } from "@/lib/resendVerification";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 type SignUpSuccessProps = {
   email: string;
@@ -26,11 +24,6 @@ export function SignUpSuccess({ email }: SignUpSuccessProps) {
         <span className="font-semibold">{email}</span>. Hit confirm and
         you&apos;ll be ready to start working.
       </p>
-
-      {mutation.data?.ok && <SuccessMessage message={mutation.data.message} />}
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
-      )}
 
       <div className="flex w-full flex-col items-start gap-3 border-t border-primary-dark/20 pt-4">
         <p className="text-slate-900">Didn&apos;t see an email?</p>

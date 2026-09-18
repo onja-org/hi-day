@@ -19,15 +19,16 @@ export class ActivitiesController {
   constructor(private readonly activitiesService: ActivitiesService) {}
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateActivityDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ActivityEntry> {
-    return this.activitiesService.create(
+  ): Promise<{ entry: ActivityEntry; message: string }> {
+    const entry = await this.activitiesService.create(
       request.organisationId!,
       request.userId,
       dto,
     );
+    return { entry, message: 'Activity posted' };
   }
 
   @Get('mine')

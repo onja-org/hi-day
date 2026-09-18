@@ -1,10 +1,6 @@
 import { API_URL } from "./apiUrl";
-import type {
-  DisclosureDraft,
-  PublishDisclosureVersionResult,
-} from "@/types/disclosure";
-
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
+import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
+import type { PublishDisclosureVersionResult } from "@/types/disclosure";
 
 export async function publishDisclosureVersion(
   organisationId: number,
@@ -22,15 +18,8 @@ export async function publishDisclosureVersion(
   }
 
   if (response.ok) {
-    const version = (await response.json()) as DisclosureDraft;
-    return { ok: true, version };
+    const body = await response.json();
+    return { ok: true, ...body };
   }
-
-  const data = (await response.json().catch(() => null)) as {
-    message?: string[] | string;
-  } | null;
-  const message = Array.isArray(data?.message)
-    ? data.message[0]
-    : data?.message;
-  return { ok: false, message: message ?? GENERIC_ERROR_MESSAGE };
+  return { ok: false, message: await parseApiErrorMessage(response) };
 }

@@ -3,6 +3,6 @@ export type ResetPasswordInput = {
   password: string;
 };
 
-export type ResetPasswordResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string };
+import type { ApiResult } from "./api";
+
+export type ResetPasswordResult = ApiResult;

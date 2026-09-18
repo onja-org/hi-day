@@ -12,10 +12,17 @@ describe("inviteMembers", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
-          Promise.resolve([
-            { email: "a@b.test", outcome: "sent" },
-            { email: "bad", outcome: "invalid", message: "Invalid email format." },
-          ]),
+          Promise.resolve({
+            results: [
+              { email: "a@b.test", outcome: "sent" },
+              {
+                email: "bad",
+                outcome: "invalid",
+                message: "Invalid email format.",
+              },
+            ],
+            message: "Invitations sent",
+          }),
       }),
     );
 
@@ -30,6 +37,7 @@ describe("inviteMembers", () => {
         { email: "a@b.test", outcome: "sent" },
         { email: "bad", outcome: "invalid", message: "Invalid email format." },
       ],
+      message: "Invitations sent",
     });
   });
 

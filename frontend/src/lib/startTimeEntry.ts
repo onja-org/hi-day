@@ -1,7 +1,6 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE } from "./parseApiError";
 import type { TimeEntry, TimeEntryActionResult } from "@/types/timeEntry";
-
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function startTimeEntry(
   organisationId: string,
@@ -24,8 +23,8 @@ export async function startTimeEntry(
   }
 
   if (response.ok) {
-    const entry = await response.json();
-    return { ok: true, entry };
+    const body = await response.json();
+    return { ok: true, ...body };
   }
 
   const data = (await response.json().catch(() => null)) as {

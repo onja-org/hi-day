@@ -1,7 +1,6 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
 import type { UpdateMyProfileInput, UpdateMyProfileResult } from "@/types/profile";
-
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function updateMyProfile(
   input: UpdateMyProfileInput,
@@ -19,15 +18,8 @@ export async function updateMyProfile(
   }
 
   if (response.ok) {
-    const profile = await response.json();
-    return { ok: true, profile };
+    const body = await response.json();
+    return { ok: true, ...body };
   }
-
-  const data = (await response.json().catch(() => null)) as {
-    message?: string[] | string;
-  } | null;
-  const message = Array.isArray(data?.message)
-    ? data.message[0]
-    : data?.message;
-  return { ok: false, message: message ?? GENERIC_ERROR_MESSAGE };
+  return { ok: false, message: await parseApiErrorMessage(response) };
 }

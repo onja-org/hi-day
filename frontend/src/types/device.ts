@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type DevicePlatform = "windows" | "macos" | "linux" | "ios" | "android";
 
 export type DeviceStatus = "active" | "offline" | "signed_out";
@@ -20,6 +22,4 @@ export type GetDevicesResult =
   | { ok: true; devices: Device[] }
   | { ok: false; message: string };
 
-export type SignOutDeviceResult =
-  | { ok: true; device: Device }
-  | { ok: false; message: string };
+export type SignOutDeviceResult = ApiResult<{ device: Device }>;

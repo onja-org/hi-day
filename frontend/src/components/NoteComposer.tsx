@@ -5,7 +5,6 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/useProjects";
 import { createNote } from "@/lib/createNote";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 type NoteComposerProps = {
@@ -91,9 +90,6 @@ export function NoteComposer({ organisationId, noteDate, onCreated }: NoteCompos
           {createMutation.isPending ? "Posting…" : "Add note"}
         </button>
       </div>
-      {createMutation.data && !createMutation.data.ok && (
-        <ErrorMessage message={createMutation.data.message} />
-      )}
     </form>
   );
 }

@@ -9,7 +9,11 @@ describe("createManualTimeEntry", () => {
   it("posts the ISO-converted start/end to the project's time-entries collection", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "te-1", source: "manual" }),
+      json: () =>
+        Promise.resolve({
+          entry: { id: "te-1", source: "manual" },
+          message: "Time entry created",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -20,7 +24,11 @@ describe("createManualTimeEntry", () => {
       endedAt: "2026-01-01T10:00",
     });
 
-    expect(result).toEqual({ ok: true, entry: { id: "te-1", source: "manual" } });
+    expect(result).toEqual({
+      ok: true,
+      entry: { id: "te-1", source: "manual" },
+      message: "Time entry created",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/time-entries",
       expect.objectContaining({

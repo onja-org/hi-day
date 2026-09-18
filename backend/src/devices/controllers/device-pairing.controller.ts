@@ -50,10 +50,11 @@ export class DevicePairingController {
   /** Web app only — the actual "log this device in" action. */
   @Post(':code/approve')
   @UseGuards(JwtAuthGuard)
-  approve(
+  async approve(
     @Param('code') code: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.devicePairingService.approve(code, request.userId);
+  ): Promise<{ message: string }> {
+    await this.devicePairingService.approve(code, request.userId);
+    return { message: 'Device approved' };
   }
 }

@@ -9,13 +9,21 @@ describe("reopenTask", () => {
   it("returns ok with the reopened task on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "t-1", status: "open" }),
+      json: () =>
+        Promise.resolve({
+          task: { id: "t-1", status: "open" },
+          message: "Task reopened",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await reopenTask("org-1", "p-1", "t-1");
 
-    expect(result).toEqual({ ok: true, task: { id: "t-1", status: "open" } });
+    expect(result).toEqual({
+      ok: true,
+      task: { id: "t-1", status: "open" },
+      message: "Task reopened",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/tasks/t-1/reopen",
       expect.objectContaining({ method: "POST" }),

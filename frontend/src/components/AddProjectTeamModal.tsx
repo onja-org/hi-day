@@ -6,7 +6,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAssignableProjectTeams } from "@/hooks/useAssignableProjectTeams";
 import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
 import { addProjectTeam } from "@/lib/addProjectTeam";
-import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
 
@@ -53,13 +52,9 @@ export function AddProjectTeamModal({
     mutation.mutate(teamId);
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
-
   return (
     <Modal title="Add team to project" onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-        {submitError && <ErrorMessage message={submitError} />}
-
         <p className="text-sm text-slate-900">
           Everyone on the team gains access to log time and be assigned tasks
           on this project.

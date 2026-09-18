@@ -61,37 +61,39 @@ export class TimeEntriesController {
   }
 
   @Post('stop')
-  stop(
+  async stop(
     @Body() dto: StopTimeEntryDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.stop(
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.stop(
       request.organisationId!,
       request.userId,
       dto.endedAt ? new Date(dto.endedAt) : undefined,
     );
+    return { entry, message: 'Timer stopped' };
   }
 
   @Patch(':timeEntryId')
-  update(
+  async update(
     @Param('timeEntryId') timeEntryId: string,
     @Body() dto: UpdateTimeEntryDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.update(
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.update(
       request.organisationId!,
       request.userId,
       timeEntryId,
       dto,
     );
+    return { entry, message: 'Time entry updated' };
   }
 
   @Post('switch')
-  switchTo(
+  async switchTo(
     @Body() dto: SwitchTimeEntryDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.switchTo(
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.switchTo(
       request.organisationId!,
       request.userId,
       dto.projectId,
@@ -99,21 +101,28 @@ export class TimeEntriesController {
       TimeEntrySource.WEB,
       null,
     );
+    return { entry, message: 'Timer switched' };
   }
 
   @Post('pause')
-  pause(@Req() request: AuthenticatedRequest): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.pause(
+  async pause(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.pause(
       request.organisationId!,
       request.userId,
     );
+    return { entry, message: 'Timer paused' };
   }
 
   @Post('resume')
-  resume(@Req() request: AuthenticatedRequest): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.resume(
+  async resume(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.resume(
       request.organisationId!,
       request.userId,
     );
+    return { entry, message: 'Timer resumed' };
   }
 }

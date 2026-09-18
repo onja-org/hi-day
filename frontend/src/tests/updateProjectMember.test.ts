@@ -9,7 +9,11 @@ describe("updateProjectMember", () => {
   it("returns ok with the updated member on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ membershipId: "m-1", role: "manager" }),
+      json: () =>
+        Promise.resolve({
+          member: { membershipId: "m-1", role: "manager" },
+          message: "Project member updated",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 

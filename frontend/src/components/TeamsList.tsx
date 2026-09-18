@@ -68,10 +68,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
     search_ ? team.name.toLowerCase().includes(search_) : true,
   );
 
-  const deleteError =
-    deleteMutation.data && !deleteMutation.data.ok
-      ? deleteMutation.data.message
-      : null;
   const teamPendingDelete = teamsQuery.data.find(
     (team) => team.id === deletingTeamId,
   );
@@ -92,8 +88,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
           className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900 sm:w-64"
         />
       </div>
-
-      {deleteError && <ErrorMessage message={deleteError} />}
 
       {teams.length === 0 ? (
         <p className="text-slate-900">

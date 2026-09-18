@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type MembershipRole = "admin" | "manager" | "member" | "finance";
 
 export type MembershipStatus = "active" | "deactivated";
@@ -25,6 +27,4 @@ export type UpdateMembershipInput = {
   disclosureRegion?: string | null;
 };
 
-export type UpdateMembershipResult =
-  | { ok: true; member: ActiveMember }
-  | { ok: false; message: string };
+export type UpdateMembershipResult = ApiResult<{ member: ActiveMember }>;
