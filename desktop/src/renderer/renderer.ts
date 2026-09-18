@@ -638,12 +638,9 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
-  // macOS + Firefox only. Shown whenever the grant is missing, not just at
-  // first run, because the user can revoke it at any moment — before this, a
-  // revocation stopped Firefox tracking with nothing said. Deliberately not
-  // gated on Firefox being installed: the app cannot see which browsers exist
-  // without asking, and an unnecessary banner is a smaller failure than a
-  // silent one.
+  // Shown whenever the grant is missing, not just at first run, since the user
+  // can revoke it mid-session. Not gated on Firefox being installed: the app
+  // cannot tell without probing, and a redundant banner beats a silent gap.
   accessibilityBanner.hidden = !(
     status.platform === "macos" && !status.accessibilityGranted
   );

@@ -3,27 +3,19 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// scripts/ -> desktop/. Taken from this file's own location rather than from
-// the pack context, whose type electron-builder does not export in a form the
-// project's eslint setup can resolve.
+/** scripts/ -> desktop/. From this file, not the pack context, whose type eslint cannot resolve. */
 const desktopDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /**
- * Fails the build when the platform's resolver side-car is missing.
+ * Fails the build when the platform's resolver side-car is missing or unusable.
  *
- * Both side-cars are build artifacts, gitignored, and produced by toolchains
- * electron-builder does not drive — .NET for win-resolver.exe, Swift for
- * firefox-ax-helper. Nothing ever built them as part of packaging, so a release
- * shipped with the extraResources directory empty and every user hit the same
- * spawn ENOENT the first Windows run did. That is a silent failure: the
- * installer builds, installs and launches, and only URL tracking is dead.
- *
- * The dist:* scripts now build them first. This guard exists for the case those
- * are bypassed — someone running `electron-builder` directly, or a workflow
- * step that drifts — so the build stops instead of producing an installer that
- * looks fine and cannot work.
+ * Both side-cars are gitignored artifacts built by toolchains electron-builder
+ * does not drive, so a release once shipped with extraResources empty: the
+ * installer built, installed and launched, and only URL tracking was dead. The
+ * dist:* scripts build them first; this catches the case those are bypassed.
  *
  * @param {{ electronPlatformName: string }} context
+ * @throws if the side-car is absent, or on macOS not universal.
  */
 export default function beforePack(context) {
   /** @type {Record<string, { path: string, build: string }>} */
@@ -38,8 +30,7 @@ export default function beforePack(context) {
     },
   };
 
-  // Linux's resolver is compiled TypeScript inside dist/, produced by `pnpm
-  // build` like the rest of the app — there is no separate artifact to check.
+  // Linux's resolver is compiled TypeScript in dist/ — no separate artifact.
   const expected = required[context.electronPlatformName];
   if (!expected) return;
 
@@ -52,12 +43,9 @@ export default function beforePack(context) {
     );
   }
 
-  // The same helper file is bundled into both the x64 and arm64 builds, so an
-  // Intel-only binary means Firefox tracking is dead for every Apple Silicon
-  // user — the majority. build.sh's --native mode produces exactly that, and
-  // it is the obvious thing to have run while testing locally, so the stale
-  // output is easy to ship by accident. Caught here rather than by remembering
-  // to run lipo by hand.
+  // One helper file is bundled into both the x64 and arm64 builds, so an
+  // Intel-only binary — what build.sh --native produces — silently breaks
+  // Firefox tracking for every Apple Silicon user.
   if (context.electronPlatformName === 'darwin') {
     const info = execFileSync('lipo', ['-info', expected.path], { encoding: 'utf-8' });
     const missing = ['x86_64', 'arm64'].filter((arch) => !info.includes(arch));

@@ -45,7 +45,14 @@ func axValue(_ element: AXUIElement, _ attribute: String) -> AnyObject? {
     return result == .success ? value : nil
 }
 
-
+/// Asks the app to switch its accessibility layer on — the handshake an
+/// assistive tool performs, and what VoiceOver does. Firefox builds its tree
+/// lazily and ignores a client that only reads, so without this it reports
+/// `Activated: false` and exposes a window with no children.
+///
+/// Per-process, not a system-wide screen-reader switch. Results are ignored:
+/// an app that does not support the attribute answers with an error, which is
+/// not a failure worth reporting.
 func enableAccessibility(for app: AXUIElement) {
     AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, true as CFTypeRef)
     AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, true as CFTypeRef)
@@ -75,6 +82,10 @@ func descendants(
     return found
 }
 
+/// Gecko's URL bar is an AXComboBox — it carries the autocomplete dropdown —
+/// and it sits in the second toolbar, not the first, which holds the tabs. Both
+/// assumptions were wrong before, and either alone was enough to find nothing.
+/// A candidate needs a non-empty value so an empty decoration cannot win.
 func findAddressField(in window: AXUIElement) -> AXUIElement? {
     for toolbar in descendants(of: window, matching: ["AXToolbar"]) {
         for candidate in descendants(of: toolbar, matching: ["AXComboBox", "AXTextField"]) {

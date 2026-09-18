@@ -117,22 +117,16 @@ interface CapturePermissionStatus {
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
   /**
-   * macOS only, and Firefox only: the AX helper that reads Firefox's address
-   * bar needs Accessibility. Every other browser goes through Apple Events,
-   * which is a separate grant, so losing this degrades exactly one browser.
-   *
-   * Reported on every poll rather than once at launch because the user can
-   * revoke it at any moment. Without that, a revocation stopped Firefox
-   * tracking silently: the helper returned permission-denied, the resolver
-   * recorded it only in the opt-in debug log, and nothing surfaced.
-   *
-   * `true` off macOS so no other platform ever shows the banner.
+   * macOS + Firefox only: the AX helper needs Accessibility, while every other
+   * browser uses Apple Events. Polled rather than read once at launch, since the
+   * user can revoke it mid-session — which used to stop Firefox tracking with
+   * nothing surfaced. `true` elsewhere so no other platform shows the banner.
    */
   accessibilityGranted: boolean;
   /**
-   * Sent rather than duplicated in the renderer, which cannot import main-process
-   * modules (tsconfig.renderer.json pins rootDir to src/renderer). Keeps
-   * permission-copy.ts the single source for user-facing wording.
+   * Sent rather than duplicated: the renderer cannot import main-process modules
+   * (tsconfig.renderer.json pins rootDir to src/renderer), and permission-copy.ts
+   * is the single source for user-facing wording.
    */
   accessibilityGuidance: string;
 }
@@ -646,9 +640,8 @@ async function registerIpcHandlers(): Promise<void> {
                 ? (session.waylandScreenshotGranted ?? false)
                 : true,
           waylandUnsupported: isWaylandSession(),
-          // Non-prompting, like the screen-recording check above: passing
-          // false means "tell me the answer", never "ask the user". The
-          // prompt only ever comes from an explicit button.
+          // Non-prompting, like the check above: `false` means "tell me", never
+          // "ask the user".
           accessibilityGranted:
             platform === 'macos'
               ? systemPreferences.isTrustedAccessibilityClient(false)
@@ -734,9 +727,8 @@ async function registerIpcHandlers(): Promise<void> {
     },
   );
 
-  // Accessibility has no native prompt the way Automation does — macOS only
-  // ever shows it in System Settings — so opening the pane is the whole of
-  // what the app can do to help.
+  // Accessibility has no native prompt the way Automation does, so opening the
+  // System Settings pane is all the app can offer.
   ipcMain.handle(
     'tracking:openAccessibilitySettings',
     async (): Promise<void> => {
