@@ -19,9 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:run": "pnpm typeorm migration:run",
-    "migration:revert": "pnpm typeorm migration:revert",
-    "rollups:backfill": "ts-node -r tsconfig-paths/register src/rollups/scripts/backfill-rollups.ts",
-    "rollups:check": "ts-node -r tsconfig-paths/register src/rollups/scripts/check-rollup-reconciliation.ts"
+    "migration:revert": "pnpm typeorm migration:revert"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",

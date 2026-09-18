@@ -14,7 +14,6 @@ import { DevicesModule } from './devices/modules/devices.module';
 import { MembersModule } from './members/modules/members.module';
 import { NotesModule } from './notes/modules/notes.module';
 import { ProjectsModule } from './projects/modules/projects.module';
-import { ReportsModule } from './reports/modules/reports.module';
 import { ScreenshotsModule } from './screenshots/modules/screenshots.module';
 import { TasksModule } from './tasks/modules/tasks.module';
 import { TimeEntriesModule } from './time-entries/modules/time-entries.module';
@@ -44,7 +43,6 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     TeamsModule,
     UrlSessionsModule,
     DashboardModule,
-    ReportsModule,
   ],
   controllers: [AppController],
   providers: [

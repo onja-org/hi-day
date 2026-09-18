@@ -9,7 +9,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   Between,
   DataSource,
-  EntityManager,
   In,
   IsNull,
   LessThan,
@@ -18,14 +17,6 @@ import {
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
-import type {
-  PauseSpan,
-  PauseState,
-} from '../../common/time-entry-active-seconds.util';
-import {
-  NO_PAUSE_STATE,
-  resolvePauseStates,
-} from '../../common/time-entry-active-seconds.util';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -39,7 +30,6 @@ import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
-import { RollupService } from '../../rollups/services/rollup.service';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
 
@@ -75,7 +65,11 @@ export interface TimeEntrySummary {
   pausedSeconds: number;
 }
 
-export type { PauseSpan };
+export interface PauseSpan {
+  pausedAt: Date;
+  /** null while this particular span is still open (currently paused). */
+  resumedAt: Date | null;
+}
 
 export interface TimeEntryListItem extends TimeEntrySummary {
   projectName: string;
@@ -117,6 +111,18 @@ interface ValidatedStart {
   task: Task | null;
 }
 
+interface PauseState {
+  pausedAt: Date | null;
+  pausedSeconds: number;
+  spans: PauseSpan[];
+}
+
+const NO_PAUSE_STATE: PauseState = {
+  pausedAt: null,
+  pausedSeconds: 0,
+  spans: [],
+};
+
 @Injectable()
 export class TimeEntriesService {
   constructor(
@@ -136,33 +142,7 @@ export class TimeEntriesService {
     private readonly tasks: Repository<Task>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
-    private readonly rollupService: RollupService,
   ) {}
-
-  /**
-   * Recomputes the rollup for whichever (membership, project, day) an
-   * entry belongs to — keyed off `startedAt` alone, matching
-   * `DashboardService`'s own bucketing convention exactly (see
-   * `RollupService.recomputeDay`'s doc comment on why a rollup and its
-   * raw-computed equivalent must agree on this). Call once per affected
-   * (project, day) pair after any mutation that could change its total.
-   */
-  private async recomputeRollup(
-    manager: EntityManager,
-    entry: {
-      organisationId: string;
-      membershipId: string;
-      projectId: string;
-      startedAt: Date;
-    },
-  ): Promise<void> {
-    await this.rollupService.recomputeDay(manager, {
-      organisationId: entry.organisationId,
-      membershipId: entry.membershipId,
-      projectId: entry.projectId,
-      day: entry.startedAt,
-    });
-  }
 
   /**
    * Starts a new timer. Rejects with a 409 (carrying the entry already
@@ -209,7 +189,6 @@ export class TimeEntriesService {
       deviceId,
     });
     const saved = await this.timeEntries.save(entry);
-    await this.recomputeRollup(this.dataSource.manager, saved);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -255,7 +234,6 @@ export class TimeEntriesService {
     // at the same instant the entry itself ends, rather than requiring the
     // caller to resume first.
     await this.closeOpenPause(this.timeEntryPauses, saved.id, resolvedEndedAt);
-    await this.recomputeRollup(this.dataSource.manager, saved);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -314,7 +292,6 @@ export class TimeEntriesService {
           running.id,
           stoppedAt,
         );
-        await this.recomputeRollup(manager, running);
         await this.auditLogService.record(manager, {
           action: 'time_entry.stopped',
           organisationId,
@@ -334,7 +311,6 @@ export class TimeEntriesService {
         deviceId,
       });
       const savedEntry = await manager.save(entry);
-      await this.recomputeRollup(manager, savedEntry);
 
       await this.auditLogService.record(manager, {
         action: 'time_entry.started',
@@ -555,13 +531,6 @@ export class TimeEntriesService {
           );
         }
 
-        // Both halves of the split need their own day recomputed — the
-        // old entry's day now ends at `boundary` instead of running past
-        // it, and the new entry's day (which didn't exist as a row a
-        // moment ago) now has one.
-        await this.recomputeRollup(manager, entry);
-        await this.recomputeRollup(manager, next);
-
         await this.auditLogService.record(manager, {
           action: 'time_entry.day_boundary_split',
           organisationId: entry.organisationId,
@@ -625,7 +594,6 @@ export class TimeEntriesService {
       deviceId: null,
     });
     const saved = await this.timeEntries.save(entry);
-    await this.recomputeRollup(this.dataSource.manager, saved);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -718,26 +686,12 @@ export class TimeEntriesService {
       changed.endedAt = { from: entry.endedAt, to: nextEndedAt };
     }
 
-    // Captured before mutating `entry` in place — project and/or day can
-    // both change here, and each is its own rollup row, so the "before"
-    // pair needs recomputing (to reflect this entry's departure) just as
-    // much as the "after" pair (to reflect its arrival).
-    const previousProjectId = entry.projectId;
-    const previousStartedAt = entry.startedAt;
-
     entry.projectId = nextProjectId;
     entry.taskId = nextTaskId;
     entry.startedAt = nextStartedAt;
     entry.endedAt = nextEndedAt;
 
     const saved = await this.timeEntries.save(entry);
-    await this.recomputeRollup(this.dataSource.manager, {
-      organisationId,
-      membershipId: saved.membershipId,
-      projectId: previousProjectId,
-      startedAt: previousStartedAt,
-    });
-    await this.recomputeRollup(this.dataSource.manager, saved);
 
     if (Object.keys(changed).length > 0) {
       await this.dataSource.transaction(async (manager) => {
@@ -786,7 +740,6 @@ export class TimeEntriesService {
       resumedAt: null,
     });
     await this.timeEntryPauses.save(pause);
-    await this.recomputeRollup(this.dataSource.manager, running);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -829,7 +782,6 @@ export class TimeEntriesService {
     this.assertValidRange(openPause.pausedAt, resumedAt);
     openPause.resumedAt = resumedAt;
     await this.timeEntryPauses.save(openPause);
-    await this.recomputeRollup(this.dataSource.manager, running);
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -986,10 +938,8 @@ export class TimeEntriesService {
   /**
    * Batches pause-span lookups for a set of Time entries into one query
    * (used by `list`) rather than one query per row — the single-entry call
-   * sites (`toSummary`) go through this too, just with a one-element array.
-   * Turning the fetched rows into a `PauseState` is `resolvePauseStates`'
-   * job, shared with `DashboardService`/`RollupService` so none of them
-   * can compute this independently and drift from the others.
+   * sites (`toSummary`) go through this too, just with a one-element array,
+   * so there's only one place that turns pause rows into a `PauseState`.
    */
   private async getPauseStatesFor(
     timeEntryIds: string[],
@@ -1002,7 +952,36 @@ export class TimeEntriesService {
       where: { timeEntryId: In(timeEntryIds) },
     });
 
-    return resolvePauseStates(pauses);
+    const byEntry = new Map<string, TimeEntryPause[]>();
+    for (const pause of pauses) {
+      const forEntry = byEntry.get(pause.timeEntryId) ?? [];
+      forEntry.push(pause);
+      byEntry.set(pause.timeEntryId, forEntry);
+    }
+
+    const states = new Map<string, PauseState>();
+    for (const [timeEntryId, spans] of byEntry) {
+      const open = spans.find((span) => span.resumedAt === null);
+      const closedSeconds = spans
+        .filter((span) => span.resumedAt !== null)
+        .reduce(
+          (total, span) =>
+            total +
+            (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
+          0,
+        );
+      states.set(timeEntryId, {
+        pausedAt: open?.pausedAt ?? null,
+        pausedSeconds: Math.round(closedSeconds),
+        spans: [...spans]
+          .sort((a, b) => a.pausedAt.getTime() - b.pausedAt.getTime())
+          .map((span) => ({
+            pausedAt: span.pausedAt,
+            resumedAt: span.resumedAt,
+          })),
+      });
+    }
+    return states;
   }
 
   private async toSummary(entry: TimeEntry): Promise<TimeEntrySummary> {

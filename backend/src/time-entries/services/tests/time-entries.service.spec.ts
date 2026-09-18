@@ -14,7 +14,6 @@ import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
-import { RollupService } from '../../../rollups/services/rollup.service';
 import { TimeEntriesService } from '../time-entries.service';
 
 describe('TimeEntriesService', () => {
@@ -109,10 +108,7 @@ describe('TimeEntriesService', () => {
       (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
     );
     return {
-      // `manager` here is the same mock `transaction` hands its callback —
-      // call sites that skip an explicit transaction (see recomputeRollup's
-      // callers) go through `dataSource.manager` directly instead.
-      dataSource: { transaction, manager } as unknown,
+      dataSource: { transaction } as unknown,
       transaction,
       save,
       manager,
@@ -127,14 +123,6 @@ describe('TimeEntriesService', () => {
     };
   }
 
-  function makeRollupService() {
-    const recomputeDay = jest.fn().mockResolvedValue(undefined);
-    return {
-      rollupService: { recomputeDay } as unknown as RollupService,
-      recomputeDay,
-    };
-  }
-
   function makeService(
     overrides: {
       timeEntriesRepo?: Repository<TimeEntry>;
@@ -146,7 +134,6 @@ describe('TimeEntriesService', () => {
       tasksRepo?: Repository<Task>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
-      rollupService?: RollupService;
     } = {},
   ) {
     return new TimeEntriesService(
@@ -159,7 +146,6 @@ describe('TimeEntriesService', () => {
       overrides.tasksRepo ?? makeTasksRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
-      overrides.rollupService ?? makeRollupService().rollupService,
     );
   }
 

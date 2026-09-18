@@ -1,24 +1,23 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
-import type { PauseState } from '../../common/time-entry-active-seconds.util';
-import {
-  NO_PAUSE_STATE,
-  activeSeconds,
-  resolvePauseStates,
-} from '../../common/time-entry-active-seconds.util';
 import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
-import { Rollup } from '../../database/entities/rollup.entity';
-import { RollupPeriodType } from '../../database/entities/rollup-period-type.enum';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_DAYS = 7;
+
+interface PauseState {
+  pausedAt: Date | null;
+  pausedSeconds: number;
+}
+
+const NO_PAUSE_STATE: PauseState = { pausedAt: null, pausedSeconds: 0 };
 
 export interface DashboardWeekDay {
   /** YYYY-MM-DD, in the server's local timezone — matches the frontend's
@@ -74,8 +73,6 @@ export class DashboardService {
     private readonly timeEntries: Repository<TimeEntry>,
     @InjectRepository(TimeEntryPause)
     private readonly timeEntryPauses: Repository<TimeEntryPause>,
-    @InjectRepository(Rollup)
-    private readonly rollups: Repository<Rollup>,
     @InjectRepository(ActivitySample)
     private readonly activitySamples: Repository<ActivitySample>,
     @InjectRepository(Membership)
@@ -90,63 +87,42 @@ export class DashboardService {
     const membership = await this.getActiveMembership(organisationId, userId);
     const now = new Date();
     const weekStart = this.startOfWeek(now);
-    const todayStart = this.startOfDay(now);
 
-    // This week splits into two very differently-shaped reads: every day
-    // *before* today already has a finalized Rollup row (fast, pre-summed,
-    // no pause-netting needed at read time), while today is still
-    // accumulating and has no such row yet — it's computed live from raw
-    // entries, exactly as the whole week used to be before rollups
-    // existed. `yesterdaySameSpan`/`lastWeekSameSpan` below stay raw
-    // queries regardless: a same-time-of-day partial-day comparison has no
-    // whole-day rollup that could answer it.
-    const [
-      completedDayRollups,
-      todayEntries,
-      yesterdaySameSpanEntries,
-      lastWeekSameSpanEntries,
-    ] = await Promise.all([
-      this.rollups.find({
-        where: {
-          membershipId: membership.id,
-          periodType: RollupPeriodType.DAY,
-          periodStart: Between(weekStart, new Date(todayStart.getTime() - 1)),
-        },
-        relations: { project: true },
-      }),
-      this.timeEntries.find({
-        where: {
-          membershipId: membership.id,
-          startedAt: Between(
-            todayStart,
-            new Date(todayStart.getTime() + DAY_MS - 1),
-          ),
-        },
-        relations: { project: true },
-        order: { startedAt: 'ASC' },
-      }),
-      this.timeEntries.find({
-        where: {
-          membershipId: membership.id,
-          startedAt: Between(
-            new Date(this.startOfDay(now).getTime() - DAY_MS),
-            new Date(now.getTime() - DAY_MS),
-          ),
-        },
-      }),
-      this.timeEntries.find({
-        where: {
-          membershipId: membership.id,
-          startedAt: Between(
-            new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS),
-            new Date(now.getTime() - WEEK_DAYS * DAY_MS),
-          ),
-        },
-      }),
-    ]);
+    const [thisWeekEntries, yesterdaySameSpanEntries, lastWeekSameSpanEntries] =
+      await Promise.all([
+        this.timeEntries.find({
+          where: {
+            membershipId: membership.id,
+            startedAt: Between(
+              weekStart,
+              new Date(weekStart.getTime() + WEEK_DAYS * DAY_MS),
+            ),
+          },
+          relations: { project: true },
+          order: { startedAt: 'ASC' },
+        }),
+        this.timeEntries.find({
+          where: {
+            membershipId: membership.id,
+            startedAt: Between(
+              new Date(this.startOfDay(now).getTime() - DAY_MS),
+              new Date(now.getTime() - DAY_MS),
+            ),
+          },
+        }),
+        this.timeEntries.find({
+          where: {
+            membershipId: membership.id,
+            startedAt: Between(
+              new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS),
+              new Date(now.getTime() - WEEK_DAYS * DAY_MS),
+            ),
+          },
+        }),
+      ]);
 
     const pauseStates = await this.getPauseStatesFor([
-      ...todayEntries,
+      ...thisWeekEntries,
       ...yesterdaySameSpanEntries,
       ...lastWeekSameSpanEntries,
     ]);
@@ -158,57 +134,30 @@ export class DashboardService {
     const projectSeconds = new Map<string, DashboardProjectTime>();
     const projectSecondsToday = new Map<string, DashboardProjectTime>();
 
-    // Every day before today: already-netted totals straight from Rollup,
-    // no per-entry pause resolution needed.
-    for (const rollup of completedDayRollups) {
-      workedThisWeekSeconds += rollup.workedSeconds;
-
-      const key = this.dateKey(rollup.periodStart);
-      const day = byDay.find((candidate) => candidate.date === key);
-      if (day) {
-        day.seconds += rollup.workedSeconds;
-      }
-
-      const existingProject = projectSeconds.get(rollup.projectId);
-      if (existingProject) {
-        existingProject.seconds += rollup.workedSeconds;
-      } else {
-        projectSeconds.set(rollup.projectId, {
-          projectId: rollup.projectId,
-          projectName: rollup.project.name,
-          projectColour: rollup.project.colour,
-          seconds: rollup.workedSeconds,
-        });
-      }
-    }
-
-    // Today: live, same formula the running-timer display uses — there is
-    // no completed-day rollup for today to read instead.
-    for (const entry of todayEntries) {
-      const seconds = activeSeconds(
-        entry,
-        pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
-        now,
-      );
+    for (const entry of thisWeekEntries) {
+      const seconds = this.activeSeconds(entry, pauseStates, now);
       workedThisWeekSeconds += seconds;
-      workedTodaySeconds += seconds;
 
-      const day = byDay.find((candidate) => candidate.date === todayKey);
+      const key = this.dateKey(entry.startedAt);
+      const day = byDay.find((candidate) => candidate.date === key);
       if (day) {
         day.seconds += seconds;
       }
+      if (key === todayKey) {
+        workedTodaySeconds += seconds;
 
-      if (entry.endedAt) {
-        const existingToday = projectSecondsToday.get(entry.projectId);
-        if (existingToday) {
-          existingToday.seconds += seconds;
-        } else {
-          projectSecondsToday.set(entry.projectId, {
-            projectId: entry.projectId,
-            projectName: entry.project.name,
-            projectColour: entry.project.colour,
-            seconds,
-          });
+        if (entry.endedAt) {
+          const existingToday = projectSecondsToday.get(entry.projectId);
+          if (existingToday) {
+            existingToday.seconds += seconds;
+          } else {
+            projectSecondsToday.set(entry.projectId, {
+              projectId: entry.projectId,
+              projectName: entry.project.name,
+              projectColour: entry.project.colour,
+              seconds,
+            });
+          }
         }
       }
 
@@ -226,18 +175,16 @@ export class DashboardService {
     }
 
     const workedYesterdaySameSpanSeconds = yesterdaySameSpanEntries.reduce(
-      (total, entry) =>
-        total +
-        activeSeconds(entry, pauseStates.get(entry.id) ?? NO_PAUSE_STATE, now),
+      (total, entry) => total + this.activeSeconds(entry, pauseStates, now),
       0,
     );
 
     let workedLastWeekSameSpanSeconds = 0;
     const lastWeekProjectIds = new Set<string>();
     for (const entry of lastWeekSameSpanEntries) {
-      workedLastWeekSameSpanSeconds += activeSeconds(
+      workedLastWeekSameSpanSeconds += this.activeSeconds(
         entry,
-        pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
+        pauseStates,
         now,
       );
       lastWeekProjectIds.add(entry.projectId);
@@ -314,9 +261,21 @@ export class DashboardService {
     return Math.round(total / samples.length);
   }
 
-  /** Shared with `TimeEntriesService`/`RollupService` — see
-   * `time-entry-active-seconds.util.ts` for why this can't be computed
-   * independently in each service without risking drift. */
+  /** Active seconds for one entry, capped at "now" (or the instant it was
+   * paused) and net of every closed pause span — same formula the frontend
+   * uses to freeze a running timer's display (`useRunningTimer`). */
+  private activeSeconds(
+    entry: TimeEntry,
+    pauseStates: Map<string, PauseState>,
+    now: Date,
+  ): number {
+    const pauseState = pauseStates.get(entry.id) ?? NO_PAUSE_STATE;
+    const effectiveEnd = pauseState.pausedAt ?? entry.endedAt ?? now;
+    const grossSeconds =
+      (effectiveEnd.getTime() - entry.startedAt.getTime()) / 1000;
+    return Math.max(0, Math.round(grossSeconds - pauseState.pausedSeconds));
+  }
+
   private async getPauseStatesFor(
     entries: TimeEntry[],
   ): Promise<Map<string, PauseState>> {
@@ -329,7 +288,30 @@ export class DashboardService {
       where: { timeEntryId: In(timeEntryIds) },
     });
 
-    return resolvePauseStates(pauses);
+    const byEntry = new Map<string, TimeEntryPause[]>();
+    for (const pause of pauses) {
+      const forEntry = byEntry.get(pause.timeEntryId) ?? [];
+      forEntry.push(pause);
+      byEntry.set(pause.timeEntryId, forEntry);
+    }
+
+    const states = new Map<string, PauseState>();
+    for (const [timeEntryId, spans] of byEntry) {
+      const open = spans.find((span) => span.resumedAt === null);
+      const closedSeconds = spans
+        .filter((span) => span.resumedAt !== null)
+        .reduce(
+          (total, span) =>
+            total +
+            (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
+          0,
+        );
+      states.set(timeEntryId, {
+        pausedAt: open?.pausedAt ?? null,
+        pausedSeconds: Math.round(closedSeconds),
+      });
+    }
+    return states;
   }
 
   private startOfDay(date: Date): Date {
