@@ -53,15 +53,26 @@ win:
   # The published self-contained win-resolver.exe plus the browser-registry/
   # firefox-private-markers JSON files copied alongside it (see
   # WinResolver.csproj's linked-file <None> entries) — NOT the AOT/trimmed
-  # variants ruled out by native/win/spike/RESULTS.md. Run
-  # `dotnet publish native/win/resolver/WinResolver/WinResolver.csproj -c
-  # Release -r win-x64 --self-contained -p:PublishSingleFile=true` first;
-  # this doesn't build it. Resolved at runtime via process.resourcesPath,
-  # per resolvers/win32/resolver-path.ts and CLAUDE.md's side-car
-  # convention — wired into main.ts's resolverSpawnConfigForPlatform, still
-  # unverified against a real Windows machine.
+  # variants ruled out by native/win/spike/RESULTS.md. `pnpm dist:win` now
+  # runs the `dotnet publish` step itself before calling electron-builder
+  # (see desktop/package.json) — don't run electron-builder directly, it
+  # won't produce this output on its own. Resolved at runtime via
+  # process.resourcesPath, per resolvers/win32/resolver-path.ts and
+  # CLAUDE.md's side-car convention — wired into main.ts's
+  # resolverSpawnConfigForPlatform, still unverified against a real Windows
+  # machine.
+  #
+  # `from` is one level up (../) because native/win/ lives at the repo
+  # root, not under desktop/ — electron-builder resolves extraResources
+  # paths relative to *this* project's directory (desktop/). The
+  # unprefixed path used to point at a desktop/native/win/ that never
+  # existed, so it silently matched nothing (no error, no copy): every
+  # Windows installer built before this fix shipped without
+  # WinResolver.exe at all, i.e. with no browser-address-bar URL tracking
+  # on Windows — confirmed from CI's dist:win logs, which show no copy and
+  # no failure for the missing source.
   extraResources:
-    - from: native/win/resolver/WinResolver/bin/Release/net8.0-windows/win-x64/publish
+    - from: ../native/win/resolver/WinResolver/bin/Release/net8.0-windows/win-x64/publish
       to: native/win/resolver
 nsis:
   oneClick: false
@@ -93,9 +104,15 @@ mac:
       you were working on. It never controls your browser or changes
       anything in it.
   # The compiled universal firefox-ax-helper binary (see
-  # native/darwin/firefox-ax-helper-swift/build.sh) — run that build first,
-  # this doesn't build it. Resolved at runtime via process.resourcesPath,
-  # per CLAUDE.md's side-car convention.
+  # native/darwin/firefox-ax-helper-swift/build.sh) — `pnpm dist:mac` now
+  # runs that build itself before calling electron-builder (see
+  # desktop/package.json), so don't run electron-builder directly, it
+  # won't produce this output on its own. Same class of bug as the Windows
+  # resolver above: this path was already correct (source lives under
+  # desktop/native/darwin/), but CI never ran build.sh first, so every
+  # macOS installer built before this fix silently shipped without this
+  # helper too. Resolved at runtime via process.resourcesPath, per
+  # CLAUDE.md's side-car convention.
   extraResources:
     - from: native/darwin/firefox-ax-helper
       to: native/darwin/firefox-ax-helper

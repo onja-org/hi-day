@@ -261,8 +261,8 @@ auto-update yet, see **Known limitations** below).
 
 ```bash
 pnpm --filter desktop dist:linux   # AppImage + .deb — works on Ubuntu, Pop!_OS, and most Debian-based distros
-pnpm --filter desktop dist:win     # NSIS installer — build on Windows (or CI)
-pnpm --filter desktop dist:mac     # dmg + zip — must build on macOS (or CI)
+pnpm --filter desktop dist:win     # NSIS installer — build on Windows (or CI); needs the .NET 8 SDK on PATH
+pnpm --filter desktop dist:mac     # dmg + zip — must build on macOS (or CI); needs Xcode command line tools
 ```
 
 `electron-builder` can only reliably produce a Windows or macOS installer
@@ -272,6 +272,22 @@ builds all three in parallel via a GitHub Actions matrix
 (`ubuntu-latest` / `windows-latest` / `macos-latest`); trigger it manually
 from the Actions tab (`workflow_dispatch`) and grab the built installers
 from the run's artifacts.
+
+`dist:win` and `dist:mac` each build a native side-car before invoking
+`electron-builder` — `WinResolver.exe` via `dotnet publish` and
+`firefox-ax-helper` via `native/darwin/firefox-ax-helper-swift/build.sh`,
+respectively (see the comments on both in `electron-builder.yml`). Don't
+invoke `electron-builder` directly for these two platforms: it has no way
+to produce that output itself, and a missing `extraResources` source is
+not an error electron-builder surfaces — it just silently packages without
+it. That's exactly what happened here before this was wired into the
+`pnpm` scripts: every past Windows installer shipped with no
+browser-address-bar URL tracking at all (the `extraResources` path also
+pointed at the wrong directory — `native/win/` lives at the repo root, not
+under `desktop/` — so it never resolved even when someone did run the
+`dotnet publish` step by hand first), and every past macOS installer
+shipped without the Firefox helper, matching the "unverified on real
+macOS hardware" limitation below.
 
 ### Window tracking (`@paymoapp/active-window`) — packaging notes
 
