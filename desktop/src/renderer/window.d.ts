@@ -131,8 +131,9 @@ declare global {
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;
-        openScreenRecordingSettings: () => Promise<void>;
-        openAccessibilitySettings: () => Promise<void>;
+        openPrivacySettings: (
+          pane: 'accessibility' | 'screenRecording',
+        ) => Promise<void>;
         indicatorStatus: () => Promise<TrackingIndicatorStatus>;
       };
       consent: {

@@ -152,10 +152,8 @@ const api = {
       >,
     requestScreenRecordingAccess: (): Promise<void> =>
       ipcRenderer.invoke('tracking:requestScreenRecordingAccess') as Promise<void>,
-    openScreenRecordingSettings: (): Promise<void> =>
-      ipcRenderer.invoke('tracking:openScreenRecordingSettings') as Promise<void>,
-    openAccessibilitySettings: (): Promise<void> =>
-      ipcRenderer.invoke('tracking:openAccessibilitySettings') as Promise<void>,
+    openPrivacySettings: (pane: 'accessibility' | 'screenRecording'): Promise<void> =>
+      ipcRenderer.invoke('tracking:openPrivacySettings', pane) as Promise<void>,
     indicatorStatus: (): Promise<TrackingIndicatorStatus> =>
       ipcRenderer.invoke('tracking:indicatorStatus') as Promise<TrackingIndicatorStatus>,
   },

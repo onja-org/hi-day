@@ -673,11 +673,11 @@ screenRecordingGrantButton.addEventListener("click", () => {
 });
 
 screenRecordingSettingsButton.addEventListener("click", () => {
-  void window.api.tracking.openScreenRecordingSettings();
+  void window.api.tracking.openPrivacySettings("screenRecording");
 });
 
 accessibilitySettingsButton.addEventListener("click", () => {
-  void window.api.tracking.openAccessibilitySettings();
+  void window.api.tracking.openPrivacySettings("accessibility");
 });
 
 /** Returns false when the session turned out to be signed out — callers chaining further tracking setup should stop rather than continue. */

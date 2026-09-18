@@ -32,6 +32,7 @@ import { resolveLinuxResolverPath,  resolveDarwinResolverPath,
   resolveWinResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { ACCESSIBILITY_COPY, SETTINGS_DEEP_LINKS } from './resolvers/darwin/permission-copy';
+import type { SettingsPane } from './resolvers/darwin/permission-copy';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
@@ -716,24 +717,15 @@ async function registerIpcHandlers(): Promise<void> {
   // Fallback for when macOS won't re-show the native prompt (already
   // asked/denied before) — opens the Screen Recording pane directly so the
   // person can grant it themselves.
+  // One handler for every privacy pane. Accessibility has no native prompt the
+  // way Automation does, so opening System Settings is all the app can offer —
+  // and the screen-recording banner needs the same thing, differing only in
+  // which pane. Links come from permission-copy.ts rather than being repeated.
   ipcMain.handle(
-    'tracking:openScreenRecordingSettings',
-    async (): Promise<void> => {
+    'tracking:openPrivacySettings',
+    async (_event, pane: SettingsPane): Promise<void> => {
       if (process.platform === 'darwin') {
-        await shell.openExternal(
-          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
-        );
-      }
-    },
-  );
-
-  // Accessibility has no native prompt the way Automation does, so opening the
-  // System Settings pane is all the app can offer.
-  ipcMain.handle(
-    'tracking:openAccessibilitySettings',
-    async (): Promise<void> => {
-      if (process.platform === 'darwin') {
-        await shell.openExternal(SETTINGS_DEEP_LINKS.accessibility);
+        await shell.openExternal(SETTINGS_DEEP_LINKS[pane]);
       }
     },
   );
