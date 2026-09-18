@@ -1,6 +1,12 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
+import { localDateKey } from '../../common/local-date-key.util';
+import {
+  buildPauseStates,
+  computeActiveSeconds,
+  PauseState,
+} from '../../common/time-entry-active-seconds.util';
 import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -11,13 +17,6 @@ import { OrganisationsService } from '../../organisations/services/organisations
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_DAYS = 7;
-
-interface PauseState {
-  pausedAt: Date | null;
-  pausedSeconds: number;
-}
-
-const NO_PAUSE_STATE: PauseState = { pausedAt: null, pausedSeconds: 0 };
 
 export interface DashboardWeekDay {
   /** YYYY-MM-DD, in the server's local timezone — matches the frontend's
@@ -127,7 +126,7 @@ export class DashboardService {
       ...lastWeekSameSpanEntries,
     ]);
 
-    const todayKey = this.dateKey(now);
+    const todayKey = localDateKey(now);
     const byDay = this.zeroFilledWeek(weekStart);
     let workedTodaySeconds = 0;
     let workedThisWeekSeconds = 0;
@@ -135,10 +134,10 @@ export class DashboardService {
     const projectSecondsToday = new Map<string, DashboardProjectTime>();
 
     for (const entry of thisWeekEntries) {
-      const seconds = this.activeSeconds(entry, pauseStates, now);
+      const seconds = computeActiveSeconds(entry, pauseStates, now);
       workedThisWeekSeconds += seconds;
 
-      const key = this.dateKey(entry.startedAt);
+      const key = localDateKey(entry.startedAt);
       const day = byDay.find((candidate) => candidate.date === key);
       if (day) {
         day.seconds += seconds;
@@ -175,14 +174,14 @@ export class DashboardService {
     }
 
     const workedYesterdaySameSpanSeconds = yesterdaySameSpanEntries.reduce(
-      (total, entry) => total + this.activeSeconds(entry, pauseStates, now),
+      (total, entry) => total + computeActiveSeconds(entry, pauseStates, now),
       0,
     );
 
     let workedLastWeekSameSpanSeconds = 0;
     const lastWeekProjectIds = new Set<string>();
     for (const entry of lastWeekSameSpanEntries) {
-      workedLastWeekSameSpanSeconds += this.activeSeconds(
+      workedLastWeekSameSpanSeconds += computeActiveSeconds(
         entry,
         pauseStates,
         now,
@@ -261,21 +260,6 @@ export class DashboardService {
     return Math.round(total / samples.length);
   }
 
-  /** Active seconds for one entry, capped at "now" (or the instant it was
-   * paused) and net of every closed pause span — same formula the frontend
-   * uses to freeze a running timer's display (`useRunningTimer`). */
-  private activeSeconds(
-    entry: TimeEntry,
-    pauseStates: Map<string, PauseState>,
-    now: Date,
-  ): number {
-    const pauseState = pauseStates.get(entry.id) ?? NO_PAUSE_STATE;
-    const effectiveEnd = pauseState.pausedAt ?? entry.endedAt ?? now;
-    const grossSeconds =
-      (effectiveEnd.getTime() - entry.startedAt.getTime()) / 1000;
-    return Math.max(0, Math.round(grossSeconds - pauseState.pausedSeconds));
-  }
-
   private async getPauseStatesFor(
     entries: TimeEntry[],
   ): Promise<Map<string, PauseState>> {
@@ -287,31 +271,7 @@ export class DashboardService {
     const pauses = await this.timeEntryPauses.find({
       where: { timeEntryId: In(timeEntryIds) },
     });
-
-    const byEntry = new Map<string, TimeEntryPause[]>();
-    for (const pause of pauses) {
-      const forEntry = byEntry.get(pause.timeEntryId) ?? [];
-      forEntry.push(pause);
-      byEntry.set(pause.timeEntryId, forEntry);
-    }
-
-    const states = new Map<string, PauseState>();
-    for (const [timeEntryId, spans] of byEntry) {
-      const open = spans.find((span) => span.resumedAt === null);
-      const closedSeconds = spans
-        .filter((span) => span.resumedAt !== null)
-        .reduce(
-          (total, span) =>
-            total +
-            (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
-          0,
-        );
-      states.set(timeEntryId, {
-        pausedAt: open?.pausedAt ?? null,
-        pausedSeconds: Math.round(closedSeconds),
-      });
-    }
-    return states;
+    return buildPauseStates(pauses);
   }
 
   private startOfDay(date: Date): Date {
@@ -326,18 +286,9 @@ export class DashboardService {
     return start;
   }
 
-  /** Local calendar date as YYYY-MM-DD — `toISOString` would shift the date
-   * near midnight for any server timezone with a non-zero UTC offset. */
-  private dateKey(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
   private zeroFilledWeek(weekStart: Date): DashboardWeekDay[] {
     return Array.from({ length: WEEK_DAYS }, (_, index) => ({
-      date: this.dateKey(new Date(weekStart.getTime() + index * DAY_MS)),
+      date: localDateKey(new Date(weekStart.getTime() + index * DAY_MS)),
       seconds: 0,
     }));
   }

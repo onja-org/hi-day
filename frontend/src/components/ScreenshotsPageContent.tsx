@@ -1,16 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
-import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { getDayRangeDateString } from "@/lib/getDayRange";
 import type { ScreenshotSummaryItem } from "@/types/screenshot";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityMeter } from "./ActivityMeter";
-import { ErrorMessage } from "./ErrorMessage";
+import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
-import { Spinner } from "./Spinner";
 
 type ScreenshotsPageContentProps = {
   organisationId: string;
@@ -33,19 +30,7 @@ function formatPeriodLabel(screenshot: ScreenshotSummaryItem): string {
 export function ScreenshotsPageContent({
   organisationId,
 }: ScreenshotsPageContentProps) {
-  const searchParams = useSearchParams();
-  const organisationQuery = useCurrentOrganisation();
-  const canViewOthers =
-    organisationQuery.data?.role === "admin" ||
-    organisationQuery.data?.role === "manager";
-
-  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
-  const date = getDayRangeDateString(new Date(), dayOffset);
-  const membershipId = searchParams.get("membershipId") ?? undefined;
-  const untracked = searchParams.get("untracked") === "1";
-  const projectId = untracked
-    ? undefined
-    : (searchParams.get("projectId") ?? undefined);
+  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
 
   const screenshotsQuery = useActivityScreenshots(organisationId, {
     date,
@@ -61,22 +46,13 @@ export function ScreenshotsPageContent({
         canViewOthers={canViewOthers}
       />
 
-      {screenshotsQuery.isLoading && (
-        <p className="flex items-center gap-2 text-slate-900">
-          <Spinner className="text-primary-dark" />
-          Loading screenshots…
-        </p>
-      )}
-
-      {screenshotsQuery.isError && (
-        <ErrorMessage
-          message={
-            screenshotsQuery.error instanceof Error
-              ? screenshotsQuery.error.message
-              : "Could not load screenshots."
-          }
-        />
-      )}
+      <ActivityQueryStatus
+        isLoading={screenshotsQuery.isLoading}
+        isError={screenshotsQuery.isError}
+        error={screenshotsQuery.error}
+        loadingLabel="Loading screenshots…"
+        errorFallback="Could not load screenshots."
+      />
 
       {screenshotsQuery.data && screenshotsQuery.data.length === 0 && (
         <p className="text-slate-900">

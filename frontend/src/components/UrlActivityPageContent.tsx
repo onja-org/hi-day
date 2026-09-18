@@ -1,12 +1,13 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
+import { useProjects } from "@/hooks/useProjects";
 import { useUrlActivityDay } from "@/hooks/useUrlActivityDay";
-import { getDayRangeDateString } from "@/lib/getDayRange";
+import { urlActivityToCsv } from "@/lib/urlActivityToCsv";
+import { urlActivityToPdf } from "@/lib/urlActivityToPdf";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { ActivityQueryStatus } from "./ActivityQueryStatus";
+import { ExportButtons } from "./ExportButtons";
 import { UrlActivityHourGroup } from "./UrlActivityHourGroup";
 
 type UrlActivityPageContentProps = {
@@ -18,16 +19,7 @@ type UrlActivityPageContentProps = {
  * recent-1000-rows view) stay untouched for their other two callers
  * (the dashboard preview, the member detail page). */
 export function UrlActivityPageContent({ organisationId }: UrlActivityPageContentProps) {
-  const searchParams = useSearchParams();
-  const organisationQuery = useCurrentOrganisation();
-  const canViewOthers =
-    organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
-
-  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
-  const date = getDayRangeDateString(new Date(), dayOffset);
-  const membershipId = searchParams.get("membershipId") ?? undefined;
-  const untracked = searchParams.get("untracked") === "1";
-  const projectId = untracked ? undefined : (searchParams.get("projectId") ?? undefined);
+  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
 
   const dayQuery = useUrlActivityDay(organisationId, {
     date,
@@ -35,29 +27,36 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
     projectId,
     untracked,
   });
+  const projectsQuery = useProjects(organisationId, { status: "all" });
+  const day = dayQuery.data;
+  const projects = projectsQuery.data ?? [];
+  const hasExportableData = !!day && day.buckets.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
-      <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
-
-      {dayQuery.isLoading && (
-        <p className="flex items-center gap-2 text-slate-900">
-          <Spinner className="text-primary-dark" />
-          Loading website activity…
-        </p>
-      )}
-
-      {dayQuery.isError && (
-        <ErrorMessage
-          message={
-            dayQuery.error instanceof Error
-              ? dayQuery.error.message
-              : "Could not load website activity."
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
+        <ExportButtons
+          csv={day ? urlActivityToCsv(day, projects) : ""}
+          buildPdf={
+            day
+              ? () => urlActivityToPdf(`Website activity — ${date}`, day, projects)
+              : () => new Blob()
           }
+          filenameBase={`url-activity-${date}`}
+          disabled={!hasExportableData}
         />
-      )}
+      </div>
 
-      {dayQuery.data && dayQuery.data.buckets.length === 0 && (
+      <ActivityQueryStatus
+        isLoading={dayQuery.isLoading}
+        isError={dayQuery.isError}
+        error={dayQuery.error}
+        loadingLabel="Loading website activity…"
+        errorFallback="Could not load website activity."
+      />
+
+      {day && day.buckets.length === 0 && (
         <p className="text-slate-900">
           {projectId || untracked
             ? "No website activity matches this filter for this day."
@@ -65,7 +64,7 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
         </p>
       )}
 
-      {dayQuery.data?.buckets.map((bucket) => (
+      {day?.buckets.map((bucket) => (
         <UrlActivityHourGroup
           key={bucket.hourStart}
           organisationId={organisationId}

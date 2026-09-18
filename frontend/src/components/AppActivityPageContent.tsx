@@ -1,13 +1,14 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { useAppActivityDay } from "@/hooks/useAppActivityDay";
-import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { getDayRangeDateString } from "@/lib/getDayRange";
+import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
+import { useProjects } from "@/hooks/useProjects";
+import { appActivityToCsv } from "@/lib/appActivityToCsv";
+import { appActivityToPdf } from "@/lib/appActivityToPdf";
 import { AppActivityHourGroup } from "./AppActivityHourGroup";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { ActivityQueryStatus } from "./ActivityQueryStatus";
+import { ExportButtons } from "./ExportButtons";
 
 type AppActivityPageContentProps = {
   organisationId: string;
@@ -16,16 +17,7 @@ type AppActivityPageContentProps = {
 export function AppActivityPageContent({
   organisationId,
 }: AppActivityPageContentProps) {
-  const searchParams = useSearchParams();
-  const organisationQuery = useCurrentOrganisation();
-  const canViewOthers =
-    organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
-
-  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
-  const date = getDayRangeDateString(new Date(), dayOffset);
-  const membershipId = searchParams.get("membershipId") ?? undefined;
-  const untracked = searchParams.get("untracked") === "1";
-  const projectId = untracked ? undefined : (searchParams.get("projectId") ?? undefined);
+  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
 
   const dayQuery = useAppActivityDay(organisationId, {
     date,
@@ -33,29 +25,36 @@ export function AppActivityPageContent({
     projectId,
     untracked,
   });
+  const projectsQuery = useProjects(organisationId, { status: "all" });
+  const day = dayQuery.data;
+  const projects = projectsQuery.data ?? [];
+  const hasExportableData = !!day && day.buckets.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
-      <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
-
-      {dayQuery.isLoading && (
-        <p className="flex items-center gap-2 text-slate-900">
-          <Spinner className="text-primary-dark" />
-          Loading app activity…
-        </p>
-      )}
-
-      {dayQuery.isError && (
-        <ErrorMessage
-          message={
-            dayQuery.error instanceof Error
-              ? dayQuery.error.message
-              : "Could not load app activity."
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
+        <ExportButtons
+          csv={day ? appActivityToCsv(day, projects) : ""}
+          buildPdf={
+            day
+              ? () => appActivityToPdf(`App activity — ${date}`, day, projects)
+              : () => new Blob()
           }
+          filenameBase={`app-activity-${date}`}
+          disabled={!hasExportableData}
         />
-      )}
+      </div>
 
-      {dayQuery.data && dayQuery.data.buckets.length === 0 && (
+      <ActivityQueryStatus
+        isLoading={dayQuery.isLoading}
+        isError={dayQuery.isError}
+        error={dayQuery.error}
+        loadingLabel="Loading app activity…"
+        errorFallback="Could not load app activity."
+      />
+
+      {day && day.buckets.length === 0 && (
         <p className="text-slate-900">
           {projectId || untracked
             ? "No app activity matches this filter for this day."
@@ -63,7 +62,7 @@ export function AppActivityPageContent({
         </p>
       )}
 
-      {dayQuery.data?.buckets.map((bucket) => (
+      {day?.buckets.map((bucket) => (
         <AppActivityHourGroup
           key={bucket.hourStart}
           organisationId={organisationId}

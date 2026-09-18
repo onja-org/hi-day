@@ -4,7 +4,7 @@ export interface TimerStatusSession {
 
 export interface TimerStatusResult {
   ok: boolean;
-  data?: { entry: unknown };
+  data?: { entry: { pausedAt?: string | null } | null };
 }
 
 export interface TimerStatusClient {
@@ -58,7 +58,11 @@ export class TimerStatusGate {
   private async isCurrentlyRunning(deviceToken: string): Promise<boolean> {
     const result = await this.apiClient.getCurrentTimer(deviceToken);
     if (!result.ok || !result.data) return false;
-    return result.data.entry !== null;
+    const entry = result.data.entry;
+    // A manually paused entry still exists server-side (only stop() clears
+    // it) — capture must not keep running through a pause, so treat it the
+    // same as "no entry" here.
+    return entry !== null && !entry.pausedAt;
   }
 
   private applyIfChanged(running: boolean): void {

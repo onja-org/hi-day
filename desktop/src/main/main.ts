@@ -581,9 +581,19 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle('tracking:status', () => callDeviceApi((token) => apiClient.getCurrentTimer(token)));
 
-  ipcMain.handle('tracking:pause', () => callDeviceApi((token) => apiClient.pauseTimer(token)));
+  ipcMain.handle('tracking:pause', async () => {
+    const result = await callDeviceApi((token) => apiClient.pauseTimer(token));
+    // Instant local feedback rather than waiting on TimerStatusGate's poll —
+    // capture must stop as soon as the person pauses, not up to 15s later.
+    void timerStatusGate.pollOnce();
+    return result;
+  });
 
-  ipcMain.handle('tracking:resume', () => callDeviceApi((token) => apiClient.resumeTimer(token)));
+  ipcMain.handle('tracking:resume', async () => {
+    const result = await callDeviceApi((token) => apiClient.resumeTimer(token));
+    void timerStatusGate.pollOnce();
+    return result;
+  });
 
   ipcMain.handle('tracking:entriesBetween', (_event, from: string, to: string) =>
     callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),

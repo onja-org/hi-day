@@ -6,11 +6,12 @@ import clsx from "clsx";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
+import { entriesToCsv } from "@/lib/entriesToCsv";
 import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
 import { ErrorMessage } from "./ErrorMessage";
-import { ExportCsvButton } from "./ExportCsvButton";
+import { ExportButtons } from "./ExportButtons";
 import { Spinner } from "./Spinner";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
 import { TimesheetCalendarGrid } from "./TimesheetCalendarGrid";
@@ -65,10 +66,10 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   );
 
   const activeEntries = viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data;
-  const activeFilename =
+  const activeFilenameBase =
     viewMode === "daily"
-      ? `timesheet-${datePreset}.csv`
-      : `timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}.csv`;
+      ? `timesheet-${datePreset}`
+      : `timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -103,7 +104,11 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
               Add time
             </button>
           )}
-          <ExportCsvButton entries={activeEntries ?? []} filename={activeFilename} />
+          <ExportButtons
+            csv={entriesToCsv(activeEntries ?? [])}
+            filenameBase={activeFilenameBase}
+            disabled={(activeEntries ?? []).length === 0}
+          />
         </div>
       </div>
 
