@@ -17,14 +17,23 @@ describe("publishDisclosureVersion", () => {
   });
 
   it("POSTs to the publish endpoint and returns ok with the new version", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true, json: () => Promise.resolve(published) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          version: published,
+          message: "Disclosure version published",
+        }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await publishDisclosureVersion(100000, null);
 
-    expect(result).toEqual({ ok: true, version: published });
+    expect(result).toEqual({
+      ok: true,
+      version: published,
+      message: "Disclosure version published",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/100000/disclosure-versions/publish",
       { method: "POST", credentials: "include" },

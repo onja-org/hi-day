@@ -11,7 +11,11 @@ describe("updateProject", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "p-1", client: "Acme Inc" }),
+        json: () =>
+          Promise.resolve({
+            project: { id: "p-1", client: "Acme Inc" },
+            message: "Project updated",
+          }),
       }),
     );
 

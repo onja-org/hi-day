@@ -49,17 +49,18 @@ export class MembershipsController {
   }
 
   @Patch(':membershipId')
-  update(
+  async update(
     @Param('membershipId') membershipId: string,
     @Body() dto: UpdateMembershipDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ActiveMemberSummary> {
-    return this.membershipsService.update(
+  ): Promise<{ member: ActiveMemberSummary; message: string }> {
+    const member = await this.membershipsService.update(
       request.organisationId!,
       membershipId,
       request.userId,
       dto,
     );
+    return { member, message: 'Membership updated' };
   }
 
   @Get(':membershipId/activities')

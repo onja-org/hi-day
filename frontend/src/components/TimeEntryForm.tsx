@@ -10,7 +10,6 @@ import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem } from "@/types/timeEntry";
-import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 type TimeEntryFormProps =
@@ -100,8 +99,6 @@ export function TimeEntryForm({
   }
 
   const mutation = mode === "create" ? createMutation : updateMutation;
-  const submitError =
-    mutation.data && !mutation.data.ok ? mutation.data.message : null;
   const projects = projectsQuery.data ?? [];
   // Always keep the entry's own (possibly since-closed) task selectable —
   // switching the picker to only open tasks shouldn't silently drop it.
@@ -111,8 +108,6 @@ export function TimeEntryForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      {submitError && <ErrorMessage message={submitError} />}
-
       <label className="flex flex-col gap-1.5">
         Project
         <select

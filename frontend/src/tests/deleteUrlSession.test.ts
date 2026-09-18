@@ -7,7 +7,10 @@ describe("deleteUrlSession", () => {
   });
 
   it("sends a DELETE request with membershipId and url in the query string", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ message: "URL session deleted" }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await deleteUrlSession(
@@ -16,7 +19,7 @@ describe("deleteUrlSession", () => {
       "https://example.com/page",
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, message: "URL session deleted" });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/url-sessions?membershipId=member-1&url=https%3A%2F%2Fexample.com%2Fpage",
       expect.objectContaining({ method: "DELETE" }),

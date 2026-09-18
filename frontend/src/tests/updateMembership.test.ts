@@ -13,14 +13,17 @@ describe("updateMembership", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            id: "m-1",
-            userId: "user-1",
-            email: "a@b.test",
-            name: "A B",
-            role: "manager",
-            teamIds: [],
-            status: "active",
-            joinedAt: "2026-01-01T00:00:00.000Z",
+            member: {
+              id: "m-1",
+              userId: "user-1",
+              email: "a@b.test",
+              name: "A B",
+              role: "manager",
+              teamIds: [],
+              status: "active",
+              joinedAt: "2026-01-01T00:00:00.000Z",
+            },
+            message: "Membership updated",
           }),
       }),
     );
@@ -30,6 +33,7 @@ describe("updateMembership", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.member.role).toBe("manager");
+      expect(result.message).toBe("Membership updated");
     }
   });
 

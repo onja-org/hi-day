@@ -5,7 +5,6 @@ import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
 import { updateTeam } from "@/lib/updateTeam";
-import { ErrorMessage } from "./ErrorMessage";
 
 type TeamRenameFormProps = {
   organisationId: string;
@@ -41,11 +40,6 @@ export function TeamRenameForm({
     renameMutation.mutate(trimmed);
   }
 
-  const renameError =
-    renameMutation.data && !renameMutation.data.ok
-      ? renameMutation.data.message
-      : null;
-
   return (
     <div className="flex flex-col gap-2">
       <form onSubmit={handleSubmit} className="flex items-center gap-3">
@@ -67,7 +61,6 @@ export function TeamRenameForm({
           Save
         </button>
       </form>
-      {renameError && <ErrorMessage message={renameError} />}
     </div>
   );
 }

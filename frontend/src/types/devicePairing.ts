@@ -1,3 +1,4 @@
+import type { ApiResult } from "./api";
 import type { DevicePlatform } from "./device";
 
 export type DevicePairingSummary = {
@@ -10,6 +11,4 @@ export type GetDevicePairingResult =
   | { ok: true; summary: DevicePairingSummary }
   | { ok: false; message: string };
 
-export type ApproveDevicePairingResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type ApproveDevicePairingResult = ApiResult;

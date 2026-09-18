@@ -7,7 +7,13 @@ describe("addTeamMembers", () => {
   });
 
   it("reports every input as succeeded when all requests succeed", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ message: "Team member added" }),
+      }),
+    );
 
     const result = await addTeamMembers("org-1", "team-1", [
       { membershipId: "m-1", isManager: false },
@@ -29,7 +35,10 @@ describe("addTeamMembers", () => {
           json: () => Promise.resolve({ message: "Membership not found." }),
         });
       }
-      return Promise.resolve({ ok: true });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ message: "Team member added" }),
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
 

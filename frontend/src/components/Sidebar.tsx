@@ -3,6 +3,7 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
   Briefcase,
+  ChartBar,
   ChartLineUp,
   Clock,
   Desktop,
@@ -78,6 +79,11 @@ export function Sidebar({
             label: "Devices",
             href: `/organisations/${organisationId}/devices`,
             icon: Desktop,
+          },
+          {
+            label: "Reports",
+            href: `/organisations/${organisationId}/reports`,
+            icon: ChartBar,
           },
         ]
       : []),

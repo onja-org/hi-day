@@ -1,9 +1,7 @@
 import type { FormEvent } from "react";
 import type { AcceptInvitationInput, AcceptInvitationResult } from "@/types/invitation";
-import { ErrorMessage } from "./ErrorMessage";
 import { PasswordInput } from "./PasswordInput";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 type SetInvitationPasswordFormProps = {
   organisationName: string;
@@ -32,9 +30,6 @@ export function SetInvitationPasswordForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-6">
-      {result?.ok && <SuccessMessage message={result.message} />}
-      {result && !result.ok && <ErrorMessage message={result.message} />}
-
       <p className="text-slate-900">
         Join {organisationName} as {role}.
       </p>

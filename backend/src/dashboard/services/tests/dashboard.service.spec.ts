@@ -4,6 +4,8 @@ import { ActivitySample } from '../../../database/entities/activity-sample.entit
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
+import { Rollup } from '../../../database/entities/rollup.entity';
+import { RollupPeriodType } from '../../../database/entities/rollup-period-type.enum';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
@@ -12,7 +14,9 @@ import { DashboardService } from '../dashboard.service';
 
 describe('DashboardService', () => {
   // A fixed Wednesday, so "this week" (Sun 2026-01-04 - Sat 2026-01-10) and
-  // "last week" (Sun 2025-12-28 - Sat 2026-01-03) are unambiguous.
+  // "last week" (Sun 2025-12-28 - Sat 2026-01-03) are unambiguous. "Today"
+  // (Wed the 7th) is always live-computed from raw entries; every earlier
+  // day in the week is a finalized Rollup row instead.
   const NOW = new Date(2026, 0, 7, 15, 0, 0);
 
   const membership = {
@@ -41,10 +45,27 @@ describe('DashboardService', () => {
     } as TimeEntry;
   }
 
+  function rollup(overrides: Partial<Rollup> & { projectId: string }): Rollup {
+    return {
+      id: `rollup-${Math.random()}`,
+      organisationId: 'org-1',
+      membershipId: 'm-1',
+      periodType: RollupPeriodType.DAY,
+      project: project(overrides.projectId, overrides.projectId),
+      ...overrides,
+    } as Rollup;
+  }
+
   function makeTimeEntriesRepo(...calls: TimeEntry[][]): Repository<TimeEntry> {
     const find = jest.fn();
     calls.forEach((result) => find.mockResolvedValueOnce(result));
     return { find } as unknown as Repository<TimeEntry>;
+  }
+
+  function makeRollupsRepo(rollups: Rollup[] = []): Repository<Rollup> {
+    return {
+      find: jest.fn().mockResolvedValue(rollups),
+    } as unknown as Repository<Rollup>;
   }
 
   function makePausesRepo(): Repository<TimeEntryPause> {
@@ -85,22 +106,26 @@ describe('DashboardService', () => {
     jest.useRealTimers();
   });
 
-  it('sums today and week-to-date, and zero-fills days with no entries', async () => {
-    const thisWeekEntries = [
+  it('sums today (live) and week-to-date (today live + earlier days from rollups), zero-filling days with no entries', async () => {
+    // Monday already ended — its 1.5h lives in a Rollup row, not a raw
+    // TimeEntry the service would have to re-net pauses for.
+    const mondayRollup = rollup({
+      projectId: 'p-1',
+      periodStart: new Date(2026, 0, 5),
+      workedSeconds: 1.5 * 3600,
+    });
+    // Today (Wed) is still live.
+    const todayEntries = [
       entry({
         projectId: 'p-1',
-        startedAt: new Date(2026, 0, 7, 9, 0, 0), // Wed = today
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
         endedAt: new Date(2026, 0, 7, 11, 0, 0), // 2h
-      }),
-      entry({
-        projectId: 'p-1',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0), // Mon
-        endedAt: new Date(2026, 0, 5, 10, 30, 0), // 1.5h
       }),
     ];
     const service = new DashboardService(
-      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makeTimeEntriesRepo(todayEntries, [], []),
       makePausesRepo(),
+      makeRollupsRepo([mondayRollup]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
@@ -114,9 +139,9 @@ describe('DashboardService', () => {
     expect(summary.thisWeekByDay).toHaveLength(7);
     expect(summary.thisWeekByDay.map((day) => day.seconds)).toEqual([
       0, // Sun
-      1.5 * 3600, // Mon
+      1.5 * 3600, // Mon (from the rollup)
       0, // Tue
-      2 * 3600, // Wed (today)
+      2 * 3600, // Wed (today, live)
       0, // Thu
       0, // Fri
       0, // Sat
@@ -125,7 +150,9 @@ describe('DashboardService', () => {
   });
 
   it('computes week-over-week and day-over-day deltas from the same-span comparison periods', async () => {
-    const thisWeekEntries = [
+    // Same-span comparisons are always partial-day raw queries — no whole
+    // day's rollup could answer "yesterday, same time of day so far".
+    const todayEntries = [
       entry({
         projectId: 'p-1',
         startedAt: new Date(2026, 0, 7, 9, 0, 0),
@@ -148,11 +175,12 @@ describe('DashboardService', () => {
     ];
     const service = new DashboardService(
       makeTimeEntriesRepo(
-        thisWeekEntries,
+        todayEntries,
         yesterdaySameSpanEntries,
         lastWeekSameSpanEntries,
       ),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
@@ -165,7 +193,7 @@ describe('DashboardService', () => {
   });
 
   it("excludes today's still-running entry from projectsToday but includes it in workedTodaySeconds", async () => {
-    const thisWeekEntries = [
+    const todayEntries = [
       entry({
         projectId: 'p-1',
         startedAt: new Date(2026, 0, 7, 9, 0, 0),
@@ -178,8 +206,9 @@ describe('DashboardService', () => {
       }),
     ];
     const service = new DashboardService(
-      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makeTimeEntriesRepo(todayEntries, [], []),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
@@ -193,13 +222,16 @@ describe('DashboardService', () => {
     ]);
   });
 
-  it('reports a projects-worked delta against the same-span last week', async () => {
-    const thisWeekEntries = [
-      entry({
-        projectId: 'p-1',
-        startedAt: new Date(2026, 0, 7, 9, 0, 0),
-        endedAt: new Date(2026, 0, 7, 10, 0, 0),
-      }),
+  it('reports a projects-worked delta against the same-span last week, combining rollup and live projects', async () => {
+    // p-1 already has a completed day earlier this week (rollup); p-2 is
+    // only ever worked today (live) — both must still count once each
+    // toward projectsWorkedThisWeek.
+    const mondayRollup = rollup({
+      projectId: 'p-1',
+      periodStart: new Date(2026, 0, 5),
+      workedSeconds: 3600,
+    });
+    const todayEntries = [
       entry({
         projectId: 'p-2',
         startedAt: new Date(2026, 0, 7, 10, 0, 0),
@@ -214,8 +246,9 @@ describe('DashboardService', () => {
       }),
     ];
     const service = new DashboardService(
-      makeTimeEntriesRepo(thisWeekEntries, [], lastWeekSameSpanEntries),
+      makeTimeEntriesRepo(todayEntries, [], lastWeekSameSpanEntries),
       makePausesRepo(),
+      makeRollupsRepo([mondayRollup]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
@@ -225,7 +258,7 @@ describe('DashboardService', () => {
 
     expect(summary.projectsWorkedThisWeek).toBe(2);
     expect(summary.projectsWorkedDelta).toBe(1);
-    expect(summary.projectsThisWeek.map((p) => p.projectId)).toEqual([
+    expect(summary.projectsThisWeek.map((p) => p.projectId).sort()).toEqual([
       'p-1',
       'p-2',
     ]);
@@ -235,6 +268,7 @@ describe('DashboardService', () => {
     const serviceWithNoSamples = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
@@ -249,6 +283,7 @@ describe('DashboardService', () => {
     const serviceWithSamples = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo(
         [{ activePercentage: 80 }, { activePercentage: 60 }], // this week avg 70
         [{ activePercentage: 50 }], // last week avg 50
@@ -265,6 +300,7 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
       makeOrganisationsService(),
@@ -279,6 +315,7 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
+      makeRollupsRepo([]),
       makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(6),

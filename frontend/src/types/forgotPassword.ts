@@ -2,6 +2,6 @@ export type ForgotPasswordInput = {
   email: string;
 };
 
-export type ForgotPasswordResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string };
+import type { ApiResult } from "./api";
+
+export type ForgotPasswordResult = ApiResult;

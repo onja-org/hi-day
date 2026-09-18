@@ -9,13 +9,21 @@ describe("startTimeEntry", () => {
   it("returns ok with the started entry on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "te-1", projectId: "p-1" }),
+      json: () =>
+        Promise.resolve({
+          entry: { id: "te-1", projectId: "p-1" },
+          message: "Timer started",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await startTimeEntry("org-1", "p-1", "task-1");
 
-    expect(result).toEqual({ ok: true, entry: { id: "te-1", projectId: "p-1" } });
+    expect(result).toEqual({
+      ok: true,
+      entry: { id: "te-1", projectId: "p-1" },
+      message: "Timer started",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/time-entries/start",
       expect.objectContaining({

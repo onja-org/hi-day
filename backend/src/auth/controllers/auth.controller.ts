@@ -160,10 +160,11 @@ export class AuthController {
 
   @Patch('me')
   @UseGuards(JwtAuthGuard)
-  updateProfile(
+  async updateProfile(
     @Body() dto: UpdateProfileDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<UserProfile> {
-    return this.authService.updateProfile(request.userId, dto);
+  ): Promise<{ profile: UserProfile; message: string }> {
+    const profile = await this.authService.updateProfile(request.userId, dto);
+    return { profile, message: 'Profile updated' };
   }
 }

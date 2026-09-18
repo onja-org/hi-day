@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type ProjectColour =
   | "blue"
   | "green"
@@ -69,17 +71,11 @@ export type GetProjectResult =
   | { ok: true; project: ProjectDetail }
   | { ok: false; message: string };
 
-export type CreateProjectResult =
-  | { ok: true; project: Project }
-  | { ok: false; message: string };
+export type CreateProjectResult = ApiResult<{ project: Project }>;
 
-export type UpdateProjectResult =
-  | { ok: true; project: Project }
-  | { ok: false; message: string };
+export type UpdateProjectResult = ApiResult<{ project: Project }>;
 
-export type ArchiveProjectResult =
-  | { ok: true; project: Project }
-  | { ok: false; message: string };
+export type ArchiveProjectResult = ApiResult<{ project: Project }>;
 
 export type AddProjectMemberInput = {
   membershipId: string;
@@ -87,31 +83,21 @@ export type AddProjectMemberInput = {
   role?: ProjectMembershipRole;
 };
 
-export type AddProjectMemberResult =
-  | { ok: true; member: ProjectMember }
-  | { ok: false; message: string };
+export type AddProjectMemberResult = ApiResult<{ member: ProjectMember }>;
 
 export type UpdateProjectMemberInput = {
   role?: ProjectMembershipRole;
   rate?: string;
 };
 
-export type UpdateProjectMemberResult =
-  | { ok: true; member: ProjectMember }
-  | { ok: false; message: string };
+export type UpdateProjectMemberResult = ApiResult<{ member: ProjectMember }>;
 
-export type RemoveProjectMemberResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type RemoveProjectMemberResult = ApiResult;
 
 export type AddProjectTeamInput = {
   teamId: string;
 };
 
-export type AddProjectTeamResult =
-  | { ok: true; team: ProjectTeamMember }
-  | { ok: false; message: string };
+export type AddProjectTeamResult = ApiResult<{ team: ProjectTeamMember }>;
 
-export type RemoveProjectTeamResult =
-  | { ok: true }
-  | { ok: false; message: string };
+export type RemoveProjectTeamResult = ApiResult;

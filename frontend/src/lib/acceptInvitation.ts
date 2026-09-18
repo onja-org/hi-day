@@ -1,7 +1,7 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE } from "./parseApiError";
 import type { AcceptInvitationInput, AcceptInvitationResult } from "@/types/invitation";
 
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 const ACCOUNT_EXISTS_MESSAGE =
   "An account already exists for this email. Log in to accept this invitation.";
 

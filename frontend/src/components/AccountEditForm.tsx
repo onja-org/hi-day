@@ -8,7 +8,6 @@ import { updateMyProfile } from "@/lib/updateMyProfile";
 import type { MyProfile } from "@/types/profile";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 const MAX_AVATAR_FILE_BYTES = 1.5 * 1024 * 1024;
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
@@ -43,8 +42,6 @@ function AvatarEditor({ profile }: { profile: MyProfile }) {
     onSuccess: (result) => {
       if (result.ok) {
         queryClient.setQueryData(MY_PROFILE_QUERY_KEY, result.profile);
-      } else {
-        setAvatarError(result.message);
       }
     },
   });
@@ -189,13 +186,6 @@ export function AccountEditForm() {
       <AvatarEditor profile={profile} />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {updateMutation.data?.ok && (
-          <SuccessMessage message="Your name has been updated." />
-        )}
-        {updateMutation.data && !updateMutation.data.ok && (
-          <ErrorMessage message={updateMutation.data.message} />
-        )}
-
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5 text-slate-900">
             First name

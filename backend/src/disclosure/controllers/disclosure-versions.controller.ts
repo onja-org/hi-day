@@ -43,33 +43,35 @@ export class DisclosureVersionsController {
   }
 
   @Patch('draft')
-  updateDraft(
+  async updateDraft(
     @Query('region') region: string | undefined,
     @Body() dto: UpdateDisclosureDraftDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<DisclosureVersion> {
-    return this.disclosureService.updateDraft(
+  ): Promise<{ draft: DisclosureVersion; message: string }> {
+    const draft = await this.disclosureService.updateDraft(
       request.organisationId!,
       region,
       dto.text,
     );
+    return { draft, message: 'Disclosure draft updated' };
   }
 
   @Post('publish')
   async publish(
     @Query('region') region: string | undefined,
     @Req() request: AuthenticatedRequest,
-  ): Promise<DisclosureVersion> {
+  ): Promise<{ version: DisclosureVersion; message: string }> {
     const membership = await this.disclosureService.resolveActiveMembership(
       request.organisationId!,
       request.userId,
     );
-    return this.disclosureService.publish(
+    const version = await this.disclosureService.publish(
       request.organisationId!,
       region,
       membership.id,
       request.userId,
     );
+    return { version, message: 'Disclosure version published' };
   }
 
   @Get()

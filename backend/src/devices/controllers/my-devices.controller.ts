@@ -15,10 +15,14 @@ export class MyDevicesController {
   }
 
   @Post(':deviceId/sign-out')
-  signOut(
+  async signOut(
     @Param('deviceId') deviceId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<DeviceSummary> {
-    return this.devicesService.signOutOwnDevice(request.userId, deviceId);
+  ): Promise<{ device: DeviceSummary; message: string }> {
+    const device = await this.devicesService.signOutOwnDevice(
+      request.userId,
+      deviceId,
+    );
+    return { device, message: 'Device signed out' };
   }
 }

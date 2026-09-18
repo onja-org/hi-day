@@ -8,7 +8,6 @@ import { resetPassword } from "@/lib/resetPassword";
 import { ErrorMessage } from "./ErrorMessage";
 import { PasswordInput } from "./PasswordInput";
 import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
 
 const REDIRECT_DELAY_MS = 900;
 const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match.";
@@ -52,12 +51,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       onSubmit={handleSubmit}
       className="flex w-full max-w-sm flex-col gap-6"
     >
-      {mutation.data?.ok && <SuccessMessage message={mutation.data.message} />}
       {!mutation.data?.ok && mismatchError && (
         <ErrorMessage message={mismatchError} />
-      )}
-      {mutation.data && !mutation.data.ok && (
-        <ErrorMessage message={mutation.data.message} />
       )}
 
       <label className="flex flex-col gap-1.5">

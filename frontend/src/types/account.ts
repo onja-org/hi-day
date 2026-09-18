@@ -7,6 +7,6 @@ export type CreateAccountInput = {
   website?: string;
 };
 
-export type CreateAccountResult =
-  | { ok: true; message: string }
-  | { ok: false; message: string };
+import type { ApiResult } from "./api";
+
+export type CreateAccountResult = ApiResult;

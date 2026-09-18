@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { TrashIcon } from "@phosphor-icons/react";
 import { deleteNote } from "@/lib/deleteNote";
 import type { Note } from "@/types/note";
-import { ErrorMessage } from "./ErrorMessage";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
 import { Spinner } from "./Spinner";
 
@@ -64,9 +63,6 @@ export function NoteDayList({ organisationId, notes, canDelete }: NoteDayListPro
           )}
         </li>
       ))}
-      {deleteMutation.data && !deleteMutation.data.ok && (
-        <ErrorMessage message={deleteMutation.data.message} />
-      )}
       {deleteMutation.isPending && (
         <li className="flex items-center gap-2 text-sm text-slate-900/70">
           <Spinner /> Deleting…

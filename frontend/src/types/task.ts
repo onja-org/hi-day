@@ -1,3 +1,4 @@
+import type { ApiResult } from "./api";
 import type { ProjectColour, ProjectStatus } from "./project";
 
 export type TaskStatus = "open" | "closed";
@@ -58,18 +59,10 @@ export type GetProjectTasksResult =
   | { ok: true; data: ProjectTasksList }
   | { ok: false; message: string };
 
-export type CreateTaskResult =
-  | { ok: true; task: Task }
-  | { ok: false; message: string };
+export type CreateTaskResult = ApiResult<{ task: Task }>;
 
-export type UpdateTaskResult =
-  | { ok: true; task: Task }
-  | { ok: false; message: string };
+export type UpdateTaskResult = ApiResult<{ task: Task }>;
 
-export type CloseTaskResult =
-  | { ok: true; task: Task }
-  | { ok: false; message: string };
+export type CloseTaskResult = ApiResult<{ task: Task }>;
 
-export type ReopenTaskResult =
-  | { ok: true; task: Task }
-  | { ok: false; message: string };
+export type ReopenTaskResult = ApiResult<{ task: Task }>;

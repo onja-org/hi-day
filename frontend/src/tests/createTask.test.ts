@@ -9,13 +9,21 @@ describe("createTask", () => {
   it("returns ok with the created task on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "t-1", name: "Write copy" }),
+      json: () =>
+        Promise.resolve({
+          task: { id: "t-1", name: "Write copy" },
+          message: "Task created",
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await createTask("org-1", "p-1", { name: "Write copy" });
 
-    expect(result).toEqual({ ok: true, task: { id: "t-1", name: "Write copy" } });
+    expect(result).toEqual({
+      ok: true,
+      task: { id: "t-1", name: "Write copy" },
+      message: "Task created",
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/tasks",
       expect.objectContaining({

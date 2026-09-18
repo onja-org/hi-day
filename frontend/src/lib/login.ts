@@ -1,7 +1,7 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE } from "./parseApiError";
 import type { LoginInput, LoginResult } from "@/types/login";
 
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 const GENERIC_INVALID_LOGIN_MESSAGE = "Invalid email or password.";
 
 export async function login(input: LoginInput): Promise<LoginResult> {
@@ -17,6 +17,10 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { ok: false, message: GENERIC_ERROR_MESSAGE };
   }
 
+  // The failure body carries `captchaRequired` alongside `message` (see
+  // AuthService.login), so this reads both off one parsed body rather than
+  // using the shared `parseApiErrorMessage` — that helper only returns a
+  // message and would require a second, independent read of the same body.
   const data = (await response.json().catch(() => null)) as {
     message?: string[] | string;
     captchaRequired?: boolean;

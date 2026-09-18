@@ -1,3 +1,4 @@
+import type { ApiResult } from "./api";
 import type { MembershipRole } from "./membership";
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
@@ -38,6 +39,6 @@ export type UpdateOrganisationInput = {
   workingHoursPerDay?: number;
 };
 
-export type UpdateOrganisationResult =
-  | { ok: true; organisation: OrganisationProfile }
-  | { ok: false; message: string };
+export type UpdateOrganisationResult = ApiResult<{
+  organisation: OrganisationProfile;
+}>;

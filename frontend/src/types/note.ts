@@ -1,3 +1,5 @@
+import type { ApiResult } from "./api";
+
 export type Note = {
   id: string;
   membershipId: string;
@@ -13,12 +15,10 @@ export type CreateNoteInput = {
   content: string;
 };
 
-export type CreateNoteResult =
-  | { ok: true; note: Note }
-  | { ok: false; message: string };
+export type CreateNoteResult = ApiResult<{ note: Note }>;
 
 export type ListNotesResult =
   | { ok: true; notes: Note[] }
   | { ok: false; message: string };
 
-export type DeleteNoteResult = { ok: true } | { ok: false; message: string };
+export type DeleteNoteResult = ApiResult;

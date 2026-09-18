@@ -19,11 +19,14 @@ describe("updateOrganisation", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            id: 100000,
-            name: "Acme International",
-            address: "2 New St",
-            website: "https://acme.test",
-            role: "admin",
+            organisation: {
+              id: 100000,
+              name: "Acme International",
+              address: "2 New St",
+              website: "https://acme.test",
+              role: "admin",
+            },
+            message: "Organisation updated",
           }),
       }),
     );
@@ -39,6 +42,7 @@ describe("updateOrganisation", () => {
         website: "https://acme.test",
         role: "admin",
       },
+      message: "Organisation updated",
     });
   });
 

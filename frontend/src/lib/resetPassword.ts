@@ -1,10 +1,9 @@
 import { API_URL } from "./apiUrl";
+import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
 import type {
   ResetPasswordInput,
   ResetPasswordResult,
 } from "@/types/resetPassword";
-
-const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function resetPassword(
   input: ResetPasswordInput,
@@ -21,19 +20,9 @@ export async function resetPassword(
     return { ok: false, message: GENERIC_ERROR_MESSAGE };
   }
 
-  const data = (await response.json().catch(() => null)) as {
-    message?: string[] | string;
-  } | null;
-  const message = Array.isArray(data?.message)
-    ? data.message[0]
-    : data?.message;
-
   if (response.ok) {
-    return { ok: true, message: message ?? "Password reset." };
+    const body = await response.json();
+    return { ok: true, ...body };
   }
-
-  return {
-    ok: false,
-    message: message ?? "This link is invalid or has expired.",
-  };
+  return { ok: false, message: await parseApiErrorMessage(response) };
 }

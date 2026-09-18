@@ -7,7 +7,6 @@ import { createProject } from "@/lib/createProject";
 import { updateProject } from "@/lib/updateProject";
 import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
 import type { Project, ProjectColour, ProjectFormInput } from "@/types/project";
-import { ErrorMessage } from "./ErrorMessage";
 import { ProjectColourPicker } from "./ProjectColourPicker";
 import { Spinner } from "./Spinner";
 
@@ -75,12 +74,8 @@ export function ProjectForm({
     });
   }
 
-  const submitError = mutation.data && !mutation.data.ok ? mutation.data.message : null;
-
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      {submitError && <ErrorMessage message={submitError} />}
-
       <label className="flex flex-col gap-1.5">
         Name
         <input

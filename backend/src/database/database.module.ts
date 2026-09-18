@@ -18,6 +18,7 @@ import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { ProjectTeam } from './entities/project-team.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { Rollup } from './entities/rollup.entity';
 import { Screenshot } from './entities/screenshot.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
@@ -61,6 +62,7 @@ import { User } from './entities/user.entity';
           DisclosureVersion,
           ConsentRecord,
           Note,
+          Rollup,
         ],
         synchronize: false,
       }),

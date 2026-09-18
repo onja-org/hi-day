@@ -13,11 +13,14 @@ describe("updateMyProfile", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            email: "jane@acme.test",
-            name: "Jane Smith",
-            firstName: "Jane",
-            lastName: "Smith",
-            avatarUrl: null,
+            profile: {
+              email: "jane@acme.test",
+              name: "Jane Smith",
+              firstName: "Jane",
+              lastName: "Smith",
+              avatarUrl: null,
+            },
+            message: "Profile updated",
           }),
       }),
     );
@@ -36,6 +39,7 @@ describe("updateMyProfile", () => {
         lastName: "Smith",
         avatarUrl: null,
       },
+      message: "Profile updated",
     });
   });
 

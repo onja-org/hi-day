@@ -33,45 +33,48 @@ export class TeamsController {
   @Post()
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN)
-  create(
+  async create(
     @Body() dto: CreateTeamDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TeamSummary> {
-    return this.teamsService.create(
+  ): Promise<{ team: TeamSummary; message: string }> {
+    const team = await this.teamsService.create(
       request.organisationId!,
       request.userId,
       dto,
     );
+    return { team, message: 'Team created' };
   }
 
   @Patch(':teamId')
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN)
-  update(
+  async update(
     @Param('teamId') teamId: string,
     @Body() dto: UpdateTeamDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<TeamSummary> {
-    return this.teamsService.update(
+  ): Promise<{ team: TeamSummary; message: string }> {
+    const team = await this.teamsService.update(
       request.organisationId!,
       teamId,
       request.userId,
       dto,
     );
+    return { team, message: 'Team updated' };
   }
 
   @Delete(':teamId')
   @UseGuards(RoleGuard)
   @RequireRole(MembershipRole.ADMIN)
-  remove(
+  async remove(
     @Param('teamId') teamId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.teamsService.remove(
+  ): Promise<{ message: string }> {
+    await this.teamsService.remove(
       request.organisationId!,
       teamId,
       request.userId,
     );
+    return { message: 'Team deleted' };
   }
 
   // Read-only: an org admin, or anyone holding a team_memberships row on
@@ -90,31 +93,33 @@ export class TeamsController {
   // "member" or "manager" of no other team. See TeamRoleGuard.
   @Post(':teamId/members')
   @UseGuards(TeamRoleGuard)
-  addOrUpdateMember(
+  async addOrUpdateMember(
     @Param('teamId') teamId: string,
     @Body() dto: AddTeamMemberDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.teamsService.addOrUpdateMember(
+  ): Promise<{ message: string }> {
+    await this.teamsService.addOrUpdateMember(
       request.organisationId!,
       teamId,
       request.userId,
       dto,
     );
+    return { message: 'Team member added' };
   }
 
   @Delete(':teamId/members/:membershipId')
   @UseGuards(TeamRoleGuard)
-  removeMember(
+  async removeMember(
     @Param('teamId') teamId: string,
     @Param('membershipId') membershipId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.teamsService.removeMember(
+  ): Promise<{ message: string }> {
+    await this.teamsService.removeMember(
       request.organisationId!,
       teamId,
       membershipId,
       request.userId,
     );
+    return { message: 'Team member removed' };
   }
 }

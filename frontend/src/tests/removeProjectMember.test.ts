@@ -7,12 +7,15 @@ describe("removeProjectMember", () => {
   });
 
   it("returns ok on success", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ message: "Project member removed" }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await removeProjectMember("org-1", "p-1", "m-1");
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, message: "Project member removed" });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/members/m-1",
       expect.objectContaining({ method: "DELETE" }),

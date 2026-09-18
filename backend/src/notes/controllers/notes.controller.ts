@@ -29,15 +29,16 @@ export class NotesController {
   constructor(private readonly notesService: NotesService) {}
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateNoteDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<NoteEntry> {
-    return this.notesService.create(
+  ): Promise<{ note: NoteEntry; message: string }> {
+    const note = await this.notesService.create(
       request.organisationId!,
       request.userId,
       dto,
     );
+    return { note, message: 'Note added' };
   }
 
   @Get('mine')
@@ -53,14 +54,15 @@ export class NotesController {
   }
 
   @Delete(':noteId')
-  delete(
+  async delete(
     @Param('noteId') noteId: string,
     @Req() request: AuthenticatedRequest,
-  ): Promise<void> {
-    return this.notesService.deleteOwn(
+  ): Promise<{ message: string }> {
+    await this.notesService.deleteOwn(
       request.organisationId!,
       request.userId,
       noteId,
     );
+    return { message: 'Note deleted' };
   }
 }
