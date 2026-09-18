@@ -140,6 +140,10 @@ linux:
 
 deb:
   packageName: workforce-monitor
+  # Removes the browser launcher overrides browser-activation.ts wrote. They
+  # live under each user's home and outlive the package, so without this every
+  # browser keeps starting with accessibility forced on after uninstall.
+  afterRemove: build/afterRemove.sh
 
 # No code signing yet — see README.md. Skip publishing/auto-update wiring
 # entirely for this pass.
