@@ -59,8 +59,7 @@ export function UrlSessionDomainAccordion({
                 {page.url}
               </a>
               <span className="text-sm text-slate-900/70">
-                Focused {formatElapsed(page.totalActiveMs)} · last visited{" "}
-                {new Date(page.lastVisitedAt).toLocaleString()}
+                Time Spent {formatElapsed(page.totalActiveMs)}
               </span>
             </div>
             {onDelete && (
