@@ -209,6 +209,13 @@ const screenRecordingGrantButton = document.getElementById(
 const screenRecordingSettingsButton = document.getElementById(
   "screen-recording-settings-button",
 ) as HTMLButtonElement;
+const accessibilityBanner = document.getElementById("accessibility-banner")!;
+const accessibilityBannerMessage = document.getElementById(
+  "accessibility-banner-message",
+)!;
+const accessibilitySettingsButton = document.getElementById(
+  "accessibility-settings-button",
+) as HTMLButtonElement;
 const trackingIndicator = document.getElementById("tracking-indicator")!;
 
 // --- Passive disclosure notice (see docs/adr/0015-...) ------------------
@@ -631,6 +638,14 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
+  // Shown whenever the grant is missing, not just at first run, since the user
+  // can revoke it mid-session. Not gated on Firefox being installed: the app
+  // cannot tell without probing, and a redundant banner beats a silent gap.
+  accessibilityBanner.hidden = !(
+    status.platform === "macos" && !status.accessibilityGranted
+  );
+  accessibilityBannerMessage.textContent = status.accessibilityGuidance;
+
   return status;
 }
 
@@ -658,7 +673,11 @@ screenRecordingGrantButton.addEventListener("click", () => {
 });
 
 screenRecordingSettingsButton.addEventListener("click", () => {
-  void window.api.tracking.openScreenRecordingSettings();
+  void window.api.tracking.openPrivacySettings("screenRecording");
+});
+
+accessibilitySettingsButton.addEventListener("click", () => {
+  void window.api.tracking.openPrivacySettings("accessibility");
 });
 
 /** Returns false when the session turned out to be signed out — callers chaining further tracking setup should stop rather than continue. */

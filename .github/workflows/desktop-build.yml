@@ -31,6 +31,16 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
+      # dist:win now publishes win-resolver.exe before packaging, so this job
+      # needs the SDK too — not just the windows-native job. Pinned to the same
+      # 8.0.x that job uses rather than relying on whichever SDK happens to be
+      # preinstalled on the runner image.
+      - name: Set up .NET
+        if: matrix.os == 'windows-latest'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

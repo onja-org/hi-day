@@ -72,6 +72,9 @@ export interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
+  /** macOS + Firefox only — see main.ts's CapturePermissionStatus. */
+  accessibilityGranted: boolean;
+  accessibilityGuidance: string;
   waylandUnsupported: boolean;
 }
 
@@ -149,8 +152,8 @@ const api = {
       >,
     requestScreenRecordingAccess: (): Promise<void> =>
       ipcRenderer.invoke('tracking:requestScreenRecordingAccess') as Promise<void>,
-    openScreenRecordingSettings: (): Promise<void> =>
-      ipcRenderer.invoke('tracking:openScreenRecordingSettings') as Promise<void>,
+    openPrivacySettings: (pane: 'accessibility' | 'screenRecording'): Promise<void> =>
+      ipcRenderer.invoke('tracking:openPrivacySettings', pane) as Promise<void>,
     indicatorStatus: (): Promise<TrackingIndicatorStatus> =>
       ipcRenderer.invoke('tracking:indicatorStatus') as Promise<TrackingIndicatorStatus>,
   },

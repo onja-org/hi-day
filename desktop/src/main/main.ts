@@ -31,6 +31,8 @@ import { loadActiveWindowModule, WindowSampler } from './window-sampler';
 import { resolveLinuxResolverPath,  resolveDarwinResolverPath,
   resolveWinResolverPath } from './resolvers/resolver-paths';
 import { applyBrowserActivation } from './resolvers/linux/browser-activation';
+import { ACCESSIBILITY_COPY, SETTINGS_DEEP_LINKS } from './resolvers/darwin/permission-copy';
+import type { SettingsPane } from './resolvers/darwin/permission-copy';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
@@ -115,6 +117,19 @@ interface CapturePermissionStatus {
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
   waylandUnsupported: boolean;
+  /**
+   * macOS + Firefox only: the AX helper needs Accessibility, while every other
+   * browser uses Apple Events. Polled rather than read once at launch, since the
+   * user can revoke it mid-session — which used to stop Firefox tracking with
+   * nothing surfaced. `true` elsewhere so no other platform shows the banner.
+   */
+  accessibilityGranted: boolean;
+  /**
+   * Sent rather than duplicated: the renderer cannot import main-process modules
+   * (tsconfig.renderer.json pins rootDir to src/renderer), and permission-copy.ts
+   * is the single source for user-facing wording.
+   */
+  accessibilityGuidance: string;
 }
 
 // Otherwise userData resolves from package.json's "name" ("desktop"),
@@ -636,6 +651,13 @@ async function registerIpcHandlers(): Promise<void> {
                 ? (session.waylandScreenshotGranted ?? false)
                 : true,
           waylandUnsupported: isWaylandSession(),
+          // Non-prompting, like the check above: `false` means "tell me", never
+          // "ask the user".
+          accessibilityGranted:
+            platform === 'macos'
+              ? systemPreferences.isTrustedAccessibilityClient(false)
+              : true,
+          accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
         },
       };
     },
@@ -705,13 +727,15 @@ async function registerIpcHandlers(): Promise<void> {
   // Fallback for when macOS won't re-show the native prompt (already
   // asked/denied before) — opens the Screen Recording pane directly so the
   // person can grant it themselves.
+  // One handler for every privacy pane. Accessibility has no native prompt the
+  // way Automation does, so opening System Settings is all the app can offer —
+  // and the screen-recording banner needs the same thing, differing only in
+  // which pane. Links come from permission-copy.ts rather than being repeated.
   ipcMain.handle(
-    'tracking:openScreenRecordingSettings',
-    async (): Promise<void> => {
+    'tracking:openPrivacySettings',
+    async (_event, pane: SettingsPane): Promise<void> => {
       if (process.platform === 'darwin') {
-        await shell.openExternal(
-          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
-        );
+        await shell.openExternal(SETTINGS_DEEP_LINKS[pane]);
       }
     },
   );
