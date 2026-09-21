@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { ACTIVE_MEMBERS_QUERY_KEY } from "@/hooks/useActiveMembers";
 import { updateMembership } from "@/lib/updateMembership";
 import type { ActiveMember, MembershipRole } from "@/types/membership";
@@ -121,12 +120,6 @@ export function MemberRow({
       </td>
       <td className="px-3 py-2">
         <div className="flex items-center justify-end gap-2">
-          <Link
-            href={`/organisations/${organisationId}/members/${member.id}`}
-            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10"
-          >
-            View
-          </Link>
           {canModify && (
             <button
               type="button"
