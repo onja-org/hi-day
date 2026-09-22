@@ -20,6 +20,102 @@ const TEXT_IFACE = 'org.a11y.atspi.Text';
 const PROPERTIES_IFACE = 'org.freedesktop.DBus.Properties';
 const WINDOW_EVENT_IFACE = 'org.a11y.atspi.Event.Window';
 const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
+const WINDOW_ACTIVATE_EVENT = 'window:activate';
+
+/**
+ * Fallback signatures, newest first, for a registry that will not
+ * introspect: at-spi2 2.46+ then 2.44-and-earlier.
+ */
+export const KNOWN_REGISTER_EVENT_SIGNATURES = ['sass', 's'];
+
+/** D-Bus integer and floating-point type codes. */
+const NUMERIC_TYPE_CODES = new Set(['y', 'n', 'q', 'i', 'u', 'x', 't', 'd']);
+
+/**
+ * Splits a D-Bus signature into its top-level argument types, so `"sass"`
+ * becomes `['s', 'as', 's']`. Array prefixes bind to the type that follows
+ * and structs/dicts nest, both of which a plain character split gets wrong.
+ */
+export function splitSignature(signature: string): string[] {
+  const types: string[] = [];
+  let index = 0;
+
+  while (index < signature.length) {
+    const start = index;
+    while (signature[index] === 'a') index += 1;
+
+    const opener = signature[index];
+    if (opener === '(' || opener === '{') {
+      const closer = opener === '(' ? ')' : '}';
+      let depth = 0;
+      do {
+        if (signature[index] === opener) depth += 1;
+        else if (signature[index] === closer) depth -= 1;
+        index += 1;
+      } while (index < signature.length && depth > 0);
+    } else {
+      index += 1;
+    }
+
+    types.push(signature.slice(start, index));
+  }
+
+  return types;
+}
+
+/**
+ * Builds a plausible argument list for a `RegisterEvent` of the given
+ * signature: the first string is the event name, any later string is the
+ * optional bus-name filter (empty means "any application"), and arrays are
+ * the empty property list. Returns null for a signature carrying a type we
+ * cannot invent a value for, so the caller skips it rather than sending
+ * something the registry will reject.
+ */
+export function argumentsForSignature(signature: string, event: string): unknown[] | null {
+  let eventPlaced = false;
+  const args: unknown[] = [];
+
+  for (const type of splitSignature(signature)) {
+    if (type === 's') {
+      args.push(eventPlaced ? '' : event);
+      eventPlaced = true;
+    } else if (type.startsWith('a')) {
+      args.push([]);
+    } else if (type === 'b') {
+      args.push(false);
+    } else if (NUMERIC_TYPE_CODES.has(type)) {
+      args.push(0);
+    } else {
+      return null;
+    }
+  }
+
+  return eventPlaced ? args : null;
+}
+
+/**
+ * Reads `RegisterEvent`'s input signature out of an introspection
+ * document. The spec defaults a method argument's direction to `in`, so an
+ * `<arg>` with no direction counts.
+ */
+export function registerEventSignatureFromXml(xml: string): string | null {
+  const method = /<method\s+name="RegisterEvent"\s*>([\s\S]*?)<\/method>/.exec(xml);
+  if (!method) return null;
+
+  const signature = [...method[1].matchAll(/<arg\b[^>]*>/g)]
+    .filter((tag) => !/direction="out"/.test(tag[0]))
+    .map((tag) => /type="([^"]+)"/.exec(tag[0])?.[1] ?? '')
+    .join('');
+
+  return signature.length > 0 ? signature : null;
+}
+
+/**
+ * Raised when the registry accepted a registration it did not record. Named
+ * so the side-car can report it as its own condition rather than as a
+ * missing accessibility bus — the bus is fine; we are simply not on it.
+ */
+export class EventRegistrationError extends Error {}
 
 /**
  * Chrome, Brave, Edge and Firefox put the address bar around depth 4;
@@ -110,12 +206,8 @@ export class AtspiClient {
     this.bus = bus;
 
     // AddMatch alone receives nothing — AT-SPI only emits to registered
-    // clients. The empty third argument is required by this interface.
-    await callOn(bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'RegisterEvent', 'sass', [
-      'window:activate',
-      [],
-      '',
-    ]);
+    // clients.
+    await this.registerWindowActivate(bus);
 
     await bus.call(
       new dbus.Message({
@@ -134,6 +226,89 @@ export class AtspiClient {
       if (!message.sender || !message.path) return;
       void this.handleActivate(message.sender, message.path);
     });
+  }
+
+  /**
+   * Registers for `window:activate` against whatever signature this
+   * registry actually exposes, rather than a signature we assume.
+   *
+   * at-spi2 changed this method's arity: 2.46+ takes
+   * `(event, properties, app_bus_name)`, 2.44 and earlier take `(event)`.
+   * Ubuntu 24.04 ships 2.52 (three arguments), Ubuntu 22.04 and Pop!_OS
+   * 22.04 ship 2.44 (one), Ubuntu 20.04 ships 2.36 (one). Sending the
+   * three-argument form to an older registry does not raise — it accepts
+   * the message and records nothing, so the resolver went on reporting
+   * `caps=focus,url` while never receiving a focus event.
+   *
+   * Introspecting first means a future release that changes the arity
+   * again is handled without another patch, and the known signatures below
+   * are only a fallback for a registry that will not introspect. Every
+   * attempt is verified against `GetRegisteredEvents`, because "the call
+   * returned" has already proved not to mean "we are registered".
+   */
+  private async registerWindowActivate(bus: dbus.MessageBus): Promise<void> {
+    const introspected = await this.registerEventSignature(bus);
+    const candidates = [introspected, ...KNOWN_REGISTER_EVENT_SIGNATURES].filter(
+      (signature, index, all): signature is string =>
+        signature !== null && all.indexOf(signature) === index,
+    );
+
+    for (const signature of candidates) {
+      const body = argumentsForSignature(signature, WINDOW_ACTIVATE_EVENT);
+      if (!body) continue; // a signature we cannot construct arguments for
+
+      try {
+        await callOn(
+          bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'RegisterEvent', signature, body,
+        );
+      } catch {
+        continue; // wrong arity for this registry — try the next
+      }
+
+      if (await this.hasWindowActivateRegistration(bus)) return;
+      this.logger(`[atspi] RegisterEvent(${signature}) was accepted but registered nothing`);
+    }
+
+    throw new EventRegistrationError(
+      `The accessibility registry did not record a window:activate listener (tried: ${candidates.join(', ')}), ` +
+        'so no focus events would ever arrive.',
+    );
+  }
+
+  /** The registry's own `RegisterEvent` input signature, or null if it will not say. */
+  private async registerEventSignature(bus: dbus.MessageBus): Promise<string | null> {
+    try {
+      const [xml] = await callOn<[string]>(
+        bus, REGISTRY_NAME, REGISTRY_PATH, 'org.freedesktop.DBus.Introspectable', 'Introspect',
+      );
+      return registerEventSignatureFromXml(xml);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Whether this connection appears in the registry's own list of event
+   * listeners — the only way to tell a registration that took effect from
+   * one that was silently dropped. A registry too old to expose
+   * `GetRegisteredEvents` is given the benefit of the doubt.
+   */
+  private async hasWindowActivateRegistration(bus: dbus.MessageBus): Promise<boolean> {
+    let events: [string, string][];
+    try {
+      [events] = await callOn<[[string, string][]]>(
+        bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'GetRegisteredEvents',
+      );
+    } catch {
+      return true;
+    }
+    // dbus-next sets the connection's unique name on the bus but omits it
+    // from its type definitions.
+    const uniqueName = (bus as unknown as { name: string | null }).name;
+    return events.some(
+      ([listener, event]) =>
+        listener === uniqueName && event.toLowerCase().startsWith('window:activate'),
+    );
   }
 
   private async handleActivate(sender: string, path: string): Promise<void> {
