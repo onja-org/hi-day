@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ADDRESS_BAR_ROLES, MAX_SEARCH_DEPTH, hasReadableAddressBarText } from '../atspi';
-import { hwndFromPath, normalizeAppName } from '../index';
+import { hwndFromPath, normalizeAppName, pidFromBusName } from '../index';
 import { evaluateSupport, readSessionEnvironment } from '../support-gate';
 
 describe('evaluateSupport — Step 20 support matrix', () => {
@@ -107,6 +107,38 @@ describe('hwndFromPath', () => {
 
   it('falls back to 0 for a path with no trailing id rather than producing NaN', () => {
     expect(hwndFromPath('/org/a11y/atspi/accessible/root')).toBe(0);
+  });
+});
+
+describe('pidFromBusName — keeping one browser apart from the next', () => {
+  it("uses the bus name's connection id", () => {
+    expect(pidFromBusName(':1.43')).toBe(43);
+    expect(pidFromBusName(':1.143')).toBe(143);
+  });
+
+  it('falls back to 0 for an unparseable name rather than producing NaN', () => {
+    expect(pidFromBusName('org.a11y.atspi.Registry')).toBe(0);
+  });
+
+  /**
+   * The regression this function exists for: every browser numbers its own
+   * windows from 1, so the session engine's `(pid, hwnd)` identity used to
+   * collide across applications and only the first browser focused was
+   * tracked.
+   */
+  it('separates the first window of two browsers that share an hwnd', () => {
+    const chrome = { bus: ':1.20', path: '/org/a11y/atspi/accessible/1' };
+    const brave = { bus: ':1.43', path: '/org/a11y/atspi/accessible/1' };
+
+    expect(hwndFromPath(chrome.path)).toBe(hwndFromPath(brave.path));
+    expect(pidFromBusName(chrome.bus)).not.toBe(pidFromBusName(brave.bus));
+  });
+
+  it('keeps two windows of the same browser under one application id', () => {
+    expect(pidFromBusName(':1.20')).toBe(pidFromBusName(':1.20'));
+    expect(hwndFromPath('/org/a11y/atspi/accessible/1')).not.toBe(
+      hwndFromPath('/org/a11y/atspi/accessible/2'),
+    );
   });
 });
 

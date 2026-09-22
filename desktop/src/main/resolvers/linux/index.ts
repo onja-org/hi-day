@@ -33,13 +33,33 @@ export function normalizeAppName(appName: string): string {
 
 /**
  * Derives the protocol's `hwnd` from an AT-SPI object path, whose trailing
- * segment is already a stable per-window integer
- * (`/org/a11y/atspi/accessible/5310`). Linux has no real window handle to
- * report, and the session engine only needs a value that stays consistent
- * for as long as the window does.
+ * segment is a per-window integer (`/org/a11y/atspi/accessible/5310`).
+ *
+ * Unique only *within* one application: every browser numbers its own
+ * windows from 1, so this alone is not a window identity. See
+ * `pidFromBusName`, which supplies the rest of it.
  */
 export function hwndFromPath(path: string): number {
   const match = /(\d+)$/.exec(path);
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Derives the protocol's `pid` from the application's unique D-Bus name
+ * (`:1.43`). Linux has no real window handle to report, so the session
+ * engine's window identity — the `(pid, hwnd)` pair — has to be built from
+ * what AT-SPI does expose.
+ *
+ * Reporting a constant pid made that pair collide: Chrome, Brave, Edge,
+ * Opera and Vivaldi each call their first window `/accessible/1`, so five
+ * browsers shared one identity and the engine saw switching between them as
+ * staying put. Only whichever was focused first was ever tracked.
+ *
+ * The bus name is the connection's unique id, stable for as long as the
+ * application runs, which is exactly what `pid` needs to convey here.
+ */
+export function pidFromBusName(bus: string): number {
+  const match = /(\d+)$/.exec(bus);
   return match ? Number(match[1]) : 0;
 }
 
@@ -70,7 +90,7 @@ async function main(): Promise<void> {
       lastFocus = window;
       const focus: FocusEvent = {
         ev: 'focus',
-        pid: 0,
+        pid: pidFromBusName(window.bus),
         hwnd: hwndFromPath(window.path),
         app: window.appName,
         title: window.title,
