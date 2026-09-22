@@ -2,6 +2,7 @@
 
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { formatElapsed } from "@/lib/formatElapsed";
+import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectColourBadge } from "./ProjectColourBadge";
 import { Spinner } from "./Spinner";
@@ -13,14 +14,11 @@ type RecentTimesheetWidgetProps = {
 };
 
 function formatTimeRange(startedAt: string, endedAt: string | null): string {
-  const start = new Date(startedAt).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const start = formatTimeOfDay(new Date(startedAt));
   if (!endedAt) {
     return `${start} → now`;
   }
-  const end = new Date(endedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const end = formatTimeOfDay(new Date(endedAt));
   return `${start} → ${end}`;
 }
 

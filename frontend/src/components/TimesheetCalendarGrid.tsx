@@ -1,10 +1,22 @@
 "use client";
 
-import { buildCalendarBlocks } from "@/lib/buildCalendarBlocks";
+import { format, getDay, setDefaultOptions, startOfWeek } from "date-fns";
+import { useMemo } from "react";
+import {
+  Calendar,
+  dateFnsLocalizer,
+  type EventProps,
+  type Formats,
+} from "react-big-calendar";
+import {
+  buildCalendarEvents,
+  type CalendarEvent,
+} from "@/lib/buildCalendarEvents";
+import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import {
-  PROJECT_COLOUR_TEXT_CLASSES,
-  PROJECT_COLOUR_TEXT_MUTED_CLASSES,
+  PROJECT_COLOUR_BG_CLASSES,
+  PROJECT_COLOUR_BG_MUTED_CLASSES,
 } from "./ProjectColourBadge";
 
 type TimesheetCalendarGridProps = {
@@ -13,137 +25,72 @@ type TimesheetCalendarGridProps = {
   now: Date;
 };
 
-// 8 equal grid columns (1 hour-label gutter + 7 days) — a deliberate
-// simplification so the non-scrolling HTML header row and the scrolling
-// SVG's internal column math always agree without arbitrary Tailwind values.
-const COLUMNS = 8;
-const PX_PER_HOUR = 48;
-const HOURS_IN_DAY = 24;
-const GRID_HEIGHT = PX_PER_HOUR * HOURS_IN_DAY;
-const GRID_WIDTH = 960;
-const COLUMN_WIDTH = GRID_WIDTH / COLUMNS;
-const DAY_COLUMN_INSET = 4;
+setDefaultOptions({ weekStartsOn: 1 });
 
-function daysBetween(from: Date, to: Date): number {
-  const fromUtc = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const toUtc = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((toUtc - fromUtc) / 86_400_000);
-}
+const GRID_START_TIME = new Date(1970, 0, 1, 6, 0, 0);
 
-/** A week's tracked time positioned by exact time-of-day, one column per
- * day — Hubstaff's Calendar tab reimagined with a fixed-pixel-per-hour SVG
- * (so a short block never gets squashed) inside a scrolling viewport, hour
- * labels drawn inside that same SVG so they never drift out of sync with
- * the gridlines they label. */
-export function TimesheetCalendarGrid({ entries, start, now }: TimesheetCalendarGridProps) {
-  const blocks = buildCalendarBlocks(entries, start, now);
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(date.getDate() + index);
-    return date;
-  });
-  const todayIndex = daysBetween(start, now);
-  const nowY = (now.getHours() * 60 + now.getMinutes()) * (PX_PER_HOUR / 60);
+const localizer = dateFnsLocalizer({
+  format,
+  getDay,
+  startOfWeek,
+  locales: {},
+});
+
+const formats: Formats = {
+  timeGutterFormat: (date) => formatTimeOfDay(date),
+  dayFormat: (date) =>
+    date.toLocaleDateString([], { weekday: "short", day: "numeric" }),
+  eventTimeRangeFormat: () => "",
+};
+
+function CalendarEventContent({ event }: EventProps<CalendarEvent>) {
+  if (event.kind === "paused") return null;
+
+  const timeLabel = `${formatTimeOfDay(event.start)} - ${formatTimeOfDay(event.end)}`;
+  const projectLabel = event.taskName
+    ? `${event.taskName} - ${event.projectName}`
+    : event.projectName;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-input-border">
-      {/* Fixed intrinsic width (the `--width-calendar-grid` theme token,
-          960px, matching the SVG's own viewBox) instead of stretching to
-          fill the container — non-uniform scaling would distort hour-label
-          text and thin gridlines on a narrow viewport. This wrapper scrolls
-          horizontally there instead, the same pattern TimesheetTable
-          already uses for its own overflow-x-auto table. grid-cols-8
-          divides this fixed width into 8 equal columns, matching the SVG's
-          own 8-way viewBox division, so the header and the grid's day
-          columns always pixel-align. */}
-      <div className="w-calendar-grid">
-        <div className="grid grid-cols-8 border-b border-input-border">
-          <div />
-          {days.map((day) => (
-            <div
-              key={day.toISOString()}
-              className="px-2 py-2 text-center text-xs font-medium text-slate-900"
-            >
-              {day.toLocaleDateString([], { weekday: "short", day: "numeric" })}
-            </div>
-          ))}
-        </div>
-        <div className="max-h-96 overflow-y-auto">
-          <svg
-            width={GRID_WIDTH}
-            height={GRID_HEIGHT}
-            viewBox={`0 0 ${GRID_WIDTH} ${GRID_HEIGHT}`}
-            role="img"
-            aria-label="Time-of-day breakdown for the week"
-          >
-            {Array.from({ length: HOURS_IN_DAY }, (_, hour) => (
-              <g key={hour}>
-                <line
-                  x1={0}
-                  x2={GRID_WIDTH}
-                  y1={hour * PX_PER_HOUR}
-                  y2={hour * PX_PER_HOUR}
-                  stroke="currentColor"
-                  className="text-input-border"
-                />
-                <text
-                  x={COLUMN_WIDTH - 6}
-                  y={hour * PX_PER_HOUR + 12}
-                  textAnchor="end"
-                  fill="currentColor"
-                  className="text-xs text-slate-900/60"
-                >
-                  {hour === 0
-                    ? ""
-                    : `${hour % 12 === 0 ? 12 : hour % 12} ${hour < 12 ? "am" : "pm"}`}
-                </text>
-              </g>
-            ))}
-            {days.map((_, dayIndex) => (
-              <line
-                key={dayIndex}
-                x1={COLUMN_WIDTH * (dayIndex + 1)}
-                x2={COLUMN_WIDTH * (dayIndex + 1)}
-                y1={0}
-                y2={GRID_HEIGHT}
-                stroke="currentColor"
-                className="text-input-border"
-              />
-            ))}
-            {blocks.map((block, index) => (
-              <rect
-                key={index}
-                x={COLUMN_WIDTH * (block.dayIndex + 1) + DAY_COLUMN_INSET}
-                y={block.startMinute * (PX_PER_HOUR / 60)}
-                width={COLUMN_WIDTH - DAY_COLUMN_INSET * 2}
-                height={Math.max(
-                  (block.endMinute - block.startMinute) * (PX_PER_HOUR / 60),
-                  3,
-                )}
-                rx={3}
-                fill="currentColor"
-                className={
-                  block.kind === "work"
-                    ? PROJECT_COLOUR_TEXT_CLASSES[block.projectColour]
-                    : PROJECT_COLOUR_TEXT_MUTED_CLASSES[block.projectColour]
-                }
-              />
-            ))}
-            {todayIndex >= 0 && todayIndex <= 6 && (
-              <line
-                x1={COLUMN_WIDTH * (todayIndex + 1)}
-                x2={COLUMN_WIDTH * (todayIndex + 2)}
-                y1={nowY}
-                y2={nowY}
-                stroke="currentColor"
-                strokeWidth={2}
-                className="text-error"
-              />
-            )}
-          </svg>
-        </div>
-      </div>
+    <div className="flex h-full flex-col gap-y-1 overflow-hidden text-white">
+      <span className="text-xs leading-tight font-medium">{timeLabel}</span>
+      <span className="capitalize text-xs leading-tight">{projectLabel}</span>
     </div>
   );
 }
 
+export function TimesheetCalendarGrid({
+  entries,
+  start,
+  now,
+}: TimesheetCalendarGridProps) {
+  const events = useMemo(
+    () => buildCalendarEvents(entries, now),
+    [entries, now],
+  );
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-input-border">
+      <div className="h-calendar-grid">
+        <Calendar
+          localizer={localizer}
+          events={events}
+          date={start}
+          getNow={() => now}
+          min={GRID_START_TIME}
+          view="week"
+          views={["week"]}
+          toolbar={false}
+          formats={formats}
+          components={{ event: CalendarEventContent }}
+          eventPropGetter={(event: CalendarEvent) => ({
+            className:
+              event.kind === "work"
+                ? PROJECT_COLOUR_BG_CLASSES[event.projectColour]
+                : PROJECT_COLOUR_BG_MUTED_CLASSES[event.projectColour],
+          })}
+        />
+      </div>
+    </div>
+  );
+}

@@ -82,6 +82,10 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
 }
 import type { UpdateCheckResult } from './update-checker';
 import { RELEASES_PAGE_URL, checkForUpdate } from './update-checker';
+import { syncAutoLaunch } from './auto-launch';
+import type { AutoUpdateState } from './auto-updater';
+import { getAutoUpdateState, restartToApplyUpdate, startAutoUpdater } from './auto-updater';
+import { loadRelaunchHistory, recordRelaunch, shouldRelaunch } from './crash-recovery';
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -152,6 +156,40 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
 let pauseRunningTimer: (() => Promise<void>) | null = null;
 /** Guards the async pause during before-quit, which must not re-enter. */
 let quitPauseComplete = false;
+
+/**
+ * Catches whatever would otherwise crash the whole process silently and
+ * relaunches into a fresh one instead of leaving the person with a
+ * vanished app and no idea why. Safe by construction: everything this app
+ * cares about surviving a crash (the session, the running timer, the
+ * offline queue) already lives on disk or on the server, not in memory —
+ * see AuthStore, OfflineQueueStore, and the pause-before-quit flow below —
+ * so a relaunch picks all of it back up the same way a normal restart
+ * does. `shouldRelaunch` guards against looping forever if the crash
+ * itself happens on every single startup (a bad build, a corrupt local
+ * file) rather than being a one-off.
+ */
+function handleFatalError(kind: string, error: unknown): void {
+  console.error(`[fatal] unhandled ${kind}:`, error);
+
+  const userDataDir = app.getPath('userData');
+  const now = Date.now();
+  if (!shouldRelaunch(loadRelaunchHistory(userDataDir), now)) {
+    console.error('[fatal] too many relaunches in the last minute — not retrying again.');
+    app.exit(1);
+    return;
+  }
+  recordRelaunch(userDataDir, now);
+
+  // Best-effort — there's no time left to await a network round-trip on the
+  // way down, same reasoning as the suspend/shutdown handlers further down.
+  void pauseRunningTimer?.().catch(() => {});
+  app.relaunch();
+  app.exit(1);
+}
+
+process.on('uncaughtException', (error) => handleFatalError('exception', error));
+process.on('unhandledRejection', (reason) => handleFatalError('rejection', reason));
 
 // Well under the backend's DEVICE_HEARTBEAT_WINDOW_MINUTES (5 min default —
 // see backend/src/devices/device-status.ts) so a normal 60s scheduling
@@ -744,10 +782,12 @@ async function registerIpcHandlers(): Promise<void> {
     startHeartbeat(apiClient, existingSession.deviceToken);
     startSync();
   }
-  // No auto-download/install — this app isn't code-signed yet, and
-  // electron-updater's silent update flow requires a valid signature on
-  // macOS to work at all. So this just checks GitHub and lets the person
-  // open the releases page themselves when there's something newer.
+  // Manual fallback: on a platform startAutoUpdater can't silently update
+  // (macOS is unsigned — see auto-updater.ts) this just checks GitHub and
+  // lets the person open the releases page themselves when there's
+  // something newer. Also covers a transient auto-update failure on
+  // win/linux, since the renderer falls back to this whenever
+  // update:autoStatus isn't reporting an active download.
   ipcMain.handle(
     'update:status',
     (): Promise<UpdateCheckResult> => checkForUpdate(app.getVersion()),
@@ -755,6 +795,12 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle('update:openReleasesPage', async (): Promise<void> => {
     await shell.openExternal(RELEASES_PAGE_URL);
+  });
+
+  ipcMain.handle('update:autoStatus', (): AutoUpdateState => getAutoUpdateState());
+
+  ipcMain.handle('update:restart', (): void => {
+    restartToApplyUpdate();
   });
 }
 
@@ -799,8 +845,10 @@ if (!gotSingleInstanceLock) {
 
   void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
+    syncAutoLaunch();
     await registerIpcHandlers();
     createWindow();
+    startAutoUpdater((line) => console.log(line));
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -813,6 +861,28 @@ if (!gotSingleInstanceLock) {
     if (process.platform !== 'darwin') {
       app.quit();
     }
+  });
+
+  // A renderer crash (OOM, a GPU crash, a native module segfaulting inside
+  // it) kills the window but never touches this process's own state — the
+  // offline queue, url-capture, and the capture-settings/timer-status gates
+  // all keep running in the main process throughout. Recreating the window
+  // is enough to recover visibly; nothing here needs replaying. Excludes
+  // 'clean-exit', which covers an intentional close (e.g. window.destroy()
+  // during before-quit), not a crash.
+  app.on('render-process-gone', (_event, _webContents, details) => {
+    console.error(`[renderer] gone: ${details.reason} (exit code ${details.exitCode})`);
+    if (details.reason === 'clean-exit') return;
+    mainWindow?.destroy();
+    mainWindow = null;
+    createWindow();
+  });
+
+  // GPU/utility process crashes — Electron already recovers the GPU process
+  // on its own; this is here purely so a crash there shows up in the logs
+  // instead of vanishing silently.
+  app.on('child-process-gone', (_event, details) => {
+    console.error(`[child-process] gone: ${details.type} ${details.reason}`);
   });
 
   // Quitting must PAUSE the running timer, never stop or discard it — the

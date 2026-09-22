@@ -47,6 +47,19 @@ export const PROJECT_COLOUR_TEXT_MUTED_CLASSES: Record<ProjectColour, string> = 
   gray: "text-project-gray/30",
 };
 
+// Same muted-opacity reasoning as the text map above, for solid backgrounds
+// (e.g. a paused span's calendar event block).
+export const PROJECT_COLOUR_BG_MUTED_CLASSES: Record<ProjectColour, string> = {
+  blue: "bg-project-blue/30",
+  green: "bg-project-green/30",
+  amber: "bg-project-amber/30",
+  red: "bg-project-red/30",
+  purple: "bg-project-purple/30",
+  teal: "bg-project-teal/30",
+  pink: "bg-project-pink/30",
+  gray: "bg-project-gray/30",
+};
+
 export function ProjectColourBadge({ colour, className }: ProjectColourBadgeProps) {
   return (
     <span

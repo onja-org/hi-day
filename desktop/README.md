@@ -12,6 +12,19 @@ follows being clocked in, not merely being logged in. **Activity level
 isn't built yet.** That's deliberate scope for this pass; see
 `docs/TECH_DESIGN.md` for where the rest of activity capture is headed.
 
+A packaged build is meant to stay running with no babysitting: it starts
+itself at login on every platform (`src/main/auto-launch.ts` — native
+`app.setLoginItemSettings` on Windows/macOS, an XDG Autostart `.desktop`
+entry on Linux via `src/main/linux-autostart.ts`), updates itself silently
+on Windows/Linux-AppImage (`src/main/auto-updater.ts`, see the **Known
+limitations** note on why macOS can't yet), and relaunches on its own if
+the main process crashes, or just recreates its window if only the
+renderer does (`src/main/crash-recovery.ts`) — either way the running timer
+and any queued-but-unsent capture data survive, since neither ever lived
+only in memory. See **Known limitations** below for the real edges of the
+update/crash-recovery pieces (macOS auto-update, and native-segfault
+recovery).
+
 Window tracking, screenshots, and activity sampling are never blocked on
 consent (see `docs/adr/0015-...`, which supersedes the earlier hard-gate
 design in `docs/adr/0014-...`): capture starts as soon as its org setting
@@ -192,6 +205,11 @@ using a UUID generated on first run and persisted under Electron's
     and a dismiss (**×**). Revert the version change afterward — this
     isn't a real version bump, just a way to trigger the "outdated" case
     locally, since your real dev build is normally the newest thing around.
+    This only exercises the manual GitHub-check fallback (`update-checker.ts`)
+    — `startAutoUpdater` (`src/main/auto-updater.ts`) no-ops entirely under
+    `electron .` (`!app.isPackaged`), so the silent win/linux download path
+    below can only be tested from a real packaged build against a real newer
+    release, not from `pnpm dev`.
 
 10. **Test screenshot capture**: toggle **Enable screenshots** in the web
     console's org settings (same form as step 8's window-tracking toggle),
@@ -233,6 +251,28 @@ using a UUID generated on first run and persisted under Electron's
     (capture keeps running uninterrupted the whole time). The **Tracking
     is on** banner reflects only the capture setting and timer state now,
     independent of the disclosure banner.
+
+13. **Test auto-launch at login**: install a packaged build (`dist:linux`/
+    `dist:win`/`dist:mac`, or a real installer on Windows/macOS — see
+    **Building installers** below) and launch it once. On Windows, check
+    Task Manager's **Startup apps** tab; on macOS, **System Settings →
+    General → Login Items** — "Workforce Monitor" should show up enabled in
+    either, without you having flipped anything by hand. On Linux, instead
+    check that `~/.config/autostart/org.onja.workforce-monitor.desktop`
+    exists and `Exec=` points at a real, runnable path (the mounted
+    AppImage's own file if you ran the `.AppImage` directly, or
+    `/opt/workforce-monitor/workforce-monitor` for a `.deb` install) — log
+    out and back in (or reboot) to confirm the app actually launches on its
+    own. `pnpm dev` never touches any of this (`app.isPackaged` guards it).
+
+14. **Test the renderer-crash recovery**: with the app running
+    (`pnpm --filter desktop dev`), open DevTools (renderer) and run
+    `process.crash()` in its console. The window should disappear and a
+    fresh one reopen within a second or two, back on whatever screen
+    (logged-in/login) you were on — check the terminal for a `[renderer]
+    gone: crashed` log line. A running timer should still show as running
+    once the new window loads (it was never touched — only the window
+    itself died, not the main process).
 
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
@@ -336,13 +376,54 @@ output — not just assumed from source-mode success):
   yet, so macOS Gatekeeper and Windows SmartScreen will both warn on
   install. Signing is deferred, matching the earlier device-management
   ticket's scope-down — see `docs/TECH_DESIGN.md` §5 for the eventual plan.
-- **No silent auto-update.** The app checks GitHub on launch
-  (`src/main/update-checker.ts`) and shows a banner with a link to the
-  releases page when a newer `desktop-v*` tag exists, but doesn't download
-  or install anything itself — every update is still a manual reinstall.
-  A full `electron-updater` silent-download flow needs code signing first
-  (it requires a valid signature to work at all on macOS), which isn't
-  set up yet — see the **Unsigned** note above.
+- **Silent auto-update on Windows and Linux only.** `src/main/auto-updater.ts`
+  wraps `electron-updater`, checking the same public releases repo every 4h
+  (and once at launch) and silently downloading a newer release when found;
+  the banner switches to "Restart now" once it's ready, or installs on the
+  next normal quit either way (`autoInstallOnAppQuit`). **macOS still can't
+  self-update** — Squirrel.Mac refuses to apply an update to an unsigned
+  app, so mac keeps the older manual flow (`src/main/update-checker.ts`,
+  checks GitHub and links to the releases page) until code signing lands —
+  see the **Unsigned** note above. On Linux this also only works when
+  actually running the **AppImage** build; a `.deb` install has no
+  self-update path and falls back to the same manual banner. Safety is
+  electron-updater's own: a downloaded update is verified against the
+  release's published sha512 before it's ever applied, so a corrupt or
+  tampered download is discarded rather than installed — there's no
+  automatic *rollback* of a release that passed that check but turns out to
+  be broken behaviorally, though; that's a "cut a new release" problem, not
+  something the client can undo on its own. Unverified against a real
+  Windows/macOS CI run — only exercised locally on Linux so far.
+- **Auto-launch at login now covers all three platforms, via two different
+  mechanisms.** `src/main/auto-launch.ts` uses `app.setLoginItemSettings`
+  on Windows/macOS (Electron's own API, native to both). Electron has no
+  equivalent on Linux, so `src/main/linux-autostart.ts` writes an XDG
+  Autostart `.desktop` entry into `~/.config/autostart/` instead — the
+  freedesktop-standard mechanism every mainstream desktop environment
+  (GNOME, KDE, XFCE, Cinnamon, …) already honors, no root required. Written
+  fresh on every launch of a packaged build (not just the first), which
+  matters for an AppImage specifically: it re-resolves `$APPIMAGE` each
+  time, so a stale entry from before a self-update can't point at a mount
+  that no longer exists. Never runs under `electron .` (dev), which would
+  otherwise register the dev binary itself as a login item. Removal
+  (`disableLinuxAutostart`) exists and is tested but isn't wired to an
+  uninstall hook yet — same as `removeBrowserActivation` in
+  `resolvers/linux/browser-activation.ts`, which has the same gap.
+- **A main-process crash relaunches automatically; a true native segfault
+  doesn't.** `process.on('uncaughtException'/'unhandledRejection')` in
+  `main.ts` relaunches the whole app (`src/main/crash-recovery.ts` caps
+  this at 3 relaunches per rolling minute, so a crash that happens on every
+  single startup doesn't loop forever), and a renderer-only crash
+  (`render-process-gone`) just recreates the window without touching
+  main-process state at all. Either way nothing is lost on restart: the
+  session, the running timer, and the offline queue all already live on
+  disk or on the server, never only in memory (see AuthStore,
+  OfflineQueueStore, and the pause-before-quit flow). What this **can't**
+  catch is a hard native crash (a segfault inside V8, Node, or a native
+  addon) — that kills the process before any JS handler gets a chance to
+  run, and nothing here supervises the process from *outside* it (no
+  systemd/launchd/Scheduled-Task wrapper). That gap is a known, accepted
+  limitation of this pass, not something silently assumed away.
 - **`package.json`'s `author`/`homepage` are placeholders** (electron-builder
   requires both to produce a `.deb`). Replace with a real product contact
   before shipping this outside the team.
