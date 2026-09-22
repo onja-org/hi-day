@@ -932,6 +932,48 @@ describe('ProjectsService', () => {
       expect(result[0].id).toBe('project-2');
       expect(projectTeamsFind).toHaveBeenCalledTimes(1);
     });
+
+    it('flags canLogTimeForOthers for an org admin regardless of ProjectMembership', async () => {
+      const projectsFind = jest.fn().mockResolvedValue([{ ...baseProject }]);
+      const projectsRepo = makeProjectsRepo({ find: projectsFind });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
+      });
+      const service = makeService({ projectsRepo, membershipsRepo });
+
+      const result = await service.listForTimeTracking('org-1', 'admin-1');
+
+      expect(result[0].canLogTimeForOthers).toBe(true);
+    });
+
+    it('flags canLogTimeForOthers only for projects where the plain member holds a manager-tier ProjectMembership', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            project: { ...baseProject, id: 'project-manager' },
+            role: ProjectMembershipRole.MANAGER,
+          },
+          {
+            project: { ...baseProject, id: 'project-member' },
+            role: ProjectMembershipRole.MEMBER,
+          },
+        ]),
+      });
+      const service = makeService({ membershipsRepo, projectMembershipsRepo });
+
+      const result = await service.listForTimeTracking('org-1', 'user-1');
+
+      const byId = new Map(result.map((project) => [project.id, project]));
+      expect(byId.get('project-manager')?.canLogTimeForOthers).toBe(true);
+      expect(byId.get('project-member')?.canLogTimeForOthers).toBe(false);
+    });
   });
 
   describe('listAssignableMembers', () => {

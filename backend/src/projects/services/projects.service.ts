@@ -63,6 +63,16 @@ export interface ProjectListItem extends ProjectSummary {
   taskCount: number;
 }
 
+export interface TimeTrackingProjectListItem extends ProjectListItem {
+  /** Whether the caller may attribute a manually-logged entry on this
+   * Project to someone other than themselves — an org admin/manager, or a
+   * project-level `manager` ProjectMembership (see CONTEXT.md's Project
+   * membership role entry: a project role only ever *adds* access, never
+   * restricts an org admin/manager). Lets the frontend show/hide the "log
+   * time for" picker per project without re-deriving the rule itself. */
+  canLogTimeForOthers: boolean;
+}
+
 export interface ListProjectsFilter {
   status?: 'active' | 'archived';
 }
@@ -112,7 +122,7 @@ export class ProjectsService {
   async listForTimeTracking(
     organisationId: string,
     userId: string,
-  ): Promise<ProjectListItem[]> {
+  ): Promise<TimeTrackingProjectListItem[]> {
     const membership = await this.memberships.findOne({
       where: { userId, organisationId, status: MembershipStatus.ACTIVE },
     });
@@ -123,19 +133,24 @@ export class ProjectsService {
     }
 
     let projects: Project[];
-    if (ORG_WIDE_ROLES.includes(membership.role)) {
+    let managerProjectIds = new Set<string>();
+    const isOrgWide = ORG_WIDE_ROLES.includes(membership.role);
+    if (isOrgWide) {
       projects = await this.projects.find({
         where: { organisationId, archivedAt: IsNull() },
         order: { name: 'ASC' },
       });
     } else {
-      projects = await this.getProjectsAccessibleTo(membership.id);
+      const accessible = await this.getProjectsAccessibleTo(membership.id);
+      projects = accessible.projects;
+      managerProjectIds = accessible.managerProjectIds;
     }
 
     const taskCounts = await this.getTaskCounts(projects.map((p) => p.id));
     return projects.map((project) => ({
       ...this.toSummary(project),
       taskCount: taskCounts.get(project.id) ?? 0,
+      canLogTimeForOthers: isOrgWide || managerProjectIds.has(project.id),
     }));
   }
 
@@ -214,7 +229,7 @@ export class ProjectsService {
    */
   private async getProjectsAccessibleTo(
     membershipId: string,
-  ): Promise<Project[]> {
+  ): Promise<{ projects: Project[]; managerProjectIds: Set<string> }> {
     const projectMemberships = await this.projectMemberships.find({
       where: { membershipId },
       relations: { project: true },
@@ -232,13 +247,23 @@ export class ProjectsService {
       : [];
 
     const projectsById = new Map<string, Project>();
-    for (const pm of projectMemberships)
+    // Team-derived access carries no role tier of its own — only a direct
+    // ProjectMembership's `manager` role counts toward "can log time for
+    // others" (see TimeTrackingProjectListItem's own comment).
+    const managerProjectIds = new Set<string>();
+    for (const pm of projectMemberships) {
       projectsById.set(pm.project.id, pm.project);
+      if (pm.role === ProjectMembershipRole.MANAGER) {
+        managerProjectIds.add(pm.project.id);
+      }
+    }
     for (const pt of projectTeams) projectsById.set(pt.project.id, pt.project);
 
-    return Array.from(projectsById.values())
+    const projects = Array.from(projectsById.values())
       .filter((project) => !project.archivedAt)
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    return { projects, managerProjectIds };
   }
 
   /**

@@ -1,11 +1,11 @@
 import { API_URL } from "./apiUrl";
-import type { GetProjectsResult } from "@/types/project";
+import type { GetMyProjectsResult } from "@/types/project";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function getMyProjects(
   organisationId: string,
-): Promise<GetProjectsResult> {
+): Promise<GetMyProjectsResult> {
   let response: Response;
   try {
     response = await fetch(

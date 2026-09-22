@@ -7,7 +7,11 @@ export const PROJECT_QUERY_KEY = (organisationId: string, projectId: string) => 
   projectId,
 ];
 
-export function useProject(organisationId: string, projectId: string) {
+export function useProject(
+  organisationId: string,
+  projectId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: PROJECT_QUERY_KEY(organisationId, projectId),
     queryFn: async () => {
@@ -17,5 +21,6 @@ export function useProject(organisationId: string, projectId: string) {
       }
       return result.project;
     },
+    enabled: options.enabled ?? true,
   });
 }

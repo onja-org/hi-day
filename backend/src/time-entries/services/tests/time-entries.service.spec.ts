@@ -455,6 +455,191 @@ describe('TimeEntriesService', () => {
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    describe('logging for someone else (dto.membershipId)', () => {
+      // Distinguishes the caller lookup (by userId) from the target lookup
+      // (by membership id) — the shared default mock returns one fixed
+      // membership regardless of query, which isn't enough here.
+      function makeMembershipsRepoFor(
+        caller: { id: string; role: MembershipRole },
+        target: { id: string } | null,
+      ) {
+        return {
+          findOne: jest.fn(
+            (options: { where: { userId?: string; id?: string } }) => {
+              if (options.where.userId) {
+                return Promise.resolve(caller);
+              }
+              return Promise.resolve(
+                target && options.where.id === target.id ? target : null,
+              );
+            },
+          ),
+        } as unknown as Repository<Membership>;
+      }
+
+      it('rejects a plain project member from logging time for someone else', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-1', role: MembershipRole.MEMBER },
+          { id: 'm-2' },
+        );
+        // Caller's own ProjectMembership exists (they can log for
+        // themselves) but isn't manager-tier.
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'member' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        await expect(
+          service.createManual('org-1', 'user-1', 'project-1', {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('lets a project-manager-tier caller log time for a teammate on that project', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-1', role: MembershipRole.MEMBER },
+          { id: 'm-2' },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+        });
+        const { auditLogService, record } = makeAuditLogService();
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+          auditLogService,
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'user-1',
+          'project-1',
+          {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-2');
+        expect(record).toHaveBeenCalledTimes(1);
+        const call = record.mock.calls[0] as [
+          unknown,
+          {
+            action: string;
+            actorUserId: string;
+            metadata: { membershipId: string };
+          },
+        ];
+        expect(call[1].action).toBe('time_entry.created_manually');
+        expect(call[1].actorUserId).toBe('user-1');
+        expect(call[1].metadata.membershipId).toBe('m-2');
+      });
+
+      it('lets an org admin log time for someone else without needing their own ProjectMembership', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-admin', role: MembershipRole.ADMIN },
+          { id: 'm-2' },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          // The target's own access check still runs — give them one.
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-2' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'admin-1',
+          'project-1',
+          {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-2');
+      });
+
+      it('rejects logging time for a target who has no access to the project', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-admin', role: MembershipRole.ADMIN },
+          { id: 'm-2' },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        });
+        const projectTeamsRepo = makeProjectTeamsRepo(
+          jest.fn().mockResolvedValue(null),
+        );
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+          projectTeamsRepo,
+        });
+
+        await expect(
+          service.createManual('org-1', 'admin-1', 'project-1', {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('rejects a membershipId that names no active membership in the organisation', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-1', role: MembershipRole.ADMIN },
+          null,
+        );
+        const service = makeService({ membershipsRepo });
+
+        await expect(
+          service.createManual('org-1', 'admin-1', 'project-1', {
+            membershipId: 'm-missing',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it("treats membershipId equal to the caller's own as a self-entry, no elevated permission needed", async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-1', role: MembershipRole.MEMBER },
+          null,
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'member' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'user-1',
+          'project-1',
+          {
+            membershipId: 'm-1',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-1');
+      });
+    });
   });
 
   describe('update', () => {

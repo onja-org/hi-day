@@ -24,6 +24,7 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
 import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
@@ -563,8 +564,11 @@ export class TimeEntriesService {
 
   /**
    * Directly logs a completed span of time with an explicit start/end,
-   * rather than starting a live timer — same access rule as `start`
-   * (org admin/manager, or a ProjectMembership on this Project).
+   * rather than starting a live timer — same base access rule as `start`
+   * (org admin/manager, or a ProjectMembership on this Project), plus an
+   * optional delegated target: `dto.membershipId` lets an org admin/manager
+   * or a project-level `manager` log the span against someone *else's*
+   * timesheet instead of their own — see resolveManualEntryTarget.
    */
   async createManual(
     organisationId: string,
@@ -572,11 +576,12 @@ export class TimeEntriesService {
     projectId: string,
     dto: CreateManualTimeEntryDto,
   ): Promise<TimeEntrySummary> {
-    const { membership, task } = await this.validateStart(
+    const { membership, task } = await this.resolveManualEntryTarget(
       organisationId,
       userId,
       projectId,
       dto.taskId,
+      dto.membershipId,
     );
 
     const startedAt = new Date(dto.startedAt);
@@ -602,6 +607,7 @@ export class TimeEntriesService {
         actorUserId: userId,
         metadata: {
           timeEntryId: saved.id,
+          membershipId: membership.id,
           projectId,
           taskId: task?.id ?? null,
           startedAt,
@@ -847,6 +853,99 @@ export class TimeEntriesService {
     }
 
     return { membership, task };
+  }
+
+  /**
+   * Like `validateStart`, but for `createManual` specifically: resolves
+   * which Membership the entry should be attributed to — the caller's own
+   * by default, or (when `targetMembershipId` names someone else) that
+   * person's, gated by `assertCanLogTimeForOthers`. The target still needs
+   * their own access to the Project (checked via `assertProjectAccess`,
+   * same as the caller) — delegation grants the *caller* extra reach, it
+   * never lets them log time against a Project the target has no relation
+   * to.
+   */
+  private async resolveManualEntryTarget(
+    organisationId: string,
+    userId: string,
+    projectId: string,
+    taskId: string | undefined,
+    targetMembershipId: string | undefined,
+  ): Promise<ValidatedStart> {
+    const caller = await this.getActiveMembership(organisationId, userId);
+    await this.assertProjectAccess(caller, projectId);
+
+    let membership = caller;
+    if (targetMembershipId && targetMembershipId !== caller.id) {
+      await this.assertCanLogTimeForOthers(caller, projectId);
+      const target = await this.memberships.findOne({
+        where: {
+          id: targetMembershipId,
+          organisationId,
+          status: MembershipStatus.ACTIVE,
+        },
+      });
+      if (!target) {
+        throw new NotFoundException('Membership not found.');
+      }
+      await this.assertProjectAccess(target, projectId);
+      membership = target;
+    }
+
+    const project = await this.projects.findOne({
+      where: { id: projectId, organisationId },
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found.');
+    }
+    if (project.archivedAt) {
+      throw new ConflictException(
+        'This project is archived — unarchive it first to track time against it.',
+      );
+    }
+
+    let task: Task | null = null;
+    if (taskId) {
+      task = await this.tasks.findOne({ where: { id: taskId, projectId } });
+      if (!task) {
+        throw new NotFoundException('Task not found.');
+      }
+      if (task.closedAt) {
+        throw new ConflictException(
+          'This task is closed — reopen it before tracking time against it.',
+        );
+      }
+    }
+
+    return { membership, task };
+  }
+
+  /**
+   * Whether `caller` may attribute a manual entry to someone else on this
+   * Project — an org admin/manager, or a direct `manager`-tier
+   * ProjectMembership (see ProjectRoleGuard's own comment: a project role
+   * only ever *adds* access, never restricts an org admin/manager).
+   * Team-derived project access carries no role tier of its own, so it
+   * doesn't unlock this — only a direct ProjectMembership does.
+   */
+  private async assertCanLogTimeForOthers(
+    caller: Membership,
+    projectId: string,
+  ): Promise<void> {
+    if (ORG_WIDE_ROLES.includes(caller.role)) {
+      return;
+    }
+
+    const callerProjectMembership = await this.projectMemberships.findOne({
+      where: { projectId, membershipId: caller.id },
+    });
+    if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Only a project manager, or an org admin/manager, can log time for someone else.',
+    );
   }
 
   private async getActiveMembership(

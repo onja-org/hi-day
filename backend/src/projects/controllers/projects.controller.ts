@@ -30,6 +30,7 @@ import type {
   ProjectMemberSummary,
   ProjectSummary,
   ProjectTeamSummary,
+  TimeTrackingProjectListItem,
 } from '../services/projects.service';
 import { ProjectsService } from '../services/projects.service';
 
@@ -62,7 +63,9 @@ export class ProjectsController {
   // ProjectsService.listForTimeTracking.
   @Get('my-projects')
   @UseGuards(RoleGuard)
-  myProjects(@Req() request: AuthenticatedRequest): Promise<ProjectListItem[]> {
+  myProjects(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<TimeTrackingProjectListItem[]> {
     return this.projectsService.listForTimeTracking(
       request.organisationId!,
       request.userId,

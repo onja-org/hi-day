@@ -58,7 +58,7 @@ export function CurrentProjectActivity({
                     {formatElapsed(project.seconds * 1000)}
                   </span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-lg bg-sidebar">
+                <div className="h-1 w-full overflow-hidden rounded-lg bg-sidebar">
                   <div
                     className={clsx(
                       "h-full rounded-lg bg-primary",

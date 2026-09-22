@@ -57,7 +57,7 @@ export function TimesheetProjectBreakdown({ entries }: TimesheetProjectBreakdown
                 {formatElapsed(project.seconds * 1000)}
               </span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-lg bg-sidebar">
+            <div className="h-1.5 w-full overflow-hidden rounded-lg bg-sidebar">
               <div
                 className={clsx(
                   "h-full rounded-lg",

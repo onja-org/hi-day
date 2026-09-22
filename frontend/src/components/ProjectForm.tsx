@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createProject } from "@/lib/createProject";
+import { syncProjectAssignments } from "@/lib/syncProjectAssignments";
 import { updateProject } from "@/lib/updateProject";
-import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
+import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
 import type {
   Project,
   ProjectColour,
   ProjectFormInput,
   ProjectMembershipRole,
 } from "@/types/project";
-import { CreateProjectAssignmentFields } from "./CreateProjectAssignmentFields";
+import { ErrorMessage } from "./ErrorMessage";
+import { ProjectAssignmentFields } from "./ProjectAssignmentFields";
 import { ProjectColourPicker } from "./ProjectColourPicker";
 import { Spinner } from "./Spinner";
 
@@ -43,11 +45,51 @@ export function ProjectForm({
   >(new Map());
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
 
+  // Full member/team assignments aren't in the shallow `project` a caller
+  // may pass in (e.g. the Projects table's `ProjectListItem`) — fetched
+  // here so the edit form can pre-check them, same as the create form.
+  const projectDetailQuery = useProject(organisationId, project?.id ?? "", {
+    enabled: mode === "edit",
+  });
+
+  const seededAssignmentsRef = useRef(false);
+  useEffect(() => {
+    if (mode === "edit" && !seededAssignmentsRef.current && projectDetailQuery.data) {
+      seededAssignmentsRef.current = true;
+      setSelectedMembers(
+        new Map(
+          projectDetailQuery.data.members.map((member) => [
+            member.membershipId,
+            member.role,
+          ]),
+        ),
+      );
+      setSelectedTeamIds(new Set(projectDetailQuery.data.teams.map((team) => team.teamId)));
+    }
+  }, [mode, projectDetailQuery.data]);
+
   const mutation = useMutation({
-    mutationFn: (input: ProjectFormInput) =>
-      mode === "create"
-        ? createProject(organisationId, input)
-        : updateProject(organisationId, project.id, input),
+    mutationFn: async (input: ProjectFormInput) => {
+      if (mode === "create") {
+        const result = await createProject(organisationId, input);
+        return { ...result, assignmentFailures: [] as string[] };
+      }
+
+      const result = await updateProject(organisationId, project.id, input);
+      if (!result.ok || !projectDetailQuery.data) {
+        return { ...result, assignmentFailures: [] as string[] };
+      }
+
+      const syncResult = await syncProjectAssignments(
+        organisationId,
+        project.id,
+        projectDetailQuery.data.members,
+        selectedMembers,
+        projectDetailQuery.data.teams,
+        selectedTeamIds,
+      );
+      return { ...result, assignmentFailures: syncResult.failures };
+    },
     onSuccess: (result) => {
       if (result.ok) {
         queryClient.invalidateQueries({ queryKey: ["projects", organisationId] });
@@ -56,7 +98,9 @@ export function ProjectForm({
             queryKey: PROJECT_QUERY_KEY(organisationId, project.id),
           });
         }
-        onSaved(result.project);
+        if (result.assignmentFailures.length === 0) {
+          onSaved(result.project);
+        }
       }
     },
   });
@@ -84,6 +128,9 @@ export function ProjectForm({
       }),
     });
   }
+
+  const assignmentsNotReady =
+    mode === "edit" && (projectDetailQuery.isLoading || projectDetailQuery.isError);
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
@@ -116,7 +163,7 @@ export function ProjectForm({
       </div>
 
       {mode === "create" && (
-        <CreateProjectAssignmentFields
+        <ProjectAssignmentFields
           organisationId={organisationId}
           selectedMembers={selectedMembers}
           onMembersChange={setSelectedMembers}
@@ -125,9 +172,39 @@ export function ProjectForm({
         />
       )}
 
+      {mode === "edit" && projectDetailQuery.isLoading && (
+        <p className="flex items-center gap-2 text-slate-900">
+          <Spinner className="text-primary-dark" />
+          Loading members &amp; teams…
+        </p>
+      )}
+
+      {mode === "edit" && projectDetailQuery.isError && (
+        <ErrorMessage message="Could not load this project's members and teams." />
+      )}
+
+      {mode === "edit" && projectDetailQuery.data && (
+        <ProjectAssignmentFields
+          organisationId={organisationId}
+          projectId={project.id}
+          selectedMembers={selectedMembers}
+          onMembersChange={setSelectedMembers}
+          selectedTeamIds={selectedTeamIds}
+          onTeamIdsChange={setSelectedTeamIds}
+        />
+      )}
+
+      {mutation.data?.ok && mutation.data.assignmentFailures.length > 0 && (
+        <ErrorMessage
+          message={`Project saved, but ${mutation.data.assignmentFailures.length} membership/team change${
+            mutation.data.assignmentFailures.length === 1 ? "" : "s"
+          } failed: ${mutation.data.assignmentFailures.join("; ")}`}
+        />
+      )}
+
       <button
         type="submit"
-        disabled={mutation.isPending}
+        disabled={mutation.isPending || assignmentsNotReady}
         className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
       >
         {mutation.isPending && <Spinner />}

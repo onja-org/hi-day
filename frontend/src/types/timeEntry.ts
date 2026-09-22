@@ -68,6 +68,9 @@ export type TimeEntryFormInput = {
   /** Local `datetime-local` input values, converted to ISO before sending. */
   startedAt: string;
   endedAt: string;
+  /** Omit to log for yourself — logging for someone else requires the
+   * caller to be an org admin/manager, or a project-level manager. */
+  membershipId?: string;
 };
 
 export type UpdateTimeEntryInput = {

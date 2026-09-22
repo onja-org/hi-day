@@ -49,6 +49,13 @@ export type ProjectListItem = Project & {
   taskCount: number;
 };
 
+export type TimeTrackingProjectListItem = ProjectListItem & {
+  /** Whether the caller may attribute a manually-logged entry on this
+   * project to someone other than themselves — an org admin/manager, or a
+   * project-level `manager` on this project specifically. */
+  canLogTimeForOthers: boolean;
+};
+
 export type CreateProjectMemberInput = {
   membershipId: string;
   role?: ProjectMembershipRole;
@@ -64,6 +71,10 @@ export type ProjectFormInput = {
 
 export type GetProjectsResult =
   | { ok: true; projects: ProjectListItem[] }
+  | { ok: false; message: string };
+
+export type GetMyProjectsResult =
+  | { ok: true; projects: TimeTrackingProjectListItem[] }
   | { ok: false; message: string };
 
 export type GetProjectResult =

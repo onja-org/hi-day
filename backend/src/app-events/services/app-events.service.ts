@@ -27,7 +27,7 @@ const MS_PER_HOUR = 60 * 60 * 1000;
  * calculation (time between consecutive samples) would be more precise if
  * the interval ever becomes configurable per-org.
  */
-const SAMPLE_INTERVAL_SECONDS = 5;
+export const SAMPLE_INTERVAL_SECONDS = 5;
 
 export interface AppHourBucketItem {
   /** The project whose TimeEntry covered these samples — null means no

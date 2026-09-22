@@ -21,6 +21,7 @@ export async function createManualTimeEntry(
           taskId: input.taskId,
           startedAt: new Date(input.startedAt).toISOString(),
           endedAt: new Date(input.endedAt).toISOString(),
+          membershipId: input.membershipId,
         }),
       },
     );

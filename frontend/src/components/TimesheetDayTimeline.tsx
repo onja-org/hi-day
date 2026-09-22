@@ -1,4 +1,5 @@
 import { buildDayTimelineSegments } from "@/lib/buildDayTimelineSegments";
+import type { TimelineSegment } from "@/lib/buildDayTimelineSegments";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import {
   PROJECT_COLOUR_TEXT_CLASSES,
@@ -13,10 +14,23 @@ type TimesheetDayTimelineProps = {
 const MINUTES_PER_DAY = 24 * 60;
 const BAR_HEIGHT = 32;
 
+function formatSegmentTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function segmentTooltip(segment: TimelineSegment): string {
+  const timeRange = `${formatSegmentTime(segment.startedAt)} – ${formatSegmentTime(segment.endedAt)}`;
+  return segment.kind === "paused"
+    ? `${segment.projectName} (paused) • ${timeRange}`
+    : `${segment.projectName} • ${timeRange}`;
+}
+
 /**
  * A single day's tracked-time occupancy bar: solid blocks for worked time
  * (colored by project), lighter blocks for a paused span within an entry,
  * and the wrapper's own background showing through for untracked gaps.
+ * Each block carries a native SVG `<title>` so hovering it shows the
+ * project and time entry it belongs to.
  */
 export function TimesheetDayTimeline({ dayStart, entries }: TimesheetDayTimelineProps) {
   const segments = buildDayTimelineSegments(entries, dayStart);
@@ -49,7 +63,9 @@ export function TimesheetDayTimeline({ dayStart, entries }: TimesheetDayTimeline
                 ? PROJECT_COLOUR_TEXT_CLASSES[segment.projectColour]
                 : PROJECT_COLOUR_TEXT_MUTED_CLASSES[segment.projectColour]
             }
-          />
+          >
+            <title>{segmentTooltip(segment)}</title>
+          </rect>
         ))}
       </svg>
     </div>

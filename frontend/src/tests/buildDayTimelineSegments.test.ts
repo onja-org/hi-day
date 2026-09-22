@@ -35,7 +35,15 @@ describe("buildDayTimelineSegments", () => {
     const segments = buildDayTimelineSegments([entry], dayStart);
 
     expect(segments).toEqual([
-      { startMinute: 540, endMinute: 630, kind: "work", projectColour: "blue" },
+      {
+        startMinute: 540,
+        endMinute: 630,
+        kind: "work",
+        projectColour: "blue",
+        projectName: "Website",
+        startedAt: new Date(2026, 0, 5, 9, 0),
+        endedAt: new Date(2026, 0, 5, 10, 30),
+      },
     ]);
   });
 
@@ -55,9 +63,33 @@ describe("buildDayTimelineSegments", () => {
     const segments = buildDayTimelineSegments([entry], dayStart);
 
     expect(segments).toEqual([
-      { startMinute: 540, endMinute: 570, kind: "work", projectColour: "blue" },
-      { startMinute: 570, endMinute: 585, kind: "paused", projectColour: "blue" },
-      { startMinute: 585, endMinute: 660, kind: "work", projectColour: "blue" },
+      {
+        startMinute: 540,
+        endMinute: 570,
+        kind: "work",
+        projectColour: "blue",
+        projectName: "Website",
+        startedAt: new Date(2026, 0, 5, 9, 0),
+        endedAt: new Date(2026, 0, 5, 9, 30),
+      },
+      {
+        startMinute: 570,
+        endMinute: 585,
+        kind: "paused",
+        projectColour: "blue",
+        projectName: "Website",
+        startedAt: new Date(2026, 0, 5, 9, 30),
+        endedAt: new Date(2026, 0, 5, 9, 45),
+      },
+      {
+        startMinute: 585,
+        endMinute: 660,
+        kind: "work",
+        projectColour: "blue",
+        projectName: "Website",
+        startedAt: new Date(2026, 0, 5, 9, 45),
+        endedAt: new Date(2026, 0, 5, 11, 0),
+      },
     ]);
   });
 
@@ -73,7 +105,15 @@ describe("buildDayTimelineSegments", () => {
     const segments = buildDayTimelineSegments([entry], dayStart, now);
 
     expect(segments).toEqual([
-      { startMinute: 1380, endMinute: 1430, kind: "work", projectColour: "blue" },
+      {
+        startMinute: 1380,
+        endMinute: 1430,
+        kind: "work",
+        projectColour: "blue",
+        projectName: "Website",
+        startedAt: new Date(2026, 0, 5, 23, 0),
+        endedAt: now,
+      },
     ]);
   });
 

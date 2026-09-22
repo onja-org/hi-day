@@ -106,7 +106,7 @@ export function DashboardKpiTile({
       </div>
 
       {progressRatio !== undefined && (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-sidebar">
+        <div className="h-1 w-full overflow-hidden rounded-full bg-sidebar">
           <div className={clsx("h-full rounded-full bg-primary", fractionClass("w", progressRatio))} />
         </div>
       )}

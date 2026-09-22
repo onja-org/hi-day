@@ -10,4 +10,12 @@ export class CreateManualTimeEntryDto {
 
   @IsDateString()
   endedAt: string;
+
+  /** Omit to log for yourself. Logging for someone else requires the
+   * caller to be an org admin/manager, or hold a `manager`-tier
+   * ProjectMembership on this Project — see
+   * TimeEntriesService.resolveManualEntryTarget. */
+  @IsOptional()
+  @IsUUID()
+  membershipId?: string;
 }

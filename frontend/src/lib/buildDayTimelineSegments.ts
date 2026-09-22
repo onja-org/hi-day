@@ -7,6 +7,10 @@ export type TimelineSegment = {
   endMinute: number;
   kind: "work" | "paused";
   projectColour: ProjectColour;
+  projectName: string;
+  /** The segment's real start/end instants (not clamped to the day), for a hover tooltip. */
+  startedAt: Date;
+  endedAt: Date;
 };
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -41,6 +45,9 @@ export function buildDayTimelineSegments(
         endMinute,
         kind: segment.kind,
         projectColour: entry.projectColour,
+        projectName: entry.projectName,
+        startedAt: segment.startedAt,
+        endedAt: segment.endedAt,
       });
     }
   }

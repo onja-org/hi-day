@@ -58,5 +58,6 @@ function inviteCreateTracker(req: Request): string {
     InvitationAcceptController,
   ],
   providers: [InvitationsService, MembershipsService, RoleGuard],
+  exports: [MembershipsService],
 })
 export class MembersModule {}

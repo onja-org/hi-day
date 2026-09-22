@@ -4,12 +4,14 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useProject } from "@/hooks/useProject";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "@/hooks/useTimeEntries";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { LogTimeForSelect } from "./LogTimeForSelect";
 import { Spinner } from "./Spinner";
 
 type TimeEntryFormProps =
@@ -39,6 +41,16 @@ export function TimeEntryForm({
     enabled: projectId !== "",
   });
 
+  const projects = projectsQuery.data ?? [];
+  const selectedProject = projects.find((project) => project.id === projectId);
+  // Only offered when creating a new entry — re-attributing an existing
+  // one to someone else isn't part of this form.
+  const canLogTimeForOthers =
+    mode === "create" && (selectedProject?.canLogTimeForOthers ?? false);
+  const projectDetailQuery = useProject(organisationId, projectId, {
+    enabled: canLogTimeForOthers,
+  });
+
   const invalidate = () =>
     queryClient.invalidateQueries({
       queryKey: TIME_ENTRIES_QUERY_KEY_PREFIX(organisationId),
@@ -50,6 +62,7 @@ export function TimeEntryForm({
       taskId?: string;
       startedAt: string;
       endedAt: string;
+      membershipId?: string;
     }) => createManualTimeEntry(organisationId, input),
     onSuccess: (result) => {
       if (result.ok) {
@@ -80,6 +93,7 @@ export function TimeEntryForm({
     const taskId = String(formData.get("taskId") ?? "");
     const startedAt = String(formData.get("startedAt") ?? "");
     const endedAt = String(formData.get("endedAt") ?? "");
+    const membershipId = String(formData.get("membershipId") ?? "");
 
     if (mode === "create") {
       createMutation.mutate({
@@ -87,6 +101,7 @@ export function TimeEntryForm({
         taskId: taskId || undefined,
         startedAt,
         endedAt,
+        membershipId: membershipId || undefined,
       });
     } else {
       updateMutation.mutate({
@@ -99,7 +114,6 @@ export function TimeEntryForm({
   }
 
   const mutation = mode === "create" ? createMutation : updateMutation;
-  const projects = projectsQuery.data ?? [];
   // Always keep the entry's own (possibly since-closed) task selectable —
   // switching the picker to only open tasks shouldn't silently drop it.
   const tasks = (tasksQuery.data?.tasks ?? []).filter(
@@ -144,6 +158,18 @@ export function TimeEntryForm({
           ))}
         </select>
       </label>
+
+      {canLogTimeForOthers && (
+        // Keyed on projectId: without a fresh mount per project, switching
+        // from one project to another would leave a stale membershipId
+        // selected in the DOM (an uncontrolled <select>) even though the
+        // option list re-rendered — a confusing 403 on submit instead of
+        // resetting to "Me".
+        <LogTimeForSelect
+          key={projectId}
+          members={projectDetailQuery.data?.members ?? []}
+        />
+      )}
 
       {/* Always stacked, never side by side: a datetime-local input's native
           width doesn't shrink below its content, so two of them in this

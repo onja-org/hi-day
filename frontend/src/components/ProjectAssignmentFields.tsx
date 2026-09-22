@@ -6,8 +6,10 @@ import type { ProjectMembershipRole } from "@/types/project";
 import { MemberSearchChecklist } from "./MemberSearchChecklist";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
 
-type CreateProjectAssignmentFieldsProps = {
+type ProjectAssignmentFieldsProps = {
   organisationId: string;
+  /** Omitted on the create form (no project exists yet to scope the request to) — passed on the edit form so the picker uses the project-scoped assignable-members/teams endpoints instead of the org-wide ones. */
+  projectId?: string;
   selectedMembers: Map<string, ProjectMembershipRole>;
   onMembersChange: (members: Map<string, ProjectMembershipRole>) => void;
   selectedTeamIds: Set<string>;
@@ -18,18 +20,20 @@ function pluralCount(count: number, noun: string): string {
   return count === 0 ? `Select ${noun}s` : `${count} ${noun}${count === 1 ? "" : "s"} selected`;
 }
 
-/** Optional member/team assignment shown on the create-project form —
- * separate from the per-project "add members"/"add teams" pickers used
- * after creation, since there's no :projectId yet to scope the request to. */
-export function CreateProjectAssignmentFields({
+/** Member/team assignment shown on both the create- and edit-project forms.
+ * On create, checking someone adds them once the project is created; on
+ * edit, the checklist starts pre-checked with the project's current
+ * members/teams, and un/checking one adds or removes it on save. */
+export function ProjectAssignmentFields({
   organisationId,
+  projectId,
   selectedMembers,
   onMembersChange,
   selectedTeamIds,
   onTeamIdsChange,
-}: CreateProjectAssignmentFieldsProps) {
-  const membersQuery = useAssignableProjectMembers(organisationId);
-  const teamsQuery = useAssignableProjectTeams(organisationId);
+}: ProjectAssignmentFieldsProps) {
+  const membersQuery = useAssignableProjectMembers(organisationId, projectId);
+  const teamsQuery = useAssignableProjectTeams(organisationId, projectId);
   const teams = teamsQuery.data ?? [];
 
   function toggleTeam(teamId: string, checked: boolean) {
@@ -45,7 +49,7 @@ export function CreateProjectAssignmentFields({
   return (
     <div className="flex flex-col gap-5">
       <MultiSelectDropdown
-        id="create-project-members"
+        id="project-members"
         label="Members (optional)"
         triggerText={pluralCount(selectedMembers.size, "member")}
       >
@@ -70,7 +74,7 @@ export function CreateProjectAssignmentFields({
       </MultiSelectDropdown>
 
       <MultiSelectDropdown
-        id="create-project-teams"
+        id="project-teams"
         label="Teams (optional)"
         triggerText={pluralCount(selectedTeamIds.size, "team")}
       >
