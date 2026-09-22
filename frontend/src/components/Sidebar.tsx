@@ -8,7 +8,6 @@ import {
   Desktop,
   Gauge,
   Gear,
-  ShieldCheck,
   Users,
   UsersThree,
 } from "@phosphor-icons/react";
@@ -87,11 +86,6 @@ export function Sidebar({
             label: "Settings",
             href: `/organisations/${organisationId}/settings`,
             icon: Gear,
-          },
-          {
-            label: "Consent & disclosure",
-            href: `/organisations/${organisationId}/settings/disclosure`,
-            icon: ShieldCheck,
           },
         ]
       : []),

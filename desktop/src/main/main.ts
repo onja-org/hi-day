@@ -8,7 +8,7 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
-import type { ConsentDecision, PairingPollResult, TrackingResult } from './api-client';
+import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
 import { resolveActivityPeriodMs } from './activity-sample';
@@ -660,29 +660,6 @@ async function registerIpcHandlers(): Promise<void> {
           accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
         },
       };
-    },
-  );
-
-  // See docs/adr/0015-... — the passive disclosure banner fetches the
-  // current notice text (if any is due) through this.
-  ipcMain.handle('consent:get', () =>
-    callDeviceApi((token) => apiClient.getDisclosure(token)),
-  );
-
-  ipcMain.handle(
-    'consent:submit',
-    async (_event, disclosureVersionId: string, decision: ConsentDecision) => {
-      const result = await callDeviceApi((token) =>
-        apiClient.submitConsent(token, disclosureVersionId, decision),
-      );
-      if (result.ok) {
-        // Instant local feedback rather than waiting up to
-        // DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS for the gate's own next
-        // poll — refreshes the banner's "acknowledged" state promptly. Purely
-        // cosmetic now: capture was never gated on this.
-        void captureSettingsGate.pollOnce();
-      }
-      return result;
     },
   );
 

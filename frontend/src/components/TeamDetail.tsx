@@ -12,9 +12,11 @@ import { TeamRenameForm } from "./TeamRenameForm";
 type TeamDetailProps = {
   organisationId: string;
   teamId: string;
+  /** False when the caller (e.g. an already-expanded list row) already shows the team's name elsewhere. */
+  showName?: boolean;
 };
 
-export function TeamDetail({ organisationId, teamId }: TeamDetailProps) {
+export function TeamDetail({ organisationId, teamId, showName = true }: TeamDetailProps) {
   const teamQuery = useTeamDetail(organisationId, teamId);
   const organisationQuery = useCurrentOrganisation();
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -49,15 +51,18 @@ export function TeamDetail({ organisationId, teamId }: TeamDetailProps) {
   const canManageMembers = isAdmin || isTeamManager;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-4">
       {isAdmin ? (
         <TeamRenameForm
           organisationId={organisationId}
           teamId={teamId}
           currentName={team.name}
+          compact={!showName}
         />
       ) : (
-        <h1 className="text-2xl font-semibold text-primary-dark">{team.name}</h1>
+        showName && (
+          <h1 className="text-2xl font-semibold text-primary-dark">{team.name}</h1>
+        )
       )}
 
       <div className="flex flex-col gap-4">

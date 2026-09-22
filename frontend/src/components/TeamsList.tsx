@@ -8,9 +8,7 @@ import {
   useOrganisationTeams,
 } from "@/hooks/useOrganisationTeams";
 import { deleteTeam } from "@/lib/deleteTeam";
-import { AddTeamMemberFromListModal } from "./AddTeamMemberFromListModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { EditTeamModal } from "./EditTeamModal";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { TeamListRow } from "./TeamListRow";
@@ -25,8 +23,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
   const teamsQuery = useOrganisationTeams(organisationId);
   const [search, setSearch] = useState("");
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
-  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
-  const [addingMemberTeamId, setAddingMemberTeamId] = useState<string | null>(null);
 
   const isAdmin = organisationQuery.data?.role === "admin";
 
@@ -71,7 +67,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
   const teamPendingDelete = teamsQuery.data.find(
     (team) => team.id === deletingTeamId,
   );
-  const editingTeam = teamsQuery.data.find((team) => team.id === editingTeamId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -103,8 +98,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
               organisationId={organisationId}
               team={team}
               isAdmin={isAdmin}
-              onAddMember={() => setAddingMemberTeamId(team.id)}
-              onEdit={() => setEditingTeamId(team.id)}
               onDelete={() => setDeletingTeamId(team.id)}
             />
           ))}
@@ -120,22 +113,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
           isPending={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate(teamPendingDelete.id)}
           onClose={() => setDeletingTeamId(null)}
-        />
-      )}
-
-      {editingTeam && (
-        <EditTeamModal
-          organisationId={organisationId}
-          team={editingTeam}
-          onClose={() => setEditingTeamId(null)}
-        />
-      )}
-
-      {addingMemberTeamId && (
-        <AddTeamMemberFromListModal
-          organisationId={organisationId}
-          teamId={addingMemberTeamId}
-          onClose={() => setAddingMemberTeamId(null)}
         />
       )}
     </div>

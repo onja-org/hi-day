@@ -37,17 +37,11 @@ function show(viewId: string): void {
   }
 }
 
-/**
- * Login and tracking are never blocked on disclosure (see docs/adr/0015-...)
- * — the passive notice banner is refreshed independently, in parallel with
- * starting the normal tracking view, not as a gate in front of it.
- */
 function showLoggedIn(organisationName: string): void {
   document.getElementById("organisation-name")!.textContent = organisationName;
 
   show("status-view");
   void initTracking();
-  void refreshDisclosureBanner();
 }
 
 const pairingStatusEl = document.getElementById("pairing-status")!;
@@ -217,59 +211,6 @@ const accessibilitySettingsButton = document.getElementById(
   "accessibility-settings-button",
 ) as HTMLButtonElement;
 const trackingIndicator = document.getElementById("tracking-indicator")!;
-
-// --- Passive disclosure notice (see docs/adr/0015-...) ------------------
-//
-// Purely informational: it never blocks login, timer start, or capture.
-// Shown as a persistent banner alongside the normal tracking view whenever
-// the org has a current disclosure notice this device hasn't acknowledged
-// yet, and refreshed on the same cadence as everything else in
-// startPolling — there's no separate gate or full-screen view for it.
-
-const disclosureBannerEl = document.getElementById("disclosure-banner")!;
-const disclosureTextEl = document.getElementById("disclosure-text")!;
-const disclosureErrorEl = document.getElementById("disclosure-error")!;
-const disclosureAcknowledgeButton = document.getElementById(
-  "disclosure-acknowledge-button",
-) as HTMLButtonElement;
-
-/** The version the currently-displayed banner text belongs to — submitted back verbatim on acknowledge. */
-let pendingDisclosureVersionId: string | null = null;
-
-async function refreshDisclosureBanner(): Promise<void> {
-  const result = await window.api.consent.get();
-  if (!result.ok || !result.data.required || !result.data.text) {
-    disclosureBannerEl.hidden = true;
-    pendingDisclosureVersionId = null;
-    return;
-  }
-
-  pendingDisclosureVersionId = result.data.disclosureVersionId;
-  disclosureTextEl.textContent = result.data.text;
-  disclosureErrorEl.hidden = true;
-  disclosureAcknowledgeButton.disabled = false;
-  disclosureBannerEl.hidden = false;
-}
-
-disclosureAcknowledgeButton.addEventListener("click", () => {
-  void (async () => {
-    if (!pendingDisclosureVersionId) return;
-    disclosureAcknowledgeButton.disabled = true;
-    disclosureErrorEl.hidden = true;
-
-    const result = await window.api.consent.submit(
-      pendingDisclosureVersionId,
-      "granted",
-    );
-    if (!result.ok) {
-      disclosureErrorEl.textContent = result.message;
-      disclosureErrorEl.hidden = false;
-      disclosureAcknowledgeButton.disabled = false;
-      return;
-    }
-    disclosureBannerEl.hidden = true;
-  })();
-});
 
 /** Drives the "Tracking is on" banner — intent-based, not tied to whether a sample actually uploaded (see docs/adr/0015-...). */
 async function refreshTrackingIndicator(): Promise<void> {
@@ -782,7 +723,6 @@ function startPolling(): void {
   pollHandle = setInterval(() => {
     void refreshStatus();
     void refreshCapturePermissionBanner();
-    void refreshDisclosureBanner();
     void refreshTrackingIndicator();
   }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);

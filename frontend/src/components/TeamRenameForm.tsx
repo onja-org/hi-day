@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import clsx from "clsx";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
 import { updateTeam } from "@/lib/updateTeam";
@@ -10,12 +11,15 @@ type TeamRenameFormProps = {
   organisationId: string;
   teamId: string;
   currentName: string;
+  /** Smaller styling for use inline (e.g. an already-expanded list row) rather than as a page heading. */
+  compact?: boolean;
 };
 
 export function TeamRenameForm({
   organisationId,
   teamId,
   currentName,
+  compact = false,
 }: TeamRenameFormProps) {
   const queryClient = useQueryClient();
   const [name, setName] = useState<string | null>(null);
@@ -51,7 +55,10 @@ export function TeamRenameForm({
           type="text"
           value={name ?? currentName}
           onChange={(event) => setName(event.target.value)}
-          className="rounded-md border border-input-border px-3 py-2 text-2xl font-semibold text-primary-dark"
+          className={clsx(
+            "rounded-md border border-input-border px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30",
+            compact ? "text-slate-900" : "text-2xl font-semibold text-primary-dark",
+          )}
         />
         <button
           type="submit"

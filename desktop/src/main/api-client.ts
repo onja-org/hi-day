@@ -95,16 +95,6 @@ export interface CaptureSettings {
   consent: { required: boolean };
 }
 
-export type ConsentDecision = 'granted' | 'declined';
-
-/** The wire shape for `GET /device/disclosure` — see docs/adr/0015-.... */
-export interface ConsentStatus {
-  required: boolean;
-  /** `null` when there's nothing to show (no capture enabled, or none published yet). */
-  disclosureVersionId: string | null;
-  text: string | null;
-}
-
 /**
  * The wire shape for `POST /device/app-events` — deliberately omits
  * `title`/`titleUnavailableReason` when absent (`undefined`) rather than
@@ -366,26 +356,6 @@ export class ApiClient {
     deviceToken: string,
   ): Promise<TrackingResult<CaptureSettings>> {
     return this.deviceRequest('GET', '/device/capture-settings', deviceToken);
-  }
-
-  /**
-   * The current disclosure text this Device's user should see, if any —
-   * fetched to populate the passive notice banner. See docs/adr/0015-....
-   */
-  getDisclosure(deviceToken: string): Promise<TrackingResult<ConsentStatus>> {
-    return this.deviceRequest('GET', '/device/disclosure', deviceToken);
-  }
-
-  /** Records the person's acknowledgment of a specific disclosure version — audit trail only, see docs/adr/0015-.... */
-  submitConsent(
-    deviceToken: string,
-    disclosureVersionId: string,
-    decision: ConsentDecision,
-  ): Promise<TrackingResult<void>> {
-    return this.deviceRequest('POST', '/device/consent', deviceToken, {
-      disclosureVersionId,
-      decision,
-    });
   }
 
   requestScreenshotUploadUrl(

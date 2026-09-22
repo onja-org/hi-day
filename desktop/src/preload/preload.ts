@@ -87,16 +87,6 @@ export interface UpdateCheckResult {
   latestVersion?: string;
 }
 
-/** See docs/adr/0015-.... */
-export type ConsentDecision = 'granted' | 'declined';
-
-export interface ConsentStatus {
-  required: boolean;
-  /** `null` when there's nothing to show (no capture enabled, or none published yet). */
-  disclosureVersionId: string | null;
-  text: string | null;
-}
-
 export interface TrackingIndicatorStatus {
   active: boolean;
 }
@@ -156,17 +146,6 @@ const api = {
       ipcRenderer.invoke('tracking:openPrivacySettings', pane) as Promise<void>,
     indicatorStatus: (): Promise<TrackingIndicatorStatus> =>
       ipcRenderer.invoke('tracking:indicatorStatus') as Promise<TrackingIndicatorStatus>,
-  },
-  consent: {
-    get: (): Promise<TrackingResult<ConsentStatus>> =>
-      ipcRenderer.invoke('consent:get') as Promise<TrackingResult<ConsentStatus>>,
-    submit: (
-      disclosureVersionId: string,
-      decision: ConsentDecision,
-    ): Promise<TrackingResult<void>> =>
-      ipcRenderer.invoke('consent:submit', disclosureVersionId, decision) as Promise<
-        TrackingResult<void>
-      >,
   },
   idle: {
     seconds: (): Promise<number> => ipcRenderer.invoke('idle:seconds') as Promise<number>,
