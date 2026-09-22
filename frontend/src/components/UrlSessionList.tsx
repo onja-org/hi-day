@@ -14,7 +14,11 @@ type UrlSessionListProps = {
   membershipId?: string;
   /** Only meaningful together with `membershipId` — admin/manager viewing a specific member. */
   showDelete?: boolean;
-  /** Caps how many DOMAINS render (most recently visited first) — the dashboard's compact preview. */
+  /**
+   * Caps how many DOMAINS render, and how many pages render inside each
+   * expanded domain (both most recently visited first) — the dashboard's
+   * compact preview.
+   */
   maxEntries?: number;
 };
 
@@ -73,6 +77,7 @@ export function UrlSessionList({
         <UrlSessionDomainAccordion
           key={group.domain}
           group={group}
+          maxPages={maxEntries}
           onDelete={
             showDelete && membershipId
               ? (url) => deleteMutation.mutate(url)

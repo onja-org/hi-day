@@ -1,9 +1,8 @@
 "use client";
 
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { Bar, BarChart, Cell, ResponsiveContainer, XAxis } from "recharts";
 import clsx from "clsx";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
-import type { DisplayWeekDay } from "@/lib/buildWeekDays";
 import { buildWeekDays } from "@/lib/buildWeekDays";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
@@ -13,38 +12,15 @@ type ThisWeekPanelProps = {
   organisationId: string;
 };
 
-type ChartDay = DisplayWeekDay & { displaySeconds: number };
-
 const BAR_SIZE = 20;
 // A day with zero tracked time still gets a small sliver in the chart data
-// (not in the label below it, and not in the tooltip) so every column shows
-// a visible baseline bar instead of fully disappearing.
+// (not in the label below it) so every column shows a visible baseline bar
+// instead of fully disappearing.
 const MIN_VISIBLE_RATIO = 0.03;
 
 function barColor(seconds: number, isToday: boolean): string {
   if (isToday) return "var(--color-primary)";
   return seconds > 0 ? "var(--color-success)" : "var(--color-sidebar-active)";
-}
-
-type ThisWeekTooltipProps = {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload: ChartDay }>;
-};
-
-function ThisWeekTooltip({ active, payload }: ThisWeekTooltipProps) {
-  if (!active || !payload || payload.length === 0) {
-    return null;
-  }
-  const day = payload[0].payload;
-
-  return (
-    <div className="rounded-md border border-input-border bg-white px-3 py-2 text-sm shadow-md">
-      <p className="font-medium text-primary-dark">{day.label}</p>
-      <p className="tabular-nums text-slate-900">
-        {day.seconds > 0 ? formatElapsed(day.seconds * 1000) : "No time tracked"}
-      </p>
-    </div>
-  );
 }
 
 export function ThisWeekPanel({ organisationId }: ThisWeekPanelProps) {
@@ -76,7 +52,6 @@ export function ThisWeekPanel({ organisationId }: ThisWeekPanelProps) {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <XAxis dataKey="label" hide />
-            <Tooltip content={<ThisWeekTooltip />} cursor={{ fill: "var(--color-sidebar)" }} />
             <Bar dataKey="displaySeconds" radius={0} barSize={BAR_SIZE} isAnimationActive={false}>
               {chartData.map((day, index) => (
                 <Cell key={index} fill={barColor(day.seconds, day.isToday)} />

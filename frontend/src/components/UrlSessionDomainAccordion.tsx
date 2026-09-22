@@ -9,6 +9,8 @@ type UrlSessionDomainAccordionProps = {
   /** Omitted on the read-only views — only a member's own detail page can delete. */
   onDelete?: (url: string) => void;
   isDeleting?: boolean;
+  /** Caps how many pages (most recently visited first) render when expanded — the dashboard's compact preview. Omit to show every tracked page. */
+  maxPages?: number;
 };
 
 /**
@@ -21,8 +23,10 @@ export function UrlSessionDomainAccordion({
   group,
   onDelete,
   isDeleting = false,
+  maxPages,
 }: UrlSessionDomainAccordionProps) {
   const pageLabel = group.pages.length === 1 ? "page" : "pages";
+  const visiblePages = maxPages ? group.pages.slice(0, maxPages) : group.pages;
 
   return (
     <details className="group rounded-md border border-input-border">
@@ -44,7 +48,7 @@ export function UrlSessionDomainAccordion({
       </summary>
 
       <ul className="flex flex-col border-t border-input-border">
-        {group.pages.map((page) => (
+        {visiblePages.map((page) => (
           <li
             key={page.url}
             className="flex items-center justify-between gap-3 border-b border-input-border px-3 py-2 last:border-b-0"

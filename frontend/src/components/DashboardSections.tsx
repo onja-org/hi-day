@@ -85,7 +85,7 @@ export function DashboardSections() {
 
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-primary-dark">Where time went</h2>
+            <h2 className="text-lg font-semibold text-primary-dark">Project Activity</h2>
             <Link
               href={`/organisations/${organisationId}/projects`}
               className="text-sm text-primary underline-offset-2 hover:underline"
@@ -106,7 +106,7 @@ export function DashboardSections() {
               View activity →
             </Link>
           </div>
-          <UrlSessionList organisationId={organisationId} maxEntries={3} />
+          <UrlSessionList organisationId={organisationId} maxEntries={5} />
         </section>
       </div>
 
@@ -117,7 +117,7 @@ export function DashboardSections() {
             href={`/organisations/${organisationId}/activities/screenshots`}
             className="text-sm text-primary underline-offset-2 hover:underline"
           >
-            View activity →
+            View Screenshots Activity →
           </Link>
         </div>
         <RecentActivityScreenshots organisationId={organisationId} />

@@ -32,7 +32,7 @@ export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
     summary.projectsThisWeek.length === 1 ? summary.projectsThisWeek[0] : undefined;
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       <DashboardKpiTile
         dotClassName="bg-primary"
         label="Worked today"
@@ -47,21 +47,6 @@ export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
         subLabel={
           activeDayCount > 0
             ? `across ${activeDayCount} active day${activeDayCount === 1 ? "" : "s"}`
-            : undefined
-        }
-      />
-      <DashboardKpiTile
-        dotClassName="bg-primary"
-        label="Activity"
-        value={
-          summary.weeklyActivityPercentage !== null
-            ? `${summary.weeklyActivityPercentage}%`
-            : "—"
-        }
-        subLabel="avg keyboard & mouse input"
-        progressRatio={
-          summary.weeklyActivityPercentage !== null
-            ? summary.weeklyActivityPercentage / 100
             : undefined
         }
       />

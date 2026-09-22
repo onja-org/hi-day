@@ -82,9 +82,10 @@ export function RecentTimesheetWidget({ organisationId }: RecentTimesheetWidgetP
             key={entry.id}
             className="flex items-center justify-between gap-3 border-t border-input-border py-2 first:border-t-0 text-sm"
           >
-            <span className="flex items-center gap-2 text-slate-900">
+            <span className="flex min-w-0 items-center gap-2 text-slate-900">
               <ProjectColourBadge colour={entry.projectColour} />
-              <span className="font-mono tabular-nums">
+              <span className="truncate">{entry.projectName}</span>
+              <span className="shrink-0 font-mono tabular-nums text-slate-900/60">
                 {formatTimeRange(entry.startedAt, entry.endedAt)}
               </span>
             </span>
