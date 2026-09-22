@@ -12,7 +12,7 @@ type TimesheetDayTimelineProps = {
 };
 
 const MINUTES_PER_DAY = 24 * 60;
-const BAR_HEIGHT = 32;
+const BAR_HEIGHT = 16;
 
 function formatSegmentTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -53,10 +53,10 @@ export function TimesheetDayTimeline({ dayStart, entries }: TimesheetDayTimeline
           <rect
             key={index}
             x={segment.startMinute}
-            y={4}
+            y={2}
             width={Math.max(segment.endMinute - segment.startMinute, 4)}
-            height={BAR_HEIGHT - 8}
-            rx={4}
+            height={BAR_HEIGHT - 4}
+            rx={2}
             fill="currentColor"
             className={
               segment.kind === "work"
