@@ -50,11 +50,9 @@ export class ProjectsController {
   list(
     @Req() request: AuthenticatedRequest,
     @Query('status') status?: 'active' | 'archived',
-    @Query('client') client?: string,
   ): Promise<ProjectListItem[]> {
     return this.projectsService.list(request.organisationId!, request.userId, {
       status,
-      client,
     });
   }
 
@@ -69,6 +67,29 @@ export class ProjectsController {
       request.organisationId!,
       request.userId,
     );
+  }
+
+  // Backs the "add members"/"add teams" picker on the create-project form,
+  // before any :projectId exists — same data as the per-project pickers
+  // below (assignableMembers/assignableTeams), just organisation-scoped.
+  // Must stay declared before the `:projectId` routes so Nest doesn't match
+  // this literal segment as a projectId.
+  @Get('assignable-members')
+  @UseGuards(RoleGuard)
+  @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+  assignableMembersForCreate(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<AssignableMemberSummary[]> {
+    return this.projectsService.listAssignableMembers(request.organisationId!);
+  }
+
+  @Get('assignable-teams')
+  @UseGuards(RoleGuard)
+  @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+  assignableTeamsForCreate(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<AssignableTeamSummary[]> {
+    return this.projectsService.listAssignableTeams(request.organisationId!);
   }
 
   @Post()

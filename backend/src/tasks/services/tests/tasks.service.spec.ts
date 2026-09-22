@@ -92,11 +92,8 @@ describe('TasksService', () => {
   const baseProject = {
     id: 'project-1',
     name: 'Website',
-    client: null,
     description: null,
     colour: ProjectColour.BLUE,
-    billable: false,
-    rate: null,
     archivedAt: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
@@ -455,7 +452,6 @@ describe('TasksService', () => {
       expect(result.project).toEqual({
         id: 'project-1',
         name: 'Website',
-        client: null,
         colour: ProjectColour.BLUE,
         status: 'active',
       });

@@ -11,7 +11,7 @@ describe("getProjectTasks", () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          project: { id: "p-1", name: "Website", client: null, colour: "blue", status: "active" },
+          project: { id: "p-1", name: "Website", colour: "blue", status: "active" },
           tasks: [],
           canManage: true,
         }),

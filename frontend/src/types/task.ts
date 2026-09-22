@@ -28,7 +28,6 @@ export type Task = {
 export type TaskProjectContext = {
   id: string;
   name: string;
-  client: string | null;
   colour: ProjectColour;
   status: ProjectStatus;
 };

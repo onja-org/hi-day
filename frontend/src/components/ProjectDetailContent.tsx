@@ -84,18 +84,6 @@ export function ProjectDetailContent({
       />
 
       <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-        <div>
-          <dt className="text-sm text-slate-900/70">Client</dt>
-          <dd className="text-slate-900">{project.client ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-sm text-slate-900/70">Billing</dt>
-          <dd className="text-slate-900">
-            {project.billable
-              ? `Billable${project.rate ? ` — $${project.rate}/hr default` : ""}`
-              : "Not billable"}
-          </dd>
-        </div>
         <div className="sm:col-span-2">
           <dt className="text-sm text-slate-900/70">Description</dt>
           <dd className="text-slate-900">{project.description ?? "—"}</dd>

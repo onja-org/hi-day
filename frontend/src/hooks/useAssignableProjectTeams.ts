@@ -3,12 +3,12 @@ import { getAssignableProjectTeams } from "@/lib/getAssignableProjectTeams";
 
 export const ASSIGNABLE_PROJECT_TEAMS_QUERY_KEY = (
   organisationId: string,
-  projectId: string,
-) => ["projects", organisationId, projectId, "assignable-teams"];
+  projectId?: string,
+) => ["projects", organisationId, projectId ?? "new", "assignable-teams"];
 
 export function useAssignableProjectTeams(
   organisationId: string,
-  projectId: string,
+  projectId?: string,
 ) {
   return useQuery({
     queryKey: ASSIGNABLE_PROJECT_TEAMS_QUERY_KEY(organisationId, projectId),

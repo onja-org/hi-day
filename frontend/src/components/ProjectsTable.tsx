@@ -16,11 +16,7 @@ const STATUS_FILTERS: (ProjectStatus | "all")[] = ["all", "active", "archived"];
 
 export function ProjectsTable({ organisationId }: ProjectsTableProps) {
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("active");
-  const [client, setClient] = useState("");
-  const projectsQuery = useProjects(organisationId, {
-    status: statusFilter,
-    client: client.trim() || undefined,
-  });
+  const projectsQuery = useProjects(organisationId, { status: statusFilter });
   const organisationQuery = useCurrentOrganisation();
   const canManage =
     organisationQuery.data?.role === "admin" ||
@@ -48,22 +44,11 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
   }
 
   const projects = projectsQuery.data;
-  const hasFilters = statusFilter !== "active" || client.trim().length > 0;
+  const hasFilters = statusFilter !== "active";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label htmlFor="project-client-filter" className="sr-only">
-          Filter by client
-        </label>
-        <input
-          id="project-client-filter"
-          type="search"
-          placeholder="Filter by client"
-          value={client}
-          onChange={(event) => setClient(event.target.value)}
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900 sm:w-64"
-        />
         <label htmlFor="project-status-filter" className="sr-only">
           Filter by status
         </label>
@@ -88,10 +73,8 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
           <thead>
             <tr className="border-b border-input-border text-slate-900">
               <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Client</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Tasks</th>
-              <th className="px-3 py-2 font-medium">Rate</th>
               <th className="px-3 py-2 font-medium">
                 <span className="sr-only">Actions</span>
               </th>
@@ -108,7 +91,7 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
             ))}
             {projects.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-slate-900">
+                <td colSpan={4} className="px-3 py-4 text-center text-slate-900">
                   {hasFilters
                     ? "No projects match your filters."
                     : "No projects yet. Create one to start tracking time against real work."}

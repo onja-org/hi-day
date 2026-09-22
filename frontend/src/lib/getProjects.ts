@@ -5,7 +5,6 @@ const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export type GetProjectsFilter = {
   status?: ProjectStatus | "all";
-  client?: string;
 };
 
 export async function getProjects(
@@ -15,9 +14,6 @@ export async function getProjects(
   const params = new URLSearchParams();
   if (filter.status && filter.status !== "all") {
     params.set("status", filter.status);
-  }
-  if (filter.client) {
-    params.set("client", filter.client);
   }
   const query = params.toString();
 

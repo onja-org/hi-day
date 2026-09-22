@@ -24,7 +24,6 @@ import { AddProjectTeamDto } from '../dto/add-project-team.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
-import { resolveProjectRate } from '../resolve-project-rate.util';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
@@ -32,11 +31,8 @@ const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 export interface ProjectSummary {
   id: string;
   name: string;
-  client: string | null;
   description: string | null;
   colour: ProjectColour;
-  billable: boolean;
-  rate: string | null;
   status: 'active' | 'archived';
   archivedAt: Date | null;
   createdAt: Date;
@@ -50,8 +46,6 @@ export interface ProjectMemberSummary {
   email: string;
   name: string | null;
   role: ProjectMembershipRole;
-  rate: string | null;
-  effectiveRate: string | null;
 }
 
 export interface ProjectTeamSummary {
@@ -71,7 +65,6 @@ export interface ProjectListItem extends ProjectSummary {
 
 export interface ListProjectsFilter {
   status?: 'active' | 'archived';
-  client?: string;
 }
 
 export interface AssignableMemberSummary {
@@ -199,10 +192,6 @@ export class ProjectsService {
       query.andWhere('project.archivedAt IS NULL');
     } else if (filter.status === 'archived') {
       query.andWhere('project.archivedAt IS NOT NULL');
-    }
-
-    if (filter.client) {
-      query.andWhere('project.client = :client', { client: filter.client });
     }
 
     query.orderBy('project.name', 'ASC');
@@ -334,7 +323,7 @@ export class ProjectsService {
     return {
       ...this.toSummary(project),
       members: members.map((projectMembership) =>
-        this.toMemberSummary(project, projectMembership),
+        this.toMemberSummary(projectMembership),
       ),
       teams: teams.map((projectTeam) => this.toProjectTeamSummary(projectTeam)),
     };
@@ -354,14 +343,35 @@ export class ProjectsService {
       );
     }
 
+    const memberIds = (dto.members ?? []).map((member) => member.membershipId);
+    if (memberIds.length > 0) {
+      const count = await this.memberships.count({
+        where: {
+          id: In(memberIds),
+          organisationId,
+          status: MembershipStatus.ACTIVE,
+        },
+      });
+      if (count !== new Set(memberIds).size) {
+        throw new NotFoundException('One or more members were not found.');
+      }
+    }
+
+    const teamIds = dto.teamIds ?? [];
+    if (teamIds.length > 0) {
+      const count = await this.teams.count({
+        where: { id: In(teamIds), organisationId },
+      });
+      if (count !== new Set(teamIds).size) {
+        throw new NotFoundException('One or more teams were not found.');
+      }
+    }
+
     const project = this.projects.create({
       organisationId,
       name: dto.name,
-      client: normalizeText(dto.client),
       description: normalizeText(dto.description),
       colour: dto.colour ?? ProjectColour.BLUE,
-      billable: dto.billable ?? false,
-      rate: dto.rate ?? null,
     });
 
     const saved = await this.projects.save(project).catch((error: unknown) => {
@@ -374,6 +384,20 @@ export class ProjectsService {
     });
 
     await this.dataSource.transaction(async (manager) => {
+      if (dto.members?.length) {
+        await manager.getRepository(ProjectMembership).insert(
+          dto.members.map((member) => ({
+            projectId: saved.id,
+            membershipId: member.membershipId,
+            role: member.role ?? ProjectMembershipRole.MEMBER,
+          })),
+        );
+      }
+      if (teamIds.length > 0) {
+        await manager
+          .getRepository(ProjectTeam)
+          .insert(teamIds.map((teamId) => ({ projectId: saved.id, teamId })));
+      }
       await this.auditLogService.record(manager, {
         action: 'project.created',
         organisationId,
@@ -395,12 +419,9 @@ export class ProjectsService {
     this.assertNotArchived(project);
 
     if (dto.name !== undefined) project.name = dto.name;
-    if (dto.client !== undefined) project.client = normalizeText(dto.client);
     if (dto.description !== undefined)
       project.description = normalizeText(dto.description);
     if (dto.colour !== undefined) project.colour = dto.colour;
-    if (dto.billable !== undefined) project.billable = dto.billable;
-    if (dto.rate !== undefined) project.rate = dto.rate;
 
     const saved = await this.projects.save(project).catch((error: unknown) => {
       if (this.isUniqueViolation(error)) {
@@ -512,7 +533,6 @@ export class ProjectsService {
     const projectMembership = this.projectMemberships.create({
       projectId,
       membershipId: dto.membershipId,
-      rate: dto.rate ?? null,
       role: dto.role ?? ProjectMembershipRole.MEMBER,
     });
 
@@ -534,7 +554,7 @@ export class ProjectsService {
       });
     });
 
-    return this.toMemberSummary(project, { ...saved, membership });
+    return this.toMemberSummary({ ...saved, membership });
   }
 
   async removeMember(
@@ -584,7 +604,6 @@ export class ProjectsService {
     }
 
     if (dto.role !== undefined) projectMembership.role = dto.role;
-    if (dto.rate !== undefined) projectMembership.rate = dto.rate;
 
     const saved = await this.projectMemberships.save(projectMembership);
 
@@ -597,7 +616,7 @@ export class ProjectsService {
       });
     });
 
-    return this.toMemberSummary(project, saved);
+    return this.toMemberSummary(saved);
   }
 
   /**
@@ -707,11 +726,8 @@ export class ProjectsService {
     return {
       id: project.id,
       name: project.name,
-      client: project.client,
       description: project.description,
       colour: project.colour,
-      billable: project.billable,
-      rate: project.rate,
       status: project.archivedAt ? 'archived' : 'active',
       archivedAt: project.archivedAt,
       createdAt: project.createdAt,
@@ -720,10 +736,9 @@ export class ProjectsService {
   }
 
   private toMemberSummary(
-    project: Project,
     projectMembership: Pick<
       ProjectMembership,
-      'id' | 'membershipId' | 'rate' | 'role'
+      'id' | 'membershipId' | 'role'
     > & {
       membership: Membership;
     },
@@ -735,8 +750,6 @@ export class ProjectsService {
       email: projectMembership.membership.user.email,
       name: projectMembership.membership.user.name,
       role: projectMembership.role,
-      rate: projectMembership.rate,
-      effectiveRate: resolveProjectRate(project, projectMembership),
     };
   }
 

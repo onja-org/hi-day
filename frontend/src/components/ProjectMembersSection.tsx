@@ -69,7 +69,6 @@ export function ProjectMembersSection({
             <tr className="border-b border-input-border text-slate-900">
               <th className="px-3 py-2 font-medium">Member</th>
               <th className="px-3 py-2 font-medium">Role</th>
-              <th className="px-3 py-2 font-medium">Rate</th>
               <th className="px-3 py-2 font-medium" />
             </tr>
           </thead>
@@ -108,11 +107,6 @@ export function ProjectMembersSection({
                     <span className="capitalize">{member.role}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-slate-900">
-                  {member.effectiveRate
-                    ? `$${member.effectiveRate}/hr${member.rate ? " (override)" : ""}`
-                    : "—"}
-                </td>
                 <td className="px-3 py-2 text-right">
                   {canManage && (
                     <button
@@ -129,7 +123,7 @@ export function ProjectMembersSection({
             ))}
             {project.members.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-4 text-center text-slate-900">
+                <td colSpan={3} className="px-3 py-4 text-center text-slate-900">
                   No members assigned yet. Only assigned members can log time to this project.
                 </td>
               </tr>

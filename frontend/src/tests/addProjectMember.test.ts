@@ -11,7 +11,7 @@ describe("addProjectMember", () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          member: { membershipId: "m-1", effectiveRate: "75.00" },
+          member: { membershipId: "m-1" },
           message: "Project member added",
         }),
     });
@@ -19,18 +19,17 @@ describe("addProjectMember", () => {
 
     const result = await addProjectMember("org-1", "p-1", {
       membershipId: "m-1",
-      rate: "75.00",
     });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.member.effectiveRate).toBe("75.00");
+      expect(result.member.membershipId).toBe("m-1");
     }
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/org-1/projects/p-1/members",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ membershipId: "m-1", rate: "75.00" }),
+        body: JSON.stringify({ membershipId: "m-1" }),
       }),
     );
   });

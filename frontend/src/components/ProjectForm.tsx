@@ -6,7 +6,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createProject } from "@/lib/createProject";
 import { updateProject } from "@/lib/updateProject";
 import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
-import type { Project, ProjectColour, ProjectFormInput } from "@/types/project";
+import type {
+  Project,
+  ProjectColour,
+  ProjectFormInput,
+  ProjectMembershipRole,
+} from "@/types/project";
+import { CreateProjectAssignmentFields } from "./CreateProjectAssignmentFields";
 import { ProjectColourPicker } from "./ProjectColourPicker";
 import { Spinner } from "./Spinner";
 
@@ -32,7 +38,10 @@ export function ProjectForm({
 }: ProjectFormProps) {
   const queryClient = useQueryClient();
   const [colour, setColour] = useState<ProjectColour>(project?.colour ?? "blue");
-  const [billable, setBillable] = useState(project?.billable ?? false);
+  const [selectedMembers, setSelectedMembers] = useState<
+    Map<string, ProjectMembershipRole>
+  >(new Map());
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
 
   const mutation = useMutation({
     mutationFn: (input: ProjectFormInput) =>
@@ -60,17 +69,19 @@ export function ProjectForm({
       return;
     }
 
-    const client = String(formData.get("client") ?? "").trim();
     const description = String(formData.get("description") ?? "").trim();
-    const rate = String(formData.get("rate") ?? "").trim();
 
     mutation.mutate({
       name,
-      client: client || undefined,
       description: description || undefined,
       colour,
-      billable,
-      rate: rate || undefined,
+      ...(mode === "create" && {
+        members: [...selectedMembers.entries()].map(([membershipId, role]) => ({
+          membershipId,
+          role,
+        })),
+        teamIds: [...selectedTeamIds],
+      }),
     });
   }
 
@@ -84,17 +95,6 @@ export function ProjectForm({
           required
           maxLength={255}
           defaultValue={project?.name}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        Client (optional)
-        <input
-          name="client"
-          type="text"
-          maxLength={255}
-          defaultValue={project?.client ?? ""}
           className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </label>
@@ -115,28 +115,15 @@ export function ProjectForm({
         <ProjectColourPicker value={colour} onChange={setColour} />
       </div>
 
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={billable}
-          onChange={(event) => setBillable(event.target.checked)}
-          className="h-4 w-4 rounded border-input-border"
+      {mode === "create" && (
+        <CreateProjectAssignmentFields
+          organisationId={organisationId}
+          selectedMembers={selectedMembers}
+          onMembersChange={setSelectedMembers}
+          selectedTeamIds={selectedTeamIds}
+          onTeamIdsChange={setSelectedTeamIds}
         />
-        Billable
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        Default rate (optional)
-        <input
-          name="rate"
-          type="number"
-          min="0"
-          step="0.01"
-          defaultValue={project?.rate ?? ""}
-          placeholder="0.00"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      )}
 
       <button
         type="submit"

@@ -5,12 +5,15 @@ const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 export async function getAssignableProjectMembers(
   organisationId: string,
-  projectId: string,
+  projectId?: string,
 ): Promise<GetAssignableMembersResult> {
+  const path = projectId
+    ? `/projects/${projectId}/assignable-members`
+    : "/projects/assignable-members";
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/projects/${projectId}/assignable-members`,
+      `${API_URL}/organisations/${organisationId}${path}`,
       { method: "GET", credentials: "include" },
     );
   } catch {

@@ -12,10 +12,8 @@ import { Project } from './project.entity';
 import { ProjectMembershipRole } from './project-membership-role.enum';
 
 /**
- * Grants an org Membership access to log time against a Project, with an
- * optional per-user rate override — see resolveProjectRate for how the
- * effective rate is picked between this and Project.rate. `role` is a
- * project-scoped permission tier, independent of the org-wide
+ * Grants an org Membership access to log time against a Project. `role` is
+ * a project-scoped permission tier, independent of the org-wide
  * MembershipRole — see ProjectMembershipRole.
  */
 @Entity({ name: 'project_memberships' })
@@ -31,9 +29,6 @@ export class ProjectMembership {
     default: ProjectMembershipRole.MEMBER,
   })
   role: ProjectMembershipRole;
-
-  @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
-  rate: string | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

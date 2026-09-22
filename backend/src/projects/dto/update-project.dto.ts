@@ -1,8 +1,6 @@
 import {
-  IsBoolean,
   IsEnum,
   IsNotEmpty,
-  IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
@@ -18,23 +16,10 @@ export class UpdateProjectDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
-  client?: string;
-
-  @IsOptional()
-  @IsString()
   @MaxLength(2000)
   description?: string;
 
   @IsOptional()
   @IsEnum(ProjectColour)
   colour?: ProjectColour;
-
-  @IsOptional()
-  @IsBoolean()
-  billable?: boolean;
-
-  @IsOptional()
-  @IsNumberString()
-  rate?: string;
 }

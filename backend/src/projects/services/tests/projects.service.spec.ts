@@ -91,6 +91,7 @@ describe('ProjectsService', () => {
     return {
       findOne: jest.fn(),
       find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       ...overrides,
     } as unknown as Repository<Membership>;
   }
@@ -114,6 +115,7 @@ describe('ProjectsService', () => {
     return {
       findOne: jest.fn(),
       find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       ...overrides,
     } as unknown as Repository<Team>;
   }
@@ -129,11 +131,19 @@ describe('ProjectsService', () => {
 
   function makeDataSource() {
     const save = jest.fn().mockResolvedValue(undefined);
-    const manager = { save } as unknown as EntityManager;
+    const insert = jest.fn().mockResolvedValue(undefined);
+    const getRepository = jest.fn(() => ({ insert }));
+    const manager = { save, getRepository } as unknown as EntityManager;
     const transaction = jest.fn(
       (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
     );
-    return { dataSource: { transaction } as unknown, transaction, save };
+    return {
+      dataSource: { transaction } as unknown,
+      transaction,
+      save,
+      insert,
+      getRepository,
+    };
   }
 
   function makeAuditLogService() {
@@ -187,11 +197,8 @@ describe('ProjectsService', () => {
   const baseProject = {
     id: 'project-1',
     name: 'Website',
-    client: null,
     description: null,
     colour: ProjectColour.BLUE,
-    billable: false,
-    rate: null,
     archivedAt: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
@@ -213,12 +220,9 @@ describe('ProjectsService', () => {
 
       const result = await service.create('org-1', 'admin-1', {
         name: 'Website',
-        billable: true,
-        rate: '50.00',
       });
 
       expect(result.name).toBe('Website');
-      expect(result.billable).toBe(true);
       expect(result.status).toBe('active');
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
@@ -247,6 +251,85 @@ describe('ProjectsService', () => {
       await expect(
         service.create('org-1', 'admin-1', { name: 'Website' }),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('adds members and teams within the same transaction', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        count: jest.fn().mockResolvedValue(2),
+      });
+      const teamsRepo = makeTeamsRepo({
+        count: jest.fn().mockResolvedValue(1),
+      });
+      const { dataSource, getRepository, insert } = makeDataSource();
+      const { auditLogService } = makeAuditLogService();
+      const service = makeService({
+        projectsRepo,
+        membershipsRepo,
+        teamsRepo,
+        dataSource,
+        auditLogService,
+      });
+
+      await service.create('org-1', 'admin-1', {
+        name: 'Website',
+        members: [
+          { membershipId: 'membership-1' },
+          { membershipId: 'membership-2', role: ProjectMembershipRole.MANAGER },
+        ],
+        teamIds: ['team-1'],
+      });
+
+      expect(getRepository).toHaveBeenCalled();
+      expect(insert).toHaveBeenCalledWith([
+        expect.objectContaining({
+          membershipId: 'membership-1',
+          role: ProjectMembershipRole.MEMBER,
+        }),
+        expect.objectContaining({
+          membershipId: 'membership-2',
+          role: ProjectMembershipRole.MANAGER,
+        }),
+      ]);
+      expect(insert).toHaveBeenCalledWith([
+        expect.objectContaining({ teamId: 'team-1' }),
+      ]);
+    });
+
+    it('rejects a member that does not belong to this organisation', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        count: jest.fn().mockResolvedValue(0),
+      });
+      const service = makeService({ projectsRepo, membershipsRepo });
+
+      await expect(
+        service.create('org-1', 'admin-1', {
+          name: 'Website',
+          members: [{ membershipId: 'membership-1' }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a team that does not belong to this organisation', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const teamsRepo = makeTeamsRepo({
+        count: jest.fn().mockResolvedValue(0),
+      });
+      const service = makeService({ projectsRepo, teamsRepo });
+
+      await expect(
+        service.create('org-1', 'admin-1', {
+          name: 'Website',
+          teamIds: ['team-1'],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -288,10 +371,10 @@ describe('ProjectsService', () => {
       });
 
       const result = await service.update('org-1', 'project-1', 'admin-1', {
-        client: 'Acme Inc',
+        description: 'A new description',
       });
 
-      expect(result.client).toBe('Acme Inc');
+      expect(result.description).toBe('A new description');
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ action: 'project.updated' }),
@@ -382,9 +465,9 @@ describe('ProjectsService', () => {
       user: { email: 'a@b.test', name: 'A B' },
     };
 
-    it('assigns a member and resolves the per-user override as the effective rate', async () => {
+    it('assigns a member and records an audit log entry', async () => {
       const projectsRepo = makeProjectsRepo({
-        findOne: jest.fn().mockResolvedValue({ ...baseProject, rate: '50.00' }),
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
       });
       const projectMembershipsRepo = makeProjectMembershipsRepo({
         findOne: jest.fn().mockResolvedValue(null),
@@ -404,38 +487,13 @@ describe('ProjectsService', () => {
 
       const result = await service.addMember('org-1', 'project-1', 'admin-1', {
         membershipId: 'membership-1',
-        rate: '75.00',
       });
 
-      expect(result.effectiveRate).toBe('75.00');
       expect(result.email).toBe('a@b.test');
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ action: 'project.member_added' }),
       );
-    });
-
-    it('falls back to the project rate when no override is given', async () => {
-      const projectsRepo = makeProjectsRepo({
-        findOne: jest.fn().mockResolvedValue({ ...baseProject, rate: '50.00' }),
-      });
-      const projectMembershipsRepo = makeProjectMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(null),
-      });
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(membership),
-      });
-      const service = makeService({
-        projectsRepo,
-        projectMembershipsRepo,
-        membershipsRepo,
-      });
-
-      const result = await service.addMember('org-1', 'project-1', 'admin-1', {
-        membershipId: 'membership-1',
-      });
-
-      expect(result.effectiveRate).toBe('50.00');
     });
 
     it('rejects assigning a member to an archived project', async () => {
@@ -546,7 +604,6 @@ describe('ProjectsService', () => {
       projectId: 'project-1',
       membershipId: 'membership-1',
       role: ProjectMembershipRole.MEMBER,
-      rate: null,
       membership: {
         userId: 'user-1',
         user: { email: 'a@b.test', name: 'A B' },
@@ -582,26 +639,6 @@ describe('ProjectsService', () => {
         expect.anything(),
         expect.objectContaining({ action: 'project.member_updated' }),
       );
-    });
-
-    it('updates the rate override', async () => {
-      const projectsRepo = makeProjectsRepo({
-        findOne: jest.fn().mockResolvedValue({ ...baseProject, rate: '50.00' }),
-      });
-      const projectMembershipsRepo = makeProjectMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue({ ...existingProjectMembership }),
-      });
-      const service = makeService({ projectsRepo, projectMembershipsRepo });
-
-      const result = await service.updateMember(
-        'org-1',
-        'project-1',
-        'membership-1',
-        'admin-1',
-        { rate: '90.00' },
-      );
-
-      expect(result.effectiveRate).toBe('90.00');
     });
 
     it('throws when the member is not assigned to the project', async () => {
@@ -695,7 +732,7 @@ describe('ProjectsService', () => {
   });
 
   describe('list', () => {
-    it('scopes the query to the organisation and applies status/client filters for an admin', async () => {
+    it('scopes the query to the organisation and applies the status filter for an admin', async () => {
       const projectsRepo = makeProjectsRepo();
       const membershipsRepo = makeMembershipsRepo({
         findOne: jest.fn().mockResolvedValue({
@@ -705,10 +742,7 @@ describe('ProjectsService', () => {
       });
       const service = makeService({ projectsRepo, membershipsRepo });
 
-      await service.list('org-1', 'admin-1', {
-        status: 'active',
-        client: 'Acme',
-      });
+      await service.list('org-1', 'admin-1', { status: 'active' });
 
       const queryBuilder = (
         projectsRepo as unknown as { __queryBuilder: Record<string, jest.Mock> }
@@ -719,10 +753,6 @@ describe('ProjectsService', () => {
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'project.archivedAt IS NULL',
-      );
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'project.client = :client',
-        { client: 'Acme' },
       );
       expect(queryBuilder.innerJoin).not.toHaveBeenCalled();
     });

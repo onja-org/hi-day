@@ -17,11 +17,8 @@ export type ProjectMembershipRole = "manager" | "member";
 export type Project = {
   id: string;
   name: string;
-  client: string | null;
   description: string | null;
   colour: ProjectColour;
-  billable: boolean;
-  rate: string | null;
   status: ProjectStatus;
   archivedAt: string | null;
   createdAt: string;
@@ -35,8 +32,6 @@ export type ProjectMember = {
   email: string;
   name: string | null;
   role: ProjectMembershipRole;
-  rate: string | null;
-  effectiveRate: string | null;
 };
 
 export type ProjectTeamMember = {
@@ -54,13 +49,17 @@ export type ProjectListItem = Project & {
   taskCount: number;
 };
 
+export type CreateProjectMemberInput = {
+  membershipId: string;
+  role?: ProjectMembershipRole;
+};
+
 export type ProjectFormInput = {
   name: string;
-  client?: string;
   description?: string;
   colour?: ProjectColour;
-  billable?: boolean;
-  rate?: string;
+  members?: CreateProjectMemberInput[];
+  teamIds?: string[];
 };
 
 export type GetProjectsResult =
@@ -79,7 +78,6 @@ export type ArchiveProjectResult = ApiResult<{ project: Project }>;
 
 export type AddProjectMemberInput = {
   membershipId: string;
-  rate?: string;
   role?: ProjectMembershipRole;
 };
 
@@ -87,7 +85,6 @@ export type AddProjectMemberResult = ApiResult<{ member: ProjectMember }>;
 
 export type UpdateProjectMemberInput = {
   role?: ProjectMembershipRole;
-  rate?: string;
 };
 
 export type UpdateProjectMemberResult = ApiResult<{ member: ProjectMember }>;

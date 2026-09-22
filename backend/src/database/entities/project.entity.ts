@@ -24,9 +24,6 @@ export class Project {
   @Column()
   name: string;
 
-  @Column({ type: 'varchar', nullable: true })
-  client: string | null;
-
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
@@ -37,12 +34,6 @@ export class Project {
     default: ProjectColour.BLUE,
   })
   colour: ProjectColour;
-
-  @Column({ default: false })
-  billable: boolean;
-
-  @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
-  rate: string | null;
 
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   archivedAt: Date | null;

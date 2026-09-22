@@ -25,17 +25,17 @@ describe("getProjects", () => {
     );
   });
 
-  it("includes status and client filters as query params", async () => {
+  it("includes the status filter as a query param", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await getProjects("org-1", { status: "archived", client: "Acme Inc" });
+    await getProjects("org-1", { status: "archived" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/backend/organisations/org-1/projects?status=archived&client=Acme+Inc",
+      "/api/backend/organisations/org-1/projects?status=archived",
       expect.objectContaining({ method: "GET" }),
     );
   });

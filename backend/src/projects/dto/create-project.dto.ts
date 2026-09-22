@@ -1,24 +1,25 @@
+import { Type } from 'class-transformer';
 import {
-  IsBoolean,
+  ArrayMaxSize,
+  IsArray,
   IsEnum,
   IsNotEmpty,
-  IsNumberString,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
+import { CreateProjectMemberDto } from './create-project-member.dto';
+
+const MAX_MEMBERS_OR_TEAMS_AT_CREATION = 200;
 
 export class CreateProjectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
   name: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  client?: string;
 
   @IsOptional()
   @IsString()
@@ -30,10 +31,15 @@ export class CreateProjectDto {
   colour?: ProjectColour;
 
   @IsOptional()
-  @IsBoolean()
-  billable?: boolean;
+  @IsArray()
+  @ArrayMaxSize(MAX_MEMBERS_OR_TEAMS_AT_CREATION)
+  @ValidateNested({ each: true })
+  @Type(() => CreateProjectMemberDto)
+  members?: CreateProjectMemberDto[];
 
   @IsOptional()
-  @IsNumberString()
-  rate?: string;
+  @IsArray()
+  @ArrayMaxSize(MAX_MEMBERS_OR_TEAMS_AT_CREATION)
+  @IsUUID('4', { each: true })
+  teamIds?: string[];
 }

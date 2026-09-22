@@ -13,17 +13,17 @@ describe("updateProject", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            project: { id: "p-1", client: "Acme Inc" },
+            project: { id: "p-1", name: "New name" },
             message: "Project updated",
           }),
       }),
     );
 
-    const result = await updateProject("org-1", "p-1", { client: "Acme Inc" });
+    const result = await updateProject("org-1", "p-1", { name: "New name" });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.project.client).toBe("Acme Inc");
+      expect(result.project.name).toBe("New name");
     }
   });
 

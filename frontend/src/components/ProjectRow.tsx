@@ -36,7 +36,6 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
             />
           </Link>
         </td>
-        <td className="px-3 py-2 text-slate-900">{project.client ?? "—"}</td>
         <td className="px-3 py-2">
           <ProjectStatusBadge status={project.status} />
         </td>
@@ -55,9 +54,6 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
             {project.taskCount} {project.taskCount === 1 ? "task" : "tasks"}
           </button>
         </td>
-        <td className="px-3 py-2 text-slate-900">
-          {project.billable ? (project.rate ? `$${project.rate}/hr` : "Billable") : "Not billable"}
-        </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {canManage && (
             <ProjectRowActions organisationId={organisationId} project={project} />
@@ -66,7 +62,7 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
       </tr>
       {tasksExpanded && (
         <tr className="border-b border-input-border bg-cream/40 last:border-b-0">
-          <td colSpan={6} className="px-3 py-4">
+          <td colSpan={4} className="px-3 py-4">
             <ProjectTasksSection organisationId={organisationId} projectId={project.id} />
           </td>
         </tr>

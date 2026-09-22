@@ -25,7 +25,6 @@ export function AddProjectMemberModal({
   const queryClient = useQueryClient();
   const projectQuery = useProject(organisationId, projectId);
   const membersQuery = useAssignableProjectMembers(organisationId, projectId);
-  const [rate, setRate] = useState("");
   // membershipId -> role, for every currently-checked candidate. Presence in
   // the map is "checked"; the value is that row's own role choice, so one
   // batch can add some people as members and others as managers together.
@@ -40,7 +39,6 @@ export function AddProjectMemberModal({
         [...selected.entries()].map(([membershipId, role]) => ({
           membershipId,
           role,
-          rate: rate.trim() || undefined,
         })),
       ),
     onSuccess: (result) => {
@@ -115,19 +113,6 @@ export function AddProjectMemberModal({
             setSelected((current) => new Map(current).set(id, role))
           }
         />
-
-        <label className="flex flex-col gap-1.5">
-          Rate override (optional)
-          <input
-            value={rate}
-            onChange={(event) => setRate(event.target.value)}
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="Uses the project's default rate if left blank — applies to everyone added below"
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
 
         <button
           type="button"

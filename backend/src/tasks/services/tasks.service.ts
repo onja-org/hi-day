@@ -47,7 +47,6 @@ export interface TaskSummary {
 export interface TaskProjectContext {
   id: string;
   name: string;
-  client: string | null;
   colour: ProjectColour;
   status: 'active' | 'archived';
 }
@@ -395,7 +394,6 @@ export class TasksService {
     return {
       id: project.id,
       name: project.name,
-      client: project.client,
       colour: project.colour,
       status: project.archivedAt ? 'archived' : 'active',
     };
