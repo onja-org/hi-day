@@ -80,29 +80,108 @@ function showLoginView(errorMessage?: string): void {
   stopPairingPoll();
 }
 
+// How often the auto-update banner re-polls once the app is running — the
+// manual GitHub-releases check (checkForUpdate below) only ever needs to
+// run once at launch, but a silent download's progress/"restart to apply"
+// state can change at any point during the day, so this refreshes on an
+// interval instead.
+const AUTO_UPDATE_POLL_INTERVAL_MS = 10_000;
+
 const updateBannerEl = document.getElementById("update-banner")!;
 const updateMessageEl = document.getElementById("update-message")!;
+const updateButtonEl = document.getElementById(
+  "update-button",
+) as HTMLButtonElement;
 
-async function checkForUpdate(): Promise<void> {
-  const result = await window.api.update.status();
-  if (!result.updateAvailable) return;
+// 'view' opens the releases page (the manual, GitHub-based fallback this
+// app has always had); 'restart' quits and installs a silently-downloaded
+// update (win/linux only — see auto-updater.ts). Set by refreshUpdateBanner
+// just before the banner is shown, read by the button's one click handler.
+let updateButtonMode: "view" | "restart" = "view";
+// Remembers which state the banner is currently showing (and, separately,
+// which one it was last dismissed for — phase + version) so a dismissed
+// banner stays hidden across polls until something actually changes (a new
+// version, or downloading finishing) rather than reappearing on the very
+// next 10s tick.
+let currentUpdateKey: string | null = null;
+let updateDismissedForKey: string | null = null;
 
-  updateMessageEl.textContent = result.latestVersion
-    ? `Version ${result.latestVersion} is available.`
-    : "A new version is available.";
+function showUpdateBanner(message: string, buttonMode: "view" | "restart", key: string): void {
+  currentUpdateKey = key;
+  if (updateDismissedForKey === key) return;
+  updateMessageEl.textContent = message;
+  updateButtonMode = buttonMode;
+  updateButtonEl.hidden = false;
+  updateButtonEl.textContent = buttonMode === "restart" ? "Restart now" : "View update";
   updateBannerEl.hidden = false;
 }
 
-document.getElementById("update-button")!.addEventListener("click", () => {
+/** The manual fallback: unsigned macOS, a non-AppImage Linux install, or a transient auto-update failure all land here. */
+async function checkForUpdate(): Promise<void> {
+  const result = await window.api.update.status();
+  if (!result.updateAvailable) {
+    updateBannerEl.hidden = true;
+    return;
+  }
+
+  showUpdateBanner(
+    result.latestVersion
+      ? `Version ${result.latestVersion} is available.`
+      : "A new version is available.",
+    "view",
+    `manual:${result.latestVersion ?? ""}`,
+  );
+}
+
+async function refreshUpdateBanner(): Promise<void> {
+  const auto = await window.api.update.autoStatus();
+
+  if (auto.phase === "downloading") {
+    const progress =
+      auto.progressPercent !== undefined ? ` (${auto.progressPercent}%)` : "";
+    showUpdateBanner(
+      auto.latestVersion
+        ? `Downloading version ${auto.latestVersion}${progress}…`
+        : `Downloading update${progress}…`,
+      "view",
+      `downloading:${auto.latestVersion ?? ""}`,
+    );
+    updateButtonEl.hidden = true; // nothing to click while it's still in flight
+    return;
+  }
+
+  if (auto.phase === "downloaded") {
+    showUpdateBanner(
+      auto.latestVersion
+        ? `Version ${auto.latestVersion} downloaded — restart to apply.`
+        : "Update downloaded — restart to apply.",
+      "restart",
+      `downloaded:${auto.latestVersion ?? ""}`,
+    );
+    return;
+  }
+
+  // idle/checking/unsupported — nothing silent is happening, so fall back
+  // to the manual GitHub check every platform has always had.
+  await checkForUpdate();
+}
+
+updateButtonEl.addEventListener("click", () => {
+  if (updateButtonMode === "restart") {
+    void window.api.update.restart();
+    return;
+  }
   void window.api.update.openReleasesPage();
 });
 
 document.getElementById("update-dismiss")!.addEventListener("click", () => {
   updateBannerEl.hidden = true;
+  updateDismissedForKey = currentUpdateKey;
 });
 
 async function init(): Promise<void> {
-  void checkForUpdate();
+  void refreshUpdateBanner();
+  setInterval(() => void refreshUpdateBanner(), AUTO_UPDATE_POLL_INTERVAL_MS);
 
   const status = await window.api.getStatus();
   if (status.loggedIn && status.organisationName) {
