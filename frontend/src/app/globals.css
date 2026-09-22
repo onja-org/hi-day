@@ -1,4 +1,43 @@
+
+@layer theme, base, rbc, components, utilities;
+@import "react-big-calendar/lib/css/react-big-calendar.css" layer(rbc);
 @import "tailwindcss";
+
+/* This app's timesheet entries are always timed, never all-day, so
+   react-big-calendar's all-day row (above the time grid, for events it
+   can't place on the grid) never has legitimate content — hide it outright
+   rather than depending on every entry being classified as timed. */
+@layer components {
+  .rbc-allday-cell {
+    display: none;
+  }
+
+  /* react-big-calendar's "now" line ships with a hardcoded default colour
+     that isn't in this app's closed brand palette — point it at the same
+     primary token the rest of the UI uses instead. */
+  .rbc-current-time-indicator {
+    background-color: var(--color-primary);
+  }
+
+  /* Each hour's gutter label only fills the first of its two (default
+     `timeslots={2}`) half-hour slot boxes, both `flex: 1 0 0` — with this
+     app's tall rows that pins the label to the top of the hour instead of
+     centering it. Let the label's own slot size to its content and center
+     the (now effectively single) block within the full hour. */
+  .rbc-time-gutter .rbc-time-slot {
+    flex: none;
+  }
+  .rbc-time-gutter .rbc-timeslot-group {
+    justify-content: center;
+  }
+
+  /* react-big-calendar's day-of-week header row (e.g. "21 Mon") ships with
+     no vertical padding beyond its text's own line-height — add some so it
+     isn't so cramped next to the taller grid below it. */
+  .rbc-header {
+    padding-block: 12px;
+  }
+}
 
 :root {
   --background: #ffffff;
@@ -70,12 +109,14 @@ body {
 }
 
 @theme {
-  /* Fixed intrinsic width for the timesheet Calendar grid's SVG (matches
-     the grid's own 960-unit viewBox) — keeps hour labels and gridlines
-     crisp at 1:1 scale instead of stretching non-uniformly to fill a
-     flexible container; the grid scrolls horizontally on a narrower
-     viewport instead (see TimesheetCalendarGrid.tsx). */
+  /* Fixed intrinsic width for the timesheet Calendar grid (react-big-calendar)
+     — keeps its 7 day columns and hour gutter from squashing illegibly on a
+     narrow viewport; the grid scrolls horizontally there instead (see
+     TimesheetCalendarGrid.tsx). */
   --width-calendar-grid: 60rem;
+  /* Taller viewport for the same grid — more of the day's hour rows are
+     visible before the grid needs to scroll vertically. */
+  --height-calendar-grid: 180rem;
 
   --animate-float: float 6s ease-in-out infinite;
   --animate-float-slow: float 8s ease-in-out 1s infinite;

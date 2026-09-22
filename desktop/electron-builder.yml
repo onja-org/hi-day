@@ -145,6 +145,28 @@ deb:
   # browser keeps starting with accessibility forced on after uninstall.
   afterRemove: build/afterRemove.sh
 
-# No code signing yet — see README.md. Skip publishing/auto-update wiring
-# entirely for this pass.
-publish: null
+# Points electron-updater at the same public releases repo update-checker.ts
+# already reads from (see RELEASES_REPO there) — this is what makes
+# electron-builder emit latest.yml/latest-mac.yml/latest-linux.yml (and the
+# NSIS/AppImage .blockmap files) into `directories.output` alongside the
+# installers, which is how auto-updater.ts's electron-updater instance knows
+# what "latest" means and how to verify a downloaded update's sha512 before
+# ever applying it.
+#
+# `--publish never` is passed explicitly by every `dist:*` script (see
+# package.json) so this config only ever generates those files locally —
+# it never tries to upload/publish itself. The actual GitHub release upload
+# stays a separate CI step (desktop-build.yml's `publish` job, using
+# RELEASES_REPO_TOKEN), which now also needs to pick up the .yml/.blockmap
+# files alongside the installers, not just the installers themselves.
+#
+# Still only really exercised on Windows/Linux today — macOS auto-update
+# needs a valid code signature to apply at all (see README's Known
+# limitations and auto-updater.ts's supportsSilentAutoUpdate), so this repo
+# being unsigned means mac keeps using the manual "View update" banner. The
+# `zip` mac target above is kept regardless, since Squirrel.Mac needs it
+# (not the dmg) once signing lands.
+publish:
+  provider: github
+  owner: onja-org
+  repo: workfoce-monitoring-app-releases

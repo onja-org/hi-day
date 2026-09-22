@@ -79,6 +79,8 @@ jobs:
             desktop/release/*.exe
             desktop/release/*.dmg
             desktop/release/*.zip
+            desktop/release/latest*.yml
+            desktop/release/*.blockmap
           if-no-files-found: error
 
   # Permanent (not workflow_dispatch-only) because Windows CI needs to
@@ -121,6 +123,12 @@ jobs:
   # which is why electron-builder's artifactName (see
   # desktop/electron-builder.yml) is deliberately version-free: those links
   # never need to change here.
+  #
+  # `installers/*` also picks up latest.yml/latest-mac.yml/latest-linux.yml
+  # and the NSIS/AppImage .blockmap files each build job now uploads
+  # alongside its installers (see electron-builder.yml's `publish` block) —
+  # electron-updater on a running app reads those from this same release to
+  # find out there's something newer and verify it before installing.
   #
   # RELEASES_REPO_TOKEN is a fine-grained PAT scoped to just that releases
   # repo with Contents: Read and write — the default GITHUB_TOKEN can't be

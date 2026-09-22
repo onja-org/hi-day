@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
+import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { ScreenshotSummaryItem } from "@/types/screenshot";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityMeter } from "./ActivityMeter";
@@ -13,24 +14,18 @@ type ScreenshotsPageContentProps = {
   organisationId: string;
 };
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function formatPeriodLabel(screenshot: ScreenshotSummaryItem): string {
   if (screenshot.periodStart && screenshot.periodEnd) {
-    return `${formatTime(screenshot.periodStart)} - ${formatTime(screenshot.periodEnd)}`;
+    return `${formatTimeOfDay(new Date(screenshot.periodStart))} - ${formatTimeOfDay(new Date(screenshot.periodEnd))}`;
   }
-  return formatTime(screenshot.capturedAt);
+  return formatTimeOfDay(new Date(screenshot.capturedAt));
 }
 
 export function ScreenshotsPageContent({
   organisationId,
 }: ScreenshotsPageContentProps) {
-  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
+  const { date, membershipId, untracked, projectId, canViewOthers } =
+    useActivityDayFilters();
 
   const screenshotsQuery = useActivityScreenshots(organisationId, {
     date,

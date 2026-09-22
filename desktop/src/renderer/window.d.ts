@@ -91,6 +91,14 @@ declare global {
     latestVersion?: string;
   }
 
+  type AutoUpdatePhase = 'idle' | 'checking' | 'downloading' | 'downloaded' | 'unsupported';
+
+  interface AutoUpdateState {
+    phase: AutoUpdatePhase;
+    latestVersion?: string;
+    progressPercent?: number;
+  }
+
   type TrackingResult<T> =
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
@@ -135,6 +143,8 @@ declare global {
       update: {
         status: () => Promise<UpdateCheckResult>;
         openReleasesPage: () => Promise<void>;
+        autoStatus: () => Promise<AutoUpdateState>;
+        restart: () => Promise<void>;
       };
     };
   }

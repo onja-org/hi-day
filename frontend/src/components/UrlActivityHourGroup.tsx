@@ -1,5 +1,5 @@
 import { groupUrlSessionsByDomain } from "@/lib/groupUrlSessionsByDomain";
-import type { UrlHourBucket, UrlSessionGroup } from "@/types/urlSession";
+import type { UrlHourBucket, UrlHourBucketPage, UrlSessionGroup } from "@/types/urlSession";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
 import { UrlSessionDomainAccordion } from "./UrlSessionDomainAccordion";
 
@@ -10,28 +10,57 @@ function formatHourLabel(hourStart: string): string {
   });
 }
 
+/**
+ * UrlSessionGroup's `lastVisitedAt` exists for sorting an all-time list;
+ * within one hour bucket every page shares the same hour, so the bucket's
+ * own hourStart stands in for it.
+ */
+function toSessionGroup(page: UrlHourBucketPage, hourStart: string): UrlSessionGroup {
+  return {
+    url: page.url,
+    host: page.host,
+    title: page.title,
+    totalActiveMs: page.activeMs,
+    lastVisitedAt: hourStart,
+    sessionCount: page.sessionCount,
+  };
+}
+
 type UrlActivityHourGroupProps = {
   organisationId: string;
   bucket: UrlHourBucket;
 };
 
-/** One hour's URL-activity accordion list — bold hour header, a Project
- * badge per domain (from that domain's first page's covering entry — a
- * domain rarely spans two projects within one hour), then the existing
- * per-domain accordion reused as-is. */
+/**
+ * One hour's URL activity, as a Project badge over a per-domain accordion.
+ *
+ * Grouped by project first, then domain. The backend keys its hour cells by
+ * (hour, project, url), so one URL legitimately appears twice in a bucket when
+ * it was visited under two projects — or once tracked and once not. Grouping
+ * the other way round put both in the same accordion, which collided React
+ * keys and let one domain's badge be taken from whichever page happened to
+ * come first. This way each accordion belongs to exactly one project, so the
+ * badge is right by construction and URLs are unique within it.
+ */
 export function UrlActivityHourGroup({ organisationId, bucket }: UrlActivityHourGroupProps) {
-  // UrlSessionGroup's `lastVisitedAt` exists for sorting within an
-  // all-time list; within one hour bucket every page shares the same hour,
-  // so the bucket's own hourStart stands in for it here.
-  const groups: UrlSessionGroup[] = bucket.pages.map((page) => ({
-    url: page.url,
-    host: page.host,
-    title: page.title,
-    totalActiveMs: page.activeMs,
-    lastVisitedAt: bucket.hourStart,
-    sessionCount: page.sessionCount,
-  }));
-  const domains = groupUrlSessionsByDomain(groups);
+  const byProject = new Map<string, UrlHourBucketPage[]>();
+  for (const page of bucket.pages) {
+    const key = page.projectId ?? "untracked";
+    byProject.set(key, [...(byProject.get(key) ?? []), page]);
+  }
+
+  // Map iteration follows insertion order, and the backend already returns a
+  // bucket's pages by descending active time — so the busiest project, and the
+  // busiest domain within it, stay first.
+  const sections = Array.from(byProject.entries()).flatMap(([projectKey, pages]) =>
+    groupUrlSessionsByDomain(pages.map((page) => toSessionGroup(page, bucket.hourStart))).map(
+      (domain) => ({
+        key: `${projectKey}|${domain.domain}`,
+        projectId: pages[0]?.projectId ?? null,
+        domain,
+      }),
+    ),
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -39,18 +68,15 @@ export function UrlActivityHourGroup({ organisationId, bucket }: UrlActivityHour
         {formatHourLabel(bucket.hourStart)}
       </h3>
       <div className="flex flex-col gap-2">
-        {domains.map((domain) => {
-          const firstPage = bucket.pages.find((page) => page.url === domain.pages[0]?.url);
-          return (
-            <div key={domain.domain} className="flex flex-col gap-1">
-              <ProjectBadgeOrUntracked
-                organisationId={organisationId}
-                projectId={firstPage?.projectId ?? null}
-              />
-              <UrlSessionDomainAccordion group={domain} />
-            </div>
-          );
-        })}
+        {sections.map((section) => (
+          <div key={section.key} className="flex flex-col gap-1">
+            <ProjectBadgeOrUntracked
+              organisationId={organisationId}
+              projectId={section.projectId}
+            />
+            <UrlSessionDomainAccordion group={section.domain} />
+          </div>
+        ))}
       </div>
     </div>
   );
