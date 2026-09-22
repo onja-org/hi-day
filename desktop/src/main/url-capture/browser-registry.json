@@ -28,7 +28,7 @@
     "darwinAppName": "Opera"
   },
   "vivaldi": {
-    "match": { "darwin": "com.vivaldi.Vivaldi", "win32": "vivaldi.exe", "linux": "vivaldi-stable" },
+    "match": { "darwin": "com.vivaldi.Vivaldi", "win32": "vivaldi.exe", "linux": "vivaldi" },
     "family": "chromium",
     "strategy": { "darwin": "apple-events", "win32": "uia-omnibox", "linux": "atspi-omnibox" },
     "privateDetect": "chromium-window-mode",
