@@ -107,6 +107,30 @@ describe('findAddressBarPath — remembering where a window keeps its address ba
     vi.restoreAllMocks();
   });
 
+  /**
+   * The regression this guard exists for: Firefox's bar reads as an
+   * embedded-object placeholder until a page settles, so the first walk
+   * finds only a decoy. Caching that node meant every later resolve
+   * answered with it and Firefox stopped being tracked entirely.
+   */
+  it('does not remember a node with nothing readable in it', async () => {
+    const tree = browserTree();
+    tree['/entry'].text = '\uFFFC'; // placeholder only — no readable URL yet
+    const fake = fakeBus(tree);
+    const client = await started(fake);
+
+    expect(await client.findAddressBarPath(':1.5', '/win')).toBe('/entry');
+    const afterFirst = fake.calls.total;
+
+    tree['/entry'].text = 'example.com'; // the page settles
+    expect(await client.findAddressBarPath(':1.5', '/win')).toBe('/entry');
+
+    // It walked again rather than trusting the earlier unreadable result.
+    expect(fake.calls.total - afterFirst).toBeGreaterThan(1);
+    client.stop();
+    vi.restoreAllMocks();
+  });
+
   it('keeps each window separate, so one window\'s bar is never served for another', async () => {
     const fake = fakeBus({ ...browserTree(), '/win2': { role: 'frame', children: ['/bar'] } });
     const client = await started(fake);

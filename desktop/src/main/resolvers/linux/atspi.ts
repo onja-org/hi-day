@@ -448,14 +448,26 @@ export class AtspiClient {
     // kept as a fallback for a genuinely empty bar.
     const fallback: { path: string | null } = { path: null };
     const readable = await this.searchForAddressBar(bus, path, 0, false, fallback);
-    const found = readable ?? fallback.path;
-    if (found) {
+    if (readable) {
       this.windowsWithoutAddressBar.delete(key);
-      this.rememberAddressBar(key, found);
-    } else {
-      this.rememberNoAddressBar(key);
+      this.rememberAddressBar(key, readable);
+      return readable;
     }
-    return found;
+
+    // Only a decoy-shaped node with nothing readable in it. Returned so a
+    // genuinely empty bar still resolves, but deliberately NOT remembered:
+    // the readable node may simply not exist yet (a window still opening, a
+    // bar mid-navigation), and caching this one would keep answering with
+    // the empty node long after the real one appeared. Firefox, whose bar
+    // reads as an embedded-object placeholder until a page settles, stops
+    // being tracked at all if this is cached.
+    if (fallback.path) {
+      this.windowsWithoutAddressBar.delete(key);
+      return fallback.path;
+    }
+
+    this.rememberNoAddressBar(key);
+    return null;
   }
 
   /** Same bound and eviction as the positive cache; see MAX_REMEMBERED_ADDRESS_BARS. */
