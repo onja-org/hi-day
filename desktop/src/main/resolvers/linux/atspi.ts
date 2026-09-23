@@ -22,6 +22,31 @@ const WINDOW_EVENT_IFACE = 'org.a11y.atspi.Event.Window';
 const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
 const WINDOW_ACTIVATE_EVENT = 'window:activate';
 
+/**
+ * Registered for, but never acted on.
+ *
+ * Chromium-based browsers under snap confinement emit no window events at
+ * all to a client subscribed only to `window:activate`. Brave, Opera and
+ * Vivaldi appeared silent on this machine for a whole day, and were assumed
+ * to emit only when a window is created. They are not silent: subscribing
+ * to object events as well makes their `window:activate` arrive normally.
+ *
+ * Measured over 75s of switching between already-open windows — Opera 6,
+ * Vivaldi 4, Brave 4 activations, against none at all for the same windows
+ * with only `window:activate` registered.
+ *
+ * So these cost nothing to hold and are what make those browsers speak.
+ * `object:state-changed` carries the focus state itself and is the one that
+ * matters; the others are registered alongside it because a browser that
+ * gates on one may gate on another, and an unused registration is free.
+ */
+const ENABLING_EVENTS = [
+  'object:state-changed',
+  'object:state-changed:focused',
+  'object:state-changed:active',
+  'window:deactivate',
+];
+
 /** Enough for every window a person realistically keeps open; oldest is evicted past this. */
 const MAX_REMEMBERED_ADDRESS_BARS = 64;
 
@@ -364,7 +389,10 @@ export class AtspiClient {
         continue; // wrong arity for this registry — try the next
       }
 
-      if (await this.hasWindowActivateRegistration(bus)) return;
+      if (await this.hasWindowActivateRegistration(bus)) {
+        await this.registerEnablingEvents(bus, signature);
+        return;
+      }
       this.logger(`[atspi] RegisterEvent(${signature}) was accepted but registered nothing`);
     }
 
@@ -372,6 +400,24 @@ export class AtspiClient {
       `The accessibility registry did not record a window:activate listener (tried: ${candidates.join(', ')}), ` +
         'so no focus events would ever arrive.',
     );
+  }
+
+  /**
+   * Best-effort: a registry that rejects any of these still leaves
+   * `window:activate` working for every browser that never needed them.
+   */
+  private async registerEnablingEvents(bus: dbus.MessageBus, signature: string): Promise<void> {
+    for (const event of ENABLING_EVENTS) {
+      const body = argumentsForSignature(signature, event);
+      if (!body) continue;
+      try {
+        await callOn(
+          bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'RegisterEvent', signature, body,
+        );
+      } catch {
+        // Not fatal — see this method's own doc comment.
+      }
+    }
   }
 
   /** The registry's own `RegisterEvent` input signature, or null if it will not say. */

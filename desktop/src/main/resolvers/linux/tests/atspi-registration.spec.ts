@@ -102,6 +102,8 @@ function fakeBus(options: {
   records: ('sass' | 's')[];
   /** Introspection document the fake registry returns; '' means it will not say. */
   xml?: string;
+  /** Rejects anything that is not window:activate, as an older registry might. */
+  rejectEnabling?: boolean;
   uniqueName?: string;
 }): { bus: dbus.MessageBus; calls: Call[] } {
   const calls: Call[] = [];
@@ -117,6 +119,9 @@ function fakeBus(options: {
       if (message.member === 'Introspect') return Promise.resolve({ body: [options.xml ?? ''] });
       if (message.member === 'RegisterEvent') {
         const arity = message.signature as 'sass' | 's';
+        if (options.rejectEnabling && message.body?.[0] !== 'window:activate') {
+          return Promise.reject(new Error('unsupported event'));
+        }
         if (!options.accepts.includes(arity)) {
           return Promise.reject(new Error(`no such method (${arity})`));
         }
@@ -135,6 +140,17 @@ function fakeBus(options: {
   return { bus: bus as unknown as dbus.MessageBus, calls };
 }
 
+
+/**
+ * Only the `window:activate` registrations. The client also subscribes to
+ * object events — see ENABLING_EVENTS — which are not what these assert on.
+ */
+function windowActivateAttempts(fake: { calls: Call[] }): Call[] {
+  return fake.calls.filter(
+    (c) => c.member === 'RegisterEvent' && c.body?.[0] === 'window:activate',
+  );
+}
+
 function startWith(fake: ReturnType<typeof fakeBus>): Promise<void> {
   vi.spyOn(dbus, 'sessionBus').mockReturnValue(fake.bus);
   return new AtspiClient({ onWindowActivated: () => undefined }).start();
@@ -149,7 +165,7 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     const fake = fakeBus({ accepts: ['sass', 's'], records: ['s'], xml: LEGACY_REGISTRY_XML });
     await expect(startWith(fake)).resolves.toBeUndefined();
 
-    const attempts = fake.calls.filter((c) => c.member === 'RegisterEvent');
+    const attempts = windowActivateAttempts(fake);
     expect(attempts).toHaveLength(1);
     expect(attempts[0].signature).toBe('s');
     vi.restoreAllMocks();
@@ -160,7 +176,7 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     const fake = fakeBus({ accepts: ['sassb' as 'sass'], records: ['sassb' as 'sass'], xml });
     await expect(startWith(fake)).resolves.toBeUndefined();
 
-    const attempts = fake.calls.filter((c) => c.member === 'RegisterEvent');
+    const attempts = windowActivateAttempts(fake);
     expect(attempts[0].signature).toBe('sassb');
     expect(attempts[0].body).toEqual(['window:activate', [], '', false]);
     vi.restoreAllMocks();
@@ -170,7 +186,7 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     const fake = fakeBus({ accepts: ['sass'], records: ['sass'] });
     await expect(startWith(fake)).resolves.toBeUndefined();
 
-    const attempts = fake.calls.filter((c) => c.member === 'RegisterEvent');
+    const attempts = windowActivateAttempts(fake);
     expect(attempts).toHaveLength(1);
     expect(attempts[0].signature).toBe('sass');
     vi.restoreAllMocks();
@@ -181,7 +197,7 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     const fake = fakeBus({ accepts: ['sass', 's'], records: ['s'] });
     await expect(startWith(fake)).resolves.toBeUndefined();
 
-    const signatures = fake.calls.filter((c) => c.member === 'RegisterEvent').map((c) => c.signature);
+    const signatures = windowActivateAttempts(fake).map((c) => c.signature);
     expect(signatures).toEqual(['sass', 's']);
     vi.restoreAllMocks();
   });
@@ -190,7 +206,7 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     const fake = fakeBus({ accepts: ['s'], records: ['s'] });
     await expect(startWith(fake)).resolves.toBeUndefined();
 
-    expect(fake.calls.filter((c) => c.member === 'RegisterEvent').map((c) => c.signature)).toEqual([
+    expect(windowActivateAttempts(fake).map((c) => c.signature)).toEqual([
       'sass',
       's',
     ]);
@@ -225,6 +241,32 @@ describe('AtspiClient — registering for window:activate across at-spi2 version
     await expect(
       new AtspiClient({ onWindowActivated: () => undefined }).start(),
     ).resolves.toBeUndefined();
+    vi.restoreAllMocks();
+  });
+});
+
+describe('subscribing to object events so confined browsers speak', () => {
+  /**
+   * Chromium under snap confinement emits no window events at all to a
+   * client subscribed only to window:activate. Brave, Opera and Vivaldi
+   * looked silent for a day because of it.
+   */
+  it('also registers the enabling events once window:activate is recorded', async () => {
+    const fake = fakeBus({ accepts: ['sass'], records: ['sass'] });
+    await startWith(fake);
+
+    const registered = fake.calls
+      .filter((c) => c.member === 'RegisterEvent')
+      .map((c) => c.body?.[0]);
+
+    expect(registered).toContain('window:activate');
+    expect(registered).toContain('object:state-changed');
+    vi.restoreAllMocks();
+  });
+
+  it('still succeeds when the registry rejects them', async () => {
+    const fake = fakeBus({ accepts: ['sass'], records: ['sass'], rejectEnabling: true });
+    await expect(startWith(fake)).resolves.toBeUndefined();
     vi.restoreAllMocks();
   });
 });
