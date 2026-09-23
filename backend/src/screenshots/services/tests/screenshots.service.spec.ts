@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Screenshot } from '../../../database/entities/screenshot.entity';
@@ -34,12 +33,6 @@ describe('ScreenshotsService', () => {
     return { repo, save, find, delete: deleteFn };
   }
 
-  function makeActivitySamplesRepo(rows: ActivitySample[] = []) {
-    const find = jest.fn().mockResolvedValue(rows);
-    const repo = { find } as unknown as Repository<ActivitySample>;
-    return { repo, find };
-  }
-
   function makeMembershipsRepo(
     overrides: Partial<Repository<Membership>> = {},
   ) {
@@ -58,7 +51,6 @@ describe('ScreenshotsService', () => {
         screenshotsEnabled: true,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
-        activityTrackingEnabled: false,
       }),
       ...overrides,
     } as unknown as OrganisationsService;
@@ -103,7 +95,6 @@ describe('ScreenshotsService', () => {
       const { storage, buildStorageKey } = makeStorage();
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,
@@ -132,7 +123,6 @@ describe('ScreenshotsService', () => {
     it('rejects a storage key not issued to this device', async () => {
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo(),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -153,7 +143,6 @@ describe('ScreenshotsService', () => {
     it('throws when the caller has no active membership in the organisation', async () => {
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -176,7 +165,6 @@ describe('ScreenshotsService', () => {
       const { repo, save } = makeScreenshotsRepo();
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService({
           getCaptureSettings: jest.fn().mockResolvedValue({
@@ -184,7 +172,6 @@ describe('ScreenshotsService', () => {
             screenshotsEnabled: true,
             screenshotFrequencySeconds: 600,
             screenshotRetentionDays: 30,
-            activityTrackingEnabled: false,
           }),
         }),
         makeStorage().storage,
@@ -224,7 +211,6 @@ describe('ScreenshotsService', () => {
       const { storage, createViewUrl } = makeStorage();
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         storage,
@@ -242,9 +228,6 @@ describe('ScreenshotsService', () => {
           id: 'screenshot-1',
           capturedAt: '2026-09-08T12:00:00.000Z',
           url: 'https://view.example/get',
-          activePercentage: null,
-          periodStart: null,
-          periodEnd: null,
           projectId: null,
         },
       ]);
@@ -271,7 +254,6 @@ describe('ScreenshotsService', () => {
       ];
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -310,7 +292,6 @@ describe('ScreenshotsService', () => {
       ];
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -353,7 +334,6 @@ describe('ScreenshotsService', () => {
       ];
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -373,88 +353,10 @@ describe('ScreenshotsService', () => {
       expect(result[0].id).toBe('screenshot-2');
     });
 
-    it("attaches the ActivitySample whose period covers the screenshot's capturedAt", async () => {
-      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
-      const row = {
-        id: 'screenshot-1',
-        capturedAt: new Date('2026-09-08T12:15:00.000Z'),
-        storageKey: 'screenshots/org-1/device-1/123-uuid.jpg',
-      } as Screenshot;
-      const sample = {
-        activePercentage: 80,
-        periodStart: new Date('2026-09-08T12:10:00.000Z'),
-        periodEnd: new Date('2026-09-08T12:20:00.000Z'),
-      } as ActivitySample;
-      const { repo } = makeScreenshotsRepo([row]);
-      const { repo: activitySamplesRepo } = makeActivitySamplesRepo([sample]);
-      const { storage } = makeStorage();
-      const service = new ScreenshotsService(
-        repo,
-        activitySamplesRepo,
-        makeMembershipsRepo({ findOne }),
-        makeOrganisationsService(),
-        storage,
-        makeTimeEntriesService(),
-      );
-
-      const result = await service.getMyScreenshots(
-        'org-1',
-        'user-1',
-        '2026-09-08',
-      );
-
-      expect(result).toEqual([
-        expect.objectContaining({
-          activePercentage: 80,
-          periodStart: '2026-09-08T12:10:00.000Z',
-          periodEnd: '2026-09-08T12:20:00.000Z',
-        }),
-      ]);
-    });
-
-    it('leaves activePercentage null when no sample period covers the screenshot', async () => {
-      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
-      const row = {
-        id: 'screenshot-1',
-        capturedAt: new Date('2026-09-08T12:05:00.000Z'),
-        storageKey: 'screenshots/org-1/device-1/123-uuid.jpg',
-      } as Screenshot;
-      const sample = {
-        activePercentage: 80,
-        periodStart: new Date('2026-09-08T12:10:00.000Z'),
-        periodEnd: new Date('2026-09-08T12:20:00.000Z'),
-      } as ActivitySample;
-      const { repo } = makeScreenshotsRepo([row]);
-      const { repo: activitySamplesRepo } = makeActivitySamplesRepo([sample]);
-      const service = new ScreenshotsService(
-        repo,
-        activitySamplesRepo,
-        makeMembershipsRepo({ findOne }),
-        makeOrganisationsService(),
-        makeStorage().storage,
-        makeTimeEntriesService(),
-      );
-
-      const result = await service.getMyScreenshots(
-        'org-1',
-        'user-1',
-        '2026-09-08',
-      );
-
-      expect(result).toEqual([
-        expect.objectContaining({
-          activePercentage: null,
-          periodStart: null,
-          periodEnd: null,
-        }),
-      ]);
-    });
-
     it('rejects a malformed date', async () => {
       const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -483,7 +385,6 @@ describe('ScreenshotsService', () => {
         });
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -515,7 +416,6 @@ describe('ScreenshotsService', () => {
         });
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -535,7 +435,6 @@ describe('ScreenshotsService', () => {
       const findOne = jest.fn().mockResolvedValue(null);
       const service = new ScreenshotsService(
         makeScreenshotsRepo().repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeOrganisationsService(),
         makeStorage().storage,
@@ -554,7 +453,6 @@ describe('ScreenshotsService', () => {
       const { storage, deleteObjects } = makeStorage();
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,
@@ -575,7 +473,6 @@ describe('ScreenshotsService', () => {
       const { storage, deleteObjects } = makeStorage();
       const service = new ScreenshotsService(
         repo,
-        makeActivitySamplesRepo().repo,
         makeMembershipsRepo(),
         makeOrganisationsService(),
         storage,

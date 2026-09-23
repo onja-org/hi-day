@@ -72,8 +72,6 @@ export function OrganisationSettingsForm({
         : undefined,
       windowTrackingEnabled: formData.get("windowTrackingEnabled") === "on",
       screenshotsEnabled: formData.get("screenshotsEnabled") === "on",
-      activityTrackingEnabled:
-        formData.get("activityTrackingEnabled") === "on",
       screenshotFrequencySeconds: Number.isFinite(screenshotFrequencyMinutes)
         ? screenshotFrequencyMinutes * 60
         : undefined,

@@ -9,9 +9,6 @@ export type TeamMemberStatus = {
   currentProjectName: string | null;
   workedTodaySeconds: number;
   workedThisWeekSeconds: number;
-  /** null when no activity samples exist yet — render "—", not a fake 0%. */
-  todayActivityPercentage: number | null;
-  weekActivityPercentage: number | null;
 };
 
 export type TeamMemberScreenshots = {
@@ -35,9 +32,6 @@ export type TeamDashboardSummary = {
   workedThisWeekDeltaSeconds: number;
   projectsWorkedThisWeek: number;
   projectsWorkedDelta: number;
-  /** null when no activity samples exist yet — render "—", not a fake 0%. */
-  weeklyActivityPercentage: number | null;
-  weeklyActivityDeltaPercentage: number | null;
   /** Desc by seconds worked this week, aggregated across every scoped member. */
   projectsThisWeek: DashboardProjectTime[];
   /** Desc by seconds worked this week. */

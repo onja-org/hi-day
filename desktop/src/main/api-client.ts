@@ -90,7 +90,6 @@ export interface CaptureSettings {
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
-  activityTrackingEnabled: boolean;
   /** See docs/adr/0015-... — whether the passive disclosure banner should be shown. Informational only; never gates capture. */
   consent: { required: boolean };
 }
@@ -106,13 +105,6 @@ export interface AppEventPayload {
   title?: string;
   titleUnavailableReason?: TitleUnavailableReason;
   sampledAt: string;
-}
-
-/** The wire shape for `POST /device/activity-samples` — one row per 10-minute period. */
-export interface ActivitySamplePayload {
-  activePercentage: number;
-  periodStart: string;
-  periodEnd: string;
 }
 
 export type TrackingResult<T> =
@@ -336,15 +328,6 @@ export class ApiClient {
   ): Promise<TrackingResult<void>> {
     return this.deviceRequest('POST', '/device/app-events', deviceToken, {
       events,
-    });
-  }
-
-  postActivitySamples(
-    deviceToken: string,
-    samples: ActivitySamplePayload[],
-  ): Promise<TrackingResult<void>> {
-    return this.deviceRequest('POST', '/device/activity-samples', deviceToken, {
-      samples,
     });
   }
 

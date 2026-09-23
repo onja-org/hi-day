@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
-import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -21,7 +20,6 @@ import { TeamDashboardService } from '../services/team-dashboard.service';
     TypeOrmModule.forFeature([
       TimeEntry,
       TimeEntryPause,
-      ActivitySample,
       AppEvent,
       UrlSession,
       Membership,

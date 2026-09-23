@@ -1,5 +1,4 @@
 import { Repository } from 'typeorm';
-import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { AppEvent } from '../../../database/entities/app-event.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
@@ -62,24 +61,6 @@ describe('TeamDashboardService', () => {
     return {
       find: jest.fn().mockResolvedValue([]),
     } as unknown as Repository<TimeEntryPause>;
-  }
-
-  function sample(
-    overrides: Partial<ActivitySample> & { membershipId: string },
-  ): ActivitySample {
-    return {
-      periodStart: NOW,
-      activePercentage: 0,
-      ...overrides,
-    } as ActivitySample;
-  }
-
-  function makeActivitySamplesRepo(
-    ...calls: ActivitySample[][]
-  ): Repository<ActivitySample> {
-    const find = jest.fn();
-    calls.forEach((result) => find.mockResolvedValueOnce(result));
-    return { find } as unknown as Repository<ActivitySample>;
   }
 
   // Both repos are only ever queried via a grouped createQueryBuilder(...)
@@ -150,7 +131,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       { find } as unknown as Repository<TimeEntry>,
       makePausesRepo(),
-      makeActivitySamplesRepo(),
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService([]),
@@ -186,7 +166,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
@@ -210,57 +189,6 @@ describe('TeamDashboardService', () => {
     ]);
   });
 
-  it("computes each member's own today/week activity percentage, separate from the team average", async () => {
-    const members = [member({ id: 'm-1' }), member({ id: 'm-2' })];
-    const thisWeekSamples = [
-      // m-1: one sample today (80%), one earlier this week (40%) -> today 80, week avg 60
-      sample({
-        membershipId: 'm-1',
-        periodStart: new Date(2026, 0, 7, 9, 0, 0),
-        activePercentage: 80,
-      }),
-      sample({
-        membershipId: 'm-1',
-        periodStart: new Date(2026, 0, 5, 9, 0, 0),
-        activePercentage: 40,
-      }),
-      // m-2: no samples today, one earlier this week (20%) -> today null, week 20
-      sample({
-        membershipId: 'm-2',
-        periodStart: new Date(2026, 0, 5, 9, 0, 0),
-        activePercentage: 20,
-      }),
-    ];
-    const service = new TeamDashboardService(
-      makeTimeEntriesRepo([], [], []),
-      makePausesRepo(),
-      makeActivitySamplesRepo(thisWeekSamples, []),
-      makeAppEventsRepo(),
-      makeUrlSessionsRepo(),
-      makeMembershipsService(members),
-      makeScreenshotsService(),
-    );
-
-    const summary = await service.getSummary('org-1', 'user-1');
-
-    expect(summary.weeklyActivityPercentage).toBe(
-      Math.round((80 + 40 + 20) / 3),
-    );
-    const byId = new Map(summary.members.map((m) => [m.membershipId, m]));
-    expect(byId.get('m-1')).toEqual(
-      expect.objectContaining({
-        todayActivityPercentage: 80,
-        weekActivityPercentage: 60,
-      }),
-    );
-    expect(byId.get('m-2')).toEqual(
-      expect.objectContaining({
-        todayActivityPercentage: null,
-        weekActivityPercentage: 20,
-      }),
-    );
-  });
-
   it('marks a member with an open entry as working and surfaces their current project', async () => {
     const members = [member({ id: 'm-1' })];
     const runningEntry = entry({
@@ -272,7 +200,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo([runningEntry], [], [runningEntry]),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
@@ -299,7 +226,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
@@ -318,7 +244,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       // 3 five-second Slack samples -> 15s; 2 Chrome samples -> 10s.
       makeAppEventsRepo([
         { appName: 'Slack', count: '3' },
@@ -346,7 +271,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeAppEventsRepo([]),
       urlSessionsRepo,
       makeMembershipsService(members),
@@ -369,7 +293,6 @@ describe('TeamDashboardService', () => {
     const service = new TeamDashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       appEventsRepo,
       makeUrlSessionsRepo([]),
       makeMembershipsService(members),

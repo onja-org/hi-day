@@ -4,22 +4,13 @@ import Image from "next/image";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
-import type { ScreenshotSummaryItem } from "@/types/screenshot";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
-import { ActivityMeter } from "./ActivityMeter";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
 
 type ScreenshotsPageContentProps = {
   organisationId: string;
 };
-
-function formatPeriodLabel(screenshot: ScreenshotSummaryItem): string {
-  if (screenshot.periodStart && screenshot.periodEnd) {
-    return `${formatTimeOfDay(new Date(screenshot.periodStart))} - ${formatTimeOfDay(new Date(screenshot.periodEnd))}`;
-  }
-  return formatTimeOfDay(new Date(screenshot.capturedAt));
-}
 
 export function ScreenshotsPageContent({
   organisationId,
@@ -77,13 +68,12 @@ export function ScreenshotsPageContent({
               </div>
               <figcaption className="flex flex-col gap-2 px-2 pb-2">
                 <span className="text-sm text-slate-900/70">
-                  {formatPeriodLabel(screenshot)}
+                  {formatTimeOfDay(new Date(screenshot.capturedAt))}
                 </span>
                 <ProjectBadgeOrUntracked
                   organisationId={organisationId}
                   projectId={screenshot.projectId}
                 />
-                <ActivityMeter activePercentage={screenshot.activePercentage} />
               </figcaption>
             </figure>
           ))}

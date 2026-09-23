@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Activity } from './entities/activity.entity';
-import { ActivitySample } from './entities/activity-sample.entity';
 import { AppEvent } from './entities/app-event.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { ConsentRecord } from './entities/consent-record.entity';
@@ -57,7 +56,6 @@ import { User } from './entities/user.entity';
           UrlSession,
           AppEvent,
           Screenshot,
-          ActivitySample,
           DisclosureVersion,
           ConsentRecord,
           Note,

@@ -15,7 +15,6 @@ export type OrganisationProfile = {
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
-  activityTrackingEnabled: boolean;
   /** Admin-configurable, default 8 — informational only, never enforced. */
   workingHoursPerDay: number;
   userId: string;
@@ -35,7 +34,6 @@ export type UpdateOrganisationInput = {
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
-  activityTrackingEnabled?: boolean;
   workingHoursPerDay?: number;
 };
 

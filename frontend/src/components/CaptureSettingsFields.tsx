@@ -30,17 +30,6 @@ export function CaptureSettingsFields({
         Enable screenshots (desktop agent)
       </label>
 
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          name="activityTrackingEnabled"
-          defaultChecked={organisation.activityTrackingEnabled}
-          className="h-4 w-4 rounded border-input-border"
-        />
-        Track activity level (desktop agent, keyboard/mouse input only —
-        never keystrokes or click locations)
-      </label>
-
       <div className="flex flex-col gap-5 sm:flex-row">
         <label className="flex flex-1 flex-col gap-1.5">
           Screenshot frequency (minutes)

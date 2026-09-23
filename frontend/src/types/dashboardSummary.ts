@@ -23,9 +23,6 @@ export type DashboardSummary = {
   workedThisWeekDeltaSeconds: number;
   projectsWorkedThisWeek: number;
   projectsWorkedDelta: number;
-  /** null when no activity samples exist yet — render "—", not a fake 0%. */
-  weeklyActivityPercentage: number | null;
-  weeklyActivityDeltaPercentage: number | null;
   /** Always 7 entries, Sunday-Saturday. */
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */

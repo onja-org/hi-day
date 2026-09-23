@@ -49,21 +49,6 @@ export function TeamKpiRow({ organisationId }: TeamKpiRowProps) {
       />
       <DashboardKpiTile
         dotClassName="bg-primary"
-        label="Weekly activity"
-        value={
-          summary.weeklyActivityPercentage !== null
-            ? `${summary.weeklyActivityPercentage}%`
-            : "—"
-        }
-        deltaLabel={
-          summary.weeklyActivityDeltaPercentage !== null
-            ? `${Math.abs(summary.weeklyActivityDeltaPercentage)}%`
-            : undefined
-        }
-        delta={summary.weeklyActivityDeltaPercentage ?? undefined}
-      />
-      <DashboardKpiTile
-        dotClassName="bg-primary"
         label="Team members"
         value={String(summary.memberCount)}
         subLabel={workingCount > 0 ? `${workingCount} working now` : undefined}

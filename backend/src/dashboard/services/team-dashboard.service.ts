@@ -8,7 +8,6 @@ import {
   computeActiveSeconds,
   PauseState,
 } from '../../common/time-entry-active-seconds.util';
-import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
@@ -43,10 +42,6 @@ export interface TeamMemberStatus {
   currentProjectName: string | null;
   workedTodaySeconds: number;
   workedThisWeekSeconds: number;
-  /** Average ActivitySample.activePercentage for this member today/this
-   * week; null if no samples exist yet — render "—", never a fabricated 0%. */
-  todayActivityPercentage: number | null;
-  weekActivityPercentage: number | null;
 }
 
 export interface TeamMemberScreenshots {
@@ -72,10 +67,6 @@ export interface TeamDashboardSummary {
   workedThisWeekDeltaSeconds: number;
   projectsWorkedThisWeek: number;
   projectsWorkedDelta: number;
-  /** Average ActivitySample.activePercentage across every scoped member this
-   * week; null if no samples exist yet. */
-  weeklyActivityPercentage: number | null;
-  weeklyActivityDeltaPercentage: number | null;
   /** Desc by seconds worked this week, aggregated across every scoped member. */
   projectsThisWeek: DashboardProjectTime[];
   /** Desc by seconds worked this week. */
@@ -98,8 +89,6 @@ function emptySummary(): TeamDashboardSummary {
     workedThisWeekDeltaSeconds: 0,
     projectsWorkedThisWeek: 0,
     projectsWorkedDelta: 0,
-    weeklyActivityPercentage: null,
-    weeklyActivityDeltaPercentage: null,
     projectsThisWeek: [],
     members: [],
     recentActivity: [],
@@ -122,8 +111,6 @@ export class TeamDashboardService {
     private readonly timeEntries: Repository<TimeEntry>,
     @InjectRepository(TimeEntryPause)
     private readonly timeEntryPauses: Repository<TimeEntryPause>,
-    @InjectRepository(ActivitySample)
-    private readonly activitySamples: Repository<ActivitySample>,
     @InjectRepository(AppEvent)
     private readonly appEvents: Repository<AppEvent>,
     @InjectRepository(UrlSession)
@@ -230,34 +217,9 @@ export class TeamDashboardService {
       runningEntries.map((entry) => [entry.membershipId, entry]),
     );
 
-    const [thisWeekSamples, lastWeekSamples] = await Promise.all([
-      this.activitySamples.find({
-        where: {
-          membershipId: In(membershipIds),
-          periodStart: Between(weekStart, weekEnd),
-        },
-      }),
-      this.activitySamples.find({
-        where: {
-          membershipId: In(membershipIds),
-          periodStart: Between(lastWeekStart, lastWeekSameSpanEnd),
-        },
-      }),
-    ]);
-    const weeklyActivityPercentage =
-      this.averageActivePercentage(thisWeekSamples);
-    const lastWeekActivityPercentage =
-      this.averageActivePercentage(lastWeekSamples);
-
     const members: TeamMemberStatus[] = scopedMembers
       .map((member) => {
         const running = runningByMembershipId.get(member.id);
-        const memberSamples = thisWeekSamples.filter(
-          (sample) => sample.membershipId === member.id,
-        );
-        const memberTodaySamples = memberSamples.filter(
-          (sample) => localDateKey(sample.periodStart) === todayKey,
-        );
         return {
           membershipId: member.id,
           name: member.name,
@@ -266,9 +228,6 @@ export class TeamDashboardService {
           currentProjectName: running ? running.project.name : null,
           workedTodaySeconds: memberTodaySeconds.get(member.id) ?? 0,
           workedThisWeekSeconds: memberWeekSeconds.get(member.id) ?? 0,
-          todayActivityPercentage:
-            this.averageActivePercentage(memberTodaySamples),
-          weekActivityPercentage: this.averageActivePercentage(memberSamples),
         };
       })
       .sort((a, b) => b.workedThisWeekSeconds - a.workedThisWeekSeconds);
@@ -285,11 +244,6 @@ export class TeamDashboardService {
         workedThisWeekSeconds - workedLastWeekSameSpanSeconds,
       projectsWorkedThisWeek: projectSeconds.size,
       projectsWorkedDelta: projectSeconds.size - lastWeekProjectIds.size,
-      weeklyActivityPercentage,
-      weeklyActivityDeltaPercentage:
-        weeklyActivityPercentage !== null && lastWeekActivityPercentage !== null
-          ? weeklyActivityPercentage - lastWeekActivityPercentage
-          : null,
       projectsThisWeek: [...projectSeconds.values()].sort(
         (a, b) => b.seconds - a.seconds,
       ),
@@ -389,17 +343,6 @@ export class TeamDashboardService {
       .map(([label, seconds]) => ({ label, seconds }))
       .sort((a, b) => b.seconds - a.seconds)
       .slice(0, APPS_AND_SITES_LIMIT);
-  }
-
-  private averageActivePercentage(samples: ActivitySample[]): number | null {
-    if (samples.length === 0) {
-      return null;
-    }
-    const total = samples.reduce(
-      (sum, sample) => sum + sample.activePercentage,
-      0,
-    );
-    return Math.round(total / samples.length);
   }
 
   private async getPauseStatesFor(

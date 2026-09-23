@@ -306,8 +306,7 @@ export class DisclosureService {
       (await this.organisationsService.getCaptureSettings(organisationId));
     const anyCaptureEnabled =
       captureSettings.windowTrackingEnabled ||
-      captureSettings.screenshotsEnabled ||
-      captureSettings.activityTrackingEnabled;
+      captureSettings.screenshotsEnabled;
 
     const version = await this.resolveCurrentVersion(
       organisationId,

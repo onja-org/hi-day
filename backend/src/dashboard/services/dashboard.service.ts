@@ -7,7 +7,6 @@ import {
   computeActiveSeconds,
   PauseState,
 } from '../../common/time-entry-active-seconds.util';
-import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
@@ -42,10 +41,6 @@ export interface DashboardSummary {
   workedThisWeekDeltaSeconds: number;
   projectsWorkedThisWeek: number;
   projectsWorkedDelta: number;
-  /** Average ActivitySample.activePercentage this week; null if no samples
-   * exist yet — render as "—", never a fabricated 0%. */
-  weeklyActivityPercentage: number | null;
-  weeklyActivityDeltaPercentage: number | null;
   /** Always 7 entries, Sunday-Saturday, zero-filled for days with no
    * entries (including days later this week, which naturally have none). */
   thisWeekByDay: DashboardWeekDay[];
@@ -72,8 +67,6 @@ export class DashboardService {
     private readonly timeEntries: Repository<TimeEntry>,
     @InjectRepository(TimeEntryPause)
     private readonly timeEntryPauses: Repository<TimeEntryPause>,
-    @InjectRepository(ActivitySample)
-    private readonly activitySamples: Repository<ActivitySample>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
     private readonly organisationsService: OrganisationsService,
@@ -189,16 +182,6 @@ export class DashboardService {
       lastWeekProjectIds.add(entry.projectId);
     }
 
-    const weeklyActivityPercentage = await this.getAverageActivity(
-      membership.id,
-      weekStart,
-      new Date(weekStart.getTime() + WEEK_DAYS * DAY_MS),
-    );
-    const lastWeekActivityPercentage = await this.getAverageActivity(
-      membership.id,
-      new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS),
-      new Date(now.getTime() - WEEK_DAYS * DAY_MS),
-    );
     const workingHoursPolicy =
       await this.organisationsService.getWorkingHoursPolicy(organisationId);
 
@@ -211,11 +194,6 @@ export class DashboardService {
         workedThisWeekSeconds - workedLastWeekSameSpanSeconds,
       projectsWorkedThisWeek: projectSeconds.size,
       projectsWorkedDelta: projectSeconds.size - lastWeekProjectIds.size,
-      weeklyActivityPercentage,
-      weeklyActivityDeltaPercentage:
-        weeklyActivityPercentage !== null && lastWeekActivityPercentage !== null
-          ? weeklyActivityPercentage - lastWeekActivityPercentage
-          : null,
       thisWeekByDay: byDay,
       projectsThisWeek: [...projectSeconds.values()].sort(
         (a, b) => b.seconds - a.seconds,
@@ -240,24 +218,6 @@ export class DashboardService {
       );
     }
     return membership;
-  }
-
-  private async getAverageActivity(
-    membershipId: string,
-    from: Date,
-    to: Date,
-  ): Promise<number | null> {
-    const samples = await this.activitySamples.find({
-      where: { membershipId, periodStart: Between(from, to) },
-    });
-    if (samples.length === 0) {
-      return null;
-    }
-    const total = samples.reduce(
-      (sum, sample) => sum + sample.activePercentage,
-      0,
-    );
-    return Math.round(total / samples.length);
   }
 
   private async getPauseStatesFor(

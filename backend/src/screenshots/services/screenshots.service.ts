@@ -9,7 +9,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Between, In, LessThan, Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
-import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Screenshot } from '../../database/entities/screenshot.entity';
@@ -28,26 +27,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 const RETENTION_CLEANUP_BATCH_SIZE = 500;
 
-/** The ActivitySample (if any) whose period contains `capturedAt` — a time-overlap lookup, not a shared foreign key. */
-function findSampleCovering(
-  samples: ActivitySample[],
-  capturedAt: Date,
-): ActivitySample | undefined {
-  return samples.find(
-    (sample) =>
-      sample.periodStart <= capturedAt && capturedAt < sample.periodEnd,
-  );
-}
-
 export interface ScreenshotSummaryItem {
   id: string;
   capturedAt: string;
   /** Presigned, time-limited GET URL — never a permanent/public link. */
   url: string;
-  /** The covering ActivitySample's activity level (see docs/adr/0013-...), or `null` if none covers `capturedAt`. */
-  activePercentage: number | null;
-  periodStart: string | null;
-  periodEnd: string | null;
   /** The project whose TimeEntry covered `capturedAt` — null if no timer
    * was running (the common case; see time-entry-coverage.util.ts). */
   projectId: string | null;
@@ -64,8 +48,6 @@ export class ScreenshotsService {
   constructor(
     @InjectRepository(Screenshot)
     private readonly screenshots: Repository<Screenshot>,
-    @InjectRepository(ActivitySample)
-    private readonly activitySamples: Repository<ActivitySample>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
     private readonly organisationsService: OrganisationsService,
@@ -199,7 +181,7 @@ export class ScreenshotsService {
     const start = new Date(`${date}T00:00:00.000Z`);
     const end = new Date(start.getTime() + MS_PER_DAY);
 
-    const [rows, samples, coveringEntries] = await Promise.all([
+    const [rows, coveringEntries] = await Promise.all([
       this.screenshots.find({
         where: {
           organisationId,
@@ -207,14 +189,6 @@ export class ScreenshotsService {
           capturedAt: Between(start, end),
         },
         order: { capturedAt: 'ASC' },
-      }),
-      this.activitySamples.find({
-        where: {
-          organisationId,
-          membershipId,
-          periodStart: Between(start, end),
-        },
-        order: { periodStart: 'ASC' },
       }),
       this.timeEntriesService.listCoveringWindow(
         organisationId,
@@ -226,16 +200,12 @@ export class ScreenshotsService {
 
     const items = await Promise.all(
       rows.map(async (row) => {
-        const sample = findSampleCovering(samples, row.capturedAt);
         const projectId =
           findEntryCovering(coveringEntries, row.capturedAt)?.projectId ?? null;
         return {
           id: row.id,
           capturedAt: row.capturedAt.toISOString(),
           url: await this.storage.createViewUrl(row.storageKey),
-          activePercentage: sample?.activePercentage ?? null,
-          periodStart: sample ? sample.periodStart.toISOString() : null,
-          periodEnd: sample ? sample.periodEnd.toISOString() : null,
           projectId,
         };
       }),
