@@ -23,6 +23,14 @@ const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
 const WINDOW_ACTIVATE_EVENT = 'window:activate';
 
 /**
+ * Signal tracing, sharing the main process's own opt-in switch — the
+ * side-car inherits its environment, so turning on the debug harness turns
+ * this on too, and neither costs anything when off.
+ */
+const TRACE_SIGNALS = process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE === '1';
+const TRACE_SUMMARY_MS = 30_000;
+
+/**
  * Fallback signatures, newest first, for a registry that will not
  * introspect: at-spi2 2.46+ then 2.44-and-earlier.
  */
@@ -187,6 +195,8 @@ export function hasReadableAddressBarText(text: string): boolean {
 export class AtspiClient {
   private bus: dbus.MessageBus | null = null;
   private readonly logger: (line: string) => void;
+  private readonly signalCounts = new Map<string, number>();
+  private traceTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: AtspiClientOptions) {
     this.logger = options.logger ?? ((): void => undefined);
@@ -222,10 +232,61 @@ export class AtspiClient {
 
     bus.on('message', (message: dbus.Message) => {
       if (message.type !== dbus.MessageType.SIGNAL) return;
+      this.trace(message);
       if (message.interface !== WINDOW_EVENT_IFACE || message.member !== 'Activate') return;
       if (!message.sender || !message.path) return;
       void this.handleActivate(message.sender, message.path);
     });
+
+    if (TRACE_SIGNALS) this.startTraceSummary();
+  }
+
+  /**
+   * Records every signal this connection receives, *before* any filtering.
+   *
+   * The handler above drops anything it doesn't match without a word, which
+   * left one question unanswerable: when a browser's activation never
+   * reaches the session, is the message arriving and being filtered out, or
+   * not arriving at all? Those have entirely different causes, and no log
+   * distinguished them.
+   *
+   * Window events are printed individually — they are rare and are the ones
+   * in question. Everything else is only counted, because a single terminal
+   * emitting text can produce hundreds of signals a minute and would bury
+   * the line worth reading.
+   */
+  private trace(message: dbus.Message): void {
+    if (!TRACE_SIGNALS) return;
+
+    const iface = message.interface ?? '(none)';
+    if (iface.startsWith(WINDOW_EVENT_IFACE)) {
+      this.logger(
+        `[atspi-trace] window signal member=${message.member ?? '?'} ` +
+          `sender=${message.sender ?? '?'} path=${message.path ?? '?'}`,
+      );
+      return;
+    }
+
+    const key = `${iface}.${message.member ?? '?'}`;
+    this.signalCounts.set(key, (this.signalCounts.get(key) ?? 0) + 1);
+  }
+
+  /** Periodic digest of the signals that were only counted, so a quiet connection is distinguishable from a busy one. */
+  private startTraceSummary(): void {
+    this.traceTimer = setInterval(() => {
+      if (this.signalCounts.size === 0) {
+        this.logger('[atspi-trace] no non-window signals in the last 30s');
+        return;
+      }
+      const summary = [...this.signalCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([key, count]) => `${key}=${count}`)
+        .join(' ');
+      this.logger(`[atspi-trace] 30s: ${summary}`);
+      this.signalCounts.clear();
+    }, TRACE_SUMMARY_MS);
+    this.traceTimer.unref?.();
   }
 
   /**
@@ -453,6 +514,8 @@ export class AtspiClient {
   }
 
   stop(): void {
+    if (this.traceTimer) clearInterval(this.traceTimer);
+    this.traceTimer = null;
     this.bus?.disconnect();
     this.bus = null;
   }
