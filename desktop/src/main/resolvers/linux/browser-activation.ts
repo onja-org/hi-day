@@ -70,12 +70,55 @@ function isEnvAssignment(token: string): boolean {
  * stripped first. The flag goes immediately after the executable, since the
  * value ends in field codes (`%U`) the desktop replaces with a URL.
  */
+/** `flatpak run` passes its own options before the app id and everything after it to the app. */
+const FLATPAK_ENV_OPTION = `--env=${ACTIVATION_ENV_ASSIGNMENT}`;
+
+function isFlatpakRun(tokens: string[], execIndex: number): boolean {
+  const command = tokens[execIndex]?.split('/').pop();
+  return command === 'flatpak' && tokens.slice(execIndex + 1).includes('run');
+}
+
+/**
+ * Rewrites a `flatpak run` command, which the generic path gets wrong in
+ * both halves.
+ *
+ * Inserting the Chromium flag after the executable hands it to `flatpak`
+ * itself, which does not recognise it and refuses to start — the launcher
+ * breaks and the browser simply stops opening. It has to go after the app
+ * id, where flatpak forwards arguments to the application.
+ *
+ * `env VAR=1 flatpak run ...` is equally useless: the variable is set for
+ * the flatpak client, not inside the sandbox the browser runs in. Flatpak's
+ * own `--env=` option is what crosses that boundary.
+ *
+ * Observed on Pop!_OS with Opera installed from Pop!_Shop, which installs
+ * flatpaks: our override left Opera unable to launch at all.
+ */
+function activateFlatpakExec(tokens: string[], execIndex: number): string {
+  const runIndex = tokens.indexOf('run', execIndex + 1);
+
+  // The app id is the first token after `run` that is not an option.
+  let appIdIndex = runIndex + 1;
+  while (appIdIndex < tokens.length && tokens[appIdIndex].startsWith('-')) {
+    appIdIndex += 1;
+  }
+  if (appIdIndex >= tokens.length) return tokens.join(' ');
+
+  const rewritten = [...tokens];
+  rewritten.splice(appIdIndex + 1, 0, ACTIVATION_FLAG);
+  rewritten.splice(runIndex + 1, 0, FLATPAK_ENV_OPTION);
+  return rewritten.join(' ');
+}
+
 export function activateExecValue(value: string): string {
   const tokens = tokenizeExec(value);
   if (tokens.length === 0) return value;
 
   const stripped = tokens.filter(
-    (token) => token !== ACTIVATION_FLAG && !token.startsWith(`${ACTIVATION_ENV_NAME}=`),
+    (token) =>
+      token !== ACTIVATION_FLAG &&
+      token !== `--env=${ACTIVATION_ENV_NAME}=1` &&
+      !token.startsWith(`${ACTIVATION_ENV_NAME}=`),
   );
 
   // A bare `env` we prefixed last time, now with nothing left behind it.
@@ -94,6 +137,8 @@ export function activateExecValue(value: string): string {
     }
   }
   if (execIndex >= stripped.length) return value;
+
+  if (isFlatpakRun(stripped, execIndex)) return activateFlatpakExec(stripped, execIndex);
 
   const rewritten = [...stripped];
   rewritten.splice(execIndex + 1, 0, ACTIVATION_FLAG);

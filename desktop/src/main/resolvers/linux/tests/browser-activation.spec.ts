@@ -264,3 +264,56 @@ describe.skipIf(process.platform !== 'linux')(
   });
   },
 );
+
+describe('activateExecValue — flatpak launchers', () => {
+  /**
+   * Pop!_Shop installs flatpaks. The generic rewrite handed the Chromium
+   * flag to `flatpak` itself, which refuses to start on an unknown option,
+   * so Opera stopped launching at all.
+   */
+  it('passes the flag to the application, not to flatpak', () => {
+    const result = activateExecValue(
+      '/usr/bin/flatpak run --branch=stable --arch=x86_64 com.opera.Opera %U',
+    );
+
+    const tokens = result.split(' ');
+    expect(tokens.indexOf(ACTIVATION_FLAG)).toBeGreaterThan(tokens.indexOf('com.opera.Opera'));
+    expect(tokens[tokens.indexOf('/usr/bin/flatpak') + 1]).not.toBe(ACTIVATION_FLAG);
+  });
+
+  it("uses flatpak's own --env, since a shell variable never enters the sandbox", () => {
+    const result = activateExecValue('/usr/bin/flatpak run com.opera.Opera %U');
+
+    expect(result).toContain('--env=GNOME_ACCESSIBILITY=1');
+    expect(result.startsWith('env ')).toBe(false);
+    const tokens = result.split(' ');
+    expect(tokens.indexOf('--env=GNOME_ACCESSIBILITY=1')).toBeGreaterThan(tokens.indexOf('run'));
+    expect(tokens.indexOf('--env=GNOME_ACCESSIBILITY=1')).toBeLessThan(
+      tokens.indexOf('com.opera.Opera'),
+    );
+  });
+
+  it('keeps flatpak run options ahead of the app id', () => {
+    const result = activateExecValue(
+      '/usr/bin/flatpak run --branch=stable --command=opera --file-forwarding com.opera.Opera @@u %U @@',
+    );
+    const tokens = result.split(' ');
+
+    for (const option of ['--branch=stable', '--command=opera', '--file-forwarding']) {
+      expect(tokens.indexOf(option)).toBeLessThan(tokens.indexOf('com.opera.Opera'));
+    }
+    expect(tokens.indexOf('@@u')).toBeGreaterThan(tokens.indexOf(ACTIVATION_FLAG));
+  });
+
+  it('is idempotent — a second run does not stack flags', () => {
+    const once = activateExecValue('/usr/bin/flatpak run com.opera.Opera %U');
+    expect(activateExecValue(once)).toBe(once);
+  });
+
+  it('leaves a non-flatpak launcher on the original path', () => {
+    const result = activateExecValue('/usr/bin/google-chrome-stable %U');
+    expect(result).toBe(
+      `env GNOME_ACCESSIBILITY=1 /usr/bin/google-chrome-stable ${ACTIVATION_FLAG} %U`,
+    );
+  });
+});
