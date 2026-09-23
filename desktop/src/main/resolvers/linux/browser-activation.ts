@@ -65,12 +65,7 @@ function isEnvAssignment(token: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
 }
 
-/**
- * Rewrites one `Exec=` value. Idempotent — a previous run's additions are
- * stripped first. The flag goes immediately after the executable, since the
- * value ends in field codes (`%U`) the desktop replaces with a URL.
- */
-/** `flatpak run` passes its own options before the app id and everything after it to the app. */
+/** `flatpak run` takes its own options before the app id and forwards everything after it to the app. */
 const FLATPAK_ENV_OPTION = `--env=${ACTIVATION_ENV_ASSIGNMENT}`;
 
 function isFlatpakRun(tokens: string[], execIndex: number): boolean {
@@ -110,6 +105,13 @@ function activateFlatpakExec(tokens: string[], execIndex: number): string {
   return rewritten.join(' ');
 }
 
+/**
+ * Rewrites one `Exec=` value. Idempotent — a previous run's additions are
+ * stripped first. The flag goes immediately after the executable, since the
+ * value ends in field codes (`%U`) the desktop replaces with a URL — except
+ * for a `flatpak run` launcher, where the executable is flatpak rather than
+ * the browser; see activateFlatpakExec.
+ */
 export function activateExecValue(value: string): string {
   const tokens = tokenizeExec(value);
   if (tokens.length === 0) return value;
@@ -117,7 +119,7 @@ export function activateExecValue(value: string): string {
   const stripped = tokens.filter(
     (token) =>
       token !== ACTIVATION_FLAG &&
-      token !== `--env=${ACTIVATION_ENV_NAME}=1` &&
+      token !== FLATPAK_ENV_OPTION &&
       !token.startsWith(`${ACTIVATION_ENV_NAME}=`),
   );
 

@@ -26,19 +26,18 @@ const WINDOW_ACTIVATE_EVENT = 'window:activate';
  * Registered for, but never acted on.
  *
  * Chromium-based browsers under snap confinement emit no window events at
- * all to a client subscribed only to `window:activate`. Brave, Opera and
- * Vivaldi appeared silent on this machine for a whole day, and were assumed
- * to emit only when a window is created. They are not silent: subscribing
- * to object events as well makes their `window:activate` arrive normally.
+ * all to a client subscribed only to `window:activate` — not on focus
+ * change, not at all. Subscribing to object events as well, and changing
+ * nothing else, makes their `window:activate` arrive normally.
  *
- * Measured over 75s of switching between already-open windows — Opera 6,
- * Vivaldi 4, Brave 4 activations, against none at all for the same windows
- * with only `window:activate` registered.
+ * Measured over 75s of switching between already-open windows: Opera 6,
+ * Vivaldi 4, Brave 4 activations, against none for the same windows with
+ * only `window:activate` registered.
  *
- * So these cost nothing to hold and are what make those browsers speak.
- * `object:state-changed` carries the focus state itself and is the one that
- * matters; the others are registered alongside it because a browser that
- * gates on one may gate on another, and an unused registration is free.
+ * `object:state-changed` carries the focus state and is the one that
+ * matters. The rest are registered with it deliberately rather than from
+ * evidence — an unused registration is free, and which event a given
+ * browser gates on is not documented anywhere.
  */
 const ENABLING_EVENTS = [
   'object:state-changed',
@@ -415,7 +414,7 @@ export class AtspiClient {
           bus, REGISTRY_NAME, REGISTRY_PATH, REGISTRY_NAME, 'RegisterEvent', signature, body,
         );
       } catch {
-        // Not fatal — see this method's own doc comment.
+        continue;
       }
     }
   }
@@ -496,7 +495,7 @@ export class AtspiClient {
     const readable = await this.searchForAddressBar(bus, path, 0, false, fallback);
     if (readable) {
       this.windowsWithoutAddressBar.delete(key);
-      this.rememberAddressBar(key, readable);
+      this.remember(this.addressBarPaths, key, readable);
       return readable;
     }
 
@@ -512,17 +511,8 @@ export class AtspiClient {
       return fallback.path;
     }
 
-    this.rememberNoAddressBar(key);
+    this.remember(this.windowsWithoutAddressBar, key, Date.now());
     return null;
-  }
-
-  /** Same bound and eviction as the positive cache; see MAX_REMEMBERED_ADDRESS_BARS. */
-  private rememberNoAddressBar(key: string): void {
-    if (this.windowsWithoutAddressBar.size >= MAX_REMEMBERED_ADDRESS_BARS) {
-      const oldest = this.windowsWithoutAddressBar.keys().next();
-      if (!oldest.done) this.windowsWithoutAddressBar.delete(oldest.value);
-    }
-    this.windowsWithoutAddressBar.set(key, Date.now());
   }
 
   /**
@@ -538,13 +528,13 @@ export class AtspiClient {
     }
   }
 
-  /** Bounded, oldest-out: a long session opens and closes many windows, and nothing else prunes this. */
-  private rememberAddressBar(key: string, path: string): void {
-    if (this.addressBarPaths.size >= MAX_REMEMBERED_ADDRESS_BARS) {
-      const oldest = this.addressBarPaths.keys().next();
-      if (!oldest.done) this.addressBarPaths.delete(oldest.value);
+  /** Bounded, oldest-out: a long session opens and closes many windows, and nothing else prunes these. */
+  private remember<V>(cache: Map<string, V>, key: string, value: V): void {
+    if (cache.size >= MAX_REMEMBERED_ADDRESS_BARS) {
+      const oldest = cache.keys().next();
+      if (!oldest.done) cache.delete(oldest.value);
     }
-    this.addressBarPaths.set(key, path);
+    cache.set(key, value);
   }
 
   private async searchForAddressBar(
