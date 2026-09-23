@@ -22,6 +22,12 @@ const WINDOW_EVENT_IFACE = 'org.a11y.atspi.Event.Window';
 const APPLICATION_ROOT_PATH = '/org/a11y/atspi/accessible/root';
 const WINDOW_ACTIVATE_EVENT = 'window:activate';
 
+/** Enough for every window a person realistically keeps open; oldest is evicted past this. */
+const MAX_REMEMBERED_ADDRESS_BARS = 64;
+
+/** How long "this window has no address bar" is trusted before re-checking. */
+const NO_ADDRESS_BAR_TTL_MS = 30_000;
+
 /**
  * Signal tracing, sharing the main process's own opt-in switch — the
  * side-car inherits its environment, so turning on the debug harness turns
@@ -196,6 +202,38 @@ export class AtspiClient {
   private bus: dbus.MessageBus | null = null;
   private readonly logger: (line: string) => void;
   private readonly signalCounts = new Map<string, number>();
+  /**
+   * Where each window's address bar was last found, keyed by bus+window.
+   *
+   * The tree walk below costs one D-Bus round trip per node visited — dozens
+   * for a Chromium window, and Opera's bar sits at depth 15. That walk ran
+   * from scratch on every resolve, and the heartbeat resolves the same
+   * window every 5 seconds, so the same search was repeated indefinitely.
+   * On a slower machine it stopped fitting inside the manager's 2s request
+   * timeout: resolves were abandoned, the late replies logged as "Dropped
+   * response for unknown/stale request id", and nothing was recorded.
+   *
+   * A window's layout does not move while it is open, so remembering the
+   * path turns every subsequent resolve into a single round trip.
+   */
+  private readonly addressBarPaths = new Map<string, string>();
+
+  /**
+   * Windows already found to expose no address bar, and when.
+   *
+   * The expensive case is not a browser — it is everything else. A window
+   * with no address bar is only known to have none after the walk has
+   * visited every node to MAX_SEARCH_DEPTH, and there is no path to
+   * remember afterwards, so the full walk repeated on every resolve.
+   * Measured at 576ms for gnome-shell on a fast machine, and gnome-shell
+   * activates several times a minute; on a slower one that alone exhausted
+   * the 2s request timeout.
+   *
+   * Expires rather than being permanent: a window could in principle gain a
+   * toolbar entry later, and a wrong negative would otherwise persist for
+   * the life of the window.
+   */
+  private readonly windowsWithoutAddressBar = new Map<string, number>();
   private traceTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: AtspiClientOptions) {
@@ -393,12 +431,62 @@ export class AtspiClient {
    * application.
    */
   async findAddressBarPath(bus: string, path: string): Promise<string | null> {
+    const key = `${bus}|${path}`;
+    const remembered = this.addressBarPaths.get(key);
+    if (remembered) {
+      if (await this.isStillAddressBar(bus, remembered)) return remembered;
+      this.addressBarPaths.delete(key); // window re-laid out — walk it again
+    }
+
+    const ruledOutAt = this.windowsWithoutAddressBar.get(key);
+    if (ruledOutAt !== undefined && Date.now() - ruledOutAt < NO_ADDRESS_BAR_TTL_MS) {
+      return null;
+    }
+
     // "First node of the right role" picks a decoy in Opera and Firefox,
     // so prefer the first candidate with readable text. The first match is
     // kept as a fallback for a genuinely empty bar.
     const fallback: { path: string | null } = { path: null };
     const readable = await this.searchForAddressBar(bus, path, 0, false, fallback);
-    return readable ?? fallback.path;
+    const found = readable ?? fallback.path;
+    if (found) {
+      this.windowsWithoutAddressBar.delete(key);
+      this.rememberAddressBar(key, found);
+    } else {
+      this.rememberNoAddressBar(key);
+    }
+    return found;
+  }
+
+  /** Same bound and eviction as the positive cache; see MAX_REMEMBERED_ADDRESS_BARS. */
+  private rememberNoAddressBar(key: string): void {
+    if (this.windowsWithoutAddressBar.size >= MAX_REMEMBERED_ADDRESS_BARS) {
+      const oldest = this.windowsWithoutAddressBar.keys().next();
+      if (!oldest.done) this.windowsWithoutAddressBar.delete(oldest.value);
+    }
+    this.windowsWithoutAddressBar.set(key, Date.now());
+  }
+
+  /**
+   * Confirms a remembered path still looks like an address bar, in one
+   * round trip. Cheap enough to pay on every resolve, and the only thing
+   * standing between a stale cache and a reading from the wrong node.
+   */
+  private async isStillAddressBar(bus: string, path: string): Promise<boolean> {
+    try {
+      return ADDRESS_BAR_ROLES.has(await this.getRoleName(bus, path));
+    } catch {
+      return false; // window gone, or the node with it
+    }
+  }
+
+  /** Bounded, oldest-out: a long session opens and closes many windows, and nothing else prunes this. */
+  private rememberAddressBar(key: string, path: string): void {
+    if (this.addressBarPaths.size >= MAX_REMEMBERED_ADDRESS_BARS) {
+      const oldest = this.addressBarPaths.keys().next();
+      if (!oldest.done) this.addressBarPaths.delete(oldest.value);
+    }
+    this.addressBarPaths.set(key, path);
   }
 
   private async searchForAddressBar(
@@ -514,6 +602,8 @@ export class AtspiClient {
   }
 
   stop(): void {
+    this.addressBarPaths.clear();
+    this.windowsWithoutAddressBar.clear();
     if (this.traceTimer) clearInterval(this.traceTimer);
     this.traceTimer = null;
     this.bus?.disconnect();
