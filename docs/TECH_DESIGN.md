@@ -14,10 +14,10 @@ Two clients feed one backend. The desktop agent captures data — including webs
 | --- | --- | --- |
 | Web console | Next.js | Admin, org/team/project management, reporting, timesheets, billing. |
 | Backend API | NestJS + Postgres | Auth, multi-tenancy, batched event ingestion, presigned uploads, business logic. |
-| Job queue | BullMQ + Redis | Async work: screenshot thumbnails, activity rollups, report aggregation. |
-| Desktop agent | Electron + native helpers + native side-car resolvers | Time tracking, apps/windows, website/URL tracking, screenshots, activity, idle; offline queue; sync. |
+| Job queue | BullMQ + Redis | Async work: screenshot thumbnails, report aggregation. |
+| Desktop agent | Electron + native helpers + native side-car resolvers | Time tracking, apps/windows, website/URL tracking, screenshots, idle; offline queue; sync. |
 | Object storage | Cloudflare R2 (S3 API) | Screenshot blobs; cheap egress; direct uploads via presigned URLs. |
-| Desktop agent | Electron + native helpers | Time tracking, apps/windows, screenshots, activity, idle; offline queue; sync. |
+| Desktop agent | Electron + native helpers | Time tracking, apps/windows, screenshots, idle; offline queue; sync. |
 | Browser extension | Manifest V3 | Reports the active tab URL to the agent, event-driven. |
 | Object storage | Wasabi (S3 API) | Screenshot blobs; cheap egress; direct uploads via presigned URLs. |
 
@@ -34,7 +34,6 @@ A generic *device* concept is kept from the start (desktop today, mobile later) 
 | time_entry | user_id, project_id, start, end, source | Manual or agent-driven. |
 | app_event | device_id, app, title, ts | Foreground app/window samples. |
 | url_event | device_id, url, title, source, confidence, ts | From the native side-car resolver; see `docs/url-tracking-plan.md`. |
-| activity_sample | device_id, level, ts | Relative input volume, not keystrokes. |
 | screenshot | device_id, storage_key, ts, kept_until | Metadata only; blob lives in Wasabi. |
 | rollup | scope, period, metrics | Pre-aggregated for dashboards. |
 
@@ -50,7 +49,7 @@ A generic *device* concept is kept from the start (desktop today, mobile later) 
 
 The agent is an Electron app whose first job is boring reliability; capture is layered on afterward, each module behind a feature flag.
 
-- **Capture modules:** @paymoapp/active-window (apps/windows), the OS screenshot tool (screenshots), uiohook-napi (activity level), Electron powerMonitor (idle).
+- **Capture modules:** @paymoapp/active-window (apps/windows), the OS screenshot tool (screenshots), Electron powerMonitor (idle).
 - **Always-on hygiene:** bounded memory, crash auto-restart, auto-launch on login, auto-update via electron-updater.
 - **Permissions:** macOS Screen Recording (screenshots) and Accessibility (window titles, input) are requested transparently.
 - **Native-module discipline:** pin versions, ship prebuilt binaries, re-test on real Windows/macOS after any OS or Electron update.

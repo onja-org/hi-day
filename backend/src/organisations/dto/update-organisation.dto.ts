@@ -55,10 +55,6 @@ export class UpdateOrganisationDto {
   screenshotRetentionDays?: number;
 
   @IsOptional()
-  @IsBoolean()
-  activityTrackingEnabled?: boolean;
-
-  @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(24)

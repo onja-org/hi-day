@@ -5,8 +5,6 @@ export interface CaptureSettings {
   screenshotFrequencySeconds: number;
   /** How long a screenshot is kept before the retention cleanup job deletes it, in days. */
   screenshotRetentionDays: number;
-  /** Gates the desktop agent's keyboard/mouse input-monitoring loop (see docs/adr/0013-...) — separate from `windowTrackingEnabled`, a more sensitive capability. */
-  activityTrackingEnabled: boolean;
 }
 
 /** Applied when an org hasn't customised the frequency yet — 10 minutes. */
@@ -26,5 +24,4 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   screenshotsEnabled: false,
   screenshotFrequencySeconds: DEFAULT_SCREENSHOT_FREQUENCY_SECONDS,
   screenshotRetentionDays: DEFAULT_SCREENSHOT_RETENTION_DAYS,
-  activityTrackingEnabled: false,
 };

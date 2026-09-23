@@ -12,22 +12,6 @@ type WhosOnlineListProps = {
   organisationId: string;
 };
 
-function ActivityBadge({ percentage }: { percentage: number | null }) {
-  if (percentage === null) {
-    return <span className="text-xs text-slate-900/40">—</span>;
-  }
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums",
-        percentage >= 50 ? "bg-success/10 text-success" : "bg-error/10 text-error",
-      )}
-    >
-      {percentage}%
-    </span>
-  );
-}
-
 export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
   const summaryQuery = useTeamDashboardSummary(organisationId);
 
@@ -86,13 +70,11 @@ export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
                 </span>
               </div>
               <div className="flex w-14 flex-col items-end gap-1">
-                <ActivityBadge percentage={member.todayActivityPercentage} />
                 <span className="text-xs tabular-nums text-slate-900/70">
                   {formatElapsed(member.workedTodaySeconds * 1000)}
                 </span>
               </div>
               <div className="flex w-16 flex-col items-end gap-1">
-                <ActivityBadge percentage={member.weekActivityPercentage} />
                 <span className="text-xs tabular-nums text-slate-900/70">
                   {formatElapsed(member.workedThisWeekSeconds * 1000)}
                 </span>

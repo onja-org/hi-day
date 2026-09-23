@@ -7,7 +7,6 @@ export interface CaptureSettingsValue {
   screenshotsEnabled: boolean;
   /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
   screenshotFrequencySeconds: number;
-  activityTrackingEnabled: boolean;
   /** See docs/adr/0015-... — purely informational, drives the renderer's passive disclosure banner. Never gates capture. Same shape as ApiClient's own CaptureSettings.consent, so a real API result needs no mapping here. */
   consent: { required: boolean };
 }
@@ -20,7 +19,6 @@ const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
-  activityTrackingEnabled: false,
   consent: { required: true },
 };
 
@@ -93,7 +91,6 @@ export class CaptureSettingsGate {
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&
-      settings.activityTrackingEnabled === this.lastSettings.activityTrackingEnabled &&
       settings.consent.required === this.lastSettings.consent.required
     ) {
       return;

@@ -14,7 +14,6 @@ const NO_CAPTURE_ENABLED = {
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 600,
   screenshotRetentionDays: 30,
-  activityTrackingEnabled: false,
 };
 
 const CAPTURE_ENABLED = {

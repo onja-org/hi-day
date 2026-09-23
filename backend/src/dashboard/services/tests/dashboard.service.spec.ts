@@ -1,6 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
@@ -53,14 +52,6 @@ describe('DashboardService', () => {
     } as unknown as Repository<TimeEntryPause>;
   }
 
-  function makeActivitySamplesRepo(
-    ...calls: Array<{ activePercentage: number }[]>
-  ): Repository<ActivitySample> {
-    const find = jest.fn();
-    calls.forEach((result) => find.mockResolvedValueOnce(result));
-    return { find } as unknown as Repository<ActivitySample>;
-  }
-
   function makeMembershipsRepo(
     overrides: Partial<Repository<Membership>> = {},
   ): Repository<Membership> {
@@ -101,7 +92,6 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
     );
@@ -153,7 +143,6 @@ describe('DashboardService', () => {
         lastWeekSameSpanEntries,
       ),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
     );
@@ -180,7 +169,6 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
     );
@@ -216,7 +204,6 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], lastWeekSameSpanEntries),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(),
     );
@@ -231,41 +218,10 @@ describe('DashboardService', () => {
     ]);
   });
 
-  it('returns null activity percentage (not a fabricated 0) when no samples exist, and a real average otherwise', async () => {
-    const serviceWithNoSamples = new DashboardService(
-      makeTimeEntriesRepo([], [], []),
-      makePausesRepo(),
-      makeActivitySamplesRepo([], []),
-      makeMembershipsRepo(),
-      makeOrganisationsService(),
-    );
-    const withNoSamples = await serviceWithNoSamples.getSummary(
-      'org-1',
-      'user-1',
-    );
-    expect(withNoSamples.weeklyActivityPercentage).toBeNull();
-    expect(withNoSamples.weeklyActivityDeltaPercentage).toBeNull();
-
-    const serviceWithSamples = new DashboardService(
-      makeTimeEntriesRepo([], [], []),
-      makePausesRepo(),
-      makeActivitySamplesRepo(
-        [{ activePercentage: 80 }, { activePercentage: 60 }], // this week avg 70
-        [{ activePercentage: 50 }], // last week avg 50
-      ),
-      makeMembershipsRepo(),
-      makeOrganisationsService(),
-    );
-    const withSamples = await serviceWithSamples.getSummary('org-1', 'user-1');
-    expect(withSamples.weeklyActivityPercentage).toBe(70);
-    expect(withSamples.weeklyActivityDeltaPercentage).toBe(20);
-  });
-
   it('rejects when the caller has no active membership in the organisation', async () => {
     const service = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
       makeOrganisationsService(),
     );
@@ -279,7 +235,6 @@ describe('DashboardService', () => {
     const service = new DashboardService(
       makeTimeEntriesRepo([], [], []),
       makePausesRepo(),
-      makeActivitySamplesRepo([], []),
       makeMembershipsRepo(),
       makeOrganisationsService(6),
     );

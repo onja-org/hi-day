@@ -11,9 +11,6 @@ import {
 import type { PairingPollResult, TrackingResult } from './api-client';
 import { ApiClient } from './api-client';
 import { resolveApiBaseUrl } from './api-base-url';
-import { resolveActivityPeriodMs } from './activity-sample';
-import { ActivitySampler } from './activity-sampler';
-import { ActivitySampleUploader } from './activity-sample-uploader';
 import { AppEventUploader } from './app-event-uploader';
 import { AuthStore } from './auth-store';
 import { CaptureSettingsGate } from './capture-settings-gate';
@@ -395,17 +392,6 @@ async function registerIpcHandlers(): Promise<void> {
       authStore.load()?.waylandScreenshotGranted ?? false,
   });
 
-  const activitySampleUploader = new ActivitySampleUploader(
-    authStore,
-    apiClient,
-    offlineQueue,
-  );
-  offlineQueue.registerSender(activitySampleUploader);
-  const activitySampler = new ActivitySampler({
-    sink: activitySampleUploader.enqueue,
-    intervalMs: resolveActivityPeriodMs(),
-  });
-
   offlineQueue.start();
 
   // Window tracking and screenshot capture each only run while BOTH are
@@ -418,7 +404,6 @@ async function registerIpcHandlers(): Promise<void> {
   let windowTrackingEnabled = false;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
-  let activityTrackingEnabled = false;
   let timerRunning = false;
   function recomputeSampling(): void {
     if (windowTrackingEnabled && timerRunning) {
@@ -437,13 +422,6 @@ async function registerIpcHandlers(): Promise<void> {
     } else {
       screenshotSampler.stop();
     }
-
-    if (activityTrackingEnabled && timerRunning) {
-      activitySampler.start();
-    } else {
-      activitySampler.stop();
-      void activitySampleUploader.flush();
-    }
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
@@ -453,7 +431,6 @@ async function registerIpcHandlers(): Promise<void> {
       windowTrackingEnabled = settings.windowTrackingEnabled;
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
-      activityTrackingEnabled = settings.activityTrackingEnabled;
       recomputeSampling();
     },
   );
@@ -705,8 +682,7 @@ async function registerIpcHandlers(): Promise<void> {
   // line up), not tied to whether a sample actually uploaded successfully
   // (see docs/adr/0015-...'s indicator-semantics note).
   ipcMain.handle('tracking:indicatorStatus', (): { active: boolean } => {
-    const anyCaptureEnabled =
-      windowTrackingEnabled || screenshotsEnabled || activityTrackingEnabled;
+    const anyCaptureEnabled = windowTrackingEnabled || screenshotsEnabled;
     return { active: anyCaptureEnabled && timerRunning };
   });
 

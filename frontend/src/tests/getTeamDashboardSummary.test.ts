@@ -18,8 +18,6 @@ describe("getTeamDashboardSummary", () => {
             workedThisWeekDeltaSeconds: 0,
             projectsWorkedThisWeek: 1,
             projectsWorkedDelta: 0,
-            weeklyActivityPercentage: null,
-            weeklyActivityDeltaPercentage: null,
             projectsThisWeek: [],
             members: [],
             recentActivity: [],
