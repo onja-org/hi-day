@@ -245,6 +245,7 @@ export class DeviceTrackingController {
     return this.timeEntriesService.stop(
       request.organisationId,
       request.userId,
+      request.deviceId,
       dto.endedAt ? new Date(dto.endedAt) : undefined,
     );
   }
@@ -271,6 +272,7 @@ export class DeviceTrackingController {
     return this.timeEntriesService.current(
       request.organisationId,
       request.userId,
+      request.deviceId,
     );
   }
 
@@ -279,6 +281,7 @@ export class DeviceTrackingController {
     return this.timeEntriesService.pause(
       request.organisationId,
       request.userId,
+      request.deviceId,
     );
   }
 
@@ -289,6 +292,7 @@ export class DeviceTrackingController {
     return this.timeEntriesService.resume(
       request.organisationId,
       request.userId,
+      request.deviceId,
     );
   }
 

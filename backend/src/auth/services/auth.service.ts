@@ -540,7 +540,7 @@ export class AuthService {
 
     for (const organisationId of organisationIds) {
       try {
-        await this.timeEntriesService.stop(organisationId, userId);
+        await this.timeEntriesService.stopAll(organisationId, userId);
       } catch (error) {
         if (!(error instanceof NotFoundException)) {
           throw error;

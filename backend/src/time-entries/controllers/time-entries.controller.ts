@@ -54,7 +54,7 @@ export class TimeEntriesController {
 
   @Get('current')
   current(@Req() request: AuthenticatedRequest): Promise<CurrentTimeEntry> {
-    return this.timeEntriesService.current(
+    return this.timeEntriesService.currentForAccount(
       request.organisationId!,
       request.userId,
     );
@@ -65,12 +65,13 @@ export class TimeEntriesController {
     @Body() dto: StopTimeEntryDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<{ entry: TimeEntrySummary; message: string }> {
-    const entry = await this.timeEntriesService.stop(
+    // Account-level: the web ends tracking on every Device, not one of them.
+    const entries = await this.timeEntriesService.stopAll(
       request.organisationId!,
       request.userId,
       dto.endedAt ? new Date(dto.endedAt) : undefined,
     );
-    return { entry, message: 'Timer stopped' };
+    return { entry: entries[0], message: 'Timer stopped' };
   }
 
   @Patch(':timeEntryId')
@@ -108,21 +109,23 @@ export class TimeEntriesController {
   async pause(
     @Req() request: AuthenticatedRequest,
   ): Promise<{ entry: TimeEntrySummary; message: string }> {
-    const entry = await this.timeEntriesService.pause(
+    const entries = await this.timeEntriesService.setPausedForAccount(
       request.organisationId!,
       request.userId,
+      true,
     );
-    return { entry, message: 'Timer paused' };
+    return { entry: entries[0], message: 'Timer paused' };
   }
 
   @Post('resume')
   async resume(
     @Req() request: AuthenticatedRequest,
   ): Promise<{ entry: TimeEntrySummary; message: string }> {
-    const entry = await this.timeEntriesService.resume(
+    const entries = await this.timeEntriesService.setPausedForAccount(
       request.organisationId!,
       request.userId,
+      false,
     );
-    return { entry, message: 'Timer resumed' };
+    return { entry: entries[0], message: 'Timer resumed' };
   }
 }

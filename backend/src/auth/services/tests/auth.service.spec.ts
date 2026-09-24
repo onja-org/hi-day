@@ -164,10 +164,10 @@ describe('AuthService', () => {
   }
 
   function makeTimeEntriesService() {
-    const stop = jest.fn().mockResolvedValue(undefined);
+    const stopAll = jest.fn().mockResolvedValue(undefined);
     return {
-      timeEntriesService: { stop } as unknown as TimeEntriesService,
-      stop,
+      timeEntriesService: { stopAll } as unknown as TimeEntriesService,
+      stopAll,
     };
   }
 
@@ -880,7 +880,7 @@ describe('AuthService', () => {
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       revokeAllForUser.mockResolvedValue(['org-1', 'org-2']);
-      const { timeEntriesService, stop } = makeTimeEntriesService();
+      const { timeEntriesService, stopAll } = makeTimeEntriesService();
       const service = makeService({
         usersRepo,
         deviceSessionService,
@@ -892,8 +892,8 @@ describe('AuthService', () => {
         makeResponse().response,
       );
 
-      expect(stop).toHaveBeenCalledWith('org-1', 'user-1');
-      expect(stop).toHaveBeenCalledWith('org-2', 'user-1');
+      expect(stopAll).toHaveBeenCalledWith('org-1', 'user-1');
+      expect(stopAll).toHaveBeenCalledWith('org-2', 'user-1');
     });
 
     it('does not fail when a revoked device has no running timer to stop', async () => {
@@ -908,8 +908,8 @@ describe('AuthService', () => {
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       revokeAllForUser.mockResolvedValue(['org-1']);
-      const { timeEntriesService, stop } = makeTimeEntriesService();
-      stop.mockRejectedValue(new NotFoundException('No timer is running.'));
+      const { timeEntriesService, stopAll } = makeTimeEntriesService();
+      stopAll.mockRejectedValue(new NotFoundException('No timer is running.'));
       const service = makeService({
         usersRepo,
         deviceSessionService,
@@ -1085,7 +1085,7 @@ describe('AuthService', () => {
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       revokeAllForUser.mockResolvedValue(['org-1', 'org-2']);
-      const { timeEntriesService, stop } = makeTimeEntriesService();
+      const { timeEntriesService, stopAll } = makeTimeEntriesService();
       const service = makeService({
         refreshTokenService,
         deviceSessionService,
@@ -1095,8 +1095,8 @@ describe('AuthService', () => {
 
       await service.logoutEverywhere(request, makeResponse().response);
 
-      expect(stop).toHaveBeenCalledWith('org-1', 'user-1');
-      expect(stop).toHaveBeenCalledWith('org-2', 'user-1');
+      expect(stopAll).toHaveBeenCalledWith('org-1', 'user-1');
+      expect(stopAll).toHaveBeenCalledWith('org-2', 'user-1');
     });
 
     it('does not fail when a revoked device has no running timer to stop', async () => {
@@ -1104,8 +1104,8 @@ describe('AuthService', () => {
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       revokeAllForUser.mockResolvedValue(['org-1']);
-      const { timeEntriesService, stop } = makeTimeEntriesService();
-      stop.mockRejectedValue(new NotFoundException('No timer is running.'));
+      const { timeEntriesService, stopAll } = makeTimeEntriesService();
+      stopAll.mockRejectedValue(new NotFoundException('No timer is running.'));
       const service = makeService({
         refreshTokenService,
         deviceSessionService,
