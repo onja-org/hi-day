@@ -306,6 +306,16 @@ let runningEntry: TimeEntry | null = null;
 // poll — lets the 1s tick compute elapsed time from the server's own
 // notion of "now" instead of trusting this device's clock.
 let serverOffsetMs = 0;
+/**
+ * The account-wide worked milliseconds as of the last poll, and the local
+ * instant it was read, so the 1s tick advances it without re-polling. Null
+ * until the first successful poll, and left null while offline — which is
+ * what makes liveElapsedMs fall back to this device's own elapsed time.
+ */
+let accountWorkedMs = 0;
+let accountWorkedMsAt: number | null = null;
+/** The account total frozen at the instant this device paused. */
+let pausedAtWorkedMs = 0;
 let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
 let projects: TrackedProject[] = [];
 /**
@@ -508,11 +518,27 @@ function displayedSecondsFor(projectId: string): number {
  */
 function liveElapsedMs(): number {
   if (!runningEntry) return 0;
-  const startedAtMs = new Date(runningEntry.startedAt).getTime();
-  const pausedMs = runningEntry.pausedSeconds * 1000;
-  return runningEntry.pausedAt
-    ? new Date(runningEntry.pausedAt).getTime() - startedAtMs - pausedMs
-    : Date.now() + serverOffsetMs - startedAtMs - pausedMs;
+
+  // The account's total, not this device's entry: a person may track on a
+  // laptop and a desktop at once, and both show the same figure — the union
+  // of their time, counting a shared hour once (ADR-0021). A device joining
+  // at 10:00 shows the hour the other already accrued, not zero.
+  //
+  // Frozen while *this* device is paused. The account total may still be
+  // climbing because another device kept tracking, but a clock ticking under
+  // the word "Paused" reads as a bug to the person who just paused it; it
+  // re-syncs on resume.
+  if (runningEntry.pausedAt) return pausedAtWorkedMs;
+
+  if (accountWorkedMsAt === null) {
+    // Offline, or not polled yet: fall back to this device's own elapsed time
+    // so the timer stays useful, and let the next poll re-sync.
+    const startedAtMs = new Date(runningEntry.startedAt).getTime();
+    const pausedMs = runningEntry.pausedSeconds * 1000;
+    return Date.now() + serverOffsetMs - startedAtMs - pausedMs;
+  }
+
+  return accountWorkedMs + (Date.now() - accountWorkedMsAt);
 }
 
 /** Re-reads today's per-Project totals from completed entries. */
@@ -784,6 +810,9 @@ async function refreshStatus(): Promise<void> {
     return;
   }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
+  accountWorkedMs = (result.data.workedSeconds ?? 0) * 1000;
+  accountWorkedMsAt = Date.now();
+  if (result.data.entry?.pausedAt) pausedAtWorkedMs = accountWorkedMs;
 
   const entry = result.data.entry;
   if (entry && (await reconcileDayBoundary(entry))) {

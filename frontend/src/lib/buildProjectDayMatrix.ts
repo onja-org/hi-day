@@ -1,3 +1,4 @@
+import { unionActiveSeconds } from "@/lib/unionActiveSeconds";
 import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -41,6 +42,13 @@ export function buildProjectDayMatrix(
 ): ProjectDayMatrix {
   const rowsByProject = new Map<string, ProjectDayMatrixRow>();
   const dailyTotals = new Array<number>(DAYS_PER_WEEK).fill(0);
+  const entriesByCell = new Map<string, TimeEntryListItem[]>();
+  const entriesByProject = new Map<string, TimeEntryListItem[]>();
+  const entriesByDay: TimeEntryListItem[][] = Array.from(
+    { length: DAYS_PER_WEEK },
+    () => [],
+  );
+  const allEntries: TimeEntryListItem[] = [];
 
   for (const entry of entries) {
     if (entry.durationSeconds === null) continue;
@@ -59,14 +67,36 @@ export function buildProjectDayMatrix(
       rowsByProject.set(entry.projectId, row);
     }
 
-    row.dailySeconds[dayIndex] += entry.durationSeconds;
-    row.totalSeconds += entry.durationSeconds;
-    dailyTotals[dayIndex] += entry.durationSeconds;
+    const cellKey = `${entry.projectId}|${dayIndex}`;
+    entriesByCell.set(cellKey, [...(entriesByCell.get(cellKey) ?? []), entry]);
+    entriesByProject.set(entry.projectId, [
+      ...(entriesByProject.get(entry.projectId) ?? []),
+      entry,
+    ]);
+    entriesByDay[dayIndex].push(entry);
+    allEntries.push(entry);
+  }
+
+  // Every total here is a union, not a sum. A person tracking the same hour
+  // on two Devices worked one hour, and adding the rows would report two
+  // (ADR-0021). Each is unioned within its own scope — cell, column, and the
+  // grand total across the week — because overlaps only cancel within a
+  // scope, so the grand total is not the sum of the columns either.
+  for (const row of rowsByProject.values()) {
+    for (let day = 0; day < DAYS_PER_WEEK; day += 1) {
+      row.dailySeconds[day] = unionActiveSeconds(
+        entriesByCell.get(`${row.projectId}|${day}`) ?? [],
+      );
+    }
+    row.totalSeconds = unionActiveSeconds(entriesByProject.get(row.projectId) ?? []);
+  }
+  for (let day = 0; day < DAYS_PER_WEEK; day += 1) {
+    dailyTotals[day] = unionActiveSeconds(entriesByDay[day]);
   }
 
   return {
     rows: [...rowsByProject.values()],
     dailyTotals,
-    grandTotal: dailyTotals.reduce((sum, seconds) => sum + seconds, 0),
+    grandTotal: unionActiveSeconds(allEntries),
   };
 }

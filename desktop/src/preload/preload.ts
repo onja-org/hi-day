@@ -56,6 +56,13 @@ export interface TrackedEntry {
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
+  /**
+  * The person's worked seconds across every device currently tracking,
+  * counting wall-clock time two devices share only once. Displayed instead
+  * of this device's own elapsed time, so a machine joining a timer already
+  * running elsewhere shows the total already accrued (ADR-0021).
+  */
+  workedSeconds: number;
 }
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";

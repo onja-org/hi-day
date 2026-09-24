@@ -1,3 +1,4 @@
+import { unionActiveSeconds } from "@/lib/unionActiveSeconds";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type TimeEntryDayGroup = {
@@ -54,9 +55,12 @@ export function groupTimeEntriesByDay(
       groups.push(group);
     }
     group.entries.push(entry);
-    if (entry.durationSeconds !== null) {
-      group.totalSeconds += entry.durationSeconds;
-    }
+  }
+
+  // Unioned, not summed: a person may have been tracking on two Devices at
+  // once, and time they share counts once (ADR-0021).
+  for (const group of groups) {
+    group.totalSeconds = unionActiveSeconds(group.entries);
   }
 
   return groups;
