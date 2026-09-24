@@ -1,5 +1,6 @@
 import { systemPreferences } from 'electron';
 import type { DesktopDevicePlatform } from './platform';
+import type { GnomeWindowFocus } from './gnome-window-focus-tracker';
 import { isWaylandSession, toDevicePlatform } from './platform';
 import type { WindowSampleSink } from './window-sample';
 import { classifyTitleUnavailability } from './window-sample';
@@ -91,6 +92,8 @@ export interface WindowSamplerDeps {
   sink?: WindowSampleSink;
   getPlatform?: () => DesktopDevicePlatform;
   isWayland?: () => boolean;
+  /** The focused XWayland window, or null when a Wayland-native one has focus. */
+  getX11Focus?: () => GnomeWindowFocus | null;
   isMacScreenRecordingGranted?: () => boolean;
   getActiveWindow?: GetActiveWindowFn;
   /**
@@ -121,6 +124,7 @@ export class WindowSampler {
   private readonly sink: WindowSampleSink;
   private readonly getPlatform: () => DesktopDevicePlatform;
   private readonly isWayland: () => boolean;
+  private readonly getX11Focus: () => GnomeWindowFocus | null;
   private readonly isMacScreenRecordingGranted: () => boolean;
   private readonly getActiveWindow: GetActiveWindowFn;
   private readonly getGnomeFocus: () => { appName: string; title: string } | null;
@@ -132,6 +136,7 @@ export class WindowSampler {
     this.getPlatform =
       deps.getPlatform ?? (() => toDevicePlatform(process.platform));
     this.isWayland = deps.isWayland ?? isWaylandSession;
+    this.getX11Focus = deps.getX11Focus ?? ((): null => null);
     // Non-prompting status check — deliberately Electron's own API, not
     // @paymoapp/active-window's `requestPermissions()`, which triggers
     // macOS's native Screen Recording prompt the first time it's called.
@@ -142,6 +147,15 @@ export class WindowSampler {
       (() => systemPreferences.getMediaAccessStatus('screen') === 'granted');
     this.getActiveWindow = deps.getActiveWindow ?? readActiveWindow;
     this.getGnomeFocus = deps.getGnomeFocus ?? ((): null => null);
+  }
+
+  /** Normalises the addon's throw-on-no-focused-window into one "nothing to report" shape. */
+  private readActiveWindowOrUndefined(): ActiveWindowResult | undefined {
+    try {
+      return this.getActiveWindow();
+    } catch {
+      return undefined;
+    }
   }
 
   start(): void {
@@ -170,15 +184,35 @@ export class WindowSampler {
     const platform = this.getPlatform();
     const sampledAt = new Date().toISOString();
 
+    // Two complementary sources on Linux: X11 sees every XWayland client —
+    // on a Wayland session, still most applications — while AT-SPI sees only
+    // what publishes an accessibility tree. PyCharm, VLC and Teams appear in
+    // the first and not the second, so X11 is read first. A null from X11
+    // means a Wayland-native window has focus, which is AT-SPI's half.
     if (platform === 'linux' && this.isWayland()) {
-      // @paymoapp/active-window (like get-windows before it) has no
-      // Wayland support at all (see docs/adr/0009-.../0011-...) — GNOME
-      // sessions fill this gap via AT-SPI2 instead (see docs/adr/0016-...,
-      // gnome-window-focus-tracker.ts), which isn't affected by the
-      // Wayland gap this whole branch otherwise exists for. Falls back to
-      // the original 'not-exposed' only when nothing has been seen yet
-      // (nothing to report before the very first window activation this
-      // session, or a non-GNOME/non-Linux caller that never wires
+      const fromX11 = this.getX11Focus();
+      if (fromX11) {
+        const reason = classifyTitleUnavailability({
+          platform,
+          macScreenRecordingGranted: true, // meaningless off macOS
+          isWayland: false, // an XWayland client is an X11 client
+          rawTitle: fromX11.title || undefined,
+          rawOwnerName: fromX11.appName || undefined,
+        });
+        this.sink({
+          appName: fromX11.appName || null,
+          title: reason === null ? fromX11.title || null : null,
+          titleUnavailableReason: reason,
+          sampledAt,
+        });
+        return;
+      }
+    }
+
+    if (platform === 'linux' && this.isWayland()) {
+      // Falls back to the original 'not-exposed' only when nothing has been
+      // seen yet (nothing to report before the very first window activation
+      // this session, or a non-GNOME/non-Linux caller that never wires
       // getGnomeFocus at all).
       const gnomeFocus = this.getGnomeFocus();
       if (!gnomeFocus) {
@@ -211,15 +245,7 @@ export class WindowSampler {
     const macScreenRecordingGranted =
       platform === 'macos' ? this.isMacScreenRecordingGranted() : true;
 
-    let result: ActiveWindowResult | undefined;
-    try {
-      // Throws (rather than resolving undefined) when there's no focused
-      // window to report — e.g. everything minimized, or the desktop
-      // itself is focused. Caught here so a tick is still always emitted.
-      result = this.getActiveWindow();
-    } catch {
-      result = undefined;
-    }
+    const result = this.readActiveWindowOrUndefined();
 
     const reason = classifyTitleUnavailability({
       platform,

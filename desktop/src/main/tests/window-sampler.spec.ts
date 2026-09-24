@@ -61,13 +61,14 @@ describe('WindowSampler', () => {
     });
   });
 
-  it("short-circuits on Wayland, never calling @paymoapp/active-window, tagged 'not-exposed', when no GNOME focus has been seen yet", () => {
+  it("with no usable X11, never calls @paymoapp/active-window and tags 'not-exposed' until a GNOME focus is seen", () => {
     const { sink, samples } = makeSink();
     const getActiveWindow = vi.fn();
     const sampler = new WindowSampler({
       sink,
       getPlatform: () => 'linux',
       isWayland: () => true,
+      getX11Focus: () => null,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow,
       getGnomeFocus: () => null,
@@ -90,6 +91,7 @@ describe('WindowSampler', () => {
       sink,
       getPlatform: () => 'linux',
       isWayland: () => true,
+      getX11Focus: () => null,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow: vi.fn(),
     });
@@ -110,6 +112,7 @@ describe('WindowSampler', () => {
       sink,
       getPlatform: () => 'linux',
       isWayland: () => true,
+      getX11Focus: () => null,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow,
       getGnomeFocus: () => ({ appName: 'Google Chrome', title: 'Example Domain' }),
@@ -132,6 +135,7 @@ describe('WindowSampler', () => {
       sink,
       getPlatform: () => 'linux',
       isWayland: () => true,
+      getX11Focus: () => null,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow: vi.fn(),
       getGnomeFocus: () => ({ appName: 'gnome-shell', title: '' }),
@@ -251,5 +255,76 @@ describe('WindowSampler start/stop', () => {
     sampler.start();
 
     expect(tick).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The gap this ordering exists to close. A Wayland session still runs most
+ * applications under XWayland, where X11 sees them — measured on GNOME 46:
+ * jetbrains-pycharm, vlc and teams-for-linux all reported by name and title,
+ * none of which publish an accessibility tree at all.
+ */
+describe('WindowSampler — Wayland with XWayland available', () => {
+  function makeSink() {
+    const samples: WindowSample[] = [];
+    return { sink: (sample: WindowSample) => samples.push(sample), samples };
+  }
+
+  it('prefers X11, which sees applications AT-SPI cannot', () => {
+    const { sink, samples } = makeSink();
+    const getGnomeFocus = vi.fn(() => ({ appName: 'gnome-shell', title: 'Overview' }));
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isMacScreenRecordingGranted: () => true,
+      getX11Focus: () => ({
+        appName: 'jetbrains-pycharm',
+        title: 'workforce-monitoring-app',
+      }),
+      getGnomeFocus,
+    });
+
+    sampler.tick();
+
+    expect(samples[0].appName).toBe('jetbrains-pycharm');
+    expect(samples[0].title).toBe('workforce-monitoring-app');
+    expect(getGnomeFocus).not.toHaveBeenCalled();
+  });
+
+  /** X11 reports nothing exactly when a Wayland-native window has focus. */
+  it('falls back to AT-SPI when X11 reports no active window', () => {
+    const { sink, samples } = makeSink();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isMacScreenRecordingGranted: () => true,
+      getX11Focus: () => null,
+      getGnomeFocus: () => ({ appName: 'gnome-terminal-server', title: 'bash' }),
+    });
+
+    sampler.tick();
+
+    expect(samples[0].appName).toBe('gnome-terminal-server');
+    expect(samples[0].title).toBe('bash');
+  });
+
+  it('never touches the native addon when X11 is unusable', () => {
+    const { sink } = makeSink();
+    const getActiveWindow = vi.fn();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      getX11Focus: () => null,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow,
+      getGnomeFocus: () => ({ appName: 'nautilus', title: 'Home' }),
+    });
+
+    sampler.tick();
+
+    expect(getActiveWindow).not.toHaveBeenCalled();
   });
 });

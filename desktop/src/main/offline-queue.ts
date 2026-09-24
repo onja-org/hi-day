@@ -1,7 +1,11 @@
+import { intervalFromEnv } from './tuning';
 import type { OfflineQueueStore } from './offline-queue-store';
 
 /** Matches the agent's existing batched-ingest cadence (docs/TECH_DESIGN.md §4). */
-export const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
+export const DEFAULT_FLUSH_INTERVAL_MS = intervalFromEnv(
+  'WM_QUEUE_FLUSH_INTERVAL_MS',
+  60_000,
+);
 export const DEFAULT_BASE_RETRY_DELAY_MS = 30_000;
 export const DEFAULT_MAX_RETRY_DELAY_MS = 30 * 60_000;
 /** Safety valve against unbounded local disk growth during a very long offline stretch — a generous default a sender can override. */

@@ -14,6 +14,8 @@ export const APP_ACTIVITY_DAY_QUERY_KEY = (
   filter.untracked ? "untracked" : (filter.projectId ?? "all"),
 ];
 
+const APP_ACTIVITY_DEV_POLL_MS = 5_000;
+
 export function useAppActivityDay(
   organisationId: string,
   filter: GetAppActivityDayFilter = {},
@@ -27,5 +29,11 @@ export function useAppActivityDay(
       }
       return result.day;
     },
+    // Development only: app events reach the server on the desktop's own
+    // flush cadence, and without a poll this page shows nothing new until a
+    // manual reload — which makes checking capture changes needlessly slow.
+    // Production keeps fetch-on-mount, as before.
+    refetchInterval:
+      process.env.NODE_ENV === "development" ? APP_ACTIVITY_DEV_POLL_MS : false,
   });
 }

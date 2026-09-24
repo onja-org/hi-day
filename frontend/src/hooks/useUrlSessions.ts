@@ -6,7 +6,13 @@ import { getUrlSessions } from "@/lib/getUrlSessions";
 // arrive just adds requests without adding freshness. Without this the
 // page only refetched on mount or window-focus, so it sat visibly stale
 // while a timer ran and only caught up when you navigated away and back.
-const URL_SESSIONS_POLL_INTERVAL_MS = 30_000;
+/**
+ * Production cadence. Shortened in development so a URL reaches the page in
+ * seconds while testing — the desktop side is already the slow link, and
+ * waiting 30s on top of it makes each check needlessly long.
+ */
+const URL_SESSIONS_POLL_INTERVAL_MS =
+  process.env.NODE_ENV === "development" ? 5_000 : 30_000;
 
 // The membership segment defaults to "self" rather than being omitted, so
 // "my own tracked URLs" and "membershipId=my own id" (which an admin/
