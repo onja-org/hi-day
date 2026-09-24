@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Workforce Monitor desktop agent (login, device registration, and start/stop time tracking)",
   "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
@@ -20,9 +20,9 @@
     "rebuild:node": "pnpm rebuild better-sqlite3",
     "build:resolver:win": "dotnet publish ../native/win/resolver/WinResolver/WinResolver.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true",
     "build:resolver:mac": "bash native/darwin/firefox-ax-helper-swift/build.sh",
-    "dist:linux": "pnpm build && pnpm rebuild:electron && electron-builder --linux",
-    "dist:win": "pnpm build && pnpm rebuild:electron && dotnet publish ../native/win/resolver/WinResolver/WinResolver.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true && electron-builder --win",
-    "dist:mac": "pnpm build && pnpm rebuild:electron && native/darwin/firefox-ax-helper-swift/build.sh && electron-builder --mac"
+    "dist:linux": "pnpm build && pnpm rebuild:electron && electron-builder --linux --publish never",
+    "dist:win": "pnpm build && pnpm rebuild:electron && dotnet publish ../native/win/resolver/WinResolver/WinResolver.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true && electron-builder --win --publish never",
+    "dist:mac": "pnpm build && pnpm rebuild:electron && native/darwin/firefox-ax-helper-swift/build.sh && electron-builder --mac --publish never"
   },
   "dependencies": {
     "@paymoapp/active-window": "^2.2.0",

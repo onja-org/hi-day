@@ -8,9 +8,10 @@ import type {
 } from '../../url-capture/protocol';
 import { parseRequestLine } from '../../url-capture/protocol';
 import { loadBrowserRegistry, lookupBrowser } from '../../url-capture/browser-registry';
-import { AtspiClient, type AtspiWindow } from './atspi';
+import { AtspiClient, EventRegistrationError, type AtspiWindow } from './atspi';
 import {
   accessibilityBusUnavailableReason,
+  eventRegistrationFailedReason,
   evaluateSupport,
   readSessionEnvironment,
 } from './support-gate';
@@ -103,10 +104,17 @@ async function main(): Promise<void> {
   try {
     await client.start();
   } catch (error) {
-    process.stderr.write(`[linux-resolver] accessibility bus unavailable: ${String(error)}\n`);
+    const registration = error instanceof EventRegistrationError;
+    process.stderr.write(
+      `[linux-resolver] ${registration ? 'focus events unavailable' : 'accessibility bus unavailable'}: ${String(error)}\n`,
+    );
     const ready: ReadyEvent = { ev: 'ready', platform: 'linux', caps: ['focus'] };
     writeLine(ready);
-    writeLine({ ev: 'error', code: 'a11y-bus-unavailable', detail: accessibilityBusUnavailableReason() });
+    writeLine({
+      ev: 'error',
+      code: registration ? 'event-registration-failed' : 'a11y-bus-unavailable',
+      detail: registration ? eventRegistrationFailedReason() : accessibilityBusUnavailableReason(),
+    });
     startProtocolLoop(null, null);
     return;
   }

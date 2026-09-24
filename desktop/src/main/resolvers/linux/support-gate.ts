@@ -103,3 +103,18 @@ export function accessibilityBusUnavailableReason(): string {
     'then sign out and back in.'
   );
 }
+
+/**
+ * Distinct from `accessibilityBusUnavailableReason`: the bus is reachable,
+ * but the registry would not record our request for window-activation
+ * events, so focus changes never arrive. Seen on at-spi2-core 2.44
+ * (Pop!_OS 22.04), whose `RegisterEvent` takes one argument where 2.46+
+ * takes three — the old registry accepts the newer call and drops it.
+ */
+export function eventRegistrationFailedReason(): string {
+  return (
+    'The accessibility service did not accept this app as a listener for window changes, ' +
+    'so website tracking is off. Updating at-spi2-core usually fixes it ' +
+    '(Debian/Ubuntu: `sudo apt install --only-upgrade at-spi2-core`), then sign out and back in.'
+  );
+}
