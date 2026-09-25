@@ -1,3 +1,4 @@
+import { intervalFromEnv } from '../tuning';
 import type { Confidence, Source } from './protocol';
 import type {
   EngineClock,
@@ -52,7 +53,10 @@ interface MergeCandidate {
 // complaint that prompted it was precisely that a long read stayed
 // invisible for too long. Worst-case staleness becomes this plus one sync
 // interval, instead of unbounded.
-const DEFAULT_SEGMENT_FLUSH_MS = 5 * 60_000;
+const DEFAULT_SEGMENT_FLUSH_MS = intervalFromEnv(
+  'WM_SEGMENT_FLUSH_MS',
+  5 * 60_000,
+);
 const DEFAULT_MERGE_WINDOW_MS = 30_000;
 const DEFAULT_MIN_SESSION_FLOOR_MS = 2_000;
 

@@ -40,9 +40,10 @@ export interface TitleUnavailabilityInput {
  *    (`CGWindowListCopyWindowInfo` redacts titles without it), not
  *    Accessibility. See docs/adr/0011-... for the migration off
  *    `get-windows`, which had this modeled as Accessibility instead.)
- * 2. Linux + Wayland session                  -> 'not-exposed'
- *    (@paymoapp/active-window only supports X11 on Linux; never even
- *    called under Wayland.)
+ * 2. Linux, no window source at all           -> 'not-exposed'
+ *    (XWayland clients come from X11 and are passed `isWayland: false`, an
+ *    XWayland client being an X11 client. This is what remains: a
+ *    Wayland-native window AT-SPI could not describe either.)
  * 3. An owner/app name came back but no title -> 'hidden-by-app'
  * 4. Otherwise                                -> null (title is usable)
  */

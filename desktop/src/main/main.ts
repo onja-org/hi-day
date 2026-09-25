@@ -15,6 +15,7 @@ import { AppEventUploader } from './app-event-uploader';
 import { AuthStore } from './auth-store';
 import { CaptureSettingsGate } from './capture-settings-gate';
 import { getOrCreateDeviceFingerprint } from './device-identity';
+import { X11WindowTracker } from './x11-window-tracker';
 import { GnomeWindowFocusTracker } from './gnome-window-focus-tracker';
 import { OfflineQueue } from './offline-queue';
 import { OfflineQueueStore } from './offline-queue-store';
@@ -31,6 +32,7 @@ import { applyBrowserActivation } from './resolvers/linux/browser-activation';
 import { ACCESSIBILITY_COPY, SETTINGS_DEEP_LINKS } from './resolvers/darwin/permission-copy';
 import type { SettingsPane } from './resolvers/darwin/permission-copy';
 import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
+import { intervalFromEnv } from './tuning';
 import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
 import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
 import type { UploadFn } from './url-capture/sync-contract';
@@ -218,7 +220,7 @@ function stopHeartbeat(): void {
 // docs/url-tracking-api.md. Nothing here is pinned to a specific
 // cadence; this just keeps the local SQLite queue from growing unbounded
 // between syncs without hammering the endpoint.
-const SYNC_INTERVAL_MS = 30_000;
+const SYNC_INTERVAL_MS = intervalFromEnv('WM_SYNC_INTERVAL_MS', 30_000);
 
 /**
  * The real network-backed `UploadFn` for a logged-in device. A 401 signs
@@ -379,8 +381,19 @@ async function registerIpcHandlers(): Promise<void> {
       : null;
   void gnomeWindowFocusTracker?.start();
 
+  // Read before AT-SPI: X11 sees every XWayland client, including the
+  // applications that publish no accessibility tree at all (PyCharm and
+  // other JetBrains IDEs among them). Linux-only, and harmless where there
+  // is no X display — it simply reports nothing and AT-SPI answers instead.
+  const x11WindowTracker =
+    process.platform === 'linux'
+      ? new X11WindowTracker({ logger: (line) => console.log(line) })
+      : null;
+  void x11WindowTracker?.start();
+
   const windowSampler = new WindowSampler({
     sink: appEventUploader.enqueue,
+    getX11Focus: () => x11WindowTracker?.getLastFocus() ?? null,
     getGnomeFocus: () => gnomeWindowFocusTracker?.getLastFocus() ?? null,
   });
 

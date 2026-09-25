@@ -165,6 +165,9 @@ importers:
       tldts:
         specifier: ^7.4.12
         version: 7.4.12
+      x11:
+        specifier: ^4.2.1
+        version: 4.2.1
     devDependencies:
       '@electron/rebuild':
         specifier: ^4.2.0
@@ -6566,6 +6569,10 @@ packages:
   write-file-atomic@5.0.1:
     resolution: {integrity: sha512-+QU2zd6OTD8XWIJCbffaiQeH9U73qIqafo1x6V1snCWYGJf6cVE0cDR4D8xRzcEnfI21IFrUPzPGtcPf8AC+Rw==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
+
+  x11@4.2.1:
+    resolution: {integrity: sha512-Qe2k+duweuxGlO5bhXmSFNBsborj0wKKx6MKCd6fOM3h9j7rYALBCjibIoytIdt5sVKM1Euy0Sq4Z099/hHigQ==}
+    engines: {node: '>=18'}
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -13769,6 +13776,8 @@ snapshots:
     dependencies:
       imurmurhash: 0.1.4
       signal-exit: 4.1.0
+
+  x11@4.2.1: {}
 
   xml-name-validator@5.0.0: {}
 
