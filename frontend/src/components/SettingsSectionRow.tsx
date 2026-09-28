@@ -15,7 +15,7 @@ export function SettingsSectionRow({
   children,
 }: SettingsSectionRowProps) {
   return (
-    <div className="grid gap-4 first:pt-0 sm:grid-cols-3 sm:gap-8">
+    <div className="grid gap-4 sm:grid-cols-3 sm:gap-8">
       <div className="flex flex-col gap-1.5">
         <h2 className="font-medium text-primary-dark">{title}</h2>
         <p className="text-sm text-slate-900/60">{description}</p>

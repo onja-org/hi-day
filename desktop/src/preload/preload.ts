@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 export interface AuthStatus {
   loggedIn: boolean;
   email?: string;
+  name?: string;
   organisationName?: string;
 }
 
@@ -13,7 +14,7 @@ export interface StartPairingResult {
 
 export type PairingPollResult =
   | { status: "pending" }
-  | { status: "approved"; email: string; organisationName: string }
+  | { status: "approved"; email: string; name: string; organisationName: string }
   | { status: "expired" }
   | { status: "error"; message: string };
 
@@ -27,7 +28,10 @@ export interface TrackedProject {
 export interface TrackedTask {
   id: string;
   name: string;
+  description: string | null;
   status: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TimeEntry {
@@ -116,10 +120,6 @@ export interface ConsentStatus {
   text: string | null;
 }
 
-export interface TrackingIndicatorStatus {
-  active: boolean;
-}
-
 const api = {
   getStatus: (): Promise<AuthStatus> =>
     ipcRenderer.invoke("auth:status") as Promise<AuthStatus>,
@@ -197,10 +197,6 @@ const api = {
       pane: "accessibility" | "screenRecording",
     ): Promise<void> =>
       ipcRenderer.invoke("tracking:openPrivacySettings", pane) as Promise<void>,
-    indicatorStatus: (): Promise<TrackingIndicatorStatus> =>
-      ipcRenderer.invoke(
-        "tracking:indicatorStatus",
-      ) as Promise<TrackingIndicatorStatus>,
   },
   idle: {
     seconds: (): Promise<number> =>

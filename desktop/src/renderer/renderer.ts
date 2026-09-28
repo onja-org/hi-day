@@ -37,8 +37,40 @@ function show(viewId: string): void {
   }
 }
 
-function showLoggedIn(organisationName: string): void {
+const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
+const profileMenu = document.getElementById("profile-menu")!;
+const profileSignedInAsEl = document.getElementById("profile-signed-in-as")!;
+const profileEmailEl = document.getElementById("profile-email")!;
+
+function hideProfileMenu(): void {
+  profileMenu.hidden = true;
+  userAvatar.setAttribute("aria-expanded", "false");
+}
+
+userAvatar.addEventListener("click", () => {
+  const willShow = profileMenu.hidden;
+  profileMenu.hidden = !willShow;
+  userAvatar.setAttribute("aria-expanded", String(willShow));
+});
+
+document.addEventListener("click", (event) => {
+  if (profileMenu.hidden) return;
+  if (event.target instanceof Node && (userAvatar.contains(event.target) || profileMenu.contains(event.target))) {
+    return;
+  }
+  hideProfileMenu();
+});
+
+function showLoggedIn(
+  organisationName: string,
+  email?: string,
+  name?: string,
+): void {
   document.getElementById("organisation-name")!.textContent = organisationName;
+  userAvatar.textContent = email ? email.trim().charAt(0).toUpperCase() : "";
+  profileSignedInAsEl.textContent = `Signed in as ${name ?? email ?? ""}`;
+  profileEmailEl.textContent = email ?? "";
+  hideProfileMenu();
 
   show("status-view");
   void initTracking();
@@ -69,6 +101,7 @@ function showLoginView(errorMessage?: string): void {
   setRunning(null);
   clearTrackingError();
   timerDisplay.hidden = true;
+  hideProfileMenu();
 
   pairingErrorEl.hidden = !errorMessage;
   pairingErrorEl.textContent = errorMessage ?? "";
@@ -185,7 +218,7 @@ async function init(): Promise<void> {
 
   const status = await window.api.getStatus();
   if (status.loggedIn && status.organisationName) {
-    showLoggedIn(status.organisationName);
+    showLoggedIn(status.organisationName, status.email, status.name);
   } else {
     showLoginView();
   }
@@ -197,7 +230,7 @@ async function pollPairing(): Promise<void> {
 
   if (result.status === "approved") {
     stopPairingPoll();
-    showLoggedIn(result.organisationName);
+    showLoggedIn(result.organisationName, result.email, result.name);
     return;
   }
 
@@ -247,7 +280,7 @@ document.getElementById("logout-button")!.addEventListener("click", () => {
 // --- Time tracking -----------------------------------------------------
 
 const projectList = document.getElementById("project-list") as HTMLUListElement;
-const taskSelect = document.getElementById("task-select") as HTMLSelectElement;
+const currentTaskLabelEl = document.getElementById("current-task-label")!;
 const timerDisplay = document.getElementById("timer-display")!;
 const trackingError = document.getElementById("tracking-error")!;
 const timerToggle = document.getElementById(
@@ -269,7 +302,28 @@ const idleKeepButton = document.getElementById(
 const idleDiscardButton = document.getElementById(
   "idle-discard-button",
 ) as HTMLButtonElement;
+const idleDurationEl = document.getElementById("idle-duration")!;
+const idleSinceEl = document.getElementById("idle-since")!;
+const idleAssignToggle = document.getElementById(
+  "idle-assign-toggle",
+) as HTMLButtonElement;
+const idleAssignList = document.getElementById(
+  "idle-assign-list",
+) as HTMLUListElement;
 const idleNotice = document.getElementById("idle-notice")!;
+const todayTotalEl = document.getElementById("today-total")!;
+const trackingProjectNameEl = document.getElementById("tracking-project-name")!;
+const taskTrigger = document.getElementById("task-trigger") as HTMLButtonElement;
+const taskPanel = document.getElementById("task-panel")!;
+const taskPanelProject = document.getElementById("task-panel-project")!;
+const taskPanelClose = document.getElementById(
+  "task-panel-close",
+) as HTMLButtonElement;
+const taskSearch = document.getElementById("task-search") as HTMLInputElement;
+const taskPanelList = document.getElementById(
+  "task-panel-list",
+) as HTMLUListElement;
+const taskPanelEmpty = document.getElementById("task-panel-empty")!;
 const screenRecordingBanner = document.getElementById(
   "screen-recording-banner",
 )!;
@@ -289,13 +343,6 @@ const accessibilityBannerMessage = document.getElementById(
 const accessibilitySettingsButton = document.getElementById(
   "accessibility-settings-button",
 ) as HTMLButtonElement;
-const trackingIndicator = document.getElementById("tracking-indicator")!;
-
-/** Drives the "Tracking is on" banner — intent-based, not tied to whether a sample actually uploaded (see docs/adr/0015-...). */
-async function refreshTrackingIndicator(): Promise<void> {
-  const status = await window.api.tracking.indicatorStatus();
-  trackingIndicator.hidden = !status.active;
-}
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
@@ -316,6 +363,10 @@ let projects: TrackedProject[] = [];
  * Excludes the running entry, whose time is added live by `tick()`.
  */
 let todaySecondsByProject = new Map<string, number>();
+// Open Tasks of the Project last loaded — the panel filters these locally.
+let currentProjectTasks: TrackedTask[] = [];
+// Applies to the next start/switch only; never edits a running entry.
+let selectedTaskId: string | null = null;
 // Phosphor Play/Pause (regular), the same glyphs the web console uses.
 const PLAY_PATH =
   "M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z";
@@ -333,6 +384,8 @@ let idlePolicy: IdlePolicy | null = null;
 let lastIdleSeconds = 0;
 let idleHandled = false;
 let pendingIdleDiscardAt: string | null = null;
+// When input resumed while the idle prompt was still open — freezes "Idle for".
+let idleEndedAtMs: number | null = null;
 
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
@@ -382,21 +435,30 @@ function formatElapsed(ms: number): string {
     .join(":");
 }
 
+function projectNameFor(projectId: string): string {
+  return projects.find((project) => project.id === projectId)?.name ?? projectId;
+}
+
 function tick(): void {
   if (!runningEntry) {
     timerDisplay.hidden = true;
+    trackingProjectNameEl.textContent = "";
     return;
   }
+
+  trackingProjectNameEl.textContent = projectNameFor(runningEntry.projectId);
 
   // Shows the Project's whole day, not just this entry: switching away and
   // back ends one entry and opens another, and the person tracking time
   // thinks of that as one continuous total, not two.
   const seconds = displayedSecondsFor(runningEntry.projectId);
+  const formatted = formatElapsed(seconds * 1000);
   timerDisplay.hidden = false;
-  timerDisplay.textContent = formatElapsed(seconds * 1000);
+  timerDisplay.textContent = formatted;
+  todayTotalEl.textContent = formatted;
 
   const activeTotal = projectTotalElements.get(runningEntry.projectId);
-  if (activeTotal) activeTotal.textContent = formatElapsed(seconds * 1000);
+  if (activeTotal) activeTotal.textContent = formatted;
 }
 
 function setRunning(entry: TimeEntry | null): void {
@@ -429,15 +491,41 @@ function setRunning(entry: TimeEntry | null): void {
   tick();
 }
 
-function showIdleBanner(idleMinutes: number, idleStartedAtIso: string): void {
+/** Local HH:MM, on the machine's clock rather than the server's. */
+function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
+  idleDurationEl.textContent = formatElapsed(idleSeconds * 1000);
+  idleSinceEl.textContent = formatClockTime(idleStartedAtIso);
+
+  idleBannerMessage.textContent = "";
+  idleBannerMessage.append(document.createTextNode("No keyboard or mouse activity while tracking "));
+  const projectNameStrong = document.createElement("strong");
+  projectNameStrong.textContent = runningEntry
+    ? projectNameFor(runningEntry.projectId)
+    : "";
+  idleBannerMessage.append(projectNameStrong);
+  idleBannerMessage.append(
+    document.createTextNode(". Tracking paused automatically."),
+  );
+}
+
+function showIdleBanner(idleSeconds: number, idleStartedAtIso: string): void {
   pendingIdleDiscardAt = idleStartedAtIso;
-  idleBannerMessage.textContent = `You've been idle for ${idleMinutes} min. Keep this time as tracked, or discard it?`;
+  updateIdleStats(idleSeconds, idleStartedAtIso);
   idleBanner.hidden = false;
 }
 
 function hideIdleBanner(): void {
   idleBanner.hidden = true;
+  idleAssignList.hidden = true;
   pendingIdleDiscardAt = null;
+  idleEndedAtMs = null;
 }
 
 function showIdleNotice(message: string): void {
@@ -464,35 +552,54 @@ async function checkIdle(): Promise<void> {
   const idleSeconds = await window.api.idle.seconds();
   const thresholdSeconds = idlePolicy.thresholdMinutes * 60;
 
-  if (idleSeconds < lastIdleSeconds) {
-    // Real input happened since the last check.
-    idleHandled = false;
-    hideIdleBanner();
-  }
+  const inputResumed = idleSeconds < lastIdleSeconds;
   lastIdleSeconds = idleSeconds;
 
-  if (idleSeconds < thresholdSeconds || idleHandled) return;
+  if (!idleBanner.hidden) {
+    // Stays open until answered, even after input resumes (like Hubstaff);
+    // the timer keeps running meanwhile.
+    if (inputResumed && idleEndedAtMs === null) {
+      idleEndedAtMs = Date.now() + serverOffsetMs - idleSeconds * 1000;
+    }
+    if (pendingIdleDiscardAt) {
+      const blockEndMs = idleEndedAtMs ?? Date.now() + serverOffsetMs;
+      const blockSeconds = Math.floor(
+        (blockEndMs - Date.parse(pendingIdleDiscardAt)) / 1000,
+      );
+      updateIdleStats(blockSeconds, pendingIdleDiscardAt);
+    }
+    return;
+  }
 
-  idleHandled = true;
-  const idleMinutes = Math.floor(idleSeconds / 60);
+  if (inputResumed) {
+    // Real input happened since the last check.
+    idleHandled = false;
+  }
+
+  if (idleSeconds < thresholdSeconds) return;
+
   const idleStartedAtIso = new Date(
     Date.now() + serverOffsetMs - idleSeconds * 1000,
   ).toISOString();
 
   if (idlePolicy.handling === "auto_subtract") {
+    if (idleHandled) return;
+    idleHandled = true;
     const result = await callTracking(() =>
       window.api.tracking.stop(idleStartedAtIso),
     );
     if (result.ok) {
       setRunning(null);
       showIdleNotice(
-        `Timer stopped automatically after ${idleMinutes} min idle.`,
+        `Timer stopped automatically after ${Math.floor(idleSeconds / 60)} min idle.`,
       );
     }
     return;
   }
 
-  showIdleBanner(idleMinutes, idleStartedAtIso);
+  if (idleHandled) return;
+  idleHandled = true;
+  showIdleBanner(idleSeconds, idleStartedAtIso);
 }
 
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
@@ -560,10 +667,9 @@ function renderProjects(): void {
 
     const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     icon.setAttribute("viewBox", "0 0 256 256");
-    icon.setAttribute("width", "32");
-    icon.setAttribute("height", "32");
+    icon.setAttribute("width", "16");
+    icon.setAttribute("height", "16");
     icon.setAttribute("aria-hidden", "true");
-    icon.setAttribute("class", "project-play");
     const iconPath = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "path",
@@ -574,18 +680,26 @@ function renderProjects(): void {
     iconPath.setAttribute("fill", "currentColor");
     icon.appendChild(iconPath);
 
+    const iconWrapper = document.createElement("span");
+    iconWrapper.className = "project-icon";
+    iconWrapper.appendChild(icon);
+
     const label = document.createElement("span");
     label.className = "project-name";
     label.textContent = project.client
       ? `${project.name} (${project.client})`
       : project.name;
 
+    const text = document.createElement("span");
+    text.className = "project-text";
+    text.append(label);
+
     const total = document.createElement("span");
     total.className = "project-total";
     total.textContent = formatElapsed(displayedSecondsFor(project.id) * 1000);
 
     projectTotalElements.set(project.id, total);
-    button.append(icon, label, total);
+    button.append(iconWrapper, text, total);
     button.addEventListener("click", () => void selectProject(project.id));
 
     const item = document.createElement("li");
@@ -612,7 +726,7 @@ async function selectProject(projectId: string): Promise<void> {
   }
 
   await loadTasks(projectId);
-  const taskId = taskSelect.value || null;
+  const taskId = selectedTaskId;
 
   const result = runningEntry
     ? await window.api.tracking.switchTo(projectId, taskId)
@@ -718,24 +832,115 @@ async function loadProjects(): Promise<boolean> {
   return true;
 }
 
+function updateCurrentTaskLabel(): void {
+  const task = currentProjectTasks.find((t) => t.id === selectedTaskId);
+  currentTaskLabelEl.textContent = task ? task.name : "No task";
+}
+
 async function loadTasks(projectId: string): Promise<void> {
   const result = await callTracking(() =>
     window.api.tracking.listTasks(projectId),
   );
-  taskSelect.innerHTML = '<option value="">No task</option>';
+  currentProjectTasks = [];
+  selectedTaskId = null;
   if (!result.ok) {
     handleTrackingFailure(result);
+    updateCurrentTaskLabel();
     return;
   }
 
-  for (const task of result.data.tasks) {
-    if (task.status === "closed") continue;
-    const option = document.createElement("option");
-    option.value = task.id;
-    option.textContent = task.name;
-    taskSelect.appendChild(option);
-  }
+  currentProjectTasks = result.data.tasks.filter(
+    (task) => task.status !== "closed",
+  );
+  updateCurrentTaskLabel();
 }
+
+function formatTaskDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function renderTaskPanelList(): void {
+  const query = taskSearch.value.trim().toLowerCase();
+  const matches = currentProjectTasks.filter(
+    (task) =>
+      !query ||
+      task.name.toLowerCase().includes(query) ||
+      (task.description ?? "").toLowerCase().includes(query),
+  );
+
+  taskPanelList.innerHTML = "";
+
+  const noTaskButton = document.createElement("button");
+  noTaskButton.type = "button";
+  noTaskButton.textContent = "No task";
+  noTaskButton.classList.toggle("is-selected", selectedTaskId === null);
+  noTaskButton.addEventListener("click", () => {
+    selectedTaskId = null;
+    updateCurrentTaskLabel();
+    closeTaskPanel();
+  });
+  const noTaskItem = document.createElement("li");
+  noTaskItem.appendChild(noTaskButton);
+  taskPanelList.appendChild(noTaskItem);
+
+  for (const task of matches) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.classList.toggle("is-selected", selectedTaskId === task.id);
+
+    const name = document.createElement("span");
+    name.className = "task-panel-task-name";
+    name.textContent = task.name;
+    button.appendChild(name);
+
+    if (task.description) {
+      const description = document.createElement("span");
+      description.className = "task-panel-description";
+      description.textContent = task.description;
+      button.appendChild(description);
+    }
+
+    const dates = document.createElement("span");
+    dates.className = "task-panel-dates";
+    dates.textContent = `Created ${formatTaskDate(task.createdAt)} · Updated ${formatTaskDate(task.updatedAt)}`;
+    button.appendChild(dates);
+
+    button.addEventListener("click", () => {
+      selectedTaskId = task.id;
+      updateCurrentTaskLabel();
+      closeTaskPanel();
+    });
+
+    const item = document.createElement("li");
+    item.appendChild(button);
+    taskPanelList.appendChild(item);
+  }
+
+  taskPanelEmpty.hidden = matches.length > 0;
+}
+
+async function openTaskPanel(): Promise<void> {
+  const projectId = runningEntry?.projectId ?? projects[0]?.id;
+  if (!projectId) return;
+
+  await loadTasks(projectId);
+  taskPanelProject.textContent = projectNameFor(projectId);
+  taskSearch.value = "";
+  renderTaskPanelList();
+  taskPanel.hidden = false;
+  taskSearch.focus();
+}
+
+function closeTaskPanel(): void {
+  taskPanel.hidden = true;
+}
+
+taskTrigger.addEventListener("click", () => void openTaskPanel());
+taskPanelClose.addEventListener("click", closeTaskPanel);
+taskSearch.addEventListener("input", renderTaskPanelList);
 
 /** Local midnight that starts the current calendar day, in the machine's own timezone. */
 function startOfToday(): number {
@@ -802,7 +1007,6 @@ function startPolling(): void {
   pollHandle = setInterval(() => {
     void refreshStatus();
     void refreshCapturePermissionBanner();
-    void refreshTrackingIndicator();
   }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
   idlePollHandle = setInterval(() => void checkIdle(), IDLE_POLL_INTERVAL_MS);
@@ -851,7 +1055,10 @@ async function startTracking(): Promise<void> {
   }
 
   await loadTasks(target.projectId);
-  if (target.taskId) taskSelect.value = target.taskId;
+  if (target.taskId) {
+    selectedTaskId = target.taskId;
+    updateCurrentTaskLabel();
+  }
 
   const result = await window.api.tracking.start(
     target.projectId,
@@ -911,23 +1118,58 @@ switchButton.addEventListener("click", () => {
 
 idleKeepButton.addEventListener("click", () => {
   hideIdleBanner();
+  // Re-arm for the next idle stretch — input may have resumed polls ago,
+  // so checkIdle won't see a fresh drop to reset this itself.
+  idleHandled = false;
 });
 
-idleDiscardButton.addEventListener("click", () => {
-  void (async () => {
-    if (!pendingIdleDiscardAt) return;
-    const discardAt = pendingIdleDiscardAt;
-    hideIdleBanner();
+/** Ends the entry at when idleness started, then starts a fresh one on `resumeProjectId`. */
+async function discardIdleTimeAndResume(resumeProjectId: string): Promise<void> {
+  if (!pendingIdleDiscardAt) return;
+  const discardAt = pendingIdleDiscardAt;
+  const taskId = runningEntry?.taskId ?? null;
+  hideIdleBanner();
 
-    const result = await callTracking(() =>
-      window.api.tracking.stop(discardAt),
-    );
-    if (result.ok) {
-      setRunning(null);
-    } else {
-      handleTrackingFailure(result);
-    }
-  })();
+  const stopResult = await callTracking(() => window.api.tracking.stop(discardAt));
+  if (!stopResult.ok) {
+    handleTrackingFailure(stopResult);
+    return;
+  }
+  setRunning(null);
+
+  const startResult = await callTracking(() =>
+    window.api.tracking.start(resumeProjectId, taskId),
+  );
+  if (startResult.ok) {
+    setRunning(startResult.data);
+  } else {
+    handleTrackingFailure(startResult);
+  }
+}
+
+idleDiscardButton.addEventListener("click", () => {
+  if (!runningEntry) return;
+  void discardIdleTimeAndResume(runningEntry.projectId);
+});
+
+idleAssignToggle.addEventListener("click", () => {
+  idleAssignList.hidden = !idleAssignList.hidden;
+  if (idleAssignList.hidden) return;
+
+  idleAssignList.innerHTML = "";
+  const otherProjects = projects.filter(
+    (project) => project.id !== runningEntry?.projectId,
+  );
+  for (const project of otherProjects) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = project.name;
+    button.addEventListener("click", () => void discardIdleTimeAndResume(project.id));
+
+    const item = document.createElement("li");
+    item.appendChild(button);
+    idleAssignList.appendChild(item);
+  }
 });
 
 async function initTracking(): Promise<void> {
@@ -953,7 +1195,6 @@ async function initTracking(): Promise<void> {
   }
 
   void refreshCapturePermissionBanner();
-  void refreshTrackingIndicator();
   startPolling();
 }
 

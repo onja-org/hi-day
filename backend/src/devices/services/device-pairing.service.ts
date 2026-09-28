@@ -37,6 +37,7 @@ export type DevicePairingPollResult =
       deviceId: string;
       deviceToken: string;
       email: string;
+      name: string;
       organisationName: string;
     }
   | { status: 'expired' };
@@ -178,6 +179,10 @@ export class DevicePairingService {
       return {
         ...result,
         email: approver.email,
+        // A User can sign up with no name set.
+        name:
+          [approver.firstName, approver.lastName].filter(Boolean).join(' ') ||
+          approver.email,
         organisationName: organisation.name,
       };
     });
@@ -191,6 +196,7 @@ export class DevicePairingService {
       deviceId: issued.deviceId,
       deviceToken: issued.token,
       email: issued.email,
+      name: issued.name,
       organisationName: issued.organisationName,
     };
   }

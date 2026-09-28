@@ -32,8 +32,7 @@ is on and a timer is running, same as everything else. If the org has
 published disclosure text, the agent shows it as a persistent,
 non-blocking notice banner alongside the normal login/timer UI — there is
 no separate consent screen, and no "decline" option, since nothing is
-gated on the answer. A persistent **Tracking is on** banner shows whenever
-capture is actually running.
+gated on the answer.
 
 Samples are batched and uploaded to the backend (`POST /device/app-events`,
 every 60s) via `AppEventUploader` — the web console's Activity → Apps tab
@@ -248,9 +247,7 @@ using a UUID generated on first run and persisted under Electron's
     entry — purely for the record, since capture was already running
     throughout. Publish a *new* version while this device stays logged
     in: on its next 15s poll the banner should reappear with the new text
-    (capture keeps running uninterrupted the whole time). The **Tracking
-    is on** banner reflects only the capture setting and timer state now,
-    independent of the disclosure banner.
+    (capture keeps running uninterrupted the whole time).
 
 13. **Test auto-launch at login**: install a packaged build (`dist:linux`/
     `dist:win`/`dist:mac`, or a real installer on Windows/macOS — see
@@ -518,16 +515,3 @@ output — not just assumed from source-mode success):
   accepted gap matching this app's existing "Linux best-effort" support
   level (idle detection has the same caveat). See `docs/adr/0009-...` for
   the original deferral and `docs/adr/0016-...` for the fix.
-- **The "Tracking is on" indicator reflects intent, not verified capture.**
-  It lights up whenever a capture setting is on and a timer is running —
-  the same conditions `recomputeSampling` in `main.ts` uses to start the
-  samplers — not whether a sample actually made it to the backend. On a
-  non-GNOME Wayland session in particular, window-tracking samples come
-  back with both `appName` and `title` null and are dropped before upload
-  (see the Wayland bullet above), so the indicator can read "on" while no
-  useful window data is actually being captured. Screenshot capture is
-  skipped outright under Wayland (see the screenshot bullet above) and
-  remains unverified on real macOS hardware. Matching actual upload success
-  would need a new "last successful capture" signal threaded through the
-  offline queue/uploaders — out of scope for this pass; see
-  docs/adr/0015-....

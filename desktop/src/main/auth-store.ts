@@ -4,6 +4,8 @@ import { safeStorage } from 'electron';
 
 export interface StoredSession {
   email: string;
+  /** Absent on a session saved before this field existed — falls back to email in the UI. */
+  name?: string;
   organisationName: string;
   deviceId: string;
   deviceToken: string;
