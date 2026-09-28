@@ -1,4 +1,3 @@
-import { AppWindowIcon } from "@phosphor-icons/react";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { AppHourBucket } from "@/types/appActivity";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
@@ -46,12 +45,7 @@ export function AppActivityHourGroup({ organisationId, bucket }: AppActivityHour
                     projectId={item.projectId}
                   />
                 </td>
-                <td className="px-3 py-2 text-slate-900">
-                  <span className="flex items-center gap-2">
-                    <AppWindowIcon size={16} className="text-primary-dark" aria-hidden="true" />
-                    {item.appName}
-                  </span>
-                </td>
+                <td className="px-3 py-2 text-slate-900">{item.appName}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-slate-900">
                   {formatElapsed(item.secondsSpent * 1000)}
                 </td>
