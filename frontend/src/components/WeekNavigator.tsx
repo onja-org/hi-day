@@ -1,7 +1,8 @@
 "use client";
 
-import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
+import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { getWeekRange } from "@/lib/getWeekRange";
+import { StepNavigator } from "./StepNavigator";
 
 type WeekNavigatorProps = {
   weekOffset: number;
@@ -19,28 +20,19 @@ export function WeekNavigator({ weekOffset, onChange }: WeekNavigatorProps) {
   const { start, end } = getWeekRange(new Date(), weekOffset);
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        aria-label="Previous week"
-        onClick={() => onChange(weekOffset - 1)}
-        className="cursor-pointer rounded-md border border-input-border p-1.5 text-slate-900 hover:bg-cream"
+    <div className="flex flex-wrap items-center gap-2">
+      <StepNavigator
+        previousLabel="Previous week"
+        nextLabel="Next week"
+        onPrevious={() => onChange(weekOffset - 1)}
+        onNext={() => onChange(weekOffset + 1)}
       >
-        <CaretLeftIcon size={16} aria-hidden="true" />
-      </button>
-      <span className="flex min-w-44 items-center justify-center gap-1.5 text-sm font-medium text-slate-900">
-        <CalendarBlankIcon size={14} aria-hidden="true" className="text-slate-900/60" />
-        {formatRangeLabel(start, end)}
-        {weekOffset === 0 && <span className="text-primary"> · This week</span>}
-      </span>
-      <button
-        type="button"
-        aria-label="Next week"
-        onClick={() => onChange(weekOffset + 1)}
-        className="cursor-pointer rounded-md border border-input-border p-1.5 text-slate-900 hover:bg-cream"
-      >
-        <CaretRightIcon size={16} aria-hidden="true" />
-      </button>
+        <span className="flex items-center gap-2 px-4 text-sm text-slate-900">
+          <CalendarBlankIcon size={18} aria-hidden="true" className="text-primary" />
+          <span className="font-semibold">{formatRangeLabel(start, end)}</span>
+          {weekOffset === 0 && <span className="text-xs text-slate-900/60">This week</span>}
+        </span>
+      </StepNavigator>
       {weekOffset !== 0 && (
         <button
           type="button"

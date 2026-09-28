@@ -1,46 +1,58 @@
-export type TimesheetDatePreset = "today" | "yesterday" | "this_week" | "this_month" | "all";
+import {
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+  subMonths,
+  subWeeks,
+} from "date-fns";
+import type { DateRange, DateRangePreset } from "@/types/dateRange";
 
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function endOfDay(date: Date): Date {
-  const end = startOfDay(date);
-  end.setDate(end.getDate() + 1);
-  end.setMilliseconds(end.getMilliseconds() - 1);
-  return end;
-}
+// Monday-start, matching the date picker's calendar grid and `getWeekRange`.
+const WEEK_OPTIONS = { weekStartsOn: 1 } as const;
 
 /**
  * Resolves a preset into a `{from, to}` instant range in the *viewer's*
  * local timezone (not UTC) — "today" means the caller's own calendar day,
  * matching how a person entering/reviewing hours actually thinks about
- * dates. Returns null for "all" (no filter).
+ * dates. "Last week"/"last 2 weeks"/"last month" are whole calendar
+ * periods before the current one; the others run up to the end of today.
  */
 export function getTimesheetDateRange(
-  preset: TimesheetDatePreset,
+  preset: DateRangePreset,
   now: Date = new Date(),
-): { from: Date; to: Date } | null {
-  if (preset === "all") {
-    return null;
-  }
+): DateRange {
+  const todayEnd = endOfDay(now);
 
-  if (preset === "today") {
-    return { from: startOfDay(now), to: endOfDay(now) };
+  switch (preset) {
+    case "today":
+      return { from: startOfDay(now), to: todayEnd };
+    case "yesterday": {
+      const yesterday = subDays(now, 1);
+      return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
+    }
+    case "last_7_days":
+      return { from: startOfDay(subDays(now, 6)), to: todayEnd };
+    case "last_week": {
+      const lastWeek = subWeeks(now, 1);
+      return {
+        from: startOfWeek(lastWeek, WEEK_OPTIONS),
+        to: endOfWeek(lastWeek, WEEK_OPTIONS),
+      };
+    }
+    case "last_2_weeks":
+      return {
+        from: startOfWeek(subWeeks(now, 2), WEEK_OPTIONS),
+        to: endOfWeek(subWeeks(now, 1), WEEK_OPTIONS),
+      };
+    case "this_month":
+      return { from: startOfMonth(now), to: todayEnd };
+    case "last_month": {
+      const lastMonth = subMonths(now, 1);
+      return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    }
   }
-
-  if (preset === "yesterday") {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
-  }
-
-  if (preset === "this_week") {
-    const from = startOfDay(now);
-    from.setDate(from.getDate() - from.getDay());
-    return { from, to: endOfDay(now) };
-  }
-
-  // this_month
-  return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(now) };
 }
