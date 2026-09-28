@@ -34,7 +34,7 @@ export function MemberFilterSelect({
   const otherMembers = membersQuery.data.filter(
     (member) => member.email !== profile?.email,
   );
-  const selfLabel = profile ? `${profile.name ?? profile.email} (You)` : "You";
+  const selfLabel = profile?.name ? `${profile.name} (You)` : "You";
 
   return (
     <select
