@@ -8,7 +8,7 @@ import { urlActivityToPdf } from "@/lib/urlActivityToPdf";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { ExportButtons } from "./ExportButtons";
-import { UrlActivityHourGroup } from "./UrlActivityHourGroup";
+import { UrlActivityTable } from "./UrlActivityTable";
 
 type UrlActivityPageContentProps = {
   organisationId: string;
@@ -64,13 +64,9 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
         </p>
       )}
 
-      {day?.buckets.map((bucket) => (
-        <UrlActivityHourGroup
-          key={bucket.hourStart}
-          organisationId={organisationId}
-          bucket={bucket}
-        />
-      ))}
+      {day && day.buckets.length > 0 && (
+        <UrlActivityTable organisationId={organisationId} buckets={day.buckets} />
+      )}
     </div>
   );
 }
