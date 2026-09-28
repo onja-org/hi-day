@@ -11,8 +11,6 @@
   </head>
   <body>
     <main class="app">
-      <h1>Workforce Monitor</h1>
-
       <div id="update-banner" class="update-banner" role="status" hidden>
         <p id="update-message"></p>
         <button id="update-button" type="button">View update</button>
@@ -44,40 +42,154 @@
       </section>
 
       <section id="status-view" hidden>
-        <p id="organisation-name" class="organisation-name"></p>
+        <header class="app-header">
+          <div class="app-brand">
+            <span class="app-icon" aria-hidden="true">
+              <svg viewBox="0 0 256 256" width="20" height="20">
+                <path
+                  d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm8-88V72a8,8,0,0,0-16,0v56a8,8,0,0,0,8,8h48a8,8,0,0,0,0-16Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <div class="app-brand-text">
+              <p class="app-name">Workforce Monitor</p>
+              <p id="organisation-name" class="organisation-name"></p>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button
+              id="task-trigger"
+              class="icon-button"
+              type="button"
+              aria-haspopup="true"
+              aria-label="Choose task"
+              title="Choose task"
+            >
+              <svg viewBox="0 0 256 256" width="18" height="18" aria-hidden="true">
+                <path
+                  d="M208,32H180.4a35.9,35.9,0,0,0-8.9-11.9C161.9,12.8,150.1,8,136,8H120c-14.1,0-25.9,4.8-35.5,12.1A35.9,35.9,0,0,0,75.6,32H48A16,16,0,0,0,32,48V216a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM120,24h16a24.4,24.4,0,0,1,15.3,5.4,20.1,20.1,0,0,1,6.9,10.5,7.9,7.9,0,0,1-1.5,7.1A8.1,8.1,0,0,1,150.4,50H105.6a8.1,8.1,0,0,1-6.3-3,7.9,7.9,0,0,1-1.5-7.1,20.1,20.1,0,0,1,6.9-10.5A24.4,24.4,0,0,1,120,24ZM208,216H48V48H68.9a24.1,24.1,0,0,0,1,4.1,23.9,23.9,0,0,0,22.5,15.9h44.6a23.9,23.9,0,0,0,22.5-15.9,24.1,24.1,0,0,0,1-4.1H208Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+
+            <div class="profile">
+              <button
+                id="user-avatar"
+                class="user-avatar"
+                type="button"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-label="Account menu"
+              ></button>
+              <div id="profile-menu" class="profile-menu" role="menu" hidden>
+                <p id="profile-signed-in-as" class="profile-signed-in-as"></p>
+                <p id="profile-email" class="profile-email"></p>
+                <button id="logout-button" type="button" class="profile-menu-button">
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
 
         <div id="tracking-view">
           <p id="tracking-error" role="alert" hidden></p>
 
-          <p id="tracking-indicator" class="idle-notice" hidden>Tracking is on</p>
-
-          <div id="idle-banner" class="idle-banner" role="alert" hidden>
-            <p id="idle-banner-message"></p>
-            <button id="idle-keep-button" type="button">Keep this time</button>
-            <button id="idle-discard-button" type="button">Discard idle time</button>
+          <div id="idle-banner" class="idle-screen" role="alert" hidden>
+            <span class="idle-icon" aria-hidden="true">
+              <svg viewBox="0 0 256 256" width="24" height="24">
+                <path
+                  d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37.13,104,104,0,0,0,144.8,144.8,104.84,104.84,0,0,0,37.13-52.91A8,8,0,0,0,233.54,142.23Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <h2 class="idle-title">You were away</h2>
+            <p id="idle-banner-message" class="idle-description"></p>
+            <div class="idle-stats">
+              <div class="idle-stat-box">
+                <span class="idle-stat-label">Idle for</span>
+                <span id="idle-duration" class="idle-stat-value">00:00:00</span>
+              </div>
+              <div class="idle-stat-box">
+                <span class="idle-stat-label">Since</span>
+                <span id="idle-since" class="idle-stat-value">--:--</span>
+              </div>
+            </div>
+            <button id="idle-discard-button" type="button" class="idle-primary-button">
+              Discard idle time &amp; resume
+            </button>
+            <button id="idle-keep-button" type="button" class="idle-secondary-button">
+              Keep it — I was working
+            </button>
+            <button id="idle-assign-toggle" type="button" class="idle-assign-link">
+              Assign to another project…
+            </button>
+            <ul id="idle-assign-list" class="idle-assign-list" hidden></ul>
           </div>
           <p id="idle-notice" class="idle-notice" hidden></p>
 
-          <p id="timer-display" class="timer-display" hidden>00:00:00</p>
+          <div class="tracking-card">
+            <div class="tracking-card-header">
+              <p id="tracking-project-name" class="tracking-project-name"></p>
+              <span class="tracking-today">Today <span id="today-total">00:00:00</span></span>
+            </div>
 
-          <button id="timer-toggle" type="button" class="timer-toggle" aria-label="Start timer">
-            <svg viewBox="0 0 256 256" width="32" height="32" aria-hidden="true">
-              <path id="timer-toggle-path" d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z" fill="currentColor" />
-            </svg>
-          </button>
+            <div class="tracking-card-body">
+              <div class="tracking-main">
+                <p id="timer-display" class="timer-display" hidden>00:00:00</p>
+                <p id="current-task-label" class="current-task-label"></p>
+              </div>
 
-          <ul id="project-list" class="project-list"></ul>
+              <button id="timer-toggle" type="button" class="timer-toggle" aria-label="Start timer">
+                <svg viewBox="0 0 256 256" width="24" height="24" aria-hidden="true">
+                  <path id="timer-toggle-path" d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
 
-          <label for="task-select">Task (optional)</label>
-          <select id="task-select">
-            <option value="">No task</option>
-          </select>
-          <button id="switch-button" type="button" hidden>
-            Stop the other timer and start this one
-          </button>
+            <button id="switch-button" type="button" hidden>
+              Stop the other timer and start this one
+            </button>
+          </div>
+
+          <div class="projects-section">
+            <div class="projects-section-header">
+              <span>Projects</span>
+              <span>Today</span>
+            </div>
+            <ul id="project-list" class="project-list"></ul>
+          </div>
         </div>
 
-        <button id="logout-button" type="button">Log out</button>
+        <div id="task-panel" class="task-panel" role="dialog" aria-label="Tasks" hidden>
+          <div class="task-panel-header">
+            <div>
+              <p class="task-panel-title">Tasks</p>
+              <p id="task-panel-project" class="task-panel-project"></p>
+            </div>
+            <button id="task-panel-close" type="button" class="icon-button" aria-label="Close">
+              <svg viewBox="0 0 256 256" width="16" height="16" aria-hidden="true">
+                <path
+                  d="M205.7,194.3a8.1,8.1,0,0,1,0,11.4,8.2,8.2,0,0,1-11.4,0L128,139.3,61.7,205.7a8.2,8.2,0,0,1-11.4,0,8.1,8.1,0,0,1,0-11.4L116.7,128,50.3,61.7a8.1,8.1,0,0,1,11.4-11.4L128,116.7l66.3-66.4a8.1,8.1,0,0,1,11.4,11.4L139.3,128Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <input
+            id="task-search"
+            type="text"
+            placeholder="Search tasks…"
+            class="task-search"
+          />
+
+          <ul id="task-panel-list" class="task-panel-list"></ul>
+          <p id="task-panel-empty" class="task-panel-empty" hidden>No tasks found.</p>
+        </div>
       </section>
     </main>
     <script type="module" src="renderer.js"></script>

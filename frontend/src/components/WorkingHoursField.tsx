@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { OrganisationProfile } from "@/types/organisation";
+import { NumberFieldWithUnit } from "./NumberFieldWithUnit";
 
 type WorkingHoursFieldProps = {
   organisation: OrganisationProfile;
@@ -6,22 +8,22 @@ type WorkingHoursFieldProps = {
 
 /** Split out of OrganisationSettingsForm (past the ~150-line guideline); submission still goes through the parent form's `FormData`. */
 export function WorkingHoursField({ organisation }: WorkingHoursFieldProps) {
+  const [hoursPerDay, setHoursPerDay] = useState(
+    organisation.workingHoursPerDay,
+  );
+
   return (
-    <label className="flex flex-col gap-1.5 sm:max-w-xs">
-      Working hours per day
-      <input
+    <div className="rounded-lg border border-input-border bg-white p-5">
+      <NumberFieldWithUnit
         name="workingHoursPerDay"
-        type="number"
-        min="1"
-        max="24"
-        step="1"
-        defaultValue={organisation.workingHoursPerDay}
-        className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+        label="Working hours per day"
+        unit="hrs"
+        min={1}
+        max={24}
+        value={hoursPerDay}
+        onChange={setHoursPerDay}
+        hint={`= ${hoursPerDay * 5} h over a 5-day week`}
       />
-      <span className="text-xs text-slate-900/60">
-        Shown as a daily target on the dashboard and timesheets —
-        informational only, never a limit on tracked time.
-      </span>
-    </label>
+    </div>
   );
 }

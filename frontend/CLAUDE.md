@@ -16,8 +16,8 @@ Rules for working in this Next.js frontend, in addition to whatever `AGENTS.md` 
 - **Always write responsive classes mobile-first (`sm:`, `md:`, `lg:`).** Unprefixed classes are the mobile baseline; prefixes layer on progressively larger breakpoints, matching Tailwind's own mobile-first design.
 - **No hardcoded color hex values — use the theme palette only.** Hex values drift from the design system and make a future rebrand or dark-mode pass much harder.
 - **The brand palette is closed — only these five colors, via their theme tokens, may be used anywhere in the UI:**
-  - `bg-primary` / `text-primary` / `border-primary` → `rgb(37, 156, 217)` — primary actions, links, active states
-  - `bg-primary-dark` / `text-primary-dark` / `border-primary-dark` → `rgb(0, 54, 115)` — headers, dark surfaces, primary text
+  - `bg-primary` / `text-primary` / `border-primary` → `rgb(79, 70, 229)` — primary actions, links, active states
+  - `bg-primary-dark` / `text-primary-dark` / `border-primary-dark` → `rgb(15, 23, 42)` — headers, dark surfaces, primary text
   - `bg-secondary` / `text-secondary` / `border-secondary` → `rgb(93, 84, 144)` — secondary accents
   - `bg-cream` / `text-cream` / `border-cream` → `rgb(255, 246, 214)` — light surfaces, highlights
   - `bg-white` / `text-white` / `border-white` → `rgb(255, 255, 255)` — base background

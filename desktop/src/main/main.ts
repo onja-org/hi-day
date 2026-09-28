@@ -1,5 +1,5 @@
-import { hostname as osHostname, release as osRelease } from 'node:os';
-import { join } from 'node:path';
+import { hostname as osHostname, release as osRelease } from "node:os";
+import { join } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -7,36 +7,50 @@ import {
   powerMonitor,
   shell,
   systemPreferences,
-} from 'electron';
-import type { PairingPollResult, TrackingResult } from './api-client';
-import { ApiClient } from './api-client';
-import { resolveApiBaseUrl } from './api-base-url';
-import { AppEventUploader } from './app-event-uploader';
-import { AuthStore } from './auth-store';
-import { CaptureSettingsGate } from './capture-settings-gate';
-import { getOrCreateDeviceFingerprint } from './device-identity';
-import { X11WindowTracker } from './x11-window-tracker';
-import { GnomeWindowFocusTracker } from './gnome-window-focus-tracker';
-import { OfflineQueue } from './offline-queue';
-import { OfflineQueueStore } from './offline-queue-store';
-import { isWaylandSession, toDevicePlatform } from './platform';
-import type { DesktopDevicePlatform } from './platform';
-import { captureScreenViaPortal } from './screenshot-portal';
-import { DEFAULT_SCREENSHOT_INTERVAL_MS, ScreenshotSampler } from './screenshot-sampler';
-import { ScreenshotUploader } from './screenshot-uploader';
-import { TimerStatusGate } from './timer-status-gate';
-import { loadActiveWindowModule, WindowSampler } from './window-sampler';
-import { resolveLinuxResolverPath,  resolveDarwinResolverPath,
-  resolveWinResolverPath } from './resolvers/resolver-paths';
-import { applyBrowserActivation } from './resolvers/linux/browser-activation';
-import { ACCESSIBILITY_COPY, SETTINGS_DEEP_LINKS } from './resolvers/darwin/permission-copy';
-import type { SettingsPane } from './resolvers/darwin/permission-copy';
-import { DebugHarness, NullDebugHarness, type DebugSink } from './url-capture/debug-harness';
-import { intervalFromEnv } from './tuning';
-import type { ResolverSpawnConfig } from './url-capture/resolver-manager';
-import { ResolverOrchestrator } from './url-capture/resolver-orchestrator';
-import type { UploadFn } from './url-capture/sync-contract';
-import { UrlCaptureService } from './url-capture/url-capture-service';
+} from "electron";
+import type { PairingPollResult, TrackingResult } from "./api-client";
+import { ApiClient } from "./api-client";
+import { resolveApiBaseUrl } from "./api-base-url";
+import { AppEventUploader } from "./app-event-uploader";
+import { AuthStore } from "./auth-store";
+import { CaptureSettingsGate } from "./capture-settings-gate";
+import { getOrCreateDeviceFingerprint } from "./device-identity";
+import { X11WindowTracker } from "./x11-window-tracker";
+import { GnomeIdleMonitor } from "./gnome-idle-monitor";
+import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
+import { OfflineQueue } from "./offline-queue";
+import { OfflineQueueStore } from "./offline-queue-store";
+import { isWaylandSession, toDevicePlatform } from "./platform";
+import type { DesktopDevicePlatform } from "./platform";
+import { captureScreenViaPortal } from "./screenshot-portal";
+import {
+  DEFAULT_SCREENSHOT_INTERVAL_MS,
+  ScreenshotSampler,
+} from "./screenshot-sampler";
+import { ScreenshotUploader } from "./screenshot-uploader";
+import { TimerStatusGate } from "./timer-status-gate";
+import { loadActiveWindowModule, WindowSampler } from "./window-sampler";
+import {
+  resolveLinuxResolverPath,
+  resolveDarwinResolverPath,
+  resolveWinResolverPath,
+} from "./resolvers/resolver-paths";
+import { applyBrowserActivation } from "./resolvers/linux/browser-activation";
+import {
+  ACCESSIBILITY_COPY,
+  SETTINGS_DEEP_LINKS,
+} from "./resolvers/darwin/permission-copy";
+import type { SettingsPane } from "./resolvers/darwin/permission-copy";
+import {
+  DebugHarness,
+  NullDebugHarness,
+  type DebugSink,
+} from "./url-capture/debug-harness";
+import { intervalFromEnv } from "./tuning";
+import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
+import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
+import type { UploadFn } from "./url-capture/sync-contract";
+import { UrlCaptureService } from "./url-capture/url-capture-service";
 
 /**
  * All three platforms now have a resolver. Returns null only on a platform
@@ -44,7 +58,7 @@ import { UrlCaptureService } from './url-capture/url-capture-service';
  * than throwing or spawning nothing usable.
  */
 function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
-  if (process.platform === 'darwin') {
+  if (process.platform === "darwin") {
     return {
       command: process.execPath,
       args: [resolveDarwinResolverPath()],
@@ -52,39 +66,50 @@ function resolverSpawnConfigForPlatform(): ResolverSpawnConfig | null {
         // The darwin resolver is compiled JS, not a native binary, so it runs
         // on Electron's own executable as a plain Node process — no system
         // Node required.
-        ELECTRON_RUN_AS_NODE: '1',
+        ELECTRON_RUN_AS_NODE: "1",
         // Which also means it can't read app.isPackaged/resourcesPath itself
         // to locate firefox-ax-helper — see firefox-ax-helper-path.ts.
-        RESOLVER_IS_PACKAGED: app.isPackaged ? '1' : '0',
+        RESOLVER_IS_PACKAGED: app.isPackaged ? "1" : "0",
         RESOLVER_RESOURCES_PATH: process.resourcesPath,
       },
     };
   }
 
-  if (process.platform === 'win32') {
+  if (process.platform === "win32") {
     return {
-      command: resolveWinResolverPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath }),
+      command: resolveWinResolverPath({
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+      }),
     };
   }
 
-  if (process.platform === 'linux') {
+  if (process.platform === "linux") {
     return {
       command: process.execPath,
       args: [resolveLinuxResolverPath()],
       // Same trick as darwin. No resourcesPath hints needed: this one spawns
       // no child, talking to the accessibility bus directly over D-Bus.
-      env: { ELECTRON_RUN_AS_NODE: '1' },
+      env: { ELECTRON_RUN_AS_NODE: "1" },
     };
   }
 
   return null;
 }
-import type { UpdateCheckResult } from './update-checker';
-import { RELEASES_PAGE_URL, checkForUpdate } from './update-checker';
-import { syncAutoLaunch } from './auto-launch';
-import type { AutoUpdateState } from './auto-updater';
-import { getAutoUpdateState, restartToApplyUpdate, startAutoUpdater } from './auto-updater';
-import { loadRelaunchHistory, recordRelaunch, shouldRelaunch } from './crash-recovery';
+import type { UpdateCheckResult } from "./update-checker";
+import { RELEASES_PAGE_URL, checkForUpdate } from "./update-checker";
+import { syncAutoLaunch } from "./auto-launch";
+import type { AutoUpdateState } from "./auto-updater";
+import {
+  getAutoUpdateState,
+  restartToApplyUpdate,
+  startAutoUpdater,
+} from "./auto-updater";
+import {
+  loadRelaunchHistory,
+  recordRelaunch,
+  shouldRelaunch,
+} from "./crash-recovery";
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -100,6 +125,7 @@ const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
 interface AuthStatus {
   loggedIn: boolean;
   email?: string;
+  name?: string;
   organisationName?: string;
 }
 
@@ -140,7 +166,7 @@ interface CapturePermissionStatus {
 // before any installs exist, since changing it later orphans the stored
 // fingerprint/session and makes every existing install re-register as a
 // "new" device.
-app.setName('Workforce Monitor');
+app.setName("Workforce Monitor");
 
 let mainWindow: BrowserWindow | null = null;
 let urlCaptureService: UrlCaptureService | null = null;
@@ -171,10 +197,12 @@ let quitPauseComplete = false;
 function handleFatalError(kind: string, error: unknown): void {
   console.error(`[fatal] unhandled ${kind}:`, error);
 
-  const userDataDir = app.getPath('userData');
+  const userDataDir = app.getPath("userData");
   const now = Date.now();
   if (!shouldRelaunch(loadRelaunchHistory(userDataDir), now)) {
-    console.error('[fatal] too many relaunches in the last minute — not retrying again.');
+    console.error(
+      "[fatal] too many relaunches in the last minute — not retrying again.",
+    );
     app.exit(1);
     return;
   }
@@ -187,8 +215,12 @@ function handleFatalError(kind: string, error: unknown): void {
   app.exit(1);
 }
 
-process.on('uncaughtException', (error) => handleFatalError('exception', error));
-process.on('unhandledRejection', (reason) => handleFatalError('rejection', reason));
+process.on("uncaughtException", (error) =>
+  handleFatalError("exception", error),
+);
+process.on("unhandledRejection", (reason) =>
+  handleFatalError("rejection", reason),
+);
 
 // Well under the backend's DEVICE_HEARTBEAT_WINDOW_MINUTES (5 min default —
 // see backend/src/devices/device-status.ts) so a normal 60s scheduling
@@ -220,7 +252,7 @@ function stopHeartbeat(): void {
 // docs/url-tracking-api.md. Nothing here is pinned to a specific
 // cadence; this just keeps the local SQLite queue from growing unbounded
 // between syncs without hammering the endpoint.
-const SYNC_INTERVAL_MS = intervalFromEnv('WM_SYNC_INTERVAL_MS', 30_000);
+const SYNC_INTERVAL_MS = intervalFromEnv("WM_SYNC_INTERVAL_MS", 30_000);
 
 /**
  * The real network-backed `UploadFn` for a logged-in device. A 401 signs
@@ -261,7 +293,7 @@ function buildUrlSessionUploadFn(
       // quiet enough not to spam a console during an ordinary outage.
       console.warn(
         `[url-sync] Batch of ${batch.length} session(s) did not sync` +
-          `${status === undefined ? ' (server unreachable)' : ` (HTTP ${status})`}: ${result.message} — will retry.`,
+          `${status === undefined ? " (server unreachable)" : ` (HTTP ${status})`}: ${result.message} — will retry.`,
       );
     }
     return { acked: [] };
@@ -292,7 +324,7 @@ function startUrlCapture(deviceId: string, upload: UploadFn): void {
 
   urlCaptureService = new UrlCaptureService({
     deviceId,
-    userDataDir: app.getPath('userData'),
+    userDataDir: app.getPath("userData"),
     powerMonitor,
     logger: (line) => console.log(line),
     upload,
@@ -320,10 +352,12 @@ function startUrlCapture(deviceId: string, upload: UploadFn): void {
 // developer/support diagnostic, not an end-user-facing preference.
 // Writes raw+normalized readings to userData, never to the regular log.
 function buildDebugSink(): DebugSink {
-  if (process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE !== '1') {
+  if (process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE !== "1") {
     return new NullDebugHarness();
   }
-  return new DebugHarness(join(app.getPath('userData'), 'url-capture-debug.jsonl'));
+  return new DebugHarness(
+    join(app.getPath("userData"), "url-capture-debug.jsonl"),
+  );
 }
 
 function stopUrlCapture(): void {
@@ -338,21 +372,20 @@ function createWindow(): void {
     width: 420,
     height: 560,
     webPreferences: {
-      preload: join(__dirname, '../preload/preload.js'),
+      preload: join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
-  void mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
-  mainWindow.on('closed', () => {
+  void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-
 async function registerIpcHandlers(): Promise<void> {
-  const authStore = new AuthStore(app.getPath('userData'));
+  const authStore = new AuthStore(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
@@ -361,11 +394,15 @@ async function registerIpcHandlers(): Promise<void> {
   // rather than losing it, and a failed batch retries with backoff instead
   // of being dropped. One queue instance serves both capture kinds.
   const offlineQueueStore = await OfflineQueueStore.create(
-    join(app.getPath('userData'), 'offline-queue.db'),
+    join(app.getPath("userData"), "offline-queue.db"),
   );
   const offlineQueue = new OfflineQueue(offlineQueueStore);
 
-  const appEventUploader = new AppEventUploader(authStore, apiClient, offlineQueue);
+  const appEventUploader = new AppEventUploader(
+    authStore,
+    apiClient,
+    offlineQueue,
+  );
   offlineQueue.registerSender(appEventUploader);
 
   // Fills WindowSampler's Wayland gap via AT-SPI2 (see docs/adr/0016-...) —
@@ -376,7 +413,7 @@ async function registerIpcHandlers(): Promise<void> {
   // ever consulting it. Linux-only — the accessibility bus this depends on
   // doesn't exist on macOS/Windows.
   const gnomeWindowFocusTracker =
-    process.platform === 'linux'
+    process.platform === "linux"
       ? new GnomeWindowFocusTracker({ logger: (line) => console.log(line) })
       : null;
   void gnomeWindowFocusTracker?.start();
@@ -386,10 +423,15 @@ async function registerIpcHandlers(): Promise<void> {
   // other JetBrains IDEs among them). Linux-only, and harmless where there
   // is no X display — it simply reports nothing and AT-SPI answers instead.
   const x11WindowTracker =
-    process.platform === 'linux'
+    process.platform === "linux"
       ? new X11WindowTracker({ logger: (line) => console.log(line) })
       : null;
   void x11WindowTracker?.start();
+  // Linux-only, best-effort — see gnome-idle-monitor.ts.
+  const gnomeIdleMonitor =
+    process.platform === "linux"
+      ? new GnomeIdleMonitor({ logger: (line) => console.log(line) })
+      : null;
 
   const windowSampler = new WindowSampler({
     sink: appEventUploader.enqueue,
@@ -397,7 +439,11 @@ async function registerIpcHandlers(): Promise<void> {
     getGnomeFocus: () => gnomeWindowFocusTracker?.getLastFocus() ?? null,
   });
 
-  const screenshotUploader = new ScreenshotUploader(authStore, apiClient, offlineQueue);
+  const screenshotUploader = new ScreenshotUploader(
+    authStore,
+    apiClient,
+    offlineQueue,
+  );
   offlineQueue.registerSender(screenshotUploader);
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
@@ -447,10 +493,14 @@ async function registerIpcHandlers(): Promise<void> {
       recomputeSampling();
     },
   );
-  const timerStatusGate = new TimerStatusGate(authStore, apiClient, (running) => {
-    timerRunning = running;
-    recomputeSampling();
-  });
+  const timerStatusGate = new TimerStatusGate(
+    authStore,
+    apiClient,
+    (running) => {
+      timerRunning = running;
+      recomputeSampling();
+    },
+  );
   captureSettingsGate.start();
   timerStatusGate.start();
 
@@ -460,21 +510,22 @@ async function registerIpcHandlers(): Promise<void> {
   // back for tracking calls.
   let pendingPairingCode: string | null = null;
 
-  ipcMain.handle('auth:status', (): AuthStatus => {
+  ipcMain.handle("auth:status", (): AuthStatus => {
     const session = authStore.load();
     return session
       ? {
           loggedIn: true,
           email: session.email,
+          name: session.name,
           organisationName: session.organisationName,
         }
       : { loggedIn: false };
   });
 
   ipcMain.handle(
-    'auth:startPairing',
+    "auth:startPairing",
     async (): Promise<StartPairingIpcResult> => {
-      const fingerprint = getOrCreateDeviceFingerprint(app.getPath('userData'));
+      const fingerprint = getOrCreateDeviceFingerprint(app.getPath("userData"));
       const result = await apiClient.startPairing({
         deviceFingerprint: fingerprint,
         platform: toDevicePlatform(process.platform),
@@ -493,46 +544,44 @@ async function registerIpcHandlers(): Promise<void> {
     },
   );
 
-  ipcMain.handle(
-    'auth:pairingStatus',
-    async (): Promise<PairingPollResult> => {
-      if (!pendingPairingCode) {
-        return { status: 'expired' };
-      }
+  ipcMain.handle("auth:pairingStatus", async (): Promise<PairingPollResult> => {
+    if (!pendingPairingCode) {
+      return { status: "expired" };
+    }
 
-      const result = await apiClient.pollPairing(pendingPairingCode);
+    const result = await apiClient.pollPairing(pendingPairingCode);
 
-      if (result.status === 'approved') {
-        pendingPairingCode = null;
-        authStore.save({
-          email: result.email,
-          organisationName: result.organisationName,
-          deviceId: result.deviceId,
-          deviceToken: result.deviceToken,
-        });
-        // Approval is the new "just logged in" moment — the password
-        // handler these hung off no longer exists.
-        startUrlCapture(
-          result.deviceId,
-          buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
-        );
-        startHeartbeat(apiClient, result.deviceToken);
-        startSync();
-        // Re-check both gates immediately rather than waiting for their own
-        // poll intervals — a device that was logged out (and therefore not
-        // tracking) should pick this up as soon as it's logged back in,
-        // including resuming a timer that was already running server-side.
-        void captureSettingsGate.pollOnce();
-        void timerStatusGate.pollOnce();
-      } else if (result.status === 'expired') {
-        pendingPairingCode = null;
-      }
+    if (result.status === "approved") {
+      pendingPairingCode = null;
+      authStore.save({
+        email: result.email,
+        name: result.name,
+        organisationName: result.organisationName,
+        deviceId: result.deviceId,
+        deviceToken: result.deviceToken,
+      });
+      // Approval is the new "just logged in" moment — the password
+      // handler these hung off no longer exists.
+      startUrlCapture(
+        result.deviceId,
+        buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
+      );
+      startHeartbeat(apiClient, result.deviceToken);
+      startSync();
+      // Re-check both gates immediately rather than waiting for their own
+      // poll intervals — a device that was logged out (and therefore not
+      // tracking) should pick this up as soon as it's logged back in,
+      // including resuming a timer that was already running server-side.
+      void captureSettingsGate.pollOnce();
+      void timerStatusGate.pollOnce();
+    } else if (result.status === "expired") {
+      pendingPairingCode = null;
+    }
 
-      return result;
-    },
-  );
+    return result;
+  });
 
-  ipcMain.handle('auth:logout', async (): Promise<AuthStatus> => {
+  ipcMain.handle("auth:logout", async (): Promise<AuthStatus> => {
     const session = authStore.load();
     if (session) {
       // Pause BEFORE revoking the session — afterwards the token is dead
@@ -584,47 +633,66 @@ async function registerIpcHandlers(): Promise<void> {
     await apiClient.pauseTimer(session.deviceToken);
   };
 
-  ipcMain.handle('tracking:listProjects', () => callDeviceApi((token) => apiClient.listProjects(token)));
+  ipcMain.handle("tracking:listProjects", () =>
+    callDeviceApi((token) => apiClient.listProjects(token)),
+  );
 
-  ipcMain.handle('tracking:listTasks', (_event, projectId: string) =>
+  ipcMain.handle("tracking:listTasks", (_event, projectId: string) =>
     callDeviceApi((token) => apiClient.listTasks(token, projectId)),
   );
 
   // Remembering the Project on the way through means the renderer never has
   // to manage it: whatever the timer last actually started against is what a
   // later auto-start or play resumes to.
-  ipcMain.handle('tracking:start', async (_event, projectId: string, taskId: string | null) => {
-    const result = await callDeviceApi((token) => apiClient.startTimer(token, projectId, taskId));
-    if (result.ok) authStore.rememberProject(projectId, taskId);
-    // Instant local feedback for window tracking rather than waiting on
-    // TimerStatusGate's poll; the periodic poll still covers a timer
-    // started or stopped elsewhere.
-    void timerStatusGate.pollOnce();
-    return result;
-  });
+  ipcMain.handle(
+    "tracking:start",
+    async (_event, projectId: string, taskId: string | null) => {
+      const result = await callDeviceApi((token) =>
+        apiClient.startTimer(token, projectId, taskId),
+      );
+      if (result.ok) authStore.rememberProject(projectId, taskId);
+      // Instant local feedback for window tracking rather than waiting on
+      // TimerStatusGate's poll; the periodic poll still covers a timer
+      // started or stopped elsewhere.
+      void timerStatusGate.pollOnce();
+      return result;
+    },
+  );
 
-  ipcMain.handle('tracking:switch', async (_event, projectId: string, taskId: string | null) => {
-    const result = await callDeviceApi((token) => apiClient.switchTimer(token, projectId, taskId));
-    if (result.ok) authStore.rememberProject(projectId, taskId);
-    void timerStatusGate.pollOnce();
-    return result;
-  });
+  ipcMain.handle(
+    "tracking:switch",
+    async (_event, projectId: string, taskId: string | null) => {
+      const result = await callDeviceApi((token) =>
+        apiClient.switchTimer(token, projectId, taskId),
+      );
+      if (result.ok) authStore.rememberProject(projectId, taskId);
+      void timerStatusGate.pollOnce();
+      return result;
+    },
+  );
 
-  ipcMain.handle('tracking:lastProject', (): LastProject | null => {
+  ipcMain.handle("tracking:lastProject", (): LastProject | null => {
     const session = authStore.load();
     if (!session?.lastProjectId) return null;
-    return { projectId: session.lastProjectId, taskId: session.lastTaskId ?? null };
+    return {
+      projectId: session.lastProjectId,
+      taskId: session.lastTaskId ?? null,
+    };
   });
 
-  ipcMain.handle('tracking:stop', async (_event, endedAt?: string) => {
-    const result = await callDeviceApi((token) => apiClient.stopTimer(token, endedAt));
+  ipcMain.handle("tracking:stop", async (_event, endedAt?: string) => {
+    const result = await callDeviceApi((token) =>
+      apiClient.stopTimer(token, endedAt),
+    );
     void timerStatusGate.pollOnce();
     return result;
   });
 
-  ipcMain.handle('tracking:status', () => callDeviceApi((token) => apiClient.getCurrentTimer(token)));
+  ipcMain.handle("tracking:status", () =>
+    callDeviceApi((token) => apiClient.getCurrentTimer(token)),
+  );
 
-  ipcMain.handle('tracking:pause', async () => {
+  ipcMain.handle("tracking:pause", async () => {
     const result = await callDeviceApi((token) => apiClient.pauseTimer(token));
     // Instant local feedback rather than waiting on TimerStatusGate's poll —
     // capture must stop as soon as the person pauses, not up to 15s later.
@@ -632,22 +700,24 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
-  ipcMain.handle('tracking:resume', async () => {
+  ipcMain.handle("tracking:resume", async () => {
     const result = await callDeviceApi((token) => apiClient.resumeTimer(token));
     void timerStatusGate.pollOnce();
     return result;
   });
 
-  ipcMain.handle('tracking:entriesBetween', (_event, from: string, to: string) =>
-    callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+  ipcMain.handle(
+    "tracking:entriesBetween",
+    (_event, from: string, to: string) =>
+      callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
   );
 
-  ipcMain.handle('tracking:idlePolicy', () =>
+  ipcMain.handle("tracking:idlePolicy", () =>
     callDeviceApi((token) => apiClient.getIdlePolicy(token)),
   );
 
   ipcMain.handle(
-    'tracking:permissionStatus',
+    "tracking:permissionStatus",
     (): TrackingResult<CapturePermissionStatus> => {
       const session = authStore.load();
       if (!session) return NOT_LOGGED_IN;
@@ -673,16 +743,16 @@ async function registerIpcHandlers(): Promise<void> {
           // itself has no query-only "check without asking" API the way
           // macOS's getMediaAccessStatus does.
           screenRecordingGranted:
-            platform === 'macos'
-              ? systemPreferences.getMediaAccessStatus('screen') === 'granted'
-              : platform === 'linux' && isWaylandSession()
+            platform === "macos"
+              ? systemPreferences.getMediaAccessStatus("screen") === "granted"
+              : platform === "linux" && isWaylandSession()
                 ? (session.waylandScreenshotGranted ?? false)
                 : true,
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
           // "ask the user".
           accessibilityGranted:
-            platform === 'macos'
+            platform === "macos"
               ? systemPreferences.isTrustedAccessibilityClient(false)
               : true,
           accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
@@ -690,14 +760,6 @@ async function registerIpcHandlers(): Promise<void> {
       };
     },
   );
-
-  // Drives the "tracking is on" banner — intent-based (settings + timer
-  // line up), not tied to whether a sample actually uploaded successfully
-  // (see docs/adr/0015-...'s indicator-semantics note).
-  ipcMain.handle('tracking:indicatorStatus', (): { active: boolean } => {
-    const anyCaptureEnabled = windowTrackingEnabled || screenshotsEnabled;
-    return { active: anyCaptureEnabled && timerRunning };
-  });
 
   // Triggers the native macOS Screen Recording prompt, or (on Linux/Wayland)
   // the portal's one-time interactive Screenshot grant — never called
@@ -707,13 +769,13 @@ async function registerIpcHandlers(): Promise<void> {
   // (e.g. on launch) — see screenshot-portal.ts and ScreenshotSampler's
   // `isWaylandScreenshotGranted` gate.
   ipcMain.handle(
-    'tracking:requestScreenRecordingAccess',
+    "tracking:requestScreenRecordingAccess",
     async (): Promise<void> => {
-      if (process.platform === 'darwin') {
+      if (process.platform === "darwin") {
         loadActiveWindowModule()?.requestPermissions();
         return;
       }
-      if (process.platform === 'linux' && isWaylandSession()) {
+      if (process.platform === "linux" && isWaylandSession()) {
         const buffer = await captureScreenViaPortal(true);
         if (!buffer) return;
         authStore.rememberWaylandScreenshotGranted();
@@ -736,26 +798,28 @@ async function registerIpcHandlers(): Promise<void> {
   // and the screen-recording banner needs the same thing, differing only in
   // which pane. Links come from permission-copy.ts rather than being repeated.
   ipcMain.handle(
-    'tracking:openPrivacySettings',
+    "tracking:openPrivacySettings",
     async (_event, pane: SettingsPane): Promise<void> => {
-      if (process.platform === 'darwin') {
+      if (process.platform === "darwin") {
         await shell.openExternal(SETTINGS_DEEP_LINKS[pane]);
       }
     },
   );
 
-  // Native, synchronous, and free of any network round-trip — the renderer
-  // polls this on its own short interval while a timer is running.
-  // See docs/adr/0007-... : unreliable under Wayland (X11 XScreenSaver
-  // extension only), matching the desktop app's existing "Linux
-  // best-effort" support level.
-  ipcMain.handle('idle:seconds', () => powerMonitor.getSystemIdleTime());
+  // Prefers GNOME's D-Bus reading — powerMonitor only works under X11.
+  ipcMain.handle("idle:seconds", async () => {
+    const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
+    if (gnomeMs !== null && gnomeMs !== undefined) {
+      return Math.floor(gnomeMs / 1000);
+    }
+    return powerMonitor.getSystemIdleTime();
+  });
 
   // Fire-and-forget push, not invoke/handle — this is the only signal the
   // main process needs about timer state that it can't get from powerMonitor
   // itself. The renderer is still the authoritative poller of
   // /device/time-entries/current; this just mirrors what it already knows.
-  ipcMain.on('urlCapture:timerStateChanged', (_event, running: boolean) => {
+  ipcMain.on("urlCapture:timerStateChanged", (_event, running: boolean) => {
     urlCaptureService?.setTimerRunning(running);
   });
 
@@ -766,7 +830,11 @@ async function registerIpcHandlers(): Promise<void> {
   if (existingSession) {
     startUrlCapture(
       existingSession.deviceId,
-      buildUrlSessionUploadFn(apiClient, authStore, existingSession.deviceToken),
+      buildUrlSessionUploadFn(
+        apiClient,
+        authStore,
+        existingSession.deviceToken,
+      ),
     );
     startHeartbeat(apiClient, existingSession.deviceToken);
     startSync();
@@ -778,17 +846,20 @@ async function registerIpcHandlers(): Promise<void> {
   // win/linux, since the renderer falls back to this whenever
   // update:autoStatus isn't reporting an active download.
   ipcMain.handle(
-    'update:status',
+    "update:status",
     (): Promise<UpdateCheckResult> => checkForUpdate(app.getVersion()),
   );
 
-  ipcMain.handle('update:openReleasesPage', async (): Promise<void> => {
+  ipcMain.handle("update:openReleasesPage", async (): Promise<void> => {
     await shell.openExternal(RELEASES_PAGE_URL);
   });
 
-  ipcMain.handle('update:autoStatus', (): AutoUpdateState => getAutoUpdateState());
+  ipcMain.handle(
+    "update:autoStatus",
+    (): AutoUpdateState => getAutoUpdateState(),
+  );
 
-  ipcMain.handle('update:restart', (): void => {
+  ipcMain.handle("update:restart", (): void => {
     restartToApplyUpdate();
   });
 }
@@ -802,16 +873,20 @@ async function registerIpcHandlers(): Promise<void> {
  * capture must never stop time tracking.
  */
 function activateBrowsersOnLinux(): void {
-  if (process.platform !== 'linux') return;
+  if (process.platform !== "linux") return;
 
   try {
-    const report = applyBrowserActivation({ scope: 'user' });
+    const report = applyBrowserActivation({ scope: "user" });
     const activated = report.outcomes.filter((outcome) => outcome.activated);
     console.log(
       `[activation] ${activated.length}/${report.outcomes.length} browser launchers activated in ${report.targetDirectory}`,
     );
-    for (const failed of report.outcomes.filter((outcome) => !outcome.activated)) {
-      console.log(`[activation] could not activate ${failed.fileName}: ${failed.reason}`);
+    for (const failed of report.outcomes.filter(
+      (outcome) => !outcome.activated,
+    )) {
+      console.log(
+        `[activation] could not activate ${failed.fileName}: ${failed.reason}`,
+      );
     }
   } catch (error) {
     console.log(`[activation] skipped: ${String(error)}`);
@@ -823,7 +898,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on("second-instance", () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
@@ -839,15 +914,15 @@ if (!gotSingleInstanceLock) {
     createWindow();
     startAutoUpdater((line) => console.log(line));
 
-    app.on('activate', () => {
+    app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
       }
     });
   });
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
       app.quit();
     }
   });
@@ -859,9 +934,11 @@ if (!gotSingleInstanceLock) {
   // is enough to recover visibly; nothing here needs replaying. Excludes
   // 'clean-exit', which covers an intentional close (e.g. window.destroy()
   // during before-quit), not a crash.
-  app.on('render-process-gone', (_event, _webContents, details) => {
-    console.error(`[renderer] gone: ${details.reason} (exit code ${details.exitCode})`);
-    if (details.reason === 'clean-exit') return;
+  app.on("render-process-gone", (_event, _webContents, details) => {
+    console.error(
+      `[renderer] gone: ${details.reason} (exit code ${details.exitCode})`,
+    );
+    if (details.reason === "clean-exit") return;
     mainWindow?.destroy();
     mainWindow = null;
     createWindow();
@@ -870,7 +947,7 @@ if (!gotSingleInstanceLock) {
   // GPU/utility process crashes — Electron already recovers the GPU process
   // on its own; this is here purely so a crash there shows up in the logs
   // instead of vanishing silently.
-  app.on('child-process-gone', (_event, details) => {
+  app.on("child-process-gone", (_event, details) => {
     console.error(`[child-process] gone: ${details.type} ${details.reason}`);
   });
 
@@ -878,11 +955,13 @@ if (!gotSingleInstanceLock) {
   // elapsed value has to survive to the next launch. The pause is a network
   // call, so the first quit is deferred until it settles and then re-issued.
   // `quitPauseComplete` makes that re-issue a plain quit instead of looping.
-  app.on('before-quit', (event) => {
+  app.on("before-quit", (event) => {
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();
       void pauseRunningTimer()
-        .catch((error: unknown) => console.error('[timer] pause on quit failed:', error))
+        .catch((error: unknown) =>
+          console.error("[timer] pause on quit failed:", error),
+        )
         .finally(() => {
           quitPauseComplete = true;
           stopUrlCapture();
@@ -907,14 +986,14 @@ if (!gotSingleInstanceLock) {
       console.error(`[timer] pause on ${label} failed:`, error),
     );
   };
-  powerMonitor.on('suspend', () => pauseForPowerEvent('suspend'));
-  powerMonitor.on('shutdown', () => pauseForPowerEvent('shutdown'));
+  powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
+  powerMonitor.on("shutdown", () => pauseForPowerEvent("shutdown"));
 
   // Logging out, and most graceful shutdowns, send SIGTERM rather than
   // anything Electron reports as a quit — without this the process dies with
   // the timer still running. Routed through app.quit() so it takes the same
   // pause-then-exit path as closing the window.
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => app.quit());
   }
 }

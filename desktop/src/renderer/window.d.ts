@@ -9,6 +9,7 @@ declare global {
   interface AuthStatus {
     loggedIn: boolean;
     email?: string;
+    name?: string;
     organisationName?: string;
     message?: string;
   }
@@ -23,7 +24,10 @@ declare global {
   interface TrackedTask {
     id: string;
     name: string;
+    description: string | null;
     status: 'open' | 'closed';
+    createdAt: string;
+    updatedAt: string;
   }
 
   interface TimeEntry {
@@ -82,7 +86,7 @@ declare global {
 
   type PairingPollResult =
     | { status: 'pending' }
-    | { status: 'approved'; email: string; organisationName: string }
+    | { status: 'approved'; email: string; name: string; organisationName: string }
     | { status: 'expired' }
     | { status: 'error'; message: string };
 
@@ -102,10 +106,6 @@ declare global {
   type TrackingResult<T> =
     | { ok: true; data: T }
     | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
-
-  interface TrackingIndicatorStatus {
-    active: boolean;
-  }
 
   interface Window {
     api: {
@@ -132,7 +132,6 @@ declare global {
         openPrivacySettings: (
           pane: 'accessibility' | 'screenRecording',
         ) => Promise<void>;
-        indicatorStatus: () => Promise<TrackingIndicatorStatus>;
       };
       idle: {
         seconds: () => Promise<number>;

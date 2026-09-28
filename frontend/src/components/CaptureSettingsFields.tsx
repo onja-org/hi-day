@@ -1,62 +1,68 @@
+import { useState } from "react";
 import type { OrganisationProfile } from "@/types/organisation";
+import { NumberFieldWithUnit } from "./NumberFieldWithUnit";
+import { Toggle } from "./Toggle";
 
 type CaptureSettingsFieldsProps = {
   organisation: OrganisationProfile;
+  windowTrackingEnabled: boolean;
+  onWindowTrackingEnabledChange: (checked: boolean) => void;
+  screenshotsEnabled: boolean;
+  onScreenshotsEnabledChange: (checked: boolean) => void;
 };
 
 /** Split out of OrganisationSettingsForm (past the ~150-line guideline); submission still goes through the parent form's `FormData`. */
 export function CaptureSettingsFields({
   organisation,
+  windowTrackingEnabled,
+  onWindowTrackingEnabledChange,
+  screenshotsEnabled,
+  onScreenshotsEnabledChange,
 }: CaptureSettingsFieldsProps) {
+  const [screenshotFrequencyMinutes, setScreenshotFrequencyMinutes] =
+    useState(Math.round(organisation.screenshotFrequencySeconds / 60));
+
   return (
-    <>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
+    <div className="flex flex-col gap-1 rounded-lg border border-input-border bg-white p-5">
+      <div className="divide-y divide-input-border">
+        <Toggle
           name="windowTrackingEnabled"
-          defaultChecked={organisation.windowTrackingEnabled}
-          className="h-4 w-4 rounded border-input-border"
+          label="Window titles"
+          description="Records the title of the active window, such as the document or page name."
+          checked={windowTrackingEnabled}
+          onCheckedChange={onWindowTrackingEnabledChange}
         />
-        Track window titles (desktop agent)
-      </label>
-
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
+        <Toggle
           name="screenshotsEnabled"
-          defaultChecked={organisation.screenshotsEnabled}
-          className="h-4 w-4 rounded border-input-border"
+          label="Screenshots"
+          description="Periodic screen captures at the interval set below."
+          checked={screenshotsEnabled}
+          onCheckedChange={onScreenshotsEnabledChange}
         />
-        Enable screenshots (desktop agent)
-      </label>
-
-      <div className="flex flex-col gap-5 sm:flex-row">
-        <label className="flex flex-1 flex-col gap-1.5">
-          Screenshot frequency (minutes)
-          <input
-            name="screenshotFrequencyMinutes"
-            type="number"
-            min="1"
-            step="1"
-            defaultValue={Math.round(
-              organisation.screenshotFrequencySeconds / 60,
-            )}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
-
-        <label className="flex flex-1 flex-col gap-1.5">
-          Screenshot retention (days)
-          <input
-            name="screenshotRetentionDays"
-            type="number"
-            min="1"
-            step="1"
-            defaultValue={organisation.screenshotRetentionDays}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
       </div>
-    </>
+
+      <div className="flex flex-col gap-3 border-t border-input-border pt-5">
+        <span className="text-sm font-medium text-slate-900">
+          Screenshot options
+        </span>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <NumberFieldWithUnit
+            name="screenshotFrequencyMinutes"
+            label="Capture every"
+            unit="min"
+            value={screenshotFrequencyMinutes}
+            onChange={setScreenshotFrequencyMinutes}
+            hint={`= ${Math.round((8 * 60) / screenshotFrequencyMinutes)} captures per 8-hour day`}
+          />
+          <NumberFieldWithUnit
+            name="screenshotRetentionDays"
+            label="Delete screenshots after"
+            unit="days"
+            defaultValue={organisation.screenshotRetentionDays}
+            hint="Older screenshots are removed permanently."
+          />
+        </div>
+      </div>
+    </div>
   );
 }

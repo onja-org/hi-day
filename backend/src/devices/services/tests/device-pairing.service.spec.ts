@@ -330,6 +330,7 @@ describe('DevicePairingService', () => {
         deviceId: 'device-1',
         deviceToken: 'device-token',
         email: 'jane@acme.test',
+        name: 'jane@acme.test',
         organisationName: 'Acme Inc',
       });
     });

@@ -22,6 +22,7 @@ export type PairingPollResult =
       deviceId: string;
       deviceToken: string;
       email: string;
+      name: string;
       organisationName: string;
     }
   | { status: 'expired' }
@@ -38,6 +39,7 @@ interface PairingPollResponseBody {
   deviceId?: string;
   deviceToken?: string;
   email?: string;
+  name?: string;
   organisationName?: string;
 }
 
@@ -51,7 +53,10 @@ export interface TrackedProject {
 export interface TrackedTask {
   id: string;
   name: string;
+  description: string | null;
   status: 'open' | 'closed';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TimeEntry {
@@ -186,6 +191,7 @@ export class ApiClient {
         !body.deviceId ||
         !body.deviceToken ||
         !body.email ||
+        !body.name ||
         !body.organisationName
       ) {
         return { status: 'error', message: 'Could not finish logging in.' };
@@ -195,6 +201,7 @@ export class ApiClient {
         deviceId: body.deviceId,
         deviceToken: body.deviceToken,
         email: body.email,
+        name: body.name,
         organisationName: body.organisationName,
       };
     }

@@ -1,3 +1,17 @@
+/* `--color-primary` matches frontend/src/app/globals.css. */
+:root {
+  --color-primary: #4f46e5;
+  --color-primary-dark: #003673;
+  --color-secondary: #5d5490;
+  --color-cream: #fff6d6;
+  --color-amber-text: #93700c;
+  --color-error: #b42318;
+  --color-border: #eaecf0;
+  --color-surface: #f6f7f9;
+  --color-text-muted: #667085;
+  --color-tint-blue: #eaf6fd;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -7,7 +21,7 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #ffffff;
-  color: #003673;
+  color: var(--color-primary-dark);
 }
 
 .app {
@@ -19,17 +33,162 @@ h1 {
   margin: 0 0 24px;
 }
 
-.organisation-name {
-  font-size: 15px;
-  font-weight: 600;
+/* --- Header: app icon/name, org name, avatar --------------------------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: -16px 0 20px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--color-primary-dark);
+  color: #ffffff;
+}
+
+.app-brand-text {
+  min-width: 0;
+}
+
+.app-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.organisation-name {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Small square icon button: task-panel trigger and close. */
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--color-surface);
+}
+
+.profile {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-cream);
+  color: var(--color-primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.user-avatar:hover {
+  opacity: 0.85;
+}
+
+/* Right-aligned so it never overhangs the window's edge. */
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1;
+  width: 180px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 54, 115, 0.12);
+}
+
+.profile-signed-in-as {
+  margin: 4px 8px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.profile-email {
+  margin: 0 8px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.profile-menu-button {
+  margin-top: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: none;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+  text-align: left;
+}
+
+.profile-menu-button:hover {
+  background: var(--color-surface);
+  opacity: 1;
 }
 
 .update-banner {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: -16px 0 20px;
+  margin: 0 0 20px;
   padding: 10px 12px;
   border: 1px solid #b2ddf7;
   border-radius: 6px;
@@ -47,7 +206,7 @@ h1 {
   flex: 1;
   margin: 0;
   font-size: 13px;
-  color: #003673;
+  color: var(--color-primary-dark);
 }
 
 .update-banner button {
@@ -60,7 +219,7 @@ h1 {
 #update-dismiss {
   padding: 6px 10px;
   background: transparent;
-  color: #003673;
+  color: var(--color-primary-dark);
 }
 
 label {
@@ -80,24 +239,81 @@ select {
 }
 
 #tracking-view {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid #eaecf0;
-}
-
-
-.timer-display {
-  margin: 16px 0 0;
-  font-size: 28px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  color: #003673;
+  margin-top: 4px;
 }
 
 #tracking-error {
   margin: 0 0 12px;
-  color: #b42318;
+  color: var(--color-error);
   font-size: 13px;
+}
+
+/* --- Tracking card: status/today, big timer + pause, task ------------- */
+
+.tracking-card {
+  margin: 0 0 20px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--color-tint-blue);
+}
+
+.tracking-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.tracking-today {
+  flex: 0 0 auto;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tracking-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.tracking-main {
+  min-width: 0;
+}
+
+.tracking-project-name {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+}
+
+.timer-display {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary-dark);
+}
+
+.current-task-label {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
 .idle-banner {
@@ -122,35 +338,135 @@ select {
   font-size: 13px;
 }
 
-#idle-keep-button {
-  margin-right: 8px;
-  background: #eaecf0;
-  color: #003673;
-}
-
-#screen-recording-grant-button {
+#accessibility-banner button,
+#screen-recording-banner button {
   margin-right: 8px;
 }
 
 #screen-recording-settings-button {
-  background: #eaecf0;
-  color: #003673;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
 }
 
 .idle-notice {
   margin: 0 0 12px;
   padding: 8px 12px;
   border-radius: 6px;
-  background: #eaecf0;
-  color: #003673;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
   font-size: 13px;
 }
 
-/* The "Tracking is on" banner reuses .idle-notice's neutral-informational
-   look, but with a left accent so it reads as a status indicator rather
-   than a passive tip. */
-#tracking-indicator {
-  border-left: 3px solid #259cd9;
+/* --- Idle screen: replaces the tracking card while idle is detected ---- */
+
+.idle-screen {
+  margin: 0 0 20px;
+  padding: 20px 16px;
+  border-radius: 10px;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.idle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--color-cream);
+  color: var(--color-amber-text);
+}
+
+.idle-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: var(--color-primary-dark);
+}
+
+.idle-description {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.idle-description strong {
+  color: var(--color-primary-dark);
+}
+
+.idle-stats {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.idle-stat-box {
+  flex: 1 1 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.idle-stat-label {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.idle-stat-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary-dark);
+}
+
+.idle-primary-button {
+  margin-top: 0;
+  background: var(--color-primary-dark);
+}
+
+.idle-secondary-button {
+  margin-top: 8px;
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
+}
+
+.idle-assign-link {
+  margin-top: 12px;
+  width: auto;
+  padding: 0;
+  background: none;
+  color: var(--color-secondary);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.idle-assign-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  text-align: left;
+}
+
+.idle-assign-list li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.idle-assign-list button {
+  margin-top: 0;
+  width: 100%;
+  padding: 8px;
+  border-radius: 0;
+  background: none;
+  color: var(--color-primary-dark);
+  text-align: left;
+}
+
+.idle-assign-list button:hover {
+  background: #ffffff;
 }
 
 /* Passive, non-blocking disclosure notice (see docs/adr/0015-...) — reuses
@@ -163,15 +479,15 @@ select {
 }
 
 #disclosure-error {
-  color: #b42318;
+  color: var(--color-error);
 }
 
 #stop-button {
-  background: #b42318;
+  background: var(--color-error);
 }
 
 #switch-button {
-  background: #5d5490;
+  background: var(--color-secondary);
 }
 
 button {
@@ -180,7 +496,7 @@ button {
   padding: 10px;
   border: none;
   border-radius: 6px;
-  background: #259cd9;
+  background: var(--color-primary);
   color: #ffffff;
   font-size: 14px;
   cursor: pointer;
@@ -192,38 +508,35 @@ button:hover {
 
 #login-error {
   margin-top: 12px;
-  color: #b42318;
+  color: var(--color-error);
   font-size: 13px;
 }
 
 .hint {
-  color: #667085;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
-/* The single run/pause control — a round icon button, since it is now the
-   primary action on the timer screen rather than one of three text buttons. */
-/* Borderless, like the project rows' icon — the glyph itself carries the
-   control, so there is no filled disc behind it. */
 .timer-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   /* Explicitly square. A block-level flex button with no width fills the
      row, and border-radius:50% then draws an ellipse rather than a disc. */
-  width: 40px;
-  height: 40px;
-  margin: 0 auto;
+  width: 48px;
+  height: 48px;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  color: #003673;
-  background: none;
+  color: #ffffff;
+  background: var(--color-primary);
 }
 
 .timer-toggle:hover {
-  background: #f6f7f9;
+  opacity: 0.9;
 }
 
 .timer-toggle:disabled {
@@ -231,18 +544,35 @@ button:hover {
   opacity: 0.5;
 }
 
+/* --- Projects list: colour-tagged icon, name + status, today's total --- */
+
+.projects-section {
+  margin: 0 0 20px;
+}
+
+.projects-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
 /* Project picker: borderless rows separated by hairlines, with the play
    affordance revealed on hover so the resting list stays quiet. */
 .project-list {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
 }
 
 .project-list li + li {
-  border-top: 1px solid #ececf0;
+  border-top: 1px solid var(--color-border);
 }
 
 .project-list button {
@@ -260,7 +590,7 @@ button:hover {
 }
 
 .project-list button:hover {
-  background: #f6f7f9;
+  background: var(--color-surface);
 }
 
 .project-list button:disabled {
@@ -273,36 +603,50 @@ button:hover {
    distinct from :hover, which uses a neutral grey — otherwise hovering
    another row would look like it had become the active one. */
 .project-list button.is-running {
-  background: #fff6d6;
+  background: var(--color-cream);
 }
 
 .project-list button.is-running:hover {
   background: #ffefb8;
 }
 
-/* Hidden until hover (or keyboard focus, so it is not mouse-only), but it
-   always occupies its slot — revealing it must not shift the row. */
-.project-play {
+.project-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  color: #003673;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  color: var(--color-primary-dark);
+}
+
+.project-list button.is-running .project-icon {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.project-icon svg {
+  /* Hidden until hover (or keyboard focus, so it is not mouse-only), but it
+     always occupies its slot — revealing it must not shift the row. */
   visibility: hidden;
 }
 
-.project-list button:hover .project-play,
-.project-list button:focus-visible .project-play,
-.project-list button[aria-current='true'] .project-play {
+.project-list button:hover .project-icon svg,
+.project-list button:focus-visible .project-icon svg,
+.project-list button[aria-current='true'] .project-icon svg {
   visibility: visible;
 }
 
-/* The running row's pause icon is a status indicator, not just an
-   affordance, so it stays visible even when nothing is hovered. */
-.project-list button.is-running .project-play {
-  visibility: visible;
+.project-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .project-name {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -310,11 +654,117 @@ button:hover {
 
 .project-list button[aria-current='true'] .project-name {
   font-weight: 600;
-  color: #003673;
+  color: var(--color-primary-dark);
 }
 
 .project-total {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
-  color: #003673;
+  color: var(--color-primary-dark);
+}
+
+/* --- Task panel: full-window overlay, opened from the header's task icon - */
+
+.task-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: #ffffff;
+  overflow-y: auto;
+}
+
+/* `display: flex` above overrides `hidden` — same fix as .update-banner[hidden]. */
+.task-panel[hidden] {
+  display: none;
+}
+
+.task-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.task-panel-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.task-panel-project {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.task-search {
+  margin-bottom: 12px;
+}
+
+.task-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.task-panel-list li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.task-panel-list button {
+  display: block;
+  margin-top: 0;
+  width: 100%;
+  padding: 10px 4px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-panel-list button:hover {
+  background: var(--color-surface);
+}
+
+.task-panel-list button.is-selected {
+  background: var(--color-tint-blue);
+}
+
+.task-panel-task-name {
+  display: block;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+}
+
+.task-panel-description {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.task-panel-dates {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.task-panel-empty {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
