@@ -1,6 +1,7 @@
 "use client";
 
 import { useProjects } from "@/hooks/useProjects";
+import { SearchableSelect } from "./SearchableSelect";
 
 export const UNTRACKED_PROJECT_VALUE = "untracked";
 
@@ -27,18 +28,17 @@ export function ProjectFilterSelect({
   const projectsQuery = useProjects(organisationId, { status: "active" });
 
   return (
-    <select
+    <SearchableSelect
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="rounded-md border border-input-border bg-white px-3 py-1.5 text-sm text-slate-900"
-    >
-      <option value="">All projects</option>
-      {projectsQuery.data?.map((project) => (
-        <option key={project.id} value={project.id}>
-          {project.name}
-        </option>
-      ))}
-      <option value={UNTRACKED_PROJECT_VALUE}>Untracked</option>
-    </select>
+      onChange={onChange}
+      ariaLabel="Filter by project"
+      placeholder="Search projects…"
+      noMatchesLabel="No matching projects"
+      options={[
+        { value: "", label: "All projects" },
+        ...(projectsQuery.data?.map((project) => ({ value: project.id, label: project.name })) ?? []),
+        { value: UNTRACKED_PROJECT_VALUE, label: "Untracked" },
+      ]}
+    />
   );
 }
