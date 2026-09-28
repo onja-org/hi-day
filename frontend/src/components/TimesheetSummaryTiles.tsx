@@ -4,20 +4,18 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { formatDuration } from "@/lib/formatDuration";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
-import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { DashboardKpiTile } from "./DashboardKpiTile";
 
-// A daily-hours target only makes sense as a comparison for a single-day
-// view — "12h of 8h target" for a whole week/month would be misleading.
-const SINGLE_DAY_PRESETS: TimesheetDatePreset[] = ["today", "yesterday"];
-
 type TimesheetSummaryTilesProps = {
   entries: TimeEntryListItem[];
-  datePreset: TimesheetDatePreset;
+  /** True when the viewed range covers one day — a daily-hours target only
+   * makes sense as a comparison then; "12h of 8h target" for a whole
+   * week/month would be misleading. */
+  isSingleDay: boolean;
 };
 
-export function TimesheetSummaryTiles({ entries, datePreset }: TimesheetSummaryTilesProps) {
+export function TimesheetSummaryTiles({ entries, isSingleDay }: TimesheetSummaryTilesProps) {
   const organisationQuery = useCurrentOrganisation();
   const dayGroups = groupTimeEntriesByDay(entries);
   const totalSeconds = dayGroups.reduce((sum, group) => sum + group.totalSeconds, 0);
@@ -27,7 +25,7 @@ export function TimesheetSummaryTiles({ entries, datePreset }: TimesheetSummaryT
   const hasRunningEntry = entries.some((entry) => entry.durationSeconds === null);
   const dailyTarget = organisationQuery.data?.workingHoursPerDay;
   const showDailyTarget =
-    dailyTarget !== undefined && SINGLE_DAY_PRESETS.includes(datePreset);
+    dailyTarget !== undefined && isSingleDay;
   const entriesUnderMinute = entries.filter(
     (entry) => entry.durationSeconds !== null && entry.durationSeconds < 60,
   ).length;

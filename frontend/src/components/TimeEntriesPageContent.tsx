@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { ClockIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import { format } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
-import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
+import type { DateRange, DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "./ErrorMessage";
 import { ExportButtons } from "./ExportButtons";
 import { Spinner } from "./Spinner";
@@ -31,13 +32,21 @@ const VIEW_MODE_LABELS: Record<TimesheetViewMode, string> = {
   calendar: "Calendar",
 };
 
+const DEFAULT_DATE_PRESET: DateRangePreset = "last_7_days";
+
 export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
   // "" means "my own timesheet" — the default for everyone, including
   // admins/managers.
   const [viewingMembershipId, setViewingMembershipId] = useState("");
   const [viewMode, setViewMode] = useState<TimesheetViewMode>("daily");
-  const [datePreset, setDatePreset] = useState<TimesheetDatePreset>("this_week");
+  // null while a custom calendar range is applied. A preset's range is
+  // re-resolved every render (below) rather than stored, so "Today" keeps
+  // meaning today if the page stays open past midnight.
+  const [datePreset, setDatePreset] = useState<DateRangePreset | null>(DEFAULT_DATE_PRESET);
+  const [customRange, setCustomRange] = useState<DateRange>(() =>
+    getTimesheetDateRange(DEFAULT_DATE_PRESET),
+  );
   // Shared by the Weekly and Calendar tabs so switching between them keeps
   // the same week in view.
   const [weekOffset, setWeekOffset] = useState(0);
@@ -50,10 +59,10 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
 
-  const dailyRange = getTimesheetDateRange(datePreset);
+  const dailyRange = datePreset ? getTimesheetDateRange(datePreset) : customRange;
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
-    { membershipId, from: dailyRange?.from, to: dailyRange?.to },
+    { membershipId, from: dailyRange.from, to: dailyRange.to },
     { enabled: viewMode === "daily" },
   );
 
@@ -68,7 +77,7 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   const activeEntries = viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data;
   const activeFilenameBase =
     viewMode === "daily"
-      ? `timesheet-${datePreset}`
+      ? `timesheet-${format(dailyRange.from, "yyyy-MM-dd")}-to-${format(dailyRange.to, "yyyy-MM-dd")}`
       : `timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}`;
 
   return (
@@ -137,8 +146,12 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
           organisationId={organisationId}
           isOwnTimesheet={isOwnTimesheet}
           datePreset={datePreset}
-          onDatePresetChange={setDatePreset}
+          defaultDatePreset={DEFAULT_DATE_PRESET}
           range={dailyRange}
+          onDateRangeChange={(range, preset) => {
+            setCustomRange(range);
+            setDatePreset(preset);
+          }}
           entries={dailyEntriesQuery.data}
           isLoading={dailyEntriesQuery.isLoading}
           isError={dailyEntriesQuery.isError}

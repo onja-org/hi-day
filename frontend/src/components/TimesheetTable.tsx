@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
-import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
 import { TimesheetDayGroupSection } from "./TimesheetDayGroupSection";
@@ -12,27 +11,20 @@ type TimesheetTableProps = {
   entries: TimeEntryListItem[];
   /** True when viewing the caller's own timesheet — only changes the empty-state copy. */
   isOwnTimesheet: boolean;
-  /** Defaults to "today". */
-  datePreset?: TimesheetDatePreset;
-};
-
-const DATE_PRESET_EMPTY_LABEL: Record<Exclude<TimesheetDatePreset, "all">, string> = {
-  today: "today",
-  yesterday: "yesterday",
-  this_week: "this week",
-  this_month: "this month",
+  /** The period named in the empty-state copy ("for <label>"). Defaults to "today". */
+  emptyPeriodLabel?: string;
 };
 
 export function TimesheetTable({
   organisationId,
   entries,
   isOwnTimesheet,
-  datePreset = "today",
+  emptyPeriodLabel = "today",
 }: TimesheetTableProps) {
   const [editingEntry, setEditingEntry] = useState<TimeEntryListItem | null>(null);
 
   if (entries.length === 0) {
-    const period = datePreset === "all" ? "" : ` for ${DATE_PRESET_EMPTY_LABEL[datePreset]}`;
+    const period = ` for ${emptyPeriodLabel}`;
     return (
       <p className="text-slate-900">
         {isOwnTimesheet ? `No hours logged${period} yet.` : `No hours logged${period}.`}

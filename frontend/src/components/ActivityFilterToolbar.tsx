@@ -1,7 +1,9 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ActivityDayNavigator } from "./ActivityDayNavigator";
+import { differenceInCalendarDays } from "date-fns";
+import { getDayRange } from "@/lib/getDayRange";
+import { DayNavigator } from "./DayNavigator";
 import { MemberFilterSelect } from "./MemberFilterSelect";
 import { ProjectFilterSelect, UNTRACKED_PROJECT_VALUE } from "./ProjectFilterSelect";
 
@@ -52,9 +54,13 @@ export function ActivityFilterToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <ActivityDayNavigator
-        dayOffset={dayOffset}
-        onChange={(offset) => updateParams({ day: offset === 0 ? null : String(offset) })}
+      <DayNavigator
+        label="Activity day"
+        value={getDayRange(new Date(), dayOffset).start}
+        onChange={(date) => {
+          const offset = differenceInCalendarDays(date, new Date());
+          updateParams({ day: offset === 0 ? null : String(offset) });
+        }}
       />
       <MemberFilterSelect
         organisationId={organisationId}

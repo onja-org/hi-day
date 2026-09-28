@@ -5,15 +5,15 @@ import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { bucketWeekly, buildDailyTotals, fromDateKey } from "@/lib/buildDailyTotals";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { fractionClass } from "@/lib/fractionClass";
-import type { TimesheetDatePreset } from "@/lib/getTimesheetDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
+import type { DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
 type TimesheetDailyChartProps = {
   organisationId: string;
   membershipId?: string;
-  datePreset: TimesheetDatePreset;
+  datePreset: DateRangePreset;
 };
 
 type ChartBar = {
