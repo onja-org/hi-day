@@ -1,7 +1,8 @@
 "use client";
 
+import clsx from "clsx";
 import { format, getDay, setDefaultOptions, startOfWeek } from "date-fns";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Calendar,
   dateFnsLocalizer,
@@ -18,8 +19,10 @@ import {
   PROJECT_COLOUR_BG_CLASSES,
   PROJECT_COLOUR_BG_MUTED_CLASSES,
 } from "./ProjectColourBadge";
+import { TimeEntryDetailModal } from "./TimeEntryDetailModal";
 
 type TimesheetCalendarGridProps = {
+  organisationId: string;
   entries: TimeEntryListItem[];
   start: Date;
   now: Date;
@@ -60,14 +63,21 @@ function CalendarEventContent({ event }: EventProps<CalendarEvent>) {
 }
 
 export function TimesheetCalendarGrid({
+  organisationId,
   entries,
   start,
   now,
 }: TimesheetCalendarGridProps) {
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const events = useMemo(
     () => buildCalendarEvents(entries, now),
     [entries, now],
   );
+  // Resolved from the live `entries` rather than stored, so the card can't
+  // outlive its entry — after an edit the list refetches and this picks up
+  // the new values, and after a delete it resolves to nothing.
+  const selectedEntry =
+    entries.find((entry) => entry.id === selectedEntryId) ?? null;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-input-border">
@@ -83,14 +93,25 @@ export function TimesheetCalendarGrid({
           toolbar={false}
           formats={formats}
           components={{ event: CalendarEventContent }}
+          onSelectEvent={(event: CalendarEvent) => setSelectedEntryId(event.entryId)}
           eventPropGetter={(event: CalendarEvent) => ({
-            className:
+            className: clsx(
+              "cursor-pointer",
               event.kind === "work"
                 ? PROJECT_COLOUR_BG_CLASSES[event.projectColour]
                 : PROJECT_COLOUR_BG_MUTED_CLASSES[event.projectColour],
+            ),
           })}
         />
       </div>
+
+      {selectedEntry && (
+        <TimeEntryDetailModal
+          organisationId={organisationId}
+          entry={selectedEntry}
+          onClose={() => setSelectedEntryId(null)}
+        />
+      )}
     </div>
   );
 }

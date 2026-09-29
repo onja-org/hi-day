@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { HALF_HOUR_MS, useNow } from "@/hooks/useNow";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
+import { TimesheetBatchActions } from "./TimesheetBatchActions";
 import { TimesheetDayGroupSection } from "./TimesheetDayGroupSection";
 
 type TimesheetTableProps = {
@@ -22,6 +24,34 @@ export function TimesheetTable({
   emptyPeriodLabel = "today",
 }: TimesheetTableProps) {
   const [editingEntry, setEditingEntry] = useState<TimeEntryListItem | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const now = useNow(HALF_HOUR_MS);
+
+  function toggleSelected(entryId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+      return next;
+    });
+  }
+
+  function toggleDay(entryIds: string[], selected: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of entryIds) {
+        if (selected) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+  }
 
   if (entries.length === 0) {
     const period = ` for ${emptyPeriodLabel}`;
@@ -32,29 +62,42 @@ export function TimesheetTable({
     );
   }
 
-  const dayGroups = groupTimeEntriesByDay(entries);
+  const dayGroups = groupTimeEntriesByDay(entries, now);
+
+  // Ticked rows can vanish from under the selection (deleted from their own
+  // menu, filtered out by a date change), so the batch action only ever sees
+  // ids still on screen.
+  const visibleSelectedIds = entries
+    .filter((entry) => selectedIds.has(entry.id))
+    .map((entry) => entry.id);
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-input-border">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-input-border text-slate-900">
-            <th className="px-3 py-2 font-medium">Project</th>
-            <th className="px-3 py-2 font-medium">Task</th>
-            <th className="px-3 py-2 font-medium">Time</th>
-            <th className="px-3 py-2 font-medium text-right">Duration</th>
-            <th className="px-3 py-2 font-medium" />
-          </tr>
-        </thead>
-        {dayGroups.map((group, index) => (
-          <TimesheetDayGroupSection
-            key={group.dateKey}
-            group={group}
-            onEdit={setEditingEntry}
-            defaultOpen={index === 0}
-          />
-        ))}
-      </table>
+    <div className="flex flex-col gap-3">
+      {/* Always rendered — see TimesheetBatchActions for why it hides itself
+          rather than being unmounted. */}
+      <div>
+        <TimesheetBatchActions
+          organisationId={organisationId}
+          selectedIds={visibleSelectedIds}
+          onDeleted={() => setSelectedIds(new Set())}
+        />
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-input-border">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          {dayGroups.map((group) => (
+            <TimesheetDayGroupSection
+              key={group.dateKey}
+              organisationId={organisationId}
+              group={group}
+              onEdit={setEditingEntry}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+              onToggleDay={toggleDay}
+            />
+          ))}
+        </table>
+      </div>
 
       {editingEntry && (
         <TimeEntryFormModal

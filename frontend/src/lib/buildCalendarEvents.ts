@@ -4,6 +4,10 @@ import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type CalendarEvent = {
+  /** The Time entry this block came from — one entry can produce several
+   * events (pause segments, midnight splits), and they all carry the same
+   * id so clicking any of them opens the one underlying entry. */
+  entryId: string;
   start: Date;
   end: Date;
   kind: "work" | "paused";
@@ -66,6 +70,7 @@ export function buildCalendarEvents(
     for (const segment of splitEntryIntoSegments(entry, now)) {
       for (const piece of splitSegmentByDay(segment)) {
         events.push({
+          entryId: entry.id,
           start: piece.startedAt,
           end: piece.endedAt,
           kind: piece.kind,

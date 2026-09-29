@@ -24,7 +24,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Modal title={title} onClose={onClose}>
-      <p className="text-slate-900">{message}</p>
+      {/* pre-line so a caller can pass a multi-line message (e.g. one line
+          per field being changed) without needing its own dialog. */}
+      <p className="whitespace-pre-line text-slate-900">{message}</p>
       <div className="flex justify-end gap-3">
         <button
           type="button"

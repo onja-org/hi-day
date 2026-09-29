@@ -18,7 +18,10 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
     pausedAt: null,
     pausedSeconds: 0,
     durationSeconds: 3600,
+    memberName: "Sam Rivers",
+    memberEmail: "sam@example.test",
     canEdit: true,
+    canDelete: true,
     pauses: [],
     ...overrides,
   };
@@ -26,7 +29,6 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
 
 describe("groupTimeEntriesByDay", () => {
   it("groups entries that share a local calendar day", () => {
-    const now = new Date(2026, 0, 5, 12, 0);
     const entries = [
       makeEntry({
         id: "te-1",
@@ -42,28 +44,27 @@ describe("groupTimeEntriesByDay", () => {
       }),
     ];
 
-    const groups = groupTimeEntriesByDay(entries, now);
+    const groups = groupTimeEntriesByDay(entries);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].entries).toHaveLength(2);
     expect(groups[0].totalSeconds).toBe(5400);
-    expect(groups[0].label).toBe("Today");
   });
 
   it("keeps different days as separate groups, in first-seen order", () => {
-    const now = new Date(2026, 0, 5, 12, 0);
     const entries = [
-      makeEntry({ id: "te-today", startedAt: new Date(2026, 0, 5, 9, 0).toISOString() }),
-      makeEntry({ id: "te-yesterday", startedAt: new Date(2026, 0, 4, 9, 0).toISOString() }),
+      makeEntry({ id: "te-later", startedAt: new Date(2026, 0, 5, 9, 0).toISOString() }),
+      makeEntry({ id: "te-earlier", startedAt: new Date(2026, 0, 4, 9, 0).toISOString() }),
     ];
 
-    const groups = groupTimeEntriesByDay(entries, now);
+    const groups = groupTimeEntriesByDay(entries);
 
-    expect(groups.map((g) => g.label)).toEqual(["Today", "Yesterday"]);
+    expect(groups.map((g) => g.dateKey)).toEqual(["2026-01-05", "2026-01-04"]);
   });
 
-  it("excludes a still-running entry from the day's total", () => {
-    const now = new Date(2026, 0, 5, 12, 0);
+  // With no clock reading there is nothing to measure a running entry
+  // against — server rendering is exactly that case.
+  it("counts a still-running entry as nothing when given no clock", () => {
     const entries = [
       makeEntry({
         id: "te-running",
@@ -73,20 +74,48 @@ describe("groupTimeEntriesByDay", () => {
       }),
     ];
 
-    const groups = groupTimeEntriesByDay(entries, now);
-
-    expect(groups[0].totalSeconds).toBe(0);
+    expect(groupTimeEntriesByDay(entries)[0].totalSeconds).toBe(0);
   });
 
-  it("labels a day further back with a formatted date, not Today/Yesterday", () => {
-    const now = new Date(2026, 0, 10, 12, 0);
+  it("counts what a still-running entry has accrued when given a clock", () => {
+    const entries = [
+      makeEntry({
+        id: "te-running",
+        startedAt: new Date(2026, 0, 5, 11, 0).toISOString(),
+        endedAt: null,
+        durationSeconds: null,
+      }),
+    ];
+
+    const groups = groupTimeEntriesByDay(entries, new Date(2026, 0, 5, 12, 0));
+
+    expect(groups[0].totalSeconds).toBe(3600);
+  });
+
+  it("labels the current day Today", () => {
+    const entries = [makeEntry({ startedAt: new Date().toISOString() })];
+
+    expect(groupTimeEntriesByDay(entries)[0].label).toBe("Today");
+  });
+
+  // Only the current day is unmistakable without knowing today's date —
+  // "Yesterday" goes stale the moment a timesheet is exported or
+  // screenshotted, so every other day gets a real one.
+  it("dates the day before rather than calling it Yesterday", () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const entries = [makeEntry({ startedAt: yesterday.toISOString() })];
+
+    const [group] = groupTimeEntriesByDay(entries);
+
+    expect(group.label).not.toBe("Yesterday");
+    expect(group.label).toContain(String(yesterday.getFullYear()));
+  });
+
+  it("spells out the year, so an exported timesheet stays unambiguous", () => {
     const entries = [makeEntry({ startedAt: new Date(2026, 0, 1, 9, 0).toISOString() })];
 
-    const groups = groupTimeEntriesByDay(entries, now);
-
-    expect(groups[0].label).not.toBe("Today");
-    expect(groups[0].label).not.toBe("Yesterday");
-    expect(groups[0].label).toContain("Jan");
+    expect(groupTimeEntriesByDay(entries)[0].label).toContain("2026");
   });
 
   it("returns an empty array for no entries", () => {

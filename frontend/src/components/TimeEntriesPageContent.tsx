@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { format } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
@@ -54,7 +55,23 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   const organisationQuery = useCurrentOrganisation();
   const canViewOthers =
     organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
+  // Adding, editing and deleting entries are all admin-only — a member
+  // logs time by running a timer, not by typing it in.
+  const isAdmin = organisationQuery.data?.role === "admin";
   const membersQuery = useActiveMembers(organisationId);
+  // The picker names the signed-in account rather than saying "My
+  // timesheet": an admin switching between people reads a list of names, and
+  // one entry phrased in the first person doesn't tell them *which* name it
+  // stands for.
+  const profileQuery = useMyProfile();
+  const ownLabel = profileQuery.data?.name ?? profileQuery.data?.email ?? "Me";
+  // The signed-in account is already the first option, so drop it from the
+  // rest of the list — otherwise the same name appears twice, once meaning
+  // "self" and once meaning "that membership", which is exactly the
+  // confusion this naming was meant to end.
+  const otherMembers = (membersQuery.data ?? []).filter(
+    (member) => member.userId !== organisationQuery.data?.userId,
+  );
 
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
@@ -94,17 +111,18 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
             <select
               value={viewingMembershipId}
               onChange={(event) => setViewingMembershipId(event.target.value)}
+              aria-label="Whose timesheet to view"
               className="rounded-md border border-input-border bg-white px-3 py-1.5 text-sm text-slate-900"
             >
-              <option value="">My timesheet</option>
-              {membersQuery.data.map((member) => (
+              <option value="">{ownLabel}</option>
+              {otherMembers.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.name ?? member.email}
                 </option>
               ))}
             </select>
           )}
-          {isOwnTimesheet && (
+          {isAdmin && (
             <button
               type="button"
               onClick={() => setAddingTime(true)}
@@ -179,7 +197,12 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
           )}
 
           {weekEntriesQuery.data && viewMode === "calendar" && (
-            <TimesheetCalendarGrid entries={weekEntriesQuery.data} start={weekStart} now={now} />
+            <TimesheetCalendarGrid
+              organisationId={organisationId}
+              entries={weekEntriesQuery.data}
+              start={weekStart}
+              now={now}
+            />
           )}
         </div>
       )}
@@ -187,6 +210,7 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
       {addingTime && (
         <TimeEntryFormModal
           organisationId={organisationId}
+          forMembershipId={membershipId}
           onClose={() => setAddingTime(false)}
         />
       )}
