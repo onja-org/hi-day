@@ -50,7 +50,7 @@ type TaskKanbanBoardProps = {
   organisationId: string;
   projectId: string;
   tasks: Task[];
-  /** Project admin: can move any card and open it for editing. */
+  /** Project admin: can move any card and edit it once opened. */
   canManage: boolean;
   isArchived: boolean;
   onOpenTask: (task: Task) => void;
@@ -66,10 +66,14 @@ export function TaskKanbanBoard({
 }: TaskKanbanBoardProps) {
   const [dragging, setDragging] = useState<Task | null>(null);
   const setStage = useSetTaskStage(organisationId, projectId);
-  // A small move threshold so a tap on the handle doesn't count as a drag.
+  // A small move threshold so a plain click opens the card instead of dragging it.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: jumpColumns }),
+    // Space picks a card up; Enter is left free to open it.
+    useSensor(KeyboardSensor, {
+      coordinateGetter: jumpColumns,
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
+    }),
   );
 
   const groups = groupTasksByStage(tasks);
@@ -106,7 +110,7 @@ export function TaskKanbanBoard({
             label={label}
             tasks={groups[stage]}
             canMove={canMove}
-            onOpenTask={canManage && !isArchived ? onOpenTask : undefined}
+            onOpenTask={onOpenTask}
           />
         ))}
       </div>

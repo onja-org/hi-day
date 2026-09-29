@@ -21,14 +21,13 @@ export class AppEventsController {
   getMyDay(
     @Query('date') date: string | undefined,
     @Query('projectId') projectId: string | undefined,
-    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<AppActivityDay> {
     return this.appEventsService.getMyDay(
       request.organisationId!,
       request.userId,
       date,
-      { projectId: untracked === '1' ? null : projectId },
+      { projectId },
     );
   }
 }

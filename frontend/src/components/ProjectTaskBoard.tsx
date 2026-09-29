@@ -5,6 +5,7 @@ import { useProjectTasks } from "@/hooks/useProjectTasks";
 import type { Task } from "@/types/task";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
+import { TaskDetailModal } from "./TaskDetailModal";
 import { TaskFormModal } from "./TaskFormModal";
 import { TaskKanbanBoard } from "./TaskKanbanBoard";
 import { TaskListView } from "./TaskListView";
@@ -20,7 +21,8 @@ type ProjectTaskBoardProps = {
  * assigned to them (the backend enforces the same). */
 export function ProjectTaskBoard({ organisationId, projectId, view }: ProjectTaskBoardProps) {
   const tasksQuery = useProjectTasks(organisationId, projectId);
-  const [formTask, setFormTask] = useState<Task | "new" | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [openTask, setOpenTask] = useState<Task | null>(null);
 
   if (tasksQuery.isLoading) {
     return (
@@ -47,7 +49,7 @@ export function ProjectTaskBoard({ organisationId, projectId, view }: ProjectTas
     tasks,
     canManage,
     isArchived,
-    onOpenTask: (task: Task) => setFormTask(task),
+    onOpenTask: (task: Task) => setOpenTask(task),
   };
 
   return (
@@ -55,13 +57,13 @@ export function ProjectTaskBoard({ organisationId, projectId, view }: ProjectTas
       <div className="flex min-h-9 items-center justify-between gap-4">
         <p className="text-sm text-slate-900/70">
           {canManage
-            ? "Drag cards by their handle to change status."
-            : "You can move the tasks assigned to you."}
+            ? "Drag a card to change its status, or open it to edit."
+            : "You can move the tasks assigned to you. Open a task to see its details."}
         </p>
         {canManage && !isArchived && (
           <button
             type="button"
-            onClick={() => setFormTask("new")}
+            onClick={() => setCreating(true)}
             className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
           >
             Add task
@@ -71,13 +73,21 @@ export function ProjectTaskBoard({ organisationId, projectId, view }: ProjectTas
 
       {view === "kanban" ? <TaskKanbanBoard {...viewProps} /> : <TaskListView {...viewProps} />}
 
-      {formTask && (
+      {creating && (
         <TaskFormModal
           organisationId={organisationId}
           projectId={projectId}
-          task={formTask === "new" ? undefined : formTask}
-          onClose={() => setFormTask(null)}
-          onSaved={() => setFormTask(null)}
+          onClose={() => setCreating(false)}
+          onSaved={() => setCreating(false)}
+        />
+      )}
+      {openTask && (
+        <TaskDetailModal
+          organisationId={organisationId}
+          task={openTask}
+          canManage={canManage && !isArchived}
+          canMove={!isArchived && (canManage || openTask.assignedToMe)}
+          onClose={() => setOpenTask(null)}
         />
       )}
     </div>

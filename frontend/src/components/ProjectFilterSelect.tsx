@@ -3,12 +3,9 @@
 import { useProjects } from "@/hooks/useProjects";
 import { SearchableSelect } from "./SearchableSelect";
 
-export const UNTRACKED_PROJECT_VALUE = "untracked";
-
 type ProjectFilterSelectProps = {
   organisationId: string;
-  /** "" = all projects, UNTRACKED_PROJECT_VALUE = no covering time entry,
-   * anything else = a real project id. */
+  /** "" = all projects, anything else = a real project id. */
   value: string;
   onChange: (value: string) => void;
 };
@@ -37,7 +34,6 @@ export function ProjectFilterSelect({
       options={[
         { value: "", label: "All projects" },
         ...(projectsQuery.data?.map((project) => ({ value: project.id, label: project.name })) ?? []),
-        { value: UNTRACKED_PROJECT_VALUE, label: "Untracked" },
       ]}
     />
   );

@@ -144,7 +144,6 @@ export class MembershipsController {
     @Param('membershipId') membershipId: string,
     @Query('date') date: string | undefined,
     @Query('projectId') projectId: string | undefined,
-    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<AppActivityDay> {
     return this.appEventsService.getDayForMembership(
@@ -152,7 +151,7 @@ export class MembershipsController {
       request.userId,
       membershipId,
       date,
-      { projectId: untracked === '1' ? null : projectId },
+      { projectId },
     );
   }
 
@@ -166,7 +165,6 @@ export class MembershipsController {
     @Param('membershipId') membershipId: string,
     @Query('date') date: string | undefined,
     @Query('projectId') projectId: string | undefined,
-    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<ScreenshotSummaryItem[]> {
     return this.screenshotsService.getScreenshotsForMembership(
@@ -174,7 +172,7 @@ export class MembershipsController {
       request.userId,
       membershipId,
       date,
-      { projectId: untracked === '1' ? null : projectId },
+      { projectId },
     );
   }
 

@@ -44,7 +44,7 @@ export function TaskListView({
             task={task}
             canEdit={canManage && !isArchived}
             canMove={!isArchived && (canManage || task.assignedToMe)}
-            onEdit={() => onOpenTask(task)}
+            onOpen={() => onOpenTask(task)}
             onMove={(stage) => setStage.mutate({ taskId: task.id, stage })}
           />
         ))}

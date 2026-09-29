@@ -8,8 +8,8 @@ import { Screenshot } from '../../database/entities/screenshot.entity';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { ScreenshotsController } from '../controllers/screenshots.controller';
-import { ScreenshotStorageService } from '../services/screenshot-storage.service';
 import { ScreenshotsService } from '../services/screenshots.service';
+import { ScreenshotStorageModule } from './screenshot-storage.module';
 
 @Module({
   imports: [
@@ -17,9 +17,10 @@ import { ScreenshotsService } from '../services/screenshots.service';
     OrganisationsModule,
     JwtAuthModule,
     TimeEntriesModule,
+    ScreenshotStorageModule,
   ],
   controllers: [ScreenshotsController],
-  providers: [ScreenshotsService, ScreenshotStorageService, RoleGuard],
+  providers: [ScreenshotsService, RoleGuard],
   exports: [ScreenshotsService],
 })
 export class ScreenshotsModule {}

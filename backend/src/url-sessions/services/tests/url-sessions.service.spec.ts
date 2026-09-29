@@ -60,7 +60,16 @@ describe('UrlSessionsService', () => {
     };
   }
 
-  function makeTimeEntriesService(coveringEntries: FakeCoveringEntry[] = []) {
+  const ALL_DAY: FakeCoveringEntry = {
+    id: 'entry-day',
+    projectId: 'project-day',
+    startedAt: new Date('2026-09-08T00:00:00.000Z'),
+    endedAt: new Date('2026-09-09T00:00:00.000Z'),
+  };
+
+  function makeTimeEntriesService(
+    coveringEntries: FakeCoveringEntry[] = [ALL_DAY],
+  ) {
     return {
       listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
     } as unknown as TimeEntriesService;
@@ -271,7 +280,7 @@ describe('UrlSessionsService', () => {
           hourStart: '2026-09-08T09:00:00.000Z',
           pages: [
             {
-              projectId: null,
+              projectId: 'project-day',
               url: 'https://example.com/page',
               host: 'example.com',
               title: 'Example Page',
@@ -284,7 +293,7 @@ describe('UrlSessionsService', () => {
           hourStart: '2026-09-08T10:00:00.000Z',
           pages: [
             {
-              projectId: null,
+              projectId: 'project-day',
               url: 'https://other.example/',
               host: 'other.example',
               title: 'Example Page',
@@ -325,7 +334,9 @@ describe('UrlSessionsService', () => {
       expect(day.buckets[0].pages[0].projectId).toBe('project-1');
     });
 
-    it('filters to untracked (no covering entry) when projectId is null', async () => {
+    // Sessions outside every entry are dropped rather than labelled
+    // "untracked", so widening an entry brings them back on the next read.
+    it('omits a session no entry covers', async () => {
       const rows = [
         makeSessionRow({
           url: 'https://tracked.example/',
@@ -358,13 +369,10 @@ describe('UrlSessionsService', () => {
         'org-1',
         'user-1',
         '2026-09-08',
-        {
-          projectId: null,
-        },
       );
 
-      expect(day.buckets[0].pages).toHaveLength(1);
-      expect(day.buckets[0].pages[0].url).toBe('https://untracked.example/');
+      expect(day.buckets).toHaveLength(1);
+      expect(day.buckets[0].pages[0].url).toBe('https://tracked.example/');
     });
 
     it('rejects a malformed date', async () => {

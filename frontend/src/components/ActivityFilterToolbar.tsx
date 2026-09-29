@@ -5,7 +5,7 @@ import { differenceInCalendarDays } from "date-fns";
 import { getDayRange } from "@/lib/getDayRange";
 import { DayNavigator } from "./DayNavigator";
 import { MemberFilterSelect } from "./MemberFilterSelect";
-import { ProjectFilterSelect, UNTRACKED_PROJECT_VALUE } from "./ProjectFilterSelect";
+import { ProjectFilterSelect } from "./ProjectFilterSelect";
 
 type ActivityFilterToolbarProps = {
   organisationId: string;
@@ -47,10 +47,7 @@ export function ActivityFilterToolbar({
 
   const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
   const membershipId = searchParams.get("membershipId") ?? "";
-  const isUntracked = searchParams.get("untracked") === "1";
-  const projectId = isUntracked
-    ? UNTRACKED_PROJECT_VALUE
-    : (searchParams.get("projectId") ?? "");
+  const projectId = searchParams.get("projectId") ?? "";
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -71,13 +68,7 @@ export function ActivityFilterToolbar({
       <ProjectFilterSelect
         organisationId={organisationId}
         value={projectId}
-        onChange={(value) => {
-          if (value === UNTRACKED_PROJECT_VALUE) {
-            updateParams({ projectId: null, untracked: "1" });
-          } else {
-            updateParams({ untracked: null, projectId: value || null });
-          }
-        }}
+        onChange={(value) => updateParams({ projectId: value || null })}
       />
     </div>
   );

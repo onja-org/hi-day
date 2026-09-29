@@ -11,7 +11,7 @@ export const APP_ACTIVITY_DAY_QUERY_KEY = (
   organisationId,
   filter.membershipId ?? "self",
   filter.date ?? null,
-  filter.untracked ? "untracked" : (filter.projectId ?? "all"),
+  filter.projectId ?? "all",
 ];
 
 const APP_ACTIVITY_DEV_POLL_MS = 5_000;

@@ -19,13 +19,12 @@ type UrlActivityPageContentProps = {
  * recent-1000-rows view) stay untouched for their other two callers
  * (the dashboard preview, the member detail page). */
 export function UrlActivityPageContent({ organisationId }: UrlActivityPageContentProps) {
-  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
+  const { date, membershipId, projectId, canViewOthers } = useActivityDayFilters();
 
   const dayQuery = useUrlActivityDay(organisationId, {
     date,
     membershipId,
     projectId,
-    untracked,
   });
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const day = dayQuery.data;
@@ -58,7 +57,7 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
 
       {day && day.buckets.length === 0 && (
         <p className="text-slate-900">
-          {projectId || untracked
+          {projectId
             ? "No website activity matches this filter for this day."
             : "No website activity recorded this day."}
         </p>

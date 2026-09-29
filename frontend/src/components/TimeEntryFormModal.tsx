@@ -7,12 +7,15 @@ import { TimeEntryForm } from "./TimeEntryForm";
 type TimeEntryFormModalProps = {
   organisationId: string;
   entry?: TimeEntryListItem;
+  /** Whose timesheet a new entry lands on. Omitted, it's the caller's own. */
+  forMembershipId?: string;
   onClose: () => void;
 };
 
 export function TimeEntryFormModal({
   organisationId,
   entry,
+  forMembershipId,
   onClose,
 }: TimeEntryFormModalProps) {
   return (
@@ -25,7 +28,12 @@ export function TimeEntryFormModal({
           onSaved={onClose}
         />
       ) : (
-        <TimeEntryForm organisationId={organisationId} mode="create" onSaved={onClose} />
+        <TimeEntryForm
+          organisationId={organisationId}
+          mode="create"
+          forMembershipId={forMembershipId}
+          onSaved={onClose}
+        />
       )}
     </Modal>
   );

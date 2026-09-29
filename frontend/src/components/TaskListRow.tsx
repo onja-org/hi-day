@@ -10,11 +10,12 @@ type TaskListRowProps = {
   task: Task;
   canEdit: boolean;
   canMove: boolean;
-  onEdit: () => void;
+  /** Opens the task (status, and editing for a project admin). */
+  onOpen: () => void;
   onMove: (stage: TaskStage) => void;
 };
 
-export function TaskListRow({ task, canEdit, canMove, onEdit, onMove }: TaskListRowProps) {
+export function TaskListRow({ task, canEdit, canMove, onOpen, onMove }: TaskListRowProps) {
   const assigneeLabel = task.assignee ? (task.assignee.name ?? task.assignee.email) : null;
   const moveItems = TASK_STAGES.filter(({ stage }) => stage !== task.stage).map(({ stage, label }) => ({
     label: `Move to ${label}`,
@@ -24,7 +25,13 @@ export function TaskListRow({ task, canEdit, canMove, onEdit, onMove }: TaskList
   return (
     <tr className="border-b border-input-border last:border-b-0 hover:bg-cream/30">
       <td className="px-4 py-3">
-        <span className="font-medium text-slate-900">{task.name}</span>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="cursor-pointer text-left font-medium text-slate-900 hover:text-primary hover:underline"
+        >
+          {task.name}
+        </button>
         {task.description && (
           <span className="block max-w-md truncate text-xs text-slate-900/60">{task.description}</span>
         )}
@@ -53,7 +60,7 @@ export function TaskListRow({ task, canEdit, canMove, onEdit, onMove }: TaskList
         {(canEdit || canMove) && (
           <ActionsMenu
             items={[
-              ...(canEdit ? [{ label: "Edit task", onSelect: onEdit }] : []),
+              ...(canEdit ? [{ label: "Edit task", onSelect: onOpen }] : []),
               ...(canMove ? moveItems : []),
             ]}
           />

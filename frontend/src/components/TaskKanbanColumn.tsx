@@ -10,7 +10,7 @@ type TaskKanbanColumnProps = {
   label: string;
   tasks: Task[];
   canMove: (task: Task) => boolean;
-  onOpenTask?: (task: Task) => void;
+  onOpenTask: (task: Task) => void;
 };
 
 export function TaskKanbanColumn({ stage, label, tasks, canMove, onOpenTask }: TaskKanbanColumnProps) {
@@ -38,7 +38,7 @@ export function TaskKanbanColumn({ stage, label, tasks, canMove, onOpenTask }: T
             key={task.id}
             task={task}
             movable={canMove(task)}
-            onOpen={onOpenTask ? () => onOpenTask(task) : undefined}
+            onOpen={() => onOpenTask(task)}
           />
         ))}
       </ul>
