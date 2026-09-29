@@ -8,6 +8,7 @@ export type PendingInvitation = {
   email: string;
   role: MembershipRole;
   teamId: string | null;
+  projectIds: string[];
   status: InvitationStatus;
   createdAt: string;
   expiresAt: string | null;
@@ -21,6 +22,7 @@ export type InviteEntryInput = {
   email: string;
   role: MembershipRole;
   teamId?: string;
+  projectIds?: string[];
 };
 
 export type InviteOutcome = "sent" | "resent" | "already_member" | "invalid";

@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { isEmail } from 'class-validator';
 import type { Request, Response } from 'express';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { hashToken } from '../../common/hash-token.util';
@@ -27,6 +27,10 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { Project } from '../../database/entities/project.entity';
+import { ProjectMembership } from '../../database/entities/project-membership.entity';
+import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import { Team } from '../../database/entities/team.entity';
 import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailService } from '../../email/services/email.service';
@@ -55,6 +59,7 @@ export interface InvitationSummary {
   email: string;
   role: MembershipRole;
   teamId: string | null;
+  projectIds: string[];
   status: EffectiveInvitationStatus;
   createdAt: Date;
   expiresAt: Date | null;
@@ -88,6 +93,10 @@ export class InvitationsService {
     private readonly refreshTokenService: RefreshTokenService,
     private readonly emailService: EmailService,
     private readonly auditLogService: AuditLogService,
+    @InjectRepository(Team)
+    private readonly teams: Repository<Team>,
+    @InjectRepository(Project)
+    private readonly projects: Repository<Project>,
   ) {}
 
   async createMany(
@@ -99,9 +108,29 @@ export class InvitationsService {
       where: { id: organisationId },
     });
 
+    // RoleGuard upstream only confirms admin-or-manager; a manager still
+    // can't hand out admin access by inviting someone as admin — the same
+    // rule MembershipsService.update enforces for role changes.
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: actorUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+    const callerIsAdmin = caller?.role === MembershipRole.ADMIN;
+
     const results: InvitationEntryResult[] = [];
 
     for (const entry of entries) {
+      if (entry.role === MembershipRole.ADMIN && !callerIsAdmin) {
+        results.push({
+          email: entry.email.trim().toLowerCase(),
+          outcome: 'invalid',
+          message: 'Only an admin can invite someone as an admin.',
+        });
+        continue;
+      }
       results.push(
         await this.upsertInvitation(organisation, actorUserId, entry),
       );
@@ -153,6 +182,7 @@ export class InvitationsService {
       invitation.email,
       invitation.role,
       invitation.teamId,
+      invitation.projectIds ?? [],
       actorUserId,
     );
   }
@@ -209,6 +239,7 @@ export class InvitationsService {
         email: invitation.email,
         role: invitation.role,
         teamId: invitation.teamId,
+        projectIds: invitation.projectIds ?? [],
         status: computeEffectiveInvitationStatus(invitation, now),
         createdAt: invitation.createdAt,
         expiresAt: invitation.expiresAt,
@@ -336,6 +367,28 @@ export class InvitationsService {
         );
       }
 
+      // Only projects still in this organisation and not archived — one
+      // deleted or archived since the invite was sent is skipped silently.
+      const projectIds = invitation.projectIds ?? [];
+      const projects = projectIds.length
+        ? await manager.find(Project, {
+            where: {
+              id: In(projectIds),
+              organisationId: invitation.organisationId,
+              archivedAt: IsNull(),
+            },
+          })
+        : [];
+      for (const project of projects) {
+        await manager.save(
+          manager.create(ProjectMembership, {
+            projectId: project.id,
+            membershipId: newMembership.id,
+            role: ProjectMembershipRole.MEMBER,
+          }),
+        );
+      }
+
       await manager.update(Invitation, invitation.id, {
         status: InvitationStatus.ACCEPTED,
         acceptedAt: new Date(),
@@ -395,6 +448,34 @@ export class InvitationsService {
       };
     }
 
+    const teamId = entry.teamId ?? null;
+    if (teamId) {
+      const team = await this.teams.findOne({
+        where: { id: teamId, organisationId: organisation.id },
+      });
+      if (!team) {
+        return { email, outcome: 'invalid', message: 'Team not found.' };
+      }
+    }
+
+    const projectIds = [...new Set(entry.projectIds ?? [])];
+    if (projectIds.length > 0) {
+      const projectCount = await this.projects.count({
+        where: {
+          id: In(projectIds),
+          organisationId: organisation.id,
+          archivedAt: IsNull(),
+        },
+      });
+      if (projectCount !== projectIds.length) {
+        return {
+          email,
+          outcome: 'invalid',
+          message: 'One or more projects were not found or are archived.',
+        };
+      }
+    }
+
     const existingInvitation = await this.invitations.findOne({
       where: {
         organisationId: organisation.id,
@@ -408,7 +489,8 @@ export class InvitationsService {
       existingInvitation?.id ?? null,
       email,
       entry.role,
-      entry.teamId ?? null,
+      teamId,
+      projectIds,
       actorUserId,
     );
   }
@@ -442,6 +524,7 @@ export class InvitationsService {
     email: string,
     role: MembershipRole,
     teamId: string | null,
+    projectIds: string[],
     actorUserId: string,
   ): Promise<InvitationEntryResult> {
     const isResend = invitationId !== null;
@@ -460,6 +543,7 @@ export class InvitationsService {
         await manager.update(Invitation, invitationId, {
           role,
           teamId,
+          projectIds,
           status: InvitationStatus.PENDING,
           tokenHash,
           expiresAt,
@@ -471,6 +555,7 @@ export class InvitationsService {
             email,
             role,
             teamId,
+            projectIds,
             organisationId: organisation.id,
             tokenHash,
             expiresAt,

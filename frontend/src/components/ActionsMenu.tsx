@@ -20,12 +20,14 @@ type ActionsMenuItem = {
 type ActionsMenuProps = {
   items: ActionsMenuItem[];
   label?: string;
+  /** Which edge the menu lines up with — "left" for a menu at the start of a row. */
+  align?: "left" | "right";
 };
 
 /** An "Actions ▾" button that opens a list of row actions. Items close the
  * menu before running, so anything they open (e.g. a modal) must be
  * rendered by the caller, outside this menu. */
-export function ActionsMenu({ items, label = "Actions" }: ActionsMenuProps) {
+export function ActionsMenu({ items, label = "Actions", align = "right" }: ActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -49,7 +51,13 @@ export function ActionsMenu({ items, label = "Actions" }: ActionsMenuProps) {
       </button>
 
       {open && (
-        <ul className="absolute top-full right-0 z-30 mt-1 flex w-52 flex-col rounded-md border border-primary-dark/10 bg-white py-1 shadow-lg">
+        <ul
+          className={clsx(
+            "absolute top-full z-30 mt-1 flex w-60 flex-col rounded-md border border-primary-dark/10 bg-white py-1 shadow-lg",
+            align === "right" && "right-0",
+            align === "left" && "left-0",
+          )}
+        >
           {items.map((item) => (
             <li key={item.label}>
               {item.href && !item.disabled ? (

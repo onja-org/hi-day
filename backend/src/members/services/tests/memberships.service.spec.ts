@@ -10,6 +10,8 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { MembershipsService } from '../memberships.service';
+import { AuthService } from '../../../auth/services/auth.service';
+import { User } from '../../../database/entities/user.entity';
 
 describe('MembershipsService', () => {
   function makeQueryBuilder(result: unknown[] = []) {
@@ -73,12 +75,21 @@ describe('MembershipsService', () => {
     };
   }
 
+  function makeAuthService() {
+    const forgotPassword = jest.fn().mockResolvedValue({ message: 'ok' });
+    return {
+      authService: { forgotPassword } as unknown as AuthService,
+      forgotPassword,
+    };
+  }
+
   function makeService(
     overrides: {
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
       devicesService?: DevicesService;
+      authService?: AuthService;
     } = {},
   ) {
     return new MembershipsService(
@@ -86,6 +97,7 @@ describe('MembershipsService', () => {
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
       overrides.devicesService ?? makeDevicesService().devicesService,
+      overrides.authService ?? makeAuthService().authService,
     );
   }
 
@@ -112,6 +124,10 @@ describe('MembershipsService', () => {
           userId: 'user-1',
           role: MembershipRole.MEMBER,
           teamMemberships: [{ teamId: 'team-2', isManager: false }],
+          projectMemberships: [
+            { id: 'pm-1', projectId: 'project-1' },
+            { id: 'pm-2', projectId: 'project-2' },
+          ],
           status: MembershipStatus.ACTIVE,
           createdAt: new Date('2026-01-01'),
           user: { email: 'a@b.test', name: 'A B' },
@@ -141,6 +157,7 @@ describe('MembershipsService', () => {
           teamIds: ['team-2'],
           status: MembershipStatus.ACTIVE,
           joinedAt: new Date('2026-01-01'),
+          projectIds: ['project-1', 'project-2'],
         },
       ]);
     });
@@ -226,6 +243,77 @@ describe('MembershipsService', () => {
   });
 
   describe('update', () => {
+    it("renames the member's User and saves it alongside the Membership", async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B', firstName: 'A', lastName: 'B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource, save } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          name: 'Ada Lovelace',
+        }),
+      );
+      expect(result.name).toBe('Ada Lovelace');
+    });
+
+    it('rejects a manager renaming an admin', async () => {
+      const caller = {
+        id: 'manager-membership',
+        userId: 'manager-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+      });
+
+      await expect(
+        service.update('org-1', 'membership-1', 'manager-1', {
+          firstName: 'X',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it('throws when the membership does not belong to the organisation', async () => {
       const membershipsRepo = makeMembershipsRepo({
         findOne: jest.fn().mockResolvedValue(null),
@@ -903,6 +991,121 @@ describe('MembershipsService', () => {
           deactivate: true,
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('sendPasswordResets', () => {
+    const admin = {
+      id: 'admin-membership',
+      userId: 'admin-1',
+      role: MembershipRole.ADMIN,
+      teamMemberships: [],
+    };
+
+    function target(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'membership-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        user: { email: 'a@b.test', passwordHash: 'hash' },
+        ...overrides,
+      };
+    }
+
+    it('emails the standard reset link and records it in the audit log', async () => {
+      const { authService, forgotPassword } = makeAuthService();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(admin),
+          find: jest.fn().mockResolvedValue([target()]),
+        }),
+        authService,
+        auditLogService,
+      });
+
+      const results = await service.sendPasswordResets('org-1', 'admin-1', [
+        'membership-1',
+      ]);
+
+      expect(forgotPassword).toHaveBeenCalledWith({ email: 'a@b.test' });
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'membership.password_reset_sent' }),
+      );
+      expect(results).toEqual([
+        { membershipId: 'membership-1', email: 'a@b.test', outcome: 'sent' },
+      ]);
+    });
+
+    it('skips the caller themselves, unknown members, and anyone without a password', async () => {
+      const { authService, forgotPassword } = makeAuthService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(admin),
+          find: jest.fn().mockResolvedValue([
+            target({
+              id: 'admin-membership',
+              user: { email: 'me@b.test', passwordHash: 'h' },
+            }),
+            target({
+              id: 'membership-2',
+              user: { email: 'new@b.test', passwordHash: null },
+            }),
+          ]),
+        }),
+        authService,
+      });
+
+      const results = await service.sendPasswordResets('org-1', 'admin-1', [
+        'admin-membership',
+        'membership-2',
+        'membership-missing',
+      ]);
+
+      expect(forgotPassword).not.toHaveBeenCalled();
+      expect(results.map((result) => result.outcome)).toEqual([
+        'skipped',
+        'skipped',
+        'skipped',
+      ]);
+    });
+
+    it("skips admins and people outside a manager caller's teams", async () => {
+      const { authService, forgotPassword } = makeAuthService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'manager-membership',
+            role: MembershipRole.MANAGER,
+            teamMemberships: [{ teamId: 'team-1', isManager: true }],
+          }),
+          find: jest.fn().mockResolvedValue([
+            target({ id: 'on-team' }),
+            target({ id: 'an-admin', role: MembershipRole.ADMIN }),
+            target({
+              id: 'other-team',
+              teamMemberships: [{ teamId: 'team-2', isManager: false }],
+            }),
+          ]),
+        }),
+        authService,
+      });
+
+      const results = await service.sendPasswordResets('org-1', 'manager-1', [
+        'on-team',
+        'an-admin',
+        'other-team',
+      ]);
+
+      expect(forgotPassword).toHaveBeenCalledTimes(1);
+      expect(
+        results.map((result) => [result.membershipId, result.outcome]),
+      ).toEqual([
+        ['on-team', 'sent'],
+        ['an-admin', 'skipped'],
+        ['other-team', 'skipped'],
+      ]);
     });
   });
 });

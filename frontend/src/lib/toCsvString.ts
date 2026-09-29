@@ -1,5 +1,11 @@
-function csvField(value: string): string {
-  if (/[",\n]/.test(value)) {
+// A cell starting with one of these is run as a formula by Excel/Sheets —
+// dangerous when the value is user-typed (a name, a note). Prefixing a
+// quote makes the spreadsheet show it as plain text instead.
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+function csvField(raw: string): string {
+  const value = FORMULA_TRIGGER.test(raw) ? `'${raw}` : raw;
+  if (/[",\r\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;

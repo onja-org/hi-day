@@ -25,4 +25,18 @@ describe("toCsvString", () => {
   it("returns just the header row for no data rows", () => {
     expect(toCsvString(["A"], []).split("\n")).toEqual(["A"]);
   });
+
+  it("neutralises a field a spreadsheet would run as a formula", () => {
+    const csv = toCsvString(["Name"], [["=HYPERLINK(\"x\")"], ["+1"], ["@SUM(A1)"], ["-2"]]);
+    expect(csv.split("\n").slice(1)).toEqual([
+      '"\'=HYPERLINK(""x"")"',
+      "'+1",
+      "'@SUM(A1)",
+      "'-2",
+    ]);
+  });
+
+  it("leaves ordinary text alone", () => {
+    expect(toCsvString(["Name"], [["Ada Lovelace"]])).toBe("Name\nAda Lovelace");
+  });
 });

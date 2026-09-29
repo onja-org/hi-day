@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
-import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
+import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMembers } from "@/lib/addTeamMembers";
 import type { TeamMember } from "@/types/team";
 import { ErrorMessage } from "./ErrorMessage";
@@ -24,7 +24,7 @@ export function AddTeamMemberModal({
   existingMembers,
   onClose,
 }: AddTeamMemberModalProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateTeams(organisationId);
   const membersQuery = useActiveMembers(organisationId);
   // membershipId -> role, for every currently-checked candidate — presence
   // in the map is "checked", the value is that row's own role choice, so
@@ -43,9 +43,7 @@ export function AddTeamMemberModal({
         })),
       ),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({
-        queryKey: TEAM_DETAIL_QUERY_KEY(organisationId, teamId),
-      });
+      invalidate();
       if (result.failed.length === 0) {
         onClose();
         return;

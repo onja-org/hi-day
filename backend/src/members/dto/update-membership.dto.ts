@@ -1,4 +1,12 @@
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { ASSIGNABLE_MEMBERSHIP_ROLES } from '../assignable-membership-roles';
 
@@ -22,4 +30,26 @@ export class UpdateMembershipDto {
   @IsOptional()
   @IsString()
   disclosureRegion?: string | null;
+
+  /**
+   * The person's name. Lives on their User, which is shared across every
+   * organisation they belong to — so a rename here shows everywhere.
+   */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  firstName?: string;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  lastName?: string;
 }

@@ -5,7 +5,10 @@ import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
-import type { OrganisationProfile } from '../services/organisations.service';
+import type {
+  OrganisationProfile,
+  TeamOverview,
+} from '../services/organisations.service';
 import { OrganisationsService } from '../services/organisations.service';
 
 @Controller('organisations')
@@ -43,9 +46,7 @@ export class OrganisationsController {
     MembershipRole.MEMBER,
     MembershipRole.FINANCE,
   )
-  listTeams(
-    @Req() request: AuthenticatedRequest,
-  ): Promise<{ id: string; name: string }[]> {
+  listTeams(@Req() request: AuthenticatedRequest): Promise<TeamOverview[]> {
     return this.organisationsService.listTeams(
       request.organisationId!,
       request.userId,

@@ -4,10 +4,12 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ActivitiesService } from '../../activities/services/activities.service';
 import type { ActivityEntry } from '../../activities/services/activities.service';
 import { AppEventsService } from '../../app-events/services/app-events.service';
@@ -24,8 +26,18 @@ import { ScreenshotsService } from '../../screenshots/services/screenshots.servi
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
-import type { ActiveMemberSummary } from '../services/memberships.service';
+import { SendPasswordResetsDto } from '../dto/send-password-resets.dto';
+import type {
+  ActiveMemberListItem,
+  ActiveMemberSummary,
+  PasswordResetResult,
+} from '../services/memberships.service';
 import { MembershipsService } from '../services/memberships.service';
+
+// A bulk request counts once regardless of how many members it contains,
+// sharing the invite-create bucket (same tracker: caller + organisation).
+const PASSWORD_RESET_THROTTLE_TTL_MS = 15 * 60 * 1000;
+const PASSWORD_RESET_THROTTLE_LIMIT = 20;
 
 @Controller('organisations/:id/memberships')
 @UseGuards(JwtAuthGuard, RoleGuard)
@@ -41,11 +53,36 @@ export class MembershipsController {
   ) {}
 
   @Get()
-  list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberSummary[]> {
+  list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberListItem[]> {
     return this.membershipsService.listActiveForOrganisation(
       request.organisationId!,
       request.userId,
     );
+  }
+
+  @Post('password-resets')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    invite: {
+      limit: PASSWORD_RESET_THROTTLE_LIMIT,
+      ttl: PASSWORD_RESET_THROTTLE_TTL_MS,
+    },
+  })
+  async sendPasswordResets(
+    @Body() dto: SendPasswordResetsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ results: PasswordResetResult[]; message: string }> {
+    const results = await this.membershipsService.sendPasswordResets(
+      request.organisationId!,
+      request.userId,
+      dto.membershipIds,
+    );
+    const sent = results.filter((result) => result.outcome === 'sent').length;
+    const skipped = results.length - sent;
+    const message =
+      `Password reset email sent to ${sent} ${sent === 1 ? 'member' : 'members'}` +
+      (skipped > 0 ? `; ${skipped} skipped` : '');
+    return { results, message };
   }
 
   @Patch(':membershipId')

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { SearchInput } from "./SearchInput";
 import { TeamFormModal } from "./TeamFormModal";
 import { TeamsList } from "./TeamsList";
 
@@ -13,23 +14,26 @@ export function TeamsPageContent({ organisationId }: TeamsPageContentProps) {
   const organisationQuery = useCurrentOrganisation();
   const isAdmin = organisationQuery.data?.role === "admin";
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-primary-dark">Teams</h1>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-semibold text-primary-dark">Teams</h1>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search teams" />
         {isAdmin && (
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
-            className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+            className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
           >
-            New team
+            Add team
           </button>
         )}
       </div>
 
-      <TeamsList organisationId={organisationId} />
+      <TeamsList organisationId={organisationId} search={search} />
 
       {createOpen && (
         <TeamFormModal

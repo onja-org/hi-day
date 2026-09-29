@@ -3,8 +3,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import clsx from "clsx";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { updateTeam } from "@/lib/updateTeam";
 
 type TeamRenameFormProps = {
@@ -21,16 +21,14 @@ export function TeamRenameForm({
   currentName,
   compact = false,
 }: TeamRenameFormProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateTeams(organisationId);
   const [name, setName] = useState<string | null>(null);
 
   const renameMutation = useMutation({
     mutationFn: (newName: string) => updateTeam(organisationId, teamId, newName),
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: TEAM_DETAIL_QUERY_KEY(organisationId, teamId),
-        });
+        invalidate();
       }
     },
   });

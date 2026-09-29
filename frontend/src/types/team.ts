@@ -5,8 +5,16 @@ export type OrganisationTeam = {
   name: string;
 };
 
+/** A Teams-page row — see the backend's TeamOverview. Also what the teams
+ * list endpoint returns everywhere else (e.g. team pickers), which just
+ * ignore the extra fields. */
+export type TeamOverview = OrganisationTeam & {
+  members: TeamMember[];
+  projectCount: number;
+};
+
 export type GetOrganisationTeamsResult =
-  | { ok: true; teams: OrganisationTeam[] }
+  | { ok: true; teams: TeamOverview[] }
   | { ok: false; message: string };
 
 export type TeamMember = {

@@ -1,144 +1,78 @@
-"use client";
-
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ACTIVE_MEMBERS_QUERY_KEY } from "@/hooks/useActiveMembers";
-import { updateMembership } from "@/lib/updateMembership";
-import type { ActiveMember, MembershipRole } from "@/types/membership";
-import { MemberDisclosureRegionField } from "./MemberDisclosureRegionField";
+import { formatMembershipRole } from "@/lib/formatMembershipRole";
+import { formatShortDate } from "@/lib/formatShortDate";
+import { getInitials } from "@/lib/getInitials";
+import type { ActiveMemberListItem, MembershipRole } from "@/types/membership";
+import { AvatarStack } from "./AvatarStack";
+import { MemberRowActions } from "./MemberRowActions";
 
 type MemberRowProps = {
   organisationId: string;
-  member: ActiveMember;
+  member: ActiveMemberListItem;
+  /** Team id → name, for the Teams column. A manager's lookup only covers
+   * their own teams, so an unknown id falls back to a generic label. */
+  teamNames: Map<string, string>;
   callerRole: MembershipRole;
   callerUserId: string;
 };
 
-const ADMIN_ASSIGNABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
-const MANAGER_ASSIGNABLE_ROLES: MembershipRole[] = ["manager", "member"];
-
 export function MemberRow({
   organisationId,
   member,
+  teamNames,
   callerRole,
   callerUserId,
 }: MemberRowProps) {
-  const queryClient = useQueryClient();
-
-  const isAdmin = callerRole === "admin";
-  const isManager = callerRole === "manager";
   const isSelf = member.userId === callerUserId;
-  // Nobody — admin included — can change their own role or deactivate
-  // their own membership (self-deactivation is a one-way footgun; a
-  // deactivated membership can't reactivate itself). Admin access is also
-  // off-limits to managers entirely for anyone else — they can't touch a
-  // member who's currently admin, and the role options below never offer
-  // "admin" as a choice for a manager to grant.
-  const canModify =
-    !isSelf && (isAdmin || (isManager && member.role !== "admin"));
-  const availableRoles = isAdmin
-    ? ADMIN_ASSIGNABLE_ROLES
-    : MANAGER_ASSIGNABLE_ROLES;
-
-  function invalidateMembers() {
-    queryClient.invalidateQueries({
-      queryKey: ACTIVE_MEMBERS_QUERY_KEY(organisationId),
-    });
-  }
-
-  const roleMutation = useMutation({
-    mutationFn: (role: MembershipRole) =>
-      updateMembership(organisationId, member.id, { role }),
-    onSuccess: (result) => {
-      if (result.ok) {
-        invalidateMembers();
-      }
-    },
-  });
-
-  const deactivateMutation = useMutation({
-    mutationFn: () =>
-      updateMembership(organisationId, member.id, { deactivate: true }),
-    onSuccess: (result) => {
-      if (result.ok) {
-        invalidateMembers();
-      }
-    },
-  });
-
-  const isPending = roleMutation.isPending || deactivateMutation.isPending;
 
   return (
-    <tr className="border-b border-input-border last:border-b-0">
-      <td className="px-3 py-2 text-slate-900">
-        {member.name ?? "—"}
-        {isSelf && (
-          <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-            You
+    <tr className="border-b border-input-border last:border-b-0 hover:bg-cream/30">
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white"
+          >
+            {getInitials(member.name, member.email)}
           </span>
-        )}
+          <span className="flex min-w-0 flex-col">
+            <span className="flex items-center gap-2 font-medium text-primary">
+              <span className="truncate">{member.name ?? member.email}</span>
+              {isSelf && (
+                <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  You
+                </span>
+              )}
+            </span>
+            {member.name && (
+              <span className="truncate text-xs text-slate-900/70">{member.email}</span>
+            )}
+          </span>
+        </div>
       </td>
-      <td className="px-3 py-2 text-slate-900">{member.email}</td>
-      <td className="px-3 py-2 text-slate-900">
-        {canModify ? (
-          <select
-            value={member.role}
-            disabled={isPending}
-            onChange={(event) =>
-              roleMutation.mutate(event.target.value as MembershipRole)
-            }
-            className="rounded-md border border-input-border bg-white px-2 py-1 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            {availableRoles.map((role) => (
-              <option key={role} value={role}>
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-              </option>
-            ))}
-          </select>
-        ) : isSelf ? (
-          <select
-            value={member.role}
-            disabled
-            title="You cannot change your own role"
-            className="cursor-not-allowed rounded-md border border-input-border bg-white px-2 py-1 text-slate-900 opacity-50"
-          >
-            {availableRoles.map((role) => (
-              <option key={role} value={role}>
-                {role.charAt(0).toUpperCase() + role.slice(1)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="capitalize">{member.role}</span>
-        )}
+      <td className="hidden px-4 py-3 text-slate-900 lg:table-cell">Active</td>
+      <td className="hidden px-4 py-3 text-slate-900 sm:table-cell">
+        {formatMembershipRole(member.role)}
       </td>
-      <td className="px-3 py-2">
-        <MemberDisclosureRegionField
-          organisationId={organisationId}
-          member={member}
-          editable={canModify}
+      <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{member.projectIds.length}</td>
+      <td className="hidden px-4 py-3 md:table-cell">
+        <AvatarStack
+          tone="secondary"
+          items={member.teamIds.map((teamId) => {
+            const name = teamNames.get(teamId) ?? "Team";
+            return { id: teamId, label: name, initials: getInitials(name).charAt(0) };
+          })}
         />
       </td>
-      <td className="px-3 py-2">
-        <div className="flex items-center justify-end gap-2">
-          {canModify && (
-            <button
-              type="button"
-              onClick={() => deactivateMutation.mutate()}
-              disabled={isPending}
-              className="cursor-pointer rounded-md border border-error px-3 py-1.5 text-sm text-error transition-colors duration-150 hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Deactivate
-            </button>
-          )}
-          {isSelf && (isAdmin || isManager) && (
-            <span
-              title="You cannot deactivate your own account"
-              className="cursor-not-allowed rounded-md border border-input-border px-3 py-1.5 text-sm text-slate-900/40"
-            >
-              Deactivate
-            </span>
-          )}
-        </div>
+      <td className="hidden px-4 py-3 whitespace-nowrap text-slate-900 lg:table-cell">
+        {formatShortDate(member.joinedAt)}
+      </td>
+      <td className="px-4 py-3 text-right whitespace-nowrap">
+        <MemberRowActions
+          organisationId={organisationId}
+          member={member}
+          callerRole={callerRole}
+          isSelf={isSelf}
+        />
       </td>
     </tr>
   );

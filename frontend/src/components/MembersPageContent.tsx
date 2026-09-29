@@ -1,42 +1,44 @@
 "use client";
 
 import { useState } from "react";
-import { InviteMemberModal } from "./InviteMemberModal";
-import { MembersList } from "./MembersList";
+import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { usePendingInvitations } from "@/hooks/usePendingInvitations";
+import { InvitesTab } from "./InvitesTab";
+import { MembersTab } from "./MembersTab";
+import { PageTabs } from "./PageTabs";
 import { RequireRole } from "./RequireRole";
 
 type MembersPageContentProps = {
   organisationId: string;
 };
 
+type MembersPageTab = "members" | "invites";
+
 export function MembersPageContent({ organisationId }: MembersPageContentProps) {
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [tab, setTab] = useState<MembersPageTab>("members");
+  // Both lists load up front so each tab can show its count.
+  const membersQuery = useActiveMembers(organisationId);
+  const invitationsQuery = usePendingInvitations(organisationId);
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-primary-dark">Members</h1>
-        <RequireRole role={["admin", "manager"]}>
-          <button
-            type="button"
-            onClick={() => setInviteOpen(true)}
-            className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
-          >
-            Invite people
-          </button>
-        </RequireRole>
-      </div>
+    <RequireRole role={["admin", "manager"]}>
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-semibold text-primary-dark">
+          {tab === "members" ? "Members" : "Invites"}
+        </h1>
 
-      <RequireRole role={["admin", "manager"]}>
-        <MembersList organisationId={organisationId} />
-      </RequireRole>
-
-      {inviteOpen && (
-        <InviteMemberModal
-          organisationId={organisationId}
-          onClose={() => setInviteOpen(false)}
+        <PageTabs
+          tabs={[
+            { key: "members", label: "Members", count: membersQuery.data?.length },
+            { key: "invites", label: "Invites", count: invitationsQuery.data?.length },
+          ]}
+          active={tab}
+          onChange={setTab}
         />
-      )}
-    </div>
+
+        {tab === "members" && <MembersTab organisationId={organisationId} />}
+        {tab === "invites" && <InvitesTab organisationId={organisationId} />}
+      </div>
+    </RequireRole>
   );
 }

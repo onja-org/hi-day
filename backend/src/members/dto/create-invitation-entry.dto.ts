@@ -1,4 +1,12 @@
-import { IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MinLength,
+} from 'class-validator';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { ASSIGNABLE_MEMBERSHIP_ROLES } from '../assignable-membership-roles';
 
@@ -13,4 +21,11 @@ export class CreateInvitationEntryDto {
   @IsOptional()
   @IsUUID()
   teamId?: string;
+
+  /** Projects to add the invitee to (as a project member) on accepting. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  projectIds?: string[];
 }

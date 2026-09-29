@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import {
-  ORGANISATION_TEAMS_QUERY_KEY,
-  useOrganisationTeams,
-} from "@/hooks/useOrganisationTeams";
+import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
+import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { deleteTeam } from "@/lib/deleteTeam";
+import { matchesSearch } from "@/lib/matchesSearch";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -15,25 +14,22 @@ import { TeamListRow } from "./TeamListRow";
 
 type TeamsListProps = {
   organisationId: string;
+  search: string;
 };
 
-export function TeamsList({ organisationId }: TeamsListProps) {
-  const queryClient = useQueryClient();
+export function TeamsList({ organisationId, search }: TeamsListProps) {
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
-  const [search, setSearch] = useState("");
+  const invalidate = useInvalidateTeams(organisationId);
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
 
   const isAdmin = organisationQuery.data?.role === "admin";
+  const callerUserId = organisationQuery.data?.userId;
 
   const deleteMutation = useMutation({
     mutationFn: (teamId: string) => deleteTeam(organisationId, teamId),
     onSuccess: (result) => {
-      if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: ORGANISATION_TEAMS_QUERY_KEY(organisationId),
-        });
-      }
+      if (result.ok) invalidate();
       setDeletingTeamId(null);
     },
   });
@@ -51,58 +47,51 @@ export function TeamsList({ organisationId }: TeamsListProps) {
     return (
       <ErrorMessage
         message={
-          teamsQuery.error instanceof Error
-            ? teamsQuery.error.message
-            : "Could not load teams."
+          teamsQuery.error instanceof Error ? teamsQuery.error.message : "Could not load teams."
         }
       />
     );
   }
 
-  const search_ = search.trim().toLowerCase();
-  const teams = teamsQuery.data.filter((team) =>
-    search_ ? team.name.toLowerCase().includes(search_) : true,
-  );
-
-  const teamPendingDelete = teamsQuery.data.find(
-    (team) => team.id === deletingTeamId,
-  );
+  const teams = teamsQuery.data.filter((team) => matchesSearch([team.name], search));
+  const teamPendingDelete = teamsQuery.data.find((team) => team.id === deletingTeamId);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label htmlFor="team-search" className="sr-only">
-          Search teams
-        </label>
-        <input
-          id="team-search"
-          type="search"
-          placeholder="Search by name"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900 sm:w-64"
-        />
-      </div>
-
-      {teams.length === 0 ? (
-        <p className="text-slate-900">
-          {teamsQuery.data.length === 0
-            ? "No teams yet."
-            : "No teams match your search."}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
+    <>
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-input-border text-primary-dark">
+            <th className="px-4 py-3 font-semibold">Name</th>
+            <th className="hidden px-4 py-3 font-semibold sm:table-cell">Members</th>
+            <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            <th className="px-4 py-3 font-semibold">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
           {teams.map((team) => (
             <TeamListRow
               key={team.id}
               organisationId={organisationId}
               team={team}
               isAdmin={isAdmin}
+              canManageMembers={
+                isAdmin ||
+                team.members.some((member) => member.userId === callerUserId && member.isManager)
+              }
               onDelete={() => setDeletingTeamId(team.id)}
             />
           ))}
-        </ul>
-      )}
+          {teams.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-4 py-8 text-center text-slate-900">
+                {teamsQuery.data.length === 0 ? "No teams yet." : "No teams match your search."}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
       {teamPendingDelete && (
         <ConfirmDialog
@@ -115,6 +104,6 @@ export function TeamsList({ organisationId }: TeamsListProps) {
           onClose={() => setDeletingTeamId(null)}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -55,6 +55,6 @@ function emailTracker(req: Request): string {
     LoginAttemptTracker,
     CaptchaService,
   ],
-  exports: [PasswordService, TokenService, RefreshTokenService],
+  exports: [AuthService, PasswordService, TokenService, RefreshTokenService],
 })
 export class AuthModule {}

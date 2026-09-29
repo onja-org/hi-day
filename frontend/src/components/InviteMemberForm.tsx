@@ -3,12 +3,15 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
+import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import type { MembershipRole } from "@/types/membership";
 import { InviteEmailsField } from "./InviteEmailsField";
+import { InviteProjectsField } from "./InviteProjectsField";
 import { InviteResultsList } from "./InviteResultsList";
 import { Spinner } from "./Spinner";
 
@@ -16,11 +19,17 @@ type InviteMemberFormProps = {
   organisationId: string;
 };
 
-const ROLES: MembershipRole[] = ["admin", "manager", "member"];
+const ADMIN_INVITABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
+// Only an admin can invite someone as an admin — enforced server-side too.
+const MANAGER_INVITABLE_ROLES: MembershipRole[] = ["manager", "member"];
 
 export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
   const queryClient = useQueryClient();
   const teamsQuery = useOrganisationTeams(organisationId);
+  const organisationQuery = useCurrentOrganisation();
+  const roles =
+    organisationQuery.data?.role === "admin" ? ADMIN_INVITABLE_ROLES : MANAGER_INVITABLE_ROLES;
+  const [projectIds, setProjectIds] = useState<Set<string>>(new Set());
   const [emailsText, setEmailsText] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
@@ -29,6 +38,7 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
       emails: string[];
       role: MembershipRole;
       teamId?: string;
+      projectIds: string[];
     }) =>
       inviteMembers(
         organisationId,
@@ -36,6 +46,7 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
           email,
           role: variables.role,
           teamId: variables.teamId,
+          projectIds: variables.projectIds,
         })),
       ),
     onSuccess: (result) => {
@@ -60,7 +71,12 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
       return;
     }
 
-    mutation.mutate({ emails, role, teamId: effectiveTeamId || undefined });
+    mutation.mutate({
+      emails,
+      role,
+      teamId: effectiveTeamId || undefined,
+      projectIds: [...projectIds],
+    });
   }
 
   const results = mutation.data?.ok ? mutation.data.results : null;
@@ -78,9 +94,9 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
           defaultValue="member"
           className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
-          {ROLES.map((role) => (
+          {roles.map((role) => (
             <option key={role} value={role}>
-              {role.charAt(0).toUpperCase() + role.slice(1)}
+              {formatMembershipRole(role)}
             </option>
           ))}
         </select>
@@ -102,6 +118,12 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
           ))}
         </select>
       </label>
+
+      <InviteProjectsField
+        organisationId={organisationId}
+        selectedIds={projectIds}
+        onChange={setProjectIds}
+      />
 
       <button
         type="submit"

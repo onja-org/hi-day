@@ -64,6 +64,11 @@ export class Invitation {
   @JoinColumn({ name: 'teamId' })
   team: Team | null;
 
+  /** Projects the invitee joins (as a project member) on accepting — see
+   * InvitationsService.accept. */
+  @Column({ type: 'uuid', array: true, default: () => "'{}'" })
+  projectIds: string[];
+
   @Column({ type: 'uuid', nullable: true })
   invitedByUserId: string | null;
 

@@ -219,13 +219,64 @@ describe('OrganisationsService', () => {
 
       const teams = await service.listTeams('org-1', 'admin-1');
 
-      expect(find).toHaveBeenCalledWith({
-        where: { organisationId: 'org-1' },
-        order: { name: 'ASC' },
-      });
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { organisationId: 'org-1' },
+          order: { name: 'ASC' },
+        }),
+      );
       expect(teams).toEqual([
-        { id: 'team-2', name: 'Sales' },
-        { id: 'team-1', name: 'General' },
+        { id: 'team-2', name: 'Sales', members: [], projectCount: 0 },
+        { id: 'team-1', name: 'General', members: [], projectCount: 0 },
+      ]);
+    });
+
+    it("attaches each team's roster and assigned-project count", async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      });
+      const find = jest.fn().mockResolvedValue([
+        {
+          id: 'team-1',
+          name: 'General',
+          teamMemberships: [
+            {
+              membershipId: 'membership-1',
+              isManager: true,
+              membership: {
+                userId: 'user-1',
+                user: { name: 'Ada', email: 'ada@example.com' },
+              },
+            },
+          ],
+          projectTeams: [{ id: 'pt-1' }, { id: 'pt-2' }],
+        },
+      ]);
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo({ find }),
+        makeAuditLogService().auditLogService,
+      );
+
+      const teams = await service.listTeams('org-1', 'admin-1');
+
+      expect(teams).toEqual([
+        {
+          id: 'team-1',
+          name: 'General',
+          members: [
+            {
+              membershipId: 'membership-1',
+              userId: 'user-1',
+              name: 'Ada',
+              email: 'ada@example.com',
+              isManager: true,
+            },
+          ],
+          projectCount: 2,
+        },
       ]);
     });
 
@@ -253,7 +304,9 @@ describe('OrganisationsService', () => {
           }) as unknown,
         }),
       );
-      expect(teams).toEqual([{ id: 'team-1', name: 'General' }]);
+      expect(teams).toEqual([
+        { id: 'team-1', name: 'General', members: [], projectCount: 0 },
+      ]);
     });
 
     it('returns an empty list for a teamless member caller', async () => {
@@ -297,8 +350,8 @@ describe('OrganisationsService', () => {
       const teams = await service.listTeams('org-1', 'member-1');
 
       expect(teams).toEqual([
-        { id: 'team-1', name: 'General' },
-        { id: 'team-2', name: 'Sales' },
+        { id: 'team-1', name: 'General', members: [], projectCount: 0 },
+        { id: 'team-2', name: 'Sales', members: [], projectCount: 0 },
       ]);
     });
 

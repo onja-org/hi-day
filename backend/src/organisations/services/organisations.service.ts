@@ -55,6 +55,21 @@ interface OrganisationSettings {
   workingHoursPerDay?: number;
 }
 
+export interface TeamOverviewMember {
+  membershipId: string;
+  userId: string;
+  name: string | null;
+  email: string;
+  isManager: boolean;
+}
+
+export interface TeamOverview {
+  id: string;
+  name: string;
+  members: TeamOverviewMember[];
+  projectCount: number;
+}
+
 @Injectable()
 export class OrganisationsService {
   constructor(
@@ -133,10 +148,17 @@ export class OrganisationsService {
    * invite-form UI offers for a new invite (not backend-enforced today —
    * see docs/adr/0008).
    */
+  /**
+   * Every team the caller can see, with its roster and how many projects
+   * it's assigned to — enough for the Teams page's avatar/count columns.
+   * Visibility matches TeamViewGuard: an admin sees every team, anyone else
+   * only the teams they belong to, so no roster is exposed here that the
+   * caller couldn't already open on that team's own page.
+   */
   async listTeams(
     organisationId: string,
     callerUserId: string,
-  ): Promise<{ id: string; name: string }[]> {
+  ): Promise<TeamOverview[]> {
     const caller = await this.memberships.findOne({
       where: {
         userId: callerUserId,
@@ -150,29 +172,40 @@ export class OrganisationsService {
       throw new NotFoundException('Membership not found.');
     }
 
+    let teamIdFilter: string[] | undefined;
     if (caller.role !== MembershipRole.ADMIN) {
-      const teamIds = caller.teamMemberships.map(
+      teamIdFilter = caller.teamMemberships.map(
         (teamMembership) => teamMembership.teamId,
       );
 
-      if (teamIds.length === 0) {
+      if (teamIdFilter.length === 0) {
         return [];
       }
-
-      const teams = await this.teams.find({
-        where: { id: In(teamIds), organisationId },
-        order: { name: 'ASC' },
-      });
-
-      return teams.map((team) => ({ id: team.id, name: team.name }));
     }
 
     const teams = await this.teams.find({
-      where: { organisationId },
+      where: teamIdFilter
+        ? { id: In(teamIdFilter), organisationId }
+        : { organisationId },
+      relations: {
+        teamMemberships: { membership: { user: true } },
+        projectTeams: true,
+      },
       order: { name: 'ASC' },
     });
 
-    return teams.map((team) => ({ id: team.id, name: team.name }));
+    return teams.map((team) => ({
+      id: team.id,
+      name: team.name,
+      members: (team.teamMemberships ?? []).map((teamMembership) => ({
+        membershipId: teamMembership.membershipId,
+        userId: teamMembership.membership.userId,
+        name: teamMembership.membership.user.name,
+        email: teamMembership.membership.user.email,
+        isManager: teamMembership.isManager,
+      })),
+      projectCount: (team.projectTeams ?? []).length,
+    }));
   }
 
   /**

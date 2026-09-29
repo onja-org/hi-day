@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjects } from "@/hooks/useProjects";
 import { filterProjectsByName } from "@/lib/filterProjectsByName";
 import type { ProjectStatus } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectRow } from "./ProjectRow";
-import { ProjectsTabs } from "./ProjectsTabs";
+import { PageTabs } from "./PageTabs";
+import { SearchInput } from "./SearchInput";
 import { Spinner } from "./Spinner";
 
 type ProjectsTableProps = {
@@ -61,24 +61,17 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <ProjectsTabs active={statusTab} counts={counts} onChange={setStatusTab} />
+      <PageTabs
+        tabs={[
+          { key: "active", label: "Active", count: counts.active },
+          { key: "archived", label: "Archived", count: counts.archived },
+        ]}
+        active={statusTab}
+        onChange={setStatusTab}
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="relative flex w-full items-center sm:max-w-sm">
-          <span className="sr-only">Search projects</span>
-          <MagnifyingGlass
-            size={16}
-            aria-hidden="true"
-            className="pointer-events-none absolute left-4 text-icon"
-          />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search projects"
-            className="w-full rounded-full border border-input-border py-2 pr-4 pl-10 text-sm text-slate-900"
-          />
-        </label>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search projects" />
         {actions}
       </div>
 

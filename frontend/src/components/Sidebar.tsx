@@ -1,6 +1,5 @@
 "use client";
 
-import type { Icon } from "@phosphor-icons/react";
 import {
   Briefcase,
   ChartLineUp,
@@ -8,25 +7,20 @@ import {
   Desktop,
   Gauge,
   Gear,
+  User,
   Users,
   UsersThree,
 } from "@phosphor-icons/react";
-import clsx from "clsx";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import type { NavEntry, NavLink } from "@/types/navigation";
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
+import { SidebarNavEntries } from "./SidebarNavEntries";
 
 type SidebarProps = {
   organisationId: number;
   mobileOpen: boolean;
   onCloseMobile: () => void;
-};
-
-type NavItem = {
-  label: string;
-  href: string;
-  icon: Icon;
 };
 
 export function Sidebar({
@@ -40,40 +34,55 @@ export function Sidebar({
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
-  const items: NavItem[] = [
+  const peopleLinks: NavLink[] = [
+    ...(canSeeMembers
+      ? [
+          {
+            kind: "link" as const,
+            label: "Members",
+            href: `/organisations/${organisationId}/members`,
+            icon: Users,
+          },
+        ]
+      : []),
     {
+      kind: "link",
+      label: "Teams",
+      href: `/organisations/${organisationId}/teams`,
+      icon: UsersThree,
+    },
+  ];
+
+  const entries: NavEntry[] = [
+    {
+      kind: "link",
       label: "Dashboard",
       href: `/dashboard/${organisationId}/me`,
       icon: Gauge,
     },
     {
+      kind: "link",
       label: "Timesheets",
       href: `/organisations/${organisationId}/time_entries`,
       icon: Clock,
     },
     {
+      kind: "link",
       label: "Activity",
       href: `/organisations/${organisationId}/activities`,
       icon: ChartLineUp,
     },
     {
-      label: "Teams",
-      href: `/organisations/${organisationId}/teams`,
-      icon: UsersThree,
-    },
-    {
+      kind: "link",
       label: "Projects",
       href: `/organisations/${organisationId}/projects`,
       icon: Briefcase,
     },
+    { kind: "group", label: "People", icon: User, children: peopleLinks },
     ...(canSeeMembers
       ? [
           {
-            label: "Members",
-            href: `/organisations/${organisationId}/members`,
-            icon: Users,
-          },
-          {
+            kind: "link" as const,
             label: "Devices",
             href: `/organisations/${organisationId}/devices`,
             icon: Desktop,
@@ -83,6 +92,7 @@ export function Sidebar({
     ...(isAdmin
       ? [
           {
+            kind: "link" as const,
             label: "Settings",
             href: `/organisations/${organisationId}/settings`,
             icon: Gear,
@@ -95,7 +105,7 @@ export function Sidebar({
     <>
       {mobileOpen && (
         <MobileSidebarDrawer
-          items={items}
+          entries={entries}
           pathname={pathname}
           organisationName={organisationName}
           onClose={onCloseMobile}
@@ -115,26 +125,7 @@ export function Sidebar({
           </span>
         </div>
         <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
-          {items.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-label={item.label}
-                title={item.label}
-                className={clsx(
-                  "flex items-center justify-center gap-3 rounded-r-md border-l-2 px-3 py-2.5 text-sm font-medium transition-colors duration-150 lg:justify-start lg:pl-4",
-                  isActive && "border-primary bg-white text-primary",
-                  !isActive &&
-                    "border-transparent text-slate-900 hover:border-primary/30 hover:bg-white hover:text-primary-dark",
-                )}
-              >
-                <item.icon size={20} aria-hidden="true" />
-                <span className="hidden lg:inline">{item.label}</span>
-              </Link>
-            );
-          })}
+          <SidebarNavEntries entries={entries} pathname={pathname} variant="rail" />
         </div>
       </nav>
     </>

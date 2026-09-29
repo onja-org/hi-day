@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { TEAM_DETAIL_QUERY_KEY } from "@/hooks/useTeamDetail";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMember } from "@/lib/addTeamMember";
 import { removeTeamMember } from "@/lib/removeTeamMember";
 import type { TeamMember } from "@/types/team";
@@ -19,8 +19,7 @@ export function TeamMemberRow({
   member,
   canManage,
 }: TeamMemberRowProps) {
-  const queryClient = useQueryClient();
-  const queryKey = TEAM_DETAIL_QUERY_KEY(organisationId, teamId);
+  const invalidate = useInvalidateTeams(organisationId);
 
   const toggleManagerMutation = useMutation({
     mutationFn: (isManager: boolean) =>
@@ -30,7 +29,7 @@ export function TeamMemberRow({
       }),
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({ queryKey });
+        invalidate();
       }
     },
   });
@@ -39,7 +38,7 @@ export function TeamMemberRow({
     mutationFn: () => removeTeamMember(organisationId, teamId, member.membershipId),
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({ queryKey });
+        invalidate();
       }
     },
   });

@@ -13,6 +13,8 @@ import { TimeEntriesModule } from '../../time-entries/modules/time-entries.modul
 import { Invitation } from '../../database/entities/invitation.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { Project } from '../../database/entities/project.entity';
+import { Team } from '../../database/entities/team.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { NotesModule } from '../../notes/modules/notes.module';
@@ -31,7 +33,14 @@ function inviteCreateTracker(req: Request): string {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Invitation, Membership, User, Organisation]),
+    TypeOrmModule.forFeature([
+      Invitation,
+      Membership,
+      User,
+      Organisation,
+      Team,
+      Project,
+    ]),
     AuditLogModule,
     EmailModule,
     JwtAuthModule,

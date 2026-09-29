@@ -5,13 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, In, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { AuthService } from '../../auth/services/auth.service';
 import { DevicesService } from '../../devices/services/devices.service';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { User } from '../../database/entities/user.entity';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 
 export interface ActiveMemberSummary {
@@ -26,6 +28,21 @@ export interface ActiveMemberSummary {
   disclosureRegion: string | null;
 }
 
+/** A Members-page row — list-only, since `update()` doesn't load the
+ * project memberships this count comes from. */
+export interface ActiveMemberListItem extends ActiveMemberSummary {
+  /** Direct ProjectMemberships only (not access via a Team), matching the
+   * Projects page's Members column. */
+  projectIds: string[];
+}
+
+export interface PasswordResetResult {
+  membershipId: string;
+  email: string | null;
+  outcome: 'sent' | 'skipped';
+  message?: string;
+}
+
 @Injectable()
 export class MembershipsService {
   constructor(
@@ -34,6 +51,7 @@ export class MembershipsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
     private readonly devicesService: DevicesService,
+    private readonly authService: AuthService,
   ) {}
 
   /**
@@ -44,7 +62,7 @@ export class MembershipsService {
   async listActiveForOrganisation(
     organisationId: string,
     callerUserId: string,
-  ): Promise<ActiveMemberSummary[]> {
+  ): Promise<ActiveMemberListItem[]> {
     const caller = await this.memberships.findOne({
       where: {
         userId: callerUserId,
@@ -79,6 +97,7 @@ export class MembershipsService {
           { scopeTeamIds },
         )
         .leftJoinAndSelect('membership.teamMemberships', 'allTm')
+        .leftJoinAndSelect('membership.projectMemberships', 'projectMembership')
         .where('membership.organisationId = :organisationId', {
           organisationId,
         })
@@ -90,12 +109,21 @@ export class MembershipsService {
     } else {
       memberships = await this.memberships.find({
         where: { organisationId, status: MembershipStatus.ACTIVE },
-        relations: { user: true, teamMemberships: true },
+        relations: {
+          user: true,
+          teamMemberships: true,
+          projectMemberships: true,
+        },
         order: { createdAt: 'ASC' },
       });
     }
 
-    return memberships.map((membership) => this.toSummary(membership));
+    return memberships.map((membership) => ({
+      ...this.toSummary(membership),
+      projectIds: (membership.projectMemberships ?? []).map(
+        (projectMembership) => projectMembership.projectId,
+      ),
+    }));
   }
 
   /**
@@ -178,6 +206,14 @@ export class MembershipsService {
       membership.disclosureRegion = dto.disclosureRegion;
     }
 
+    const renames = dto.firstName !== undefined || dto.lastName !== undefined;
+    if (renames) {
+      const user = membership.user;
+      user.firstName = dto.firstName ?? user.firstName;
+      user.lastName = dto.lastName ?? user.lastName;
+      user.name = [user.firstName, user.lastName].filter(Boolean).join(' ');
+    }
+
     if (dto.deactivate) {
       membership.status = MembershipStatus.DEACTIVATED;
       membership.deactivatedAt = new Date();
@@ -185,6 +221,10 @@ export class MembershipsService {
 
     await this.dataSource.transaction(async (manager) => {
       await manager.save(Membership, membership);
+      // Saving the Membership doesn't cascade to its User.
+      if (renames) {
+        await manager.save(User, membership.user);
+      }
 
       await this.auditLogService.record(manager, {
         action: 'membership.updated',
@@ -194,6 +234,7 @@ export class MembershipsService {
           membershipId,
           role: dto.role,
           disclosureRegion: dto.disclosureRegion,
+          renamed: renames,
           deactivated: dto.deactivate ?? false,
         },
       });
@@ -209,6 +250,105 @@ export class MembershipsService {
     });
 
     return this.toSummary(membership);
+  }
+
+  /**
+   * Emails each listed member the standard password-reset link (the same
+   * one "Forgot password" sends) — the caller never sees or sets anyone's
+   * password. Uses the same who-can-modify-whom rules as `update`: never
+   * yourself (use Forgot password instead), and a manager only for
+   * non-admin members of a team they manage. Anyone not eligible, or who
+   * hasn't set a password yet, is reported as skipped rather than failing
+   * the whole batch.
+   */
+  async sendPasswordResets(
+    organisationId: string,
+    actorUserId: string,
+    membershipIds: string[],
+  ): Promise<PasswordResetResult[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: actorUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    const targets = await this.memberships.find({
+      where: {
+        id: In([...new Set(membershipIds)]),
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { user: true, teamMemberships: true },
+    });
+    const targetsById = new Map(targets.map((target) => [target.id, target]));
+
+    const results: PasswordResetResult[] = [];
+    for (const membershipId of new Set(membershipIds)) {
+      const target = targetsById.get(membershipId);
+      if (!target) {
+        results.push({
+          membershipId,
+          email: null,
+          outcome: 'skipped',
+          message: 'Member not found.',
+        });
+        continue;
+      }
+
+      const email = target.user.email;
+      const skip = (message: string) =>
+        results.push({ membershipId, email, outcome: 'skipped', message });
+
+      if (target.id === caller.id) {
+        skip('Use "Forgot password" to reset your own password.');
+        continue;
+      }
+      if (
+        caller.role === MembershipRole.MANAGER &&
+        !this.managerCanModify(caller, target, undefined)
+      ) {
+        skip('You can only reset passwords for members of your own team.');
+        continue;
+      }
+      if (!target.user.passwordHash) {
+        skip("This person hasn't set a password yet.");
+        continue;
+      }
+
+      await this.authService.forgotPassword({ email });
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.password_reset_sent',
+          organisationId,
+          actorUserId,
+          metadata: { membershipId },
+        }),
+      );
+      results.push({ membershipId, email, outcome: 'sent' });
+    }
+
+    return results;
+  }
+
+  /** The non-throwing form of `assertManagerCanModify`. */
+  private managerCanModify(
+    caller: Membership,
+    target: Membership,
+    requestedRole: MembershipRole | undefined,
+  ): boolean {
+    try {
+      this.assertManagerCanModify(caller, target, { role: requestedRole });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
