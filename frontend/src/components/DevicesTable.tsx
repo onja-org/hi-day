@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useDevices } from "@/hooks/useDevices";
 import type { DeviceStatus } from "@/types/device";
-import { DeviceRow } from "./DeviceRow";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { DeviceRow } from "@/components/DeviceRow";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { Label } from "@/components/ui/form/Label";
+import { SelectField } from "@/components/ui/form/SelectField";
+import { Spinner } from "@/components/Spinner";
 
 type DevicesTableProps = {
   organisationId: string;
@@ -59,35 +62,38 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label htmlFor="device-search" className="sr-only">
-          Search devices
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex flex-col gap-1.5 sm:w-64">
+          <Label>Search devices</Label>
+          <div className="relative flex items-center">
+            <MagnifyingGlass
+              size={16}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-4 text-icon"
+            />
+            <input
+              type="search"
+              placeholder="Search by name, email, or platform"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="h-11 w-full rounded-md border border-input-border bg-white pr-4 pl-10 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
         </label>
-        <input
-          id="device-search"
-          type="search"
-          placeholder="Search by name, email, or platform"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900 sm:w-64"
-        />
-        <label htmlFor="device-status-filter" className="sr-only">
-          Filter by status
-        </label>
-        <select
-          id="device-status-filter"
+        <SelectField
+          label="Filter by status"
+          compact
           value={statusFilter}
           onChange={(event) =>
             setStatusFilter(event.target.value as DeviceStatus | "all")
           }
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900"
         >
           {STATUS_FILTERS.map((status) => (
             <option key={status} value={status}>
               {status === "all" ? "All statuses" : status.replace("_", " ")}
             </option>
           ))}
-        </select>
+        </SelectField>
       </div>
 
       <div className="overflow-x-auto rounded-md border border-input-border">
@@ -112,7 +118,10 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
             ))}
             {devices.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-4 text-center text-slate-900">
+                <td
+                  colSpan={6}
+                  className="px-3 py-4 text-center text-slate-900"
+                >
                   {devicesQuery.data.length === 0
                     ? "No devices yet. A device appears here automatically the first time someone logs into the desktop or mobile app."
                     : "No devices match your filters."}

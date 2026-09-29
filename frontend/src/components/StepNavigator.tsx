@@ -26,7 +26,7 @@ export function StepNavigator({
   children,
 }: StepNavigatorProps) {
   return (
-    <div className="inline-flex h-10 items-stretch rounded-lg border border-input-border bg-white">
+    <div className="inline-flex h-11 items-stretch rounded-lg border border-input-border bg-white">
       <button
         type="button"
         aria-label={previousLabel}

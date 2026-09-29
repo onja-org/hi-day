@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { ImportProjectsModal } from "./ImportProjectsModal";
-import { ProjectFormModal } from "./ProjectFormModal";
-import { ProjectsTable } from "./ProjectsTable";
+import { ImportProjectsModal } from "@/components/ImportProjectsModal";
+import { ProjectFormModal } from "@/components/ProjectFormModal";
+import { ProjectsTable } from "@/components/ProjectsTable";
 
 type ProjectsPageContentProps = {
   organisationId: string;

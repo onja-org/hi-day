@@ -7,7 +7,10 @@ import { useProject } from "@/hooks/useProject";
 import { createTask } from "@/lib/createTask";
 import { updateTask } from "@/lib/updateTask";
 import type { Task, TaskFormInput, UpdateTaskInput } from "@/types/task";
-import { Spinner } from "./Spinner";
+import { SelectField } from "@/components/ui/form/SelectField";
+import { TextareaField } from "@/components/ui/form/TextareaField";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 type TaskFormProps =
   | {
@@ -86,70 +89,60 @@ export function TaskForm({
   const members = (projectQuery.data?.members ?? []).filter((member) => member.role !== "viewer");
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      <label className="flex flex-col gap-1.5">
-        Name
-        <input
-          name="name"
-          type="text"
-          required
-          maxLength={255}
-          defaultValue={task?.name}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-lg flex-col gap-5"
+    >
+      <TextField
+        label="Name"
+        name="name"
+        type="text"
+        required
+        maxLength={255}
+        defaultValue={task?.name}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Description (optional)
-        <textarea
-          name="description"
-          rows={3}
-          maxLength={2000}
-          defaultValue={task?.description ?? ""}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextareaField
+        label="Description (optional)"
+        name="description"
+        rows={3}
+        maxLength={2000}
+        defaultValue={task?.description ?? ""}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Assignee (optional)
-        <select
-          name="assigneeProjectMembershipId"
-          defaultValue={task?.assignee?.membershipId ?? ""}
-          disabled={projectQuery.isLoading}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-        >
-          <option value="">Unassigned</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name ?? member.email}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectField
+        label="Assignee (optional)"
+        name="assigneeProjectMembershipId"
+        defaultValue={task?.assignee?.membershipId ?? ""}
+        disabled={projectQuery.isLoading}
+      >
+        <option value="">Unassigned</option>
+        {members.map((member) => (
+          <option key={member.id} value={member.id}>
+            {member.name ?? member.email}
+          </option>
+        ))}
+      </SelectField>
 
       <div className="flex flex-col gap-5 sm:flex-row">
-        <label className="flex flex-1 flex-col gap-1.5">
-          Estimate in hours (optional)
-          <input
-            name="estimate"
-            type="number"
-            min="0"
-            step="0.25"
-            defaultValue={task?.estimate ?? ""}
-            placeholder="0.00"
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextField
+          label="Estimate in hours (optional)"
+          className="flex-1"
+          name="estimate"
+          type="number"
+          min="0"
+          step="0.25"
+          defaultValue={task?.estimate ?? ""}
+          placeholder="0.00"
+        />
 
-        <label className="flex flex-1 flex-col gap-1.5">
-          Due date (optional)
-          <input
-            name="dueDate"
-            type="date"
-            defaultValue={task?.dueDate ?? ""}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextField
+          label="Due date (optional)"
+          className="flex-1"
+          name="dueDate"
+          type="date"
+          defaultValue={task?.dueDate ?? ""}
+        />
       </div>
 
       <button

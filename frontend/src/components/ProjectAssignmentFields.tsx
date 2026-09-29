@@ -4,12 +4,12 @@ import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers
 import { useAssignableProjectTeams } from "@/hooks/useAssignableProjectTeams";
 import { PROJECT_MEMBERSHIP_ROLE_OPTIONS } from "@/lib/projectMembershipRoleOptions";
 import type { ProjectMembershipRole } from "@/types/project";
-import { MemberSearchChecklist } from "./MemberSearchChecklist";
-import { MultiSelectDropdown } from "./MultiSelectDropdown";
+import { CheckboxField } from "@/components/ui/form/CheckboxField";
+import { MemberSearchChecklist } from "@/components/MemberSearchChecklist";
+import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 
 type ProjectAssignmentFieldsProps = {
   organisationId: string;
-  /** Omitted on the create form (no project exists yet to scope the request to) — passed on the edit form so the picker uses the project-scoped assignable-members/teams endpoints instead of the org-wide ones. */
   projectId?: string;
   selectedMembers: Map<string, ProjectMembershipRole>;
   onMembersChange: (members: Map<string, ProjectMembershipRole>) => void;
@@ -18,13 +18,11 @@ type ProjectAssignmentFieldsProps = {
 };
 
 function pluralCount(count: number, noun: string): string {
-  return count === 0 ? `Select ${noun}s` : `${count} ${noun}${count === 1 ? "" : "s"} selected`;
+  return count === 0
+    ? `Select ${noun}s`
+    : `${count} ${noun}${count === 1 ? "" : "s"} selected`;
 }
 
-/** Member/team assignment shown on both the create- and edit-project forms.
- * On create, checking someone adds them once the project is created; on
- * edit, the checklist starts pre-checked with the project's current
- * members/teams, and un/checking one adds or removes it on save. */
 export function ProjectAssignmentFields({
   organisationId,
   projectId,
@@ -86,19 +84,20 @@ export function ProjectAssignmentFields({
           <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
             {teams.map((team) => (
               <li key={team.id}>
-                <label className="flex items-center gap-2 rounded-md border border-input-border px-3 py-2 text-slate-900">
-                  <input
-                    type="checkbox"
-                    checked={selectedTeamIds.has(team.id)}
-                    onChange={(event) => toggleTeam(team.id, event.target.checked)}
-                    className="size-4"
-                  />
-                  {team.name}
-                </label>
+                <CheckboxField
+                  label={team.name}
+                  className="rounded-md border border-input-border px-3 py-2"
+                  checked={selectedTeamIds.has(team.id)}
+                  onChange={(event) =>
+                    toggleTeam(team.id, event.target.checked)
+                  }
+                />
               </li>
             ))}
             {teams.length === 0 && (
-              <li className="text-slate-900">No teams in this organisation yet.</li>
+              <li className="text-slate-900">
+                No teams in this organisation yet.
+              </li>
             )}
           </ul>
         )}

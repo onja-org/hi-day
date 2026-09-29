@@ -2,23 +2,19 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { differenceInCalendarDays } from "date-fns";
+import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { useMyProfile } from "@/hooks/useMyProfile";
+import { useProjects } from "@/hooks/useProjects";
 import { getDayRange } from "@/lib/getDayRange";
-import { DayNavigator } from "./DayNavigator";
-import { MemberFilterSelect } from "./MemberFilterSelect";
-import { ProjectFilterSelect } from "./ProjectFilterSelect";
+import { DayNavigator } from "@/components/DayNavigator";
+import { Label } from "@/components/ui/form/Label";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 type ActivityFilterToolbarProps = {
   organisationId: string;
   canViewOthers: boolean;
 };
 
-/**
- * The shared day/member/project filter row for the Activities pages. State
- * lives in the URL query string (`?day=&membershipId=&projectId=`), not
- * component state — the four tabs are four separate routes, so local state
- * can't survive a tab switch. `ActivityTabs` forwards the current query
- * string onto every tab's link so switching tabs keeps the same filters.
- */
 export function ActivityFilterToolbar({
   organisationId,
   canViewOthers,
@@ -26,12 +22,11 @@ export function ActivityFilterToolbar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const membersQuery = useActiveMembers(organisationId);
+  const profileQuery = useMyProfile();
+  const profile = profileQuery.data;
+  const projectsQuery = useProjects(organisationId, { status: "active" });
 
-  // Applies every key in `patch` to one URLSearchParams copy and navigates
-  // once — a project-filter change touches both `projectId` and
-  // `untracked` together, and two separate router.push calls would each
-  // start from the same stale `searchParams` snapshot and clobber each
-  // other instead of combining.
   function updateParams(patch: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(patch)) {
@@ -49,8 +44,13 @@ export function ActivityFilterToolbar({
   const membershipId = searchParams.get("membershipId") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
 
+  const otherMembers = membersQuery.data?.filter(
+    (member) => member.email !== profile?.email,
+  );
+  const selfLabel = profile?.name ? `${profile.name} (You)` : "You";
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-end gap-3">
       <DayNavigator
         label="Activity day"
         value={getDayRange(new Date(), dayOffset).start}
@@ -59,17 +59,42 @@ export function ActivityFilterToolbar({
           updateParams({ day: offset === 0 ? null : String(offset) });
         }}
       />
-      <MemberFilterSelect
-        organisationId={organisationId}
-        value={membershipId}
-        onChange={(value) => updateParams({ membershipId: value || null })}
-        canViewOthers={canViewOthers}
-      />
-      <ProjectFilterSelect
-        organisationId={organisationId}
-        value={projectId}
-        onChange={(value) => updateParams({ projectId: value || null })}
-      />
+      {canViewOthers && otherMembers && (
+        <div className="flex flex-col gap-1">
+          <Label>Member</Label>
+          <SearchableSelect
+            value={membershipId}
+            onChange={(value) => updateParams({ membershipId: value || null })}
+            ariaLabel="Filter by member"
+            placeholder="Search people…"
+            noMatchesLabel="No matching people"
+            options={[
+              { value: "", label: selfLabel },
+              ...otherMembers.map((member) => ({
+                value: member.id,
+                label: member.name ?? member.email,
+              })),
+            ]}
+          />
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <Label>Project</Label>
+        <SearchableSelect
+          value={projectId}
+          onChange={(value) => updateParams({ projectId: value || null })}
+          ariaLabel="Filter by project"
+          placeholder="Search projects…"
+          noMatchesLabel="No matching projects"
+          options={[
+            { value: "", label: "All projects" },
+            ...(projectsQuery.data?.map((project) => ({
+              value: project.id,
+              label: project.name,
+            })) ?? []),
+          ]}
+        />
+      </div>
     </div>
   );
 }

@@ -7,7 +7,8 @@ import { PROJECT_MEMBERSHIP_ROLE_OPTIONS } from "@/lib/projectMembershipRoleOpti
 import { removeProjectMember } from "@/lib/removeProjectMember";
 import { updateProjectMember } from "@/lib/updateProjectMember";
 import type { ProjectDetail, ProjectMembershipRole } from "@/types/project";
-import { AddProjectMemberModal } from "./AddProjectMemberModal";
+import { SelectField } from "@/components/ui/form/SelectField";
+import { AddProjectMemberModal } from "@/components/AddProjectMemberModal";
 
 type ProjectMembersSectionProps = {
   organisationId: string;
@@ -37,7 +38,8 @@ export function ProjectMembersSection({
     }: {
       membershipId: string;
       role: ProjectMembershipRole;
-    }) => updateProjectMember(organisationId, project.id, membershipId, { role }),
+    }) =>
+      updateProjectMember(organisationId, project.id, membershipId, { role }),
     onSuccess: invalidate,
   });
 
@@ -50,7 +52,11 @@ export function ProjectMembersSection({
             type="button"
             onClick={() => setAddOpen(true)}
             disabled={isArchived}
-            title={isArchived ? "Unarchive this project to change members." : undefined}
+            title={
+              isArchived
+                ? "Unarchive this project to change members."
+                : undefined
+            }
             className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Add members
@@ -69,38 +75,39 @@ export function ProjectMembersSection({
           </thead>
           <tbody>
             {project.members.map((member) => (
-              <tr key={member.membershipId} className="border-b border-input-border last:border-b-0">
+              <tr
+                key={member.membershipId}
+                className="border-b border-input-border last:border-b-0"
+              >
                 <td className="px-3 py-2 text-slate-900">
                   {member.name ?? member.email}
                   {member.name && (
-                    <span className="block text-xs text-slate-900/70">{member.email}</span>
+                    <span className="block text-xs text-slate-900/70">
+                      {member.email}
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-slate-900">
                   {canManage ? (
-                    <>
-                      <label className="sr-only" htmlFor={`role-${member.membershipId}`}>
-                        Role for {member.name ?? member.email}
-                      </label>
-                      <select
-                        id={`role-${member.membershipId}`}
-                        value={member.role}
-                        onChange={(event) =>
-                          updateRoleMutation.mutate({
-                            membershipId: member.membershipId,
-                            role: event.target.value as ProjectMembershipRole,
-                          })
-                        }
-                        disabled={isArchived || updateRoleMutation.isPending}
-                        className="rounded-md border border-input-border bg-white px-2 py-1 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {PROJECT_MEMBERSHIP_ROLE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </>
+                    <SelectField
+                      label={`Role for ${member.name ?? member.email}`}
+                      hideLabel
+                      compact
+                      value={member.role}
+                      onChange={(event) =>
+                        updateRoleMutation.mutate({
+                          membershipId: member.membershipId,
+                          role: event.target.value as ProjectMembershipRole,
+                        })
+                      }
+                      disabled={isArchived || updateRoleMutation.isPending}
+                    >
+                      {PROJECT_MEMBERSHIP_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </SelectField>
                   ) : (
                     <span className="capitalize">{member.role}</span>
                   )}
@@ -121,8 +128,12 @@ export function ProjectMembersSection({
             ))}
             {project.members.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-3 py-4 text-center text-slate-900">
-                  No members assigned yet. Only assigned members can log time to this project.
+                <td
+                  colSpan={3}
+                  className="px-3 py-4 text-center text-slate-900"
+                >
+                  No members assigned yet. Only assigned members can log time to
+                  this project.
                 </td>
               </tr>
             )}

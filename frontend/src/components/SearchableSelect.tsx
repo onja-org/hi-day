@@ -17,8 +17,6 @@ type SearchableSelectProps = {
   noMatchesLabel?: string;
 };
 
-/** Accessible type-to-search dropdown (WAI-ARIA combobox + listbox
- * pattern) over a small, already-fetched option list. */
 export function SearchableSelect({
   options,
   value,
@@ -28,7 +26,8 @@ export function SearchableSelect({
   noMatchesLabel = "No matches",
 }: SearchableSelectProps) {
   const listboxId = useId();
-  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+  const selectedOption =
+    options.find((option) => option.value === value) ?? options[0];
 
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -36,12 +35,17 @@ export function SearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const matches = options.filter((option) => option.label.toLowerCase().includes(query.toLowerCase()));
+  const matches = options.filter((option) =>
+    option.label.toLowerCase().includes(query.toLowerCase()),
+  );
   const filteredOptions = isOpen ? matches : options;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         closeAndReset();
       }
     }
@@ -76,7 +80,9 @@ export function SearchableSelect({
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlightedIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
+      setHighlightedIndex((current) =>
+        Math.min(current + 1, filteredOptions.length - 1),
+      );
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setHighlightedIndex((current) => Math.max(current - 1, 0));
@@ -104,7 +110,11 @@ export function SearchableSelect({
           aria-expanded={isOpen}
           aria-controls={listboxId}
           aria-autocomplete="list"
-          aria-activedescendant={activeOption ? `${listboxId}-${activeOption.value || "empty"}` : undefined}
+          aria-activedescendant={
+            activeOption
+              ? `${listboxId}-${activeOption.value || "empty"}`
+              : undefined
+          }
           aria-label={ariaLabel}
           value={isOpen ? query : (selectedOption?.label ?? "")}
           onFocus={() => {
@@ -118,7 +128,7 @@ export function SearchableSelect({
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full rounded-md border border-input-border bg-white px-3 py-1.5 pr-8 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="h-11 w-full rounded-md border border-input-border bg-white px-3 pr-8 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
         {isOpen && query ? (
           <button
@@ -131,7 +141,11 @@ export function SearchableSelect({
             <X size={14} aria-hidden="true" />
           </button>
         ) : (
-          <MagnifyingGlass size={14} aria-hidden="true" className="pointer-events-none absolute right-3 text-icon" />
+          <MagnifyingGlass
+            size={14}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-3 text-icon"
+          />
         )}
       </div>
       {isOpen && (

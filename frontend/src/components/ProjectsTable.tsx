@@ -6,17 +6,16 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjects } from "@/hooks/useProjects";
 import { filterProjectsByName } from "@/lib/filterProjectsByName";
 import type { ProjectStatus } from "@/types/project";
-import { ErrorMessage } from "./ErrorMessage";
-import { ProjectRow } from "./ProjectRow";
-import { PageTabs } from "./PageTabs";
-import { ProjectBatchActions } from "./ProjectBatchActions";
-import { SearchInput } from "./SearchInput";
-import { SelectAllCheckbox } from "./SelectAllCheckbox";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { PageTabs } from "@/components/PageTabs";
+import { ProjectBatchActions } from "@/components/ProjectBatchActions";
+import { ProjectRow } from "@/components/ProjectRow";
+import { SearchInput } from "@/components/SearchInput";
+import { SelectAllCheckbox } from "@/components/SelectAllCheckbox";
+import { Spinner } from "@/components/Spinner";
 
 type ProjectsTableProps = {
   organisationId: string;
-  /** Rendered at the right of the search bar, e.g. an "Add project" button. */
   actions?: ReactNode;
 };
 
@@ -55,7 +54,8 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
   const allProjects = projectsQuery.data;
   const counts: Record<ProjectStatus, number> = {
     active: allProjects.filter((project) => project.status === "active").length,
-    archived: allProjects.filter((project) => project.status === "archived").length,
+    archived: allProjects.filter((project) => project.status === "archived")
+      .length,
   };
   const projects = filterProjectsByName(
     allProjects.filter((project) => project.status === statusTab),
@@ -122,9 +122,15 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
               </th>
             )}
             <th className="px-4 py-3 font-semibold">Name</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Teams</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Members</th>
-            <th className="hidden px-4 py-3 font-semibold sm:table-cell">Tasks</th>
+            <th className="hidden px-4 py-3 font-semibold md:table-cell">
+              Teams
+            </th>
+            <th className="hidden px-4 py-3 font-semibold md:table-cell">
+              Members
+            </th>
+            <th className="hidden px-4 py-3 font-semibold sm:table-cell">
+              Tasks
+            </th>
             <th className="px-4 py-3 font-semibold">
               <span className="sr-only">Actions</span>
             </th>
@@ -146,7 +152,9 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
             <tr>
               <td colSpan={columnCount} className="px-4 py-8 text-center text-slate-900">
                 {search.trim() && "No projects match your search."}
-                {!search.trim() && statusTab === "archived" && "No archived projects."}
+                {!search.trim() &&
+                  statusTab === "archived" &&
+                  "No archived projects."}
                 {!search.trim() &&
                   statusTab === "active" &&
                   "No projects yet. Create one to start tracking time against real work."}

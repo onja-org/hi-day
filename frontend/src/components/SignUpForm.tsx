@@ -4,8 +4,10 @@ import { useMutation } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { createAccount } from "@/lib/createAccount";
 import { parseSignUpFormData } from "@/lib/parseSignUpFormData";
-import { SignUpSuccess } from "./SignUpSuccess";
-import { Spinner } from "./Spinner";
+import { CheckboxField } from "@/components/ui/form/CheckboxField";
+import { TextField } from "@/components/ui/form/TextField";
+import { SignUpSuccess } from "@/components/SignUpSuccess";
+import { Spinner } from "@/components/Spinner";
 import Link from "next/link";
 
 export function SignUpForm() {
@@ -27,82 +29,61 @@ export function SignUpForm() {
       className="flex w-full max-w-4xl mx-auto md:px-20 lg:px-0 flex-col gap-6"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          First name
-          <input
-            name="firstName"
-            type="text"
-            autoComplete="given-name"
-            required
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextField
+          label="First name"
+          name="firstName"
+          type="text"
+          autoComplete="given-name"
+          required
+        />
 
-        <label className="flex flex-col gap-1.5">
-          Last name
-          <input
-            name="lastName"
-            type="text"
-            autoComplete="family-name"
-            required
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextField
+          label="Last name"
+          name="lastName"
+          type="text"
+          autoComplete="family-name"
+          required
+        />
       </div>
 
-      <label className="flex flex-col gap-1.5">
-        Email address
-        <input
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Email address"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Company name
-        <input
-          name="companyName"
-          type="text"
-          autoComplete="organization"
-          required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Company name"
+        name="companyName"
+        type="text"
+        autoComplete="organization"
+        required
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Address
-        <input
-          name="address"
-          type="text"
-          autoComplete="street-address"
-          required
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Address"
+        name="address"
+        type="text"
+        autoComplete="street-address"
+        required
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Website (optional)
-        <input
-          name="website"
-          type="text"
-          autoComplete="url"
-          placeholder="https://example.com"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Website (optional)"
+        name="website"
+        type="text"
+        autoComplete="url"
+        placeholder="https://example.com"
+      />
 
-      <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-900">
-        <input
-          name="agreeToTerms"
-          type="checkbox"
-          required
-          className="mt-0.5 h-4 w-4 cursor-pointer rounded border-input-border text-primary focus:ring-primary/30"
-        />
-        I agree to the Terms of Service and Privacy Policy
-      </label>
+      <CheckboxField
+        label="I agree to the Terms of Service and Privacy Policy"
+        name="agreeToTerms"
+        required
+        className="items-start text-sm"
+      />
 
       <button
         type="submit"

@@ -13,10 +13,12 @@ import type {
   ProjectFormInput,
   ProjectMembershipRole,
 } from "@/types/project";
-import { ErrorMessage } from "./ErrorMessage";
-import { ProjectAssignmentFields } from "./ProjectAssignmentFields";
-import { ProjectColourPicker } from "./ProjectColourPicker";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { TextareaField } from "@/components/ui/form/TextareaField";
+import { TextField } from "@/components/ui/form/TextField";
+import { ProjectAssignmentFields } from "@/components/ProjectAssignmentFields";
+import { ProjectColourPicker } from "@/components/ProjectColourPicker";
+import { Spinner } from "@/components/Spinner";
 
 type ProjectFormProps =
   | {
@@ -39,22 +41,27 @@ export function ProjectForm({
   onSaved,
 }: ProjectFormProps) {
   const queryClient = useQueryClient();
-  const [colour, setColour] = useState<ProjectColour>(project?.colour ?? "blue");
+  const [colour, setColour] = useState<ProjectColour>(
+    project?.colour ?? "blue",
+  );
   const [selectedMembers, setSelectedMembers] = useState<
     Map<string, ProjectMembershipRole>
   >(new Map());
-  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(
+    new Set(),
+  );
 
-  // Full member/team assignments aren't in the shallow `project` a caller
-  // may pass in (e.g. the Projects table's `ProjectListItem`) — fetched
-  // here so the edit form can pre-check them, same as the create form.
   const projectDetailQuery = useProject(organisationId, project?.id ?? "", {
     enabled: mode === "edit",
   });
 
   const seededAssignmentsRef = useRef(false);
   useEffect(() => {
-    if (mode === "edit" && !seededAssignmentsRef.current && projectDetailQuery.data) {
+    if (
+      mode === "edit" &&
+      !seededAssignmentsRef.current &&
+      projectDetailQuery.data
+    ) {
       seededAssignmentsRef.current = true;
       setSelectedMembers(
         new Map(
@@ -64,7 +71,9 @@ export function ProjectForm({
           ]),
         ),
       );
-      setSelectedTeamIds(new Set(projectDetailQuery.data.teams.map((team) => team.teamId)));
+      setSelectedTeamIds(
+        new Set(projectDetailQuery.data.teams.map((team) => team.teamId)),
+      );
     }
   }, [mode, projectDetailQuery.data]);
 
@@ -92,7 +101,9 @@ export function ProjectForm({
     },
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({ queryKey: ["projects", organisationId] });
+        queryClient.invalidateQueries({
+          queryKey: ["projects", organisationId],
+        });
         if (mode === "edit") {
           queryClient.invalidateQueries({
             queryKey: PROJECT_QUERY_KEY(organisationId, project.id),
@@ -130,32 +141,30 @@ export function ProjectForm({
   }
 
   const assignmentsNotReady =
-    mode === "edit" && (projectDetailQuery.isLoading || projectDetailQuery.isError);
+    mode === "edit" &&
+    (projectDetailQuery.isLoading || projectDetailQuery.isError);
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      <label className="flex flex-col gap-1.5">
-        Name
-        <input
-          name="name"
-          type="text"
-          required
-          maxLength={255}
-          defaultValue={project?.name}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-lg flex-col gap-5"
+    >
+      <TextField
+        label="Name"
+        name="name"
+        type="text"
+        required
+        maxLength={255}
+        defaultValue={project?.name}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Description (optional)
-        <textarea
-          name="description"
-          rows={3}
-          maxLength={2000}
-          defaultValue={project?.description ?? ""}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextareaField
+        label="Description (optional)"
+        name="description"
+        rows={3}
+        maxLength={2000}
+        defaultValue={project?.description ?? ""}
+      />
 
       <div className="flex flex-col gap-1.5">
         Colour

@@ -1,6 +1,7 @@
 "use client";
 
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
+import { TextField } from "@/components/ui/form/TextField";
 
 type TimeEntryTimeFieldsProps = {
   /** ISO instants, or undefined to leave the input empty. */
@@ -10,9 +11,6 @@ type TimeEntryTimeFieldsProps = {
    * entry isn't this: it can be given an end, which closes it. */
   isTicking: boolean;
 };
-
-const FIELD_CLASSES =
-  "w-full rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
 
 /** The Start and End inputs of the time-entry form.
  *
@@ -26,16 +24,15 @@ export function TimeEntryTimeFields({
 }: TimeEntryTimeFieldsProps) {
   return (
     <div className="flex flex-col gap-5">
-      <label className="flex flex-1 flex-col gap-1.5">
-        Start
-        <input
-          name="startedAt"
-          type="datetime-local"
-          required
-          defaultValue={startedAt ? toDatetimeLocalValue(startedAt) : undefined}
-          className={FIELD_CLASSES}
-        />
-      </label>
+      <TextField
+        label="Start"
+        className="flex-1"
+        inputClassName="w-full"
+        name="startedAt"
+        type="datetime-local"
+        required
+        defaultValue={startedAt ? toDatetimeLocalValue(startedAt) : undefined}
+      />
 
       {isTicking ? (
         <p className="text-sm text-slate-900/60">
@@ -43,16 +40,15 @@ export function TimeEntryTimeFields({
           stop it to set one.
         </p>
       ) : (
-        <label className="flex flex-1 flex-col gap-1.5">
-          End
-          <input
-            name="endedAt"
-            type="datetime-local"
-            required
-            defaultValue={endedAt ? toDatetimeLocalValue(endedAt) : undefined}
-            className={FIELD_CLASSES}
-          />
-        </label>
+        <TextField
+          label="End"
+          className="flex-1"
+          inputClassName="w-full"
+          name="endedAt"
+          type="datetime-local"
+          required
+          defaultValue={endedAt ? toDatetimeLocalValue(endedAt) : undefined}
+        />
       )}
     </div>
   );

@@ -11,10 +11,11 @@ import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import type { MembershipRole } from "@/types/membership";
-import { InviteEmailsField } from "./InviteEmailsField";
-import { CheckboxDropdownField } from "./CheckboxDropdownField";
-import { InviteResultsList } from "./InviteResultsList";
-import { Spinner } from "./Spinner";
+import { CheckboxDropdownField } from "@/components/CheckboxDropdownField";
+import { InviteEmailsField } from "@/components/InviteEmailsField";
+import { InviteResultsList } from "@/components/InviteResultsList";
+import { Spinner } from "@/components/Spinner";
+import { SelectField } from "@/components/ui/form/SelectField";
 
 type InviteMemberFormProps = {
   organisationId: string;
@@ -81,25 +82,21 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
   const results = mutation.data?.ok ? mutation.data.results : null;
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-6">
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-lg flex-col gap-6"
+    >
       {results && <InviteResultsList results={results} />}
 
       <InviteEmailsField value={emailsText} onChange={setEmailsText} />
 
-      <label className="flex flex-col gap-1.5">
-        Role
-        <select
-          name="role"
-          defaultValue="member"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          {roles.map((role) => (
-            <option key={role} value={role}>
-              {formatMembershipRole(role)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectField label="Role" name="role" defaultValue="member">
+        {roles.map((role) => (
+          <option key={role} value={role}>
+            {formatMembershipRole(role)}
+          </option>
+        ))}
+      </SelectField>
 
       <CheckboxDropdownField
         id="invite-teams"

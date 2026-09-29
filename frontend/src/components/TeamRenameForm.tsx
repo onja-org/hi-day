@@ -6,12 +6,12 @@ import clsx from "clsx";
 import { useMutation } from "@tanstack/react-query";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { updateTeam } from "@/lib/updateTeam";
+import { TextField } from "@/components/ui/form/TextField";
 
 type TeamRenameFormProps = {
   organisationId: string;
   teamId: string;
   currentName: string;
-  /** Smaller styling for use inline (e.g. an already-expanded list row) rather than as a page heading. */
   compact?: boolean;
 };
 
@@ -25,7 +25,8 @@ export function TeamRenameForm({
   const [name, setName] = useState<string | null>(null);
 
   const renameMutation = useMutation({
-    mutationFn: (newName: string) => updateTeam(organisationId, teamId, newName),
+    mutationFn: (newName: string) =>
+      updateTeam(organisationId, teamId, newName),
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
@@ -44,18 +45,16 @@ export function TeamRenameForm({
 
   return (
     <div className="flex flex-col gap-2">
-      <form onSubmit={handleSubmit} className="flex items-center gap-3">
-        <label className="sr-only" htmlFor="team-name">
-          Team name
-        </label>
-        <input
-          id="team-name"
+      <form onSubmit={handleSubmit} className="flex items-end gap-3">
+        <TextField
+          label="Team name"
           type="text"
           value={name ?? currentName}
           onChange={(event) => setName(event.target.value)}
-          className={clsx(
-            "rounded-md border border-input-border px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30",
-            compact ? "text-slate-900" : "text-2xl font-semibold text-primary-dark",
+          inputClassName={clsx(
+            compact
+              ? "text-slate-900"
+              : "text-2xl font-semibold text-primary-dark",
           )}
         />
         <button

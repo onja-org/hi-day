@@ -6,14 +6,18 @@ import { Camera, Trash } from "@phosphor-icons/react";
 import { MY_PROFILE_QUERY_KEY, useMyProfile } from "@/hooks/useMyProfile";
 import { updateMyProfile } from "@/lib/updateMyProfile";
 import type { MyProfile } from "@/types/profile";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 const MAX_AVATAR_FILE_BYTES = 1.5 * 1024 * 1024;
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 function displayName(profile: MyProfile): string {
-  return [profile.firstName, profile.lastName].filter(Boolean).join(" ") || profile.email;
+  return (
+    [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
+    profile.email
+  );
 }
 
 function initials(profile: MyProfile): string {
@@ -120,10 +124,13 @@ function AvatarEditor({ profile }: { profile: MyProfile }) {
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          aria-label="Upload profile photo"
           onChange={handleFileChange}
           className="hidden"
         />
-        <span className="text-xs text-slate-900/60">JPG or PNG, up to 1.5MB.</span>
+        <span className="text-xs text-slate-900/60">
+          JPG or PNG, up to 1.5MB.
+        </span>
         {avatarError && <ErrorMessage message={avatarError} />}
       </div>
     </div>
@@ -187,27 +194,21 @@ export function AccountEditForm() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5 text-slate-900">
-            First name
-            <input
-              name="firstName"
-              type="text"
-              defaultValue={profile.firstName ?? ""}
-              required
-              className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
+          <TextField
+            label="First name"
+            name="firstName"
+            type="text"
+            defaultValue={profile.firstName ?? ""}
+            required
+          />
 
-          <label className="flex flex-col gap-1.5 text-slate-900">
-            Last name
-            <input
-              name="lastName"
-              type="text"
-              defaultValue={profile.lastName ?? ""}
-              required
-              className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
+          <TextField
+            label="Last name"
+            name="lastName"
+            type="text"
+            defaultValue={profile.lastName ?? ""}
+            required
+          />
         </div>
 
         <button

@@ -4,15 +4,19 @@ import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MY_ACTIVITY_QUERY_KEY, useMyActivity } from "@/hooks/useMyActivity";
 import { createActivity } from "@/lib/createActivity";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 type ActivityFeedProps = {
   organisationId: string;
   maxEntries?: number;
 };
 
-export function ActivityFeed({ organisationId, maxEntries }: ActivityFeedProps) {
+export function ActivityFeed({
+  organisationId,
+  maxEntries,
+}: ActivityFeedProps) {
   const queryClient = useQueryClient();
   const activityQuery = useMyActivity(organisationId);
 
@@ -56,18 +60,15 @@ export function ActivityFeed({ organisationId, maxEntries }: ActivityFeedProps) 
     <div className="flex flex-col gap-4">
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-2 sm:flex-row"
+        className="flex flex-col gap-2 sm:flex-row sm:items-end"
       >
-        <label className="sr-only" htmlFor="activity-content">
-          What are you working on?
-        </label>
-        <input
-          id="activity-content"
+        <TextField
+          label="What are you working on?"
           name="content"
           type="text"
           placeholder="What are you working on?"
           required
-          className="flex-1 rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="flex-1"
         />
         <button
           type="submit"

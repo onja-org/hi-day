@@ -1,7 +1,11 @@
 import type { FormEvent } from "react";
-import type { AcceptInvitationInput, AcceptInvitationResult } from "@/types/invitation";
-import { PasswordInput } from "./PasswordInput";
-import { Spinner } from "./Spinner";
+import type {
+  AcceptInvitationInput,
+  AcceptInvitationResult,
+} from "@/types/invitation";
+import { PasswordField } from "@/components/ui/form/PasswordField";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 type SetInvitationPasswordFormProps = {
   organisationName: string;
@@ -29,48 +33,41 @@ export function SetInvitationPasswordForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-6">
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-sm flex-col gap-6"
+    >
       <p className="text-slate-900">
         Join {organisationName} as {role}.
       </p>
 
-      <label className="flex flex-col gap-1.5">
-        First name
-        <input
-          name="firstName"
-          type="text"
-          required
-          disabled={result?.ok}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="First name"
+        name="firstName"
+        type="text"
+        required
+        disabled={result?.ok}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Last name
-        <input
-          name="lastName"
-          type="text"
-          required
-          disabled={result?.ok}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Last name"
+        name="lastName"
+        type="text"
+        required
+        disabled={result?.ok}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Password
-        <PasswordInput
-          name="password"
-          autoComplete="new-password"
-          required
-          minLength={6}
-          pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-          title="At least 6 characters, including a letter and a number"
-          disabled={result?.ok}
-        />
-        <span className="text-sm text-slate-900">
-          At least 6 characters, including a letter and a number.
-        </span>
-      </label>
+      <PasswordField
+        label="Password"
+        hint="At least 6 characters, including a letter and a number."
+        name="password"
+        autoComplete="new-password"
+        required
+        minLength={6}
+        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
+        title="At least 6 characters, including a letter and a number"
+        disabled={result?.ok}
+      />
 
       <button
         type="submit"

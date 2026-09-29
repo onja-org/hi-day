@@ -12,10 +12,11 @@ import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
 import type { TimeEntryChange } from "@/lib/describeTimeEntryChanges";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem, UpdateTimeEntryInput } from "@/types/timeEntry";
-import { LogTimeForSelect } from "./LogTimeForSelect";
-import { Spinner } from "./Spinner";
-import { TimeEntryTimeFields } from "./TimeEntryTimeFields";
-import { TimeEntryEditConfirmDialog } from "./TimeEntryEditConfirmDialog";
+import { LogTimeForSelect } from "@/components/LogTimeForSelect";
+import { Spinner } from "@/components/Spinner";
+import { TimeEntryEditConfirmDialog } from "@/components/TimeEntryEditConfirmDialog";
+import { TimeEntryTimeFields } from "@/components/TimeEntryTimeFields";
+import { SelectField } from "@/components/ui/form/SelectField";
 
 type TimeEntryFormProps =
   | {
@@ -57,8 +58,7 @@ export function TimeEntryForm({
 
   const projects = projectsQuery.data ?? [];
   const selectedProject = projects.find((project) => project.id === projectId);
-  // Only offered when creating a new entry — re-attributing an existing
-  // one to someone else isn't part of this form.
+
   const canLogTimeForOthers =
     mode === "create" &&
     forMembershipId === undefined &&
@@ -173,42 +173,36 @@ export function TimeEntryForm({
   return (
     <>
       <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-        <label className="flex flex-col gap-1.5">
-          Project
-          <select
-            value={projectId}
-            onChange={(event) => setProjectId(event.target.value)}
-            required
-            disabled={projectsQuery.isLoading}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-          >
-            <option value="" disabled>
-              Select a project…
+        <SelectField
+          label="Project"
+          value={projectId}
+          onChange={(event) => setProjectId(event.target.value)}
+          required
+          disabled={projectsQuery.isLoading}
+        >
+          <option value="" disabled>
+            Select a project…
+          </option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
             </option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          ))}
+        </SelectField>
 
-        <label className="flex flex-col gap-1.5">
-          Task (optional)
-          <select
-            name="taskId"
-            defaultValue={entry?.taskId ?? ""}
-            disabled={!projectId}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-          >
-            <option value="">No task</option>
-            {tasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          label="Task (optional)"
+          name="taskId"
+          defaultValue={entry?.taskId ?? ""}
+          disabled={!projectId}
+        >
+          <option value="">No task</option>
+          {tasks.map((task) => (
+            <option key={task.id} value={task.id}>
+              {task.name}
+            </option>
+          ))}
+        </SelectField>
 
         {canLogTimeForOthers && (
           // Keyed on projectId: without a fresh mount per project, switching

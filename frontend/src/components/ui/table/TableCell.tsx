@@ -5,12 +5,10 @@ type TableCellProps = {
   children?: ReactNode;
   align?: "right";
   colSpan?: number;
-  /** "compact" matches a smaller nested table, e.g. an expanded row's detail table. */
   size?: "default" | "compact";
   className?: string;
 };
 
-/** A data cell (`<td>`) for use inside a `TableBody`'s `TableRow`. */
 export function TableCell({
   children,
   align,
