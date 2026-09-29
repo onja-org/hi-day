@@ -2,9 +2,15 @@
 
 import { useState } from "react";
 import { MinusIcon, PlusIcon } from "@phosphor-icons/react";
-import { useProjects } from "@/hooks/useProjects";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { UrlSessionDomainGroup } from "@/lib/groupUrlSessionsByDomain";
+import { Table } from "@/components/ui/table/Table";
+import { TableHeader } from "@/components/ui/table/TableHeader";
+import { TableBody } from "@/components/ui/table/TableBody";
+import { TableRow } from "@/components/ui/table/TableRow";
+import { TableHead } from "@/components/ui/table/TableHead";
+import { TableCell } from "@/components/ui/table/TableCell";
+import { ProjectNameOrUntracked } from "@/components/ProjectNameOrUntracked";
 
 type UrlActivityDomainRowProps = {
   organisationId: string;
@@ -12,27 +18,17 @@ type UrlActivityDomainRowProps = {
   domain: UrlSessionDomainGroup;
 };
 
-/**
- * One project+domain row of the URLs table (Hubstaff's URLs view is the
- * layout reference) — expands into a nested table of the individual
- * tracked pages on that domain.
- */
 export function UrlActivityDomainRow({
   organisationId,
   projectId,
   domain,
 }: UrlActivityDomainRowProps) {
   const [isOpen, setIsOpen] = useState(false);
-  // `status: "all"` so a since-archived project still resolves for older activity.
-  const projectsQuery = useProjects(organisationId, { status: "all" });
-  const project = projectId
-    ? projectsQuery.data?.find((candidate) => candidate.id === projectId)
-    : undefined;
 
   return (
     <>
-      <tr className="border-b border-input-border last:border-b-0">
-        <td className="px-3 py-3">
+      <TableRow>
+        <TableCell>
           <button
             type="button"
             onClick={() => setIsOpen((open) => !open)}
@@ -52,44 +48,40 @@ export function UrlActivityDomainRow({
                 className="shrink-0 text-primary"
               />
             )}
-            {project ? (
-              <span className="text-slate-900">{project.name}</span>
-            ) : (
-              <span className="text-slate-900/50">Untracked</span>
-            )}
+            <ProjectNameOrUntracked
+              organisationId={organisationId}
+              projectId={projectId}
+            />
           </button>
-        </td>
-        <td className="px-3 py-3 text-slate-900">
+        </TableCell>
+        <TableCell>
           <span className="truncate">{domain.domain}</span>
-        </td>
-        <td className="px-3 py-3 text-right tabular-nums text-slate-900">
+        </TableCell>
+        <TableCell align="right">
           {formatElapsed(domain.totalActiveMs)}
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
 
       {isOpen && (
-        <tr className="border-b border-input-border last:border-b-0">
-          <td colSpan={3} className="px-3 py-3">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-input-border text-slate-900/70">
-                  <th className="px-2 py-2 font-medium">Title</th>
-                  <th className="px-2 py-2 font-medium">URL</th>
-                  <th className="px-2 py-2 text-right font-medium">
+        <TableRow>
+          <TableCell colSpan={3}>
+            <Table bare>
+              <TableHeader>
+                <TableRow>
+                  <TableHead size="compact">Title</TableHead>
+                  <TableHead size="compact">URL</TableHead>
+                  <TableHead size="compact" align="right">
                     Time spent
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {domain.pages.map((page) => (
-                  <tr
-                    key={page.url}
-                    className="border-b border-input-border last:border-b-0"
-                  >
-                    <td className="max-w-0 truncate px-2 py-2 text-slate-900">
+                  <TableRow key={page.url}>
+                    <TableCell size="compact" className="max-w-0 truncate">
                       {page.title ?? "—"}
-                    </td>
-                    <td className="max-w-0 truncate px-2 py-2">
+                    </TableCell>
+                    <TableCell size="compact" className="max-w-0 truncate">
                       <a
                         href={page.url}
                         target="_blank"
@@ -98,16 +90,16 @@ export function UrlActivityDomainRow({
                       >
                         {page.url}
                       </a>
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums text-slate-900">
+                    </TableCell>
+                    <TableCell size="compact" align="right">
                       {formatElapsed(page.totalActiveMs)}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </td>
-        </tr>
+              </TableBody>
+            </Table>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );

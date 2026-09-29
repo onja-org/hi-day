@@ -5,10 +5,10 @@ import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useProjects } from "@/hooks/useProjects";
 import { appActivityToCsv } from "@/lib/appActivityToCsv";
 import { appActivityToPdf } from "@/lib/appActivityToPdf";
-import { AppActivityHourGroup } from "./AppActivityHourGroup";
-import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
-import { ActivityQueryStatus } from "./ActivityQueryStatus";
-import { ExportButtons } from "./ExportButtons";
+import { AppActivityTable } from "@/components/AppActivityTable";
+import { ActivityFilterToolbar } from "@/components/ActivityFilterToolbar";
+import { ActivityQueryStatus } from "@/components/ActivityQueryStatus";
+import { ExportButtons } from "@/components/ExportButtons";
 
 type AppActivityPageContentProps = {
   organisationId: string;
@@ -17,7 +17,8 @@ type AppActivityPageContentProps = {
 export function AppActivityPageContent({
   organisationId,
 }: AppActivityPageContentProps) {
-  const { date, membershipId, untracked, projectId, canViewOthers } = useActivityDayFilters();
+  const { date, membershipId, untracked, projectId, canViewOthers } =
+    useActivityDayFilters();
 
   const dayQuery = useAppActivityDay(organisationId, {
     date,
@@ -33,7 +34,10 @@ export function AppActivityPageContent({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
+        <ActivityFilterToolbar
+          organisationId={organisationId}
+          canViewOthers={canViewOthers}
+        />
         <ExportButtons
           csv={day ? appActivityToCsv(day, projects) : ""}
           buildPdf={
@@ -62,13 +66,12 @@ export function AppActivityPageContent({
         </p>
       )}
 
-      {day?.buckets.map((bucket) => (
-        <AppActivityHourGroup
-          key={bucket.hourStart}
+      {day && day.buckets.length > 0 && (
+        <AppActivityTable
           organisationId={organisationId}
-          bucket={bucket}
+          buckets={day.buckets}
         />
-      ))}
+      )}
     </div>
   );
 }

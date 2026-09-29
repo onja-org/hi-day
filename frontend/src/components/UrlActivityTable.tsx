@@ -1,5 +1,6 @@
 import type { UrlHourBucket } from "@/types/urlSession";
-import { UrlActivityHourSection } from "./UrlActivityHourSection";
+import { ActivityBucketTable } from "@/components/ActivityBucketTable";
+import { UrlActivityHourSection } from "@/components/UrlActivityHourSection";
 
 type UrlActivityTableProps = {
   organisationId: string;
@@ -12,25 +13,24 @@ type UrlActivityTableProps = {
  * hour bucket, and one row per project+domain within it — each row
  * expandable into the individual tracked pages on that domain.
  */
-export function UrlActivityTable({ organisationId, buckets }: UrlActivityTableProps) {
+export function UrlActivityTable({
+  organisationId,
+  buckets,
+}: UrlActivityTableProps) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-input-border">
-      <table className="w-full min-w-[640px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-input-border text-slate-900">
-            <th className="px-3 py-3 font-medium">Project</th>
-            <th className="px-3 py-3 font-medium">Site</th>
-            <th className="px-3 py-3 text-right font-medium">Time spent</th>
-          </tr>
-        </thead>
-        {buckets.map((bucket) => (
-          <UrlActivityHourSection
-            key={bucket.hourStart}
-            organisationId={organisationId}
-            bucket={bucket}
-          />
-        ))}
-      </table>
-    </div>
+    <ActivityBucketTable
+      columns={[
+        { label: "Project" },
+        { label: "Site" },
+        { label: "Time spent", align: "right" },
+      ]}
+      buckets={buckets}
+      renderSection={(bucket) => (
+        <UrlActivityHourSection
+          organisationId={organisationId}
+          bucket={bucket}
+        />
+      )}
+    />
   );
 }
