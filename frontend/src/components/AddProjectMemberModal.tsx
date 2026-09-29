@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers";
-import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
+import { useInvalidateProject } from "@/hooks/useInvalidateProject";
+import { useProject } from "@/hooks/useProject";
 import { addProjectMembers } from "@/lib/addProjectMembers";
 import type { ProjectMembershipRole } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
@@ -22,7 +23,7 @@ export function AddProjectMemberModal({
   projectId,
   onClose,
 }: AddProjectMemberModalProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateProject(organisationId, projectId);
   const projectQuery = useProject(organisationId, projectId);
   const membersQuery = useAssignableProjectMembers(organisationId, projectId);
   // membershipId -> role, for every currently-checked candidate. Presence in
@@ -42,9 +43,7 @@ export function AddProjectMemberModal({
         })),
       ),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({
-        queryKey: PROJECT_QUERY_KEY(organisationId, projectId),
-      });
+      invalidate();
       if (result.failed.length === 0) {
         onClose();
         return;

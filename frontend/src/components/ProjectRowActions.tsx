@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { PencilSimple, UserPlus, UsersThree } from "@phosphor-icons/react";
+import { useUnarchiveProject } from "@/hooks/useUnarchiveProject";
 import type { ProjectListItem } from "@/types/project";
+import { ActionsMenu } from "./ActionsMenu";
 import { AddProjectMemberModal } from "./AddProjectMemberModal";
 import { AddProjectTeamModal } from "./AddProjectTeamModal";
-import { ArchiveProjectButton } from "./ArchiveProjectButton";
+import { ArchiveProjectModal } from "./ArchiveProjectModal";
 import { ProjectFormModal } from "./ProjectFormModal";
 
 type ProjectRowActionsProps = {
@@ -13,69 +14,84 @@ type ProjectRowActionsProps = {
   project: ProjectListItem;
 };
 
+type OpenModal = "edit" | "addMembers" | "addTeam" | "archive" | null;
+
 export function ProjectRowActions({ organisationId, project }: ProjectRowActionsProps) {
-  const [editOpen, setEditOpen] = useState(false);
-  const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [addTeamOpen, setAddTeamOpen] = useState(false);
+  const [openModal, setOpenModal] = useState<OpenModal>(null);
+  const unarchiveMutation = useUnarchiveProject(organisationId, project.id);
   const isArchived = project.status === "archived";
   const archivedTitle = isArchived ? "Unarchive this project to change it." : undefined;
+  const closeModal = () => setOpenModal(null);
 
   return (
-    <div className="flex items-center justify-end gap-3">
-      <button
-        type="button"
-        onClick={() => setEditOpen(true)}
-        disabled={isArchived}
-        title={archivedTitle ?? "Edit project"}
-        aria-label="Edit project"
-        className="cursor-pointer text-primary-dark transition-colors duration-150 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <PencilSimple size={18} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setAddMemberOpen(true)}
-        disabled={isArchived}
-        title={archivedTitle ?? "Add members"}
-        aria-label="Add members"
-        className="cursor-pointer text-primary-dark transition-colors duration-150 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <UserPlus size={18} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setAddTeamOpen(true)}
-        disabled={isArchived}
-        title={archivedTitle ?? "Add team"}
-        aria-label="Add team"
-        className="cursor-pointer text-primary-dark transition-colors duration-150 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <UsersThree size={18} aria-hidden="true" />
-      </button>
-      <ArchiveProjectButton organisationId={organisationId} project={project} />
+    <>
+      <ActionsMenu
+        items={[
+          {
+            label: "Edit project",
+            onSelect: () => setOpenModal("edit"),
+            disabled: isArchived,
+            title: archivedTitle,
+          },
+          {
+            label: "Add members",
+            onSelect: () => setOpenModal("addMembers"),
+            disabled: isArchived,
+            title: archivedTitle,
+          },
+          {
+            label: "Add team",
+            onSelect: () => setOpenModal("addTeam"),
+            disabled: isArchived,
+            title: archivedTitle,
+          },
+          {
+            label: "Manage members",
+            href: `/organisations/${organisationId}/projects/${project.id}`,
+          },
+          isArchived
+            ? {
+                label: "Unarchive project",
+                onSelect: () => unarchiveMutation.mutate(),
+                disabled: unarchiveMutation.isPending,
+              }
+            : {
+                label: "Archive project",
+                onSelect: () => setOpenModal("archive"),
+                tone: "danger",
+              },
+        ]}
+      />
 
-      {editOpen && (
+      {openModal === "edit" && (
         <ProjectFormModal
           organisationId={organisationId}
           project={project}
-          onClose={() => setEditOpen(false)}
-          onSaved={() => setEditOpen(false)}
+          onClose={closeModal}
+          onSaved={closeModal}
         />
       )}
-      {addMemberOpen && (
+      {openModal === "addMembers" && (
         <AddProjectMemberModal
           organisationId={organisationId}
           projectId={project.id}
-          onClose={() => setAddMemberOpen(false)}
+          onClose={closeModal}
         />
       )}
-      {addTeamOpen && (
+      {openModal === "addTeam" && (
         <AddProjectTeamModal
           organisationId={organisationId}
           projectId={project.id}
-          onClose={() => setAddTeamOpen(false)}
+          onClose={closeModal}
         />
       )}
-    </div>
+      {openModal === "archive" && (
+        <ArchiveProjectModal
+          organisationId={organisationId}
+          project={project}
+          onClose={closeModal}
+        />
+      )}
+    </>
   );
 }

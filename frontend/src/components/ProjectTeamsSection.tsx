@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateProject } from "@/hooks/useInvalidateProject";
 import { removeProjectTeam } from "@/lib/removeProjectTeam";
 import type { ProjectDetail } from "@/types/project";
 import { AddProjectTeamModal } from "./AddProjectTeamModal";
@@ -18,17 +18,14 @@ export function ProjectTeamsSection({
   project,
   canManage,
 }: ProjectTeamsSectionProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateProject(organisationId, project.id);
   const [addOpen, setAddOpen] = useState(false);
   const isArchived = project.status === "archived";
 
   const removeMutation = useMutation({
     mutationFn: (teamId: string) =>
       removeProjectTeam(organisationId, project.id, teamId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: PROJECT_QUERY_KEY(organisationId, project.id),
-      }),
+    onSuccess: invalidate,
   });
 
   return (

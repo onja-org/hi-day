@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PROJECT_QUERY_KEY } from "@/hooks/useProject";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateProject } from "@/hooks/useInvalidateProject";
 import { removeProjectMember } from "@/lib/removeProjectMember";
 import { updateProjectMember } from "@/lib/updateProjectMember";
 import type { ProjectDetail, ProjectMembershipRole } from "@/types/project";
@@ -19,17 +19,14 @@ export function ProjectMembersSection({
   project,
   canManage,
 }: ProjectMembersSectionProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateProject(organisationId, project.id);
   const [addOpen, setAddOpen] = useState(false);
   const isArchived = project.status === "archived";
 
   const removeMutation = useMutation({
     mutationFn: (membershipId: string) =>
       removeProjectMember(organisationId, project.id, membershipId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: PROJECT_QUERY_KEY(organisationId, project.id),
-      }),
+    onSuccess: invalidate,
   });
 
   const updateRoleMutation = useMutation({
@@ -40,10 +37,7 @@ export function ProjectMembersSection({
       membershipId: string;
       role: ProjectMembershipRole;
     }) => updateProjectMember(organisationId, project.id, membershipId, { role }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: PROJECT_QUERY_KEY(organisationId, project.id),
-      }),
+    onSuccess: invalidate,
   });
 
   return (

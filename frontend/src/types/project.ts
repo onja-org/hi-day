@@ -49,6 +49,12 @@ export type ProjectListItem = Project & {
   taskCount: number;
 };
 
+/** A Projects-page row — see the backend's ProjectOverviewItem. */
+export type ProjectOverviewItem = ProjectListItem & {
+  members: ProjectMember[];
+  teams: ProjectTeamMember[];
+};
+
 export type TimeTrackingProjectListItem = ProjectListItem & {
   /** Whether the caller may attribute a manually-logged entry on this
    * project to someone other than themselves — an org admin/manager, or a
@@ -70,7 +76,7 @@ export type ProjectFormInput = {
 };
 
 export type GetProjectsResult =
-  | { ok: true; projects: ProjectListItem[] }
+  | { ok: true; projects: ProjectOverviewItem[] }
   | { ok: false; message: string };
 
 export type GetMyProjectsResult =

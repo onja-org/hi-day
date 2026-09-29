@@ -1,22 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjects } from "@/hooks/useProjects";
+import { filterProjectsByName } from "@/lib/filterProjectsByName";
 import type { ProjectStatus } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectRow } from "./ProjectRow";
+import { ProjectsTabs } from "./ProjectsTabs";
 import { Spinner } from "./Spinner";
 
 type ProjectsTableProps = {
   organisationId: string;
+  /** Rendered at the right of the search bar, e.g. an "Add project" button. */
+  actions?: ReactNode;
 };
 
-const STATUS_FILTERS: (ProjectStatus | "all")[] = ["all", "active", "archived"];
-
-export function ProjectsTable({ organisationId }: ProjectsTableProps) {
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("active");
-  const projectsQuery = useProjects(organisationId, { status: statusFilter });
+export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
+  const [statusTab, setStatusTab] = useState<ProjectStatus>("active");
+  const [search, setSearch] = useState("");
+  // Fetches every status at once so both tabs can show their counts.
+  const projectsQuery = useProjects(organisationId, { status: "all" });
   const organisationQuery = useCurrentOrganisation();
   const canManage =
     organisationQuery.data?.role === "admin" ||
@@ -43,64 +49,76 @@ export function ProjectsTable({ organisationId }: ProjectsTableProps) {
     );
   }
 
-  const projects = projectsQuery.data;
-  const hasFilters = statusFilter !== "active";
+  const allProjects = projectsQuery.data;
+  const counts: Record<ProjectStatus, number> = {
+    active: allProjects.filter((project) => project.status === "active").length,
+    archived: allProjects.filter((project) => project.status === "archived").length,
+  };
+  const projects = filterProjectsByName(
+    allProjects.filter((project) => project.status === statusTab),
+    search,
+  );
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label htmlFor="project-status-filter" className="sr-only">
-          Filter by status
+    <div className="flex flex-col gap-6">
+      <ProjectsTabs active={statusTab} counts={counts} onChange={setStatusTab} />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="relative flex w-full items-center sm:max-w-sm">
+          <span className="sr-only">Search projects</span>
+          <MagnifyingGlass
+            size={16}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-4 text-icon"
+          />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search projects"
+            className="w-full rounded-full border border-input-border py-2 pr-4 pl-10 text-sm text-slate-900"
+          />
         </label>
-        <select
-          id="project-status-filter"
-          value={statusFilter}
-          onChange={(event) =>
-            setStatusFilter(event.target.value as ProjectStatus | "all")
-          }
-          className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900"
-        >
-          {STATUS_FILTERS.map((status) => (
-            <option key={status} value={status}>
-              {status === "all" ? "All statuses" : status}
-            </option>
-          ))}
-        </select>
+        {actions}
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-input-border">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-input-border text-slate-900">
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Tasks</th>
-              <th className="px-3 py-2 font-medium">
-                <span className="sr-only">Actions</span>
-              </th>
+      {/* No horizontal scroll wrapper: it would also clip a last row's
+          Actions menu vertically. Secondary columns hide on narrow screens
+          instead (see ProjectRow). */}
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-input-border text-primary-dark">
+            <th className="px-4 py-3 font-semibold">Name</th>
+            <th className="hidden px-4 py-3 font-semibold md:table-cell">Teams</th>
+            <th className="hidden px-4 py-3 font-semibold md:table-cell">Members</th>
+            <th className="hidden px-4 py-3 font-semibold sm:table-cell">Tasks</th>
+            <th className="px-4 py-3 font-semibold">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {projects.map((project) => (
+            <ProjectRow
+              key={project.id}
+              organisationId={organisationId}
+              project={project}
+              canManage={canManage}
+            />
+          ))}
+          {projects.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-4 py-8 text-center text-slate-900">
+                {search.trim() && "No projects match your search."}
+                {!search.trim() && statusTab === "archived" && "No archived projects."}
+                {!search.trim() &&
+                  statusTab === "active" &&
+                  "No projects yet. Create one to start tracking time against real work."}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {projects.map((project) => (
-              <ProjectRow
-                key={project.id}
-                organisationId={organisationId}
-                project={project}
-                canManage={canManage}
-              />
-            ))}
-            {projects.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-3 py-4 text-center text-slate-900">
-                  {hasFilters
-                    ? "No projects match your filters."
-                    : "No projects yet. Create one to start tracking time against real work."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

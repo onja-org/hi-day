@@ -17,21 +17,23 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-primary-dark">Projects</h1>
-        {canCreate && (
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
-          >
-            New project
-          </button>
-        )}
-      </div>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-semibold text-primary-dark">Projects</h1>
 
-      <ProjectsTable organisationId={organisationId} />
+      <ProjectsTable
+        organisationId={organisationId}
+        actions={
+          canCreate && (
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+            >
+              Add project
+            </button>
+          )
+        }
+      />
 
       {createOpen && (
         <ProjectFormModal

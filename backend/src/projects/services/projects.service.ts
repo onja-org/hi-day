@@ -63,6 +63,13 @@ export interface ProjectListItem extends ProjectSummary {
   taskCount: number;
 }
 
+/** A Projects-page row: a list item plus who's assigned to it, so the
+ * table can show member/team avatars without a detail fetch per row. */
+export interface ProjectOverviewItem extends ProjectListItem {
+  members: ProjectMemberSummary[];
+  teams: ProjectTeamSummary[];
+}
+
 export interface TimeTrackingProjectListItem extends ProjectListItem {
   /** Whether the caller may attribute a manually-logged entry on this
    * Project to someone other than themselves — an org admin/manager, or a
@@ -158,7 +165,7 @@ export class ProjectsService {
     organisationId: string,
     callerUserId: string,
     filter: ListProjectsFilter,
-  ): Promise<ProjectListItem[]> {
+  ): Promise<ProjectOverviewItem[]> {
     const caller = await this.memberships.findOne({
       where: {
         userId: callerUserId,
@@ -212,12 +219,53 @@ export class ProjectsService {
     query.orderBy('project.name', 'ASC');
 
     const projects = await query.getMany();
-    const taskCounts = await this.getTaskCounts(projects.map((p) => p.id));
+    const projectIds = projects.map((p) => p.id);
+    const taskCounts = await this.getTaskCounts(projectIds);
+    const assignments = await this.getAssignments(projectIds);
 
     return projects.map((project) => ({
       ...this.toSummary(project),
       taskCount: taskCounts.get(project.id) ?? 0,
+      members: assignments.members.get(project.id) ?? [],
+      teams: assignments.teams.get(project.id) ?? [],
     }));
+  }
+
+  /** Every listed project's members and teams from one query each, grouped
+   * by project — same batching reason as getTaskCounts. */
+  private async getAssignments(projectIds: string[]): Promise<{
+    members: Map<string, ProjectMemberSummary[]>;
+    teams: Map<string, ProjectTeamSummary[]>;
+  }> {
+    const members = new Map<string, ProjectMemberSummary[]>();
+    const teams = new Map<string, ProjectTeamSummary[]>();
+    if (projectIds.length === 0) {
+      return { members, teams };
+    }
+
+    const projectMemberships = await this.projectMemberships.find({
+      where: { projectId: In(projectIds) },
+      relations: { membership: { user: true } },
+      order: { createdAt: 'ASC' },
+    });
+    for (const pm of projectMemberships) {
+      const list = members.get(pm.projectId) ?? [];
+      list.push(this.toMemberSummary(pm));
+      members.set(pm.projectId, list);
+    }
+
+    const projectTeams = await this.projectTeams.find({
+      where: { projectId: In(projectIds) },
+      relations: { team: true },
+      order: { createdAt: 'ASC' },
+    });
+    for (const pt of projectTeams) {
+      const list = teams.get(pt.projectId) ?? [];
+      list.push(this.toProjectTeamSummary(pt));
+      teams.set(pt.projectId, list);
+    }
+
+    return { members, teams };
   }
 
   /**

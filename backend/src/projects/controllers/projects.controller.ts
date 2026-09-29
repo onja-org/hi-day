@@ -26,7 +26,7 @@ import type {
   AssignableMemberSummary,
   AssignableTeamSummary,
   ProjectDetail,
-  ProjectListItem,
+  ProjectOverviewItem,
   ProjectMemberSummary,
   ProjectSummary,
   ProjectTeamSummary,
@@ -51,7 +51,7 @@ export class ProjectsController {
   list(
     @Req() request: AuthenticatedRequest,
     @Query('status') status?: 'active' | 'archived',
-  ): Promise<ProjectListItem[]> {
+  ): Promise<ProjectOverviewItem[]> {
     return this.projectsService.list(request.organisationId!, request.userId, {
       status,
     });

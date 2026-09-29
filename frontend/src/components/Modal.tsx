@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
@@ -10,10 +10,13 @@ type ModalProps = {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** "wide" fits content like a table that the default width would squash. */
+  size?: "default" | "wide";
 };
 
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, children, size = "default" }: ModalProps) {
   const [visible, setVisible] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true));
@@ -22,7 +25,11 @@ export function Modal({ title, onClose, children }: ModalProps) {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      // Only the topmost dialog closes, so Escape in a modal opened from
+      // another modal doesn't dismiss both.
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      const isTopmost = dialogs[dialogs.length - 1] === dialogRef.current;
+      if (event.key === "Escape" && isTopmost) {
         onClose();
       }
     }
@@ -46,12 +53,15 @@ export function Modal({ title, onClose, children }: ModalProps) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
         onClick={(event) => event.stopPropagation()}
         className={clsx(
-          "flex max-h-full w-full max-w-lg cursor-auto flex-col gap-6 overflow-y-auto rounded-lg bg-white p-6 transition-all duration-200",
+          "flex max-h-full w-full cursor-auto flex-col gap-6 overflow-y-auto rounded-lg bg-white p-6 transition-all duration-200",
+          size === "default" && "max-w-lg",
+          size === "wide" && "max-w-2xl",
           visible && "scale-100 opacity-100",
           !visible && "scale-95 opacity-0",
         )}

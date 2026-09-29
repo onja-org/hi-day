@@ -830,6 +830,72 @@ describe('ProjectsService', () => {
       ]);
     });
 
+    it('attaches each project its members and teams, grouped by project', async () => {
+      const projectsRepo = makeProjectsRepo();
+      (
+        projectsRepo as unknown as { __queryBuilder: { getMany: jest.Mock } }
+      ).__queryBuilder.getMany.mockResolvedValue([
+        { ...baseProject, id: 'project-1' },
+        { ...baseProject, id: 'project-2' },
+      ]);
+      const projectMembershipsFind = jest.fn().mockResolvedValue([
+        {
+          id: 'pm-1',
+          projectId: 'project-1',
+          membershipId: 'membership-1',
+          role: ProjectMembershipRole.MEMBER,
+          membership: {
+            userId: 'user-1',
+            user: { email: 'a@example.com', name: 'Ada' },
+          },
+        },
+      ]);
+      const projectTeamsFind = jest.fn().mockResolvedValue([
+        {
+          id: 'pt-1',
+          projectId: 'project-2',
+          teamId: 'team-1',
+          team: { name: 'Design' },
+        },
+      ]);
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-membership',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+      const service = makeService({
+        projectsRepo,
+        membershipsRepo,
+        projectMembershipsRepo: makeProjectMembershipsRepo({
+          find: projectMembershipsFind,
+        }),
+        projectTeamsRepo: makeProjectTeamsRepo({ find: projectTeamsFind }),
+      });
+
+      const result = await service.list('org-1', 'admin-1', {});
+
+      expect(projectMembershipsFind).toHaveBeenCalledTimes(1);
+      expect(projectTeamsFind).toHaveBeenCalledTimes(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          members: [
+            expect.objectContaining({
+              membershipId: 'membership-1',
+              name: 'Ada',
+            }),
+          ],
+          teams: [],
+        }),
+      );
+      expect(result[1]).toEqual(
+        expect.objectContaining({
+          members: [],
+          teams: [{ id: 'pt-1', teamId: 'team-1', name: 'Design' }],
+        }),
+      );
+    });
+
     it('skips the task count query when there are no projects', async () => {
       const tasksRepo = makeTasksRepo();
       const membershipsRepo = makeMembershipsRepo({

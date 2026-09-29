@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useAssignableProjectTeams } from "@/hooks/useAssignableProjectTeams";
-import { PROJECT_QUERY_KEY, useProject } from "@/hooks/useProject";
+import { useInvalidateProject } from "@/hooks/useInvalidateProject";
+import { useProject } from "@/hooks/useProject";
 import { addProjectTeam } from "@/lib/addProjectTeam";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
@@ -20,7 +21,7 @@ export function AddProjectTeamModal({
   projectId,
   onClose,
 }: AddProjectTeamModalProps) {
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateProject(organisationId, projectId);
   const projectQuery = useProject(organisationId, projectId);
   const teamsQuery = useAssignableProjectTeams(organisationId, projectId);
   const [teamId, setTeamId] = useState("");
@@ -30,9 +31,7 @@ export function AddProjectTeamModal({
       addProjectTeam(organisationId, projectId, { teamId: id }),
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: PROJECT_QUERY_KEY(organisationId, projectId),
-        });
+        invalidate();
         onClose();
       }
     },
