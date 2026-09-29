@@ -84,7 +84,16 @@ describe('ScreenshotsService', () => {
     };
   }
 
-  function makeTimeEntriesService(coveringEntries: FakeCoveringEntry[] = []) {
+  const ALL_DAY: FakeCoveringEntry = {
+    id: 'entry-day',
+    projectId: 'project-day',
+    startedAt: new Date('2026-09-08T00:00:00.000Z'),
+    endedAt: new Date('2026-09-09T00:00:00.000Z'),
+  };
+
+  function makeTimeEntriesService(
+    coveringEntries: FakeCoveringEntry[] = [ALL_DAY],
+  ) {
     return {
       listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
     } as unknown as TimeEntriesService;
@@ -228,7 +237,7 @@ describe('ScreenshotsService', () => {
           id: 'screenshot-1',
           capturedAt: '2026-09-08T12:00:00.000Z',
           url: 'https://view.example/get',
-          projectId: null,
+          projectId: 'project-day',
         },
       ]);
       expect(createViewUrl).toHaveBeenCalledWith(
@@ -311,7 +320,9 @@ describe('ScreenshotsService', () => {
       expect(result[0].id).toBe('screenshot-1');
     });
 
-    it('filters to untracked (no covering entry) when projectId is null', async () => {
+    // Screenshots outside every entry are dropped rather than labelled
+    // "untracked", so widening an entry brings them back on the next read.
+    it('omits a screenshot no entry covers', async () => {
       const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
       const covered = {
         id: 'screenshot-1',
@@ -344,13 +355,10 @@ describe('ScreenshotsService', () => {
         'org-1',
         'user-1',
         '2026-09-08',
-        {
-          projectId: null,
-        },
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('screenshot-2');
+      expect(result[0].id).toBe('screenshot-1');
     });
 
     it('rejects a malformed date', async () => {

@@ -7,7 +7,6 @@ export type GetAppActivityDayFilter = {
   date?: string;
   membershipId?: string;
   projectId?: string;
-  untracked?: boolean;
 };
 
 export async function getAppActivityDay(
@@ -15,10 +14,7 @@ export async function getAppActivityDay(
   filter: GetAppActivityDayFilter = {},
 ): Promise<GetAppActivityDayResult> {
   const params = new URLSearchParams();
-  if (filter.date) params.set("date", filter.date);
-  if (filter.untracked) {
-    params.set("untracked", "1");
-  } else if (filter.projectId) {
+  if (filter.date) params.set("date", filter.date); else if (filter.projectId) {
     params.set("projectId", filter.projectId);
   }
   const query = params.toString();

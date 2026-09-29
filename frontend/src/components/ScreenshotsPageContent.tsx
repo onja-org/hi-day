@@ -15,14 +15,13 @@ type ScreenshotsPageContentProps = {
 export function ScreenshotsPageContent({
   organisationId,
 }: ScreenshotsPageContentProps) {
-  const { date, membershipId, untracked, projectId, canViewOthers } =
+  const { date, membershipId, projectId, canViewOthers } =
     useActivityDayFilters();
 
   const screenshotsQuery = useActivityScreenshots(organisationId, {
     date,
     membershipId,
     projectId,
-    untracked,
   });
 
   return (
@@ -42,7 +41,7 @@ export function ScreenshotsPageContent({
 
       {screenshotsQuery.data && screenshotsQuery.data.length === 0 && (
         <p className="text-slate-900">
-          {projectId || untracked
+          {projectId
             ? "No screenshots match this filter for this day."
             : "No screenshots captured this day yet — this fills in once screenshots are turned on and a timer is running."}
         </p>
