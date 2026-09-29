@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ClockIcon } from "@phosphor-icons/react";
+import { ClockIcon, FunnelIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { format } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
@@ -9,6 +9,13 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import {
+  EMPTY_TIMESHEET_FILTERS,
+  countActiveFilters,
+  filterTimeEntries,
+  projectOptionsFrom,
+} from "@/lib/timesheetFilters";
+import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
@@ -16,6 +23,7 @@ import { ErrorMessage } from "./ErrorMessage";
 import { ExportButtons } from "./ExportButtons";
 import { Spinner } from "./Spinner";
 import { TimeEntryFormModal } from "./TimeEntryFormModal";
+import { TimesheetFilterPanel } from "./TimesheetFilterPanel";
 import { TimesheetCalendarGrid } from "./TimesheetCalendarGrid";
 import { TimesheetDailyView } from "./TimesheetDailyView";
 import { TimesheetWeeklyMatrix } from "./TimesheetWeeklyMatrix";
@@ -37,6 +45,8 @@ const DEFAULT_DATE_PRESET: DateRangePreset = "last_7_days";
 
 export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
   // "" means "my own timesheet" — the default for everyone, including
   // admins/managers.
   const [viewingMembershipId, setViewingMembershipId] = useState("");
@@ -91,7 +101,24 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
     { enabled: viewMode === "weekly" || viewMode === "calendar" },
   );
 
-  const activeEntries = viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data;
+  // Filtering happens here rather than per view, so the Daily, Weekly and
+  // Calendar tabs can't disagree about what is on screen — and so the CSV
+  // export carries exactly what the page shows.
+  const dailyEntries = dailyEntriesQuery.data
+    ? filterTimeEntries(dailyEntriesQuery.data, filters)
+    : undefined;
+  const weekEntries = weekEntriesQuery.data
+    ? filterTimeEntries(weekEntriesQuery.data, filters)
+    : undefined;
+
+  // Options come from the *unfiltered* entries: narrowing to one project
+  // shouldn't make every other project disappear from the picker.
+  const projectOptions = projectOptionsFrom(
+    (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
+  );
+  const activeFilterCount = countActiveFilters(filters);
+
+  const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
   const activeFilenameBase =
     viewMode === "daily"
       ? `timesheet-${format(dailyRange.from, "yyyy-MM-dd")}-to-${format(dailyRange.to, "yyyy-MM-dd")}`
@@ -107,21 +134,18 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
           <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {canViewOthers && membersQuery.data && (
-            <select
-              value={viewingMembershipId}
-              onChange={(event) => setViewingMembershipId(event.target.value)}
-              aria-label="Whose timesheet to view"
-              className="rounded-md border border-input-border bg-white px-3 py-1.5 text-sm text-slate-900"
-            >
-              <option value="">{ownLabel}</option>
-              {otherMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name ?? member.email}
-                </option>
-              ))}
-            </select>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowFilters(true)}
+            aria-expanded={showFilters}
+            className="flex cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
+          >
+            <FunnelIcon size={16} aria-hidden="true" />
+            Filter
+            {activeFilterCount > 0 && (
+              <span className="tabular-nums">({activeFilterCount})</span>
+            )}
+          </button>
           {isAdmin && (
             <button
               type="button"
@@ -170,7 +194,7 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
             setCustomRange(range);
             setDatePreset(preset);
           }}
-          entries={dailyEntriesQuery.data}
+          entries={dailyEntries}
           isLoading={dailyEntriesQuery.isLoading}
           isError={dailyEntriesQuery.isError}
           errorMessage={
@@ -192,19 +216,33 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
 
           {weekEntriesQuery.isError && <ErrorMessage message="Could not load this timesheet." />}
 
-          {weekEntriesQuery.data && viewMode === "weekly" && (
-            <TimesheetWeeklyMatrix entries={weekEntriesQuery.data} start={weekStart} />
+          {weekEntries && viewMode === "weekly" && (
+            <TimesheetWeeklyMatrix entries={weekEntries} start={weekStart} />
           )}
 
-          {weekEntriesQuery.data && viewMode === "calendar" && (
+          {weekEntries && viewMode === "calendar" && (
             <TimesheetCalendarGrid
               organisationId={organisationId}
-              entries={weekEntriesQuery.data}
+              entries={weekEntries}
               start={weekStart}
               now={now}
             />
           )}
         </div>
+      )}
+
+      {showFilters && (
+        <TimesheetFilterPanel
+          filters={filters}
+          onChange={setFilters}
+          projectOptions={projectOptions}
+          memberValue={viewingMembershipId}
+          onMemberChange={setViewingMembershipId}
+          ownLabel={ownLabel}
+          otherMembers={otherMembers}
+          canViewOthers={canViewOthers && membersQuery.data !== undefined}
+          onClose={() => setShowFilters(false)}
+        />
       )}
 
       {addingTime && (
