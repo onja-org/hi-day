@@ -6,6 +6,7 @@ import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers
 import { useInvalidateProject } from "@/hooks/useInvalidateProject";
 import { useProject } from "@/hooks/useProject";
 import { addProjectMembers } from "@/lib/addProjectMembers";
+import { PROJECT_MEMBERSHIP_ROLE_OPTIONS } from "@/lib/projectMembershipRoleOptions";
 import type { ProjectMembershipRole } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
 import { MemberSearchChecklist } from "./MemberSearchChecklist";
@@ -93,6 +94,7 @@ export function AddProjectMemberModal({
         )}
 
         <MemberSearchChecklist
+          roleOptions={PROJECT_MEMBERSHIP_ROLE_OPTIONS}
           candidates={availableMembers}
           selected={selected}
           isLoading={isLoading}

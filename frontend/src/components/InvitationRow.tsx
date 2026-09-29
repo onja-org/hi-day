@@ -15,11 +15,11 @@ import { InvitationStatusBadge } from "./InvitationStatusBadge";
 type InvitationRowProps = {
   organisationId: string;
   invitation: PendingInvitation;
-  /** The invited-to team's name, when the caller can see that team. */
-  teamName: string | null;
+  /** Team id → name for the teams the caller can see. */
+  teamNames: Map<string, string>;
 };
 
-export function InvitationRow({ organisationId, invitation, teamName }: InvitationRowProps) {
+export function InvitationRow({ organisationId, invitation, teamNames }: InvitationRowProps) {
   const queryClient = useQueryClient();
 
   function invalidate() {
@@ -37,7 +37,6 @@ export function InvitationRow({ organisationId, invitation, teamName }: Invitati
   });
 
   const isPending = resendMutation.isPending || revokeMutation.isPending;
-  const teamLabel = teamName ?? "Team";
 
   return (
     <tr className="border-b border-input-border last:border-b-0 hover:bg-cream/30">
@@ -58,17 +57,10 @@ export function InvitationRow({ organisationId, invitation, teamName }: Invitati
       <td className="hidden px-4 py-3 md:table-cell">
         <AvatarStack
           tone="secondary"
-          items={
-            invitation.teamId
-              ? [
-                  {
-                    id: invitation.teamId,
-                    label: teamLabel,
-                    initials: getInitials(teamLabel).charAt(0),
-                  },
-                ]
-              : []
-          }
+          items={invitation.teamIds.map((teamId) => {
+            const name = teamNames.get(teamId) ?? "Team";
+            return { id: teamId, label: name, initials: getInitials(name).charAt(0) };
+          })}
         />
       </td>
       <td className="hidden px-4 py-3 text-slate-900 md:table-cell">

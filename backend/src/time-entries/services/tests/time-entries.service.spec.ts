@@ -9,6 +9,7 @@ import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Project } from '../../../database/entities/project.entity';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
+import { ProjectMembershipRole } from '../../../database/entities/project-membership-role.enum';
 import { ProjectTeam } from '../../../database/entities/project-team.entity';
 import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
@@ -269,6 +270,29 @@ describe('TimeEntriesService', () => {
           null,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a project viewer, who can see the project but not track time on it', async () => {
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'pm-1',
+          role: ProjectMembershipRole.VIEWER,
+        }),
+      });
+      const service = makeService({ projectMembershipsRepo });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toThrow(
+        'Project viewers can see this project but can’t log time on it.',
+      );
     });
 
     it('rejects starting against an archived project', async () => {

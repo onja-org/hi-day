@@ -82,7 +82,8 @@ export function TaskForm({
     }
   }
 
-  const members = projectQuery.data?.members ?? [];
+  // A viewer can't be assigned tasks (the backend rejects it).
+  const members = (projectQuery.data?.members ?? []).filter((member) => member.role !== "viewer");
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">

@@ -156,9 +156,11 @@ describe('ProjectsService', () => {
 
   function makeTimeEntriesService(overrides: Partial<TimeEntriesService> = {}) {
     const hasRunningEntryForProject = jest.fn().mockResolvedValue(false);
+    const hasEntriesForProject = jest.fn().mockResolvedValue(false);
     return {
       timeEntriesService: {
         hasRunningEntryForProject,
+        hasEntriesForProject,
         ...overrides,
       } as unknown as TimeEntriesService,
       hasRunningEntryForProject,
@@ -379,6 +381,105 @@ describe('ProjectsService', () => {
         expect.anything(),
         expect.objectContaining({ action: 'project.updated' }),
       );
+    });
+  });
+
+  describe('remove', () => {
+    function makeDeletingDataSource() {
+      const calls: string[] = [];
+      const deleteFn = jest.fn((entity: { name: string }) => {
+        calls.push(entity.name);
+        return Promise.resolve(undefined);
+      });
+      const query = jest.fn().mockResolvedValue(undefined);
+      const manager = { delete: deleteFn, query } as unknown as EntityManager;
+      const transaction = jest.fn(
+        (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
+      );
+      return { dataSource: { transaction } as unknown, calls, query };
+    }
+
+    it('deletes assignments and tasks before the project, and records an audit log entry', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const { dataSource, calls, query } = makeDeletingDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        projectsRepo,
+        dataSource,
+        auditLogService,
+      });
+
+      await service.remove('org-1', 'project-1', 'admin-1');
+
+      expect(calls).toEqual([
+        'ProjectMembership',
+        'ProjectTeam',
+        'Task',
+        'Project',
+      ]);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('array_remove'),
+        ['project-1', 'org-1'],
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'project.deleted',
+          metadata: { projectId: 'project-1', name: 'Website' },
+        }),
+      );
+    });
+
+    it('refuses to delete a project with time logged against it', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const { timeEntriesService } = makeTimeEntriesService({
+        hasEntriesForProject: jest.fn().mockResolvedValue(true),
+      });
+      const { dataSource, calls } = makeDeletingDataSource();
+      const service = makeService({
+        projectsRepo,
+        dataSource,
+        timeEntriesService,
+      });
+
+      await expect(
+        service.remove('org-1', 'project-1', 'admin-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(calls).toEqual([]);
+    });
+
+    it('maps a foreign-key violation (time logged mid-delete) to a conflict', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const error = new QueryFailedError('DELETE', [], new Error('fk'));
+      (error as unknown as { driverError: { code: string } }).driverError = {
+        code: '23503',
+      };
+      const dataSource = { transaction: jest.fn().mockRejectedValue(error) };
+      const service = makeService({ projectsRepo, dataSource });
+
+      await expect(
+        service.remove('org-1', 'project-1', 'admin-1'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('404s for a project outside the organisation', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const projectsRepo = makeProjectsRepo({ findOne });
+      const service = makeService({ projectsRepo });
+
+      await expect(
+        service.remove('org-1', 'project-1', 'admin-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(findOne).toHaveBeenCalledWith({
+        where: { id: 'project-1', organisationId: 'org-1' },
+      });
     });
   });
 
@@ -639,6 +740,73 @@ describe('ProjectsService', () => {
         expect.anything(),
         expect.objectContaining({ action: 'project.member_updated' }),
       );
+    });
+
+    it('unassigns their tasks when a member becomes a viewer', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...existingProjectMembership }),
+      });
+      const update = jest.fn().mockResolvedValue(undefined);
+      const dataSource = {
+        transaction: jest.fn(
+          (fn: (manager: EntityManager) => Promise<unknown>) =>
+            fn({ update } as unknown as EntityManager),
+        ),
+      };
+      const service = makeService({
+        projectsRepo,
+        projectMembershipsRepo,
+        dataSource,
+      });
+
+      const result = await service.updateMember(
+        'org-1',
+        'project-1',
+        'membership-1',
+        'admin-1',
+        { role: ProjectMembershipRole.VIEWER },
+      );
+
+      expect(result.role).toBe(ProjectMembershipRole.VIEWER);
+      expect(update).toHaveBeenCalledWith(
+        Task,
+        { assigneeProjectMembershipId: 'pm-1' },
+        { assigneeProjectMembershipId: null },
+      );
+    });
+
+    it('leaves task assignments alone when promoting to manager', async () => {
+      const projectsRepo = makeProjectsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...baseProject }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({ ...existingProjectMembership }),
+      });
+      const update = jest.fn();
+      const dataSource = {
+        transaction: jest.fn(
+          (fn: (manager: EntityManager) => Promise<unknown>) =>
+            fn({ update } as unknown as EntityManager),
+        ),
+      };
+      const service = makeService({
+        projectsRepo,
+        projectMembershipsRepo,
+        dataSource,
+      });
+
+      await service.updateMember(
+        'org-1',
+        'project-1',
+        'membership-1',
+        'admin-1',
+        { role: ProjectMembershipRole.MANAGER },
+      );
+
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('throws when the member is not assigned to the project', async () => {
@@ -956,6 +1124,28 @@ describe('ProjectsService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('project-1');
+    });
+
+    it('leaves out projects the caller is only a viewer on', async () => {
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+      });
+      const projectMembershipsRepo = makeProjectMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          { role: ProjectMembershipRole.VIEWER, project: { ...baseProject } },
+          {
+            role: ProjectMembershipRole.MEMBER,
+            project: { ...baseProject, id: 'project-2', name: 'Portal' },
+          },
+        ]),
+      });
+      const service = makeService({ membershipsRepo, projectMembershipsRepo });
+
+      const result = await service.listForTimeTracking('org-1', 'user-1');
+
+      expect(result.map((project) => project.id)).toEqual(['project-2']);
     });
 
     it('rejects a caller with no active membership in the organisation', async () => {

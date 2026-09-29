@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useInvalidateProject } from "@/hooks/useInvalidateProject";
+import { PROJECT_MEMBERSHIP_ROLE_OPTIONS } from "@/lib/projectMembershipRoleOptions";
 import { removeProjectMember } from "@/lib/removeProjectMember";
 import { updateProjectMember } from "@/lib/updateProjectMember";
 import type { ProjectDetail, ProjectMembershipRole } from "@/types/project";
@@ -93,8 +94,11 @@ export function ProjectMembersSection({
                         disabled={isArchived || updateRoleMutation.isPending}
                         className="rounded-md border border-input-border bg-white px-2 py-1 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <option value="member">Member</option>
-                        <option value="manager">Manager</option>
+                        {PROJECT_MEMBERSHIP_ROLE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                     </>
                   ) : (

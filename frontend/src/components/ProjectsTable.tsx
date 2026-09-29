@@ -9,7 +9,9 @@ import type { ProjectStatus } from "@/types/project";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectRow } from "./ProjectRow";
 import { PageTabs } from "./PageTabs";
+import { ProjectBatchActions } from "./ProjectBatchActions";
 import { SearchInput } from "./SearchInput";
+import { SelectAllCheckbox } from "./SelectAllCheckbox";
 import { Spinner } from "./Spinner";
 
 type ProjectsTableProps = {
@@ -21,6 +23,7 @@ type ProjectsTableProps = {
 export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
   const [statusTab, setStatusTab] = useState<ProjectStatus>("active");
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Fetches every status at once so both tabs can show their counts.
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const organisationQuery = useCurrentOrganisation();
@@ -58,6 +61,22 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
     allProjects.filter((project) => project.status === statusTab),
     search,
   );
+  // Only rows on screen count, so a search can't hide a ticked project
+  // that a batch action would still touch.
+  const selected = projects.filter((project) => selectedIds.has(project.id));
+  const columnCount = canManage ? 6 : 5;
+
+  function toggleSelected(projectId: string) {
+    const next = new Set(selectedIds);
+    if (next.has(projectId)) next.delete(projectId);
+    else next.add(projectId);
+    setSelectedIds(next);
+  }
+
+  function changeTab(tab: ProjectStatus) {
+    setStatusTab(tab);
+    setSelectedIds(new Set());
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,7 +86,7 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
           { key: "archived", label: "Archived", count: counts.archived },
         ]}
         active={statusTab}
-        onChange={setStatusTab}
+        onChange={changeTab}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -75,12 +94,33 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
         {actions}
       </div>
 
+      {canManage && (
+        <ProjectBatchActions
+          organisationId={organisationId}
+          status={statusTab}
+          selected={selected}
+          onClearSelection={() => setSelectedIds(new Set())}
+        />
+      )}
+
       {/* No horizontal scroll wrapper: it would also clip a last row's
           Actions menu vertically. Secondary columns hide on narrow screens
           instead (see ProjectRow). */}
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-input-border text-primary-dark">
+            {canManage && (
+              <th className="w-10 py-3 pl-4">
+                <SelectAllCheckbox
+                  label="Select all projects"
+                  selectedCount={selected.length}
+                  totalCount={projects.length}
+                  onChange={(selectAll) =>
+                    setSelectedIds(new Set(selectAll ? projects.map((project) => project.id) : []))
+                  }
+                />
+              </th>
+            )}
             <th className="px-4 py-3 font-semibold">Name</th>
             <th className="hidden px-4 py-3 font-semibold md:table-cell">Teams</th>
             <th className="hidden px-4 py-3 font-semibold md:table-cell">Members</th>
@@ -97,11 +137,14 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
               organisationId={organisationId}
               project={project}
               canManage={canManage}
+              columnCount={columnCount}
+              selected={selectedIds.has(project.id)}
+              onToggleSelected={() => toggleSelected(project.id)}
             />
           ))}
           {projects.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-8 text-center text-slate-900">
+              <td colSpan={columnCount} className="px-4 py-8 text-center text-slate-900">
                 {search.trim() && "No projects match your search."}
                 {!search.trim() && statusTab === "archived" && "No archived projects."}
                 {!search.trim() &&

@@ -22,7 +22,7 @@ const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
  * org admin/manager can always manage any project, and — layered on top —
  * a ProjectMembership with role MANAGER on that specific project can
  * manage that project too (add/remove members, change other members'
- * roles, edit, archive/unarchive), even if the caller's org role is plain
+ * roles, edit, archive/unarchive, delete), even if the caller's org role is plain
  * "member". This is what makes project-level manager useful as a
  * delegation mechanism, rather than just a label. A plain project MEMBER
  * never passes this guard — see ProjectViewGuard for their read-only

@@ -7,7 +7,7 @@ export type PendingInvitation = {
   id: string;
   email: string;
   role: MembershipRole;
-  teamId: string | null;
+  teamIds: string[];
   projectIds: string[];
   status: InvitationStatus;
   createdAt: string;
@@ -21,7 +21,7 @@ export type GetPendingInvitationsResult =
 export type InviteEntryInput = {
   email: string;
   role: MembershipRole;
-  teamId?: string;
+  teamIds?: string[];
   projectIds?: string[];
 };
 
@@ -42,7 +42,7 @@ export type InvitationPreview = {
   email?: string;
   organisationName?: string;
   role?: MembershipRole;
-  teamName?: string | null;
+  teamNames?: string[];
   accountAlreadyExists?: boolean;
 };
 

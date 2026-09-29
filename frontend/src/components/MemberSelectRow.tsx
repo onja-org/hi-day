@@ -1,32 +1,30 @@
 "use client";
 
-type MemberSelectRowProps = {
+type MemberSelectRowProps<TRole extends string> = {
   id: string;
   name: string | null;
   email: string;
   checked: boolean;
-  role: "member" | "manager";
-  /** e.g. "Team manager" vs. plain "Manager" — the only thing that differs
-   * between the Projects and Teams add-member checklists. */
-  managerLabel?: string;
+  role: TRole;
+  /** The roles this row can pick from — Projects and Teams offer different ones. */
+  roleOptions: { value: TRole; label: string }[];
   onCheckedChange: (checked: boolean) => void;
-  onRoleChange: (role: "member" | "manager") => void;
+  onRoleChange: (role: TRole) => void;
 };
 
 /** One checkable candidate row, shared by the Projects and Teams "add
  * members" checklists — a checkbox plus that row's own role choice, so a
- * single batch submit can add some people as members and others as
- * managers together. */
-export function MemberSelectRow({
+ * single batch submit can add people with different roles together. */
+export function MemberSelectRow<TRole extends string>({
   id,
   name,
   email,
   checked,
   role,
-  managerLabel = "Manager",
+  roleOptions,
   onCheckedChange,
   onRoleChange,
-}: MemberSelectRowProps) {
+}: MemberSelectRowProps<TRole>) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-md border border-input-border px-3 py-2 text-slate-900">
       <label className="flex flex-1 items-center gap-2">
@@ -48,11 +46,14 @@ export function MemberSelectRow({
         id={`role-${id}`}
         value={role}
         disabled={!checked}
-        onChange={(event) => onRoleChange(event.target.value as "member" | "manager")}
+        onChange={(event) => onRoleChange(event.target.value as TRole)}
         className="rounded-md border border-input-border px-2 py-1.5 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <option value="member">Member</option>
-        <option value="manager">{managerLabel}</option>
+        {roleOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
     </li>
   );

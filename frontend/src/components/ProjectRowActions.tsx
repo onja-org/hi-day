@@ -7,6 +7,7 @@ import { ActionsMenu } from "./ActionsMenu";
 import { AddProjectMemberModal } from "./AddProjectMemberModal";
 import { AddProjectTeamModal } from "./AddProjectTeamModal";
 import { ArchiveProjectModal } from "./ArchiveProjectModal";
+import { DeleteProjectModal } from "./DeleteProjectModal";
 import { ProjectFormModal } from "./ProjectFormModal";
 
 type ProjectRowActionsProps = {
@@ -14,7 +15,7 @@ type ProjectRowActionsProps = {
   project: ProjectListItem;
 };
 
-type OpenModal = "edit" | "addMembers" | "addTeam" | "archive" | null;
+type OpenModal = "edit" | "addMembers" | "addTeam" | "archive" | "delete" | null;
 
 export function ProjectRowActions({ organisationId, project }: ProjectRowActionsProps) {
   const [openModal, setOpenModal] = useState<OpenModal>(null);
@@ -60,6 +61,11 @@ export function ProjectRowActions({ organisationId, project }: ProjectRowActions
                 onSelect: () => setOpenModal("archive"),
                 tone: "danger",
               },
+          {
+            label: "Delete project",
+            onSelect: () => setOpenModal("delete"),
+            tone: "danger",
+          },
         ]}
       />
 
@@ -83,6 +89,14 @@ export function ProjectRowActions({ organisationId, project }: ProjectRowActions
           organisationId={organisationId}
           projectId={project.id}
           onClose={closeModal}
+        />
+      )}
+      {openModal === "delete" && (
+        <DeleteProjectModal
+          organisationId={organisationId}
+          project={project}
+          onClose={closeModal}
+          onArchiveInstead={() => setOpenModal("archive")}
         />
       )}
       {openModal === "archive" && (

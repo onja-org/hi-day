@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMembers } from "@/lib/addTeamMembers";
+import { TEAM_ROLE_OPTIONS } from "@/lib/teamRoleOptions";
 import type { TeamMember } from "@/types/team";
 import { ErrorMessage } from "./ErrorMessage";
 import { MemberSearchChecklist } from "./MemberSearchChecklist";
@@ -97,7 +98,7 @@ export function AddTeamMemberModal({
           selected={selected}
           isLoading={membersQuery.isLoading}
           emptyMessage="Every active member is already on this team."
-          managerLabel="Team manager"
+          roleOptions={TEAM_ROLE_OPTIONS}
           onToggle={(id, checked) =>
             setSelected((current) => {
               const next = new Map(current);

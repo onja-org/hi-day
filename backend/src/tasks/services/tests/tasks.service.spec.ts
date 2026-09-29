@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -13,6 +14,7 @@ import { ProjectMembership } from '../../../database/entities/project-membership
 import { ProjectMembershipRole } from '../../../database/entities/project-membership-role.enum';
 import { Task } from '../../../database/entities/task.entity';
 import { TasksService } from '../tasks.service';
+import { TaskStage } from '../../../database/entities/task-stage.enum';
 
 describe('TasksService', () => {
   function makeTasksRepo(overrides: Partial<Repository<Task>> = {}) {
@@ -174,6 +176,24 @@ describe('TasksService', () => {
           assigneeProjectMembershipId: 'pm-nope',
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a project viewer as the assignee', async () => {
+      const service = makeService({
+        projectMembershipsRepo: makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...baseAssignee,
+            role: ProjectMembershipRole.VIEWER,
+          }),
+        }),
+      });
+
+      await expect(
+        service.create('org-1', 'project-1', 'admin-1', {
+          name: 'Task',
+          assigneeProjectMembershipId: 'pm-1',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('assigns the task when the assignee is a project member', async () => {
@@ -486,6 +506,169 @@ describe('TasksService', () => {
 
       expect(result.canManage).toBe(false);
       expect(result.tasks[0].assignedToMe).toBe(true);
+    });
+  });
+
+  describe('setStage', () => {
+    const memberRole = {
+      membershipsRepo: () =>
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ id: 'm-1', role: MembershipRole.MEMBER }),
+        }),
+      projectMembershipsRepo: () =>
+        makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'pm-1',
+            role: ProjectMembershipRole.MEMBER,
+          }),
+        }),
+    };
+
+    it('closes the task when moved to Done and audits the move', async () => {
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        tasksRepo: makeTasksRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ ...baseTask, stage: TaskStage.IN_PROGRESS }),
+        }),
+        auditLogService,
+      });
+
+      const result = await service.setStage(
+        'org-1',
+        'project-1',
+        'task-1',
+        'admin-1',
+        TaskStage.DONE,
+      );
+
+      expect(result.stage).toBe(TaskStage.DONE);
+      expect(result.status).toBe('closed');
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'task.stage_changed',
+          metadata: expect.objectContaining({
+            from: TaskStage.IN_PROGRESS,
+            to: TaskStage.DONE,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('reopens a closed task moved out of Done', async () => {
+      const service = makeService({
+        tasksRepo: makeTasksRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...baseTask,
+            stage: TaskStage.DONE,
+            closedAt: new Date('2026-03-01'),
+          }),
+        }),
+      });
+
+      const result = await service.setStage(
+        'org-1',
+        'project-1',
+        'task-1',
+        'admin-1',
+        TaskStage.IN_PROGRESS,
+      );
+
+      expect(result.status).toBe('open');
+      expect(result.closedAt).toBeNull();
+    });
+
+    it("lets a plain member move their own task but not someone else's", async () => {
+      const own = makeService({
+        tasksRepo: makeTasksRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...baseTask,
+            stage: TaskStage.TODO,
+            assigneeProjectMembershipId: 'pm-1',
+          }),
+        }),
+        membershipsRepo: memberRole.membershipsRepo(),
+        projectMembershipsRepo: memberRole.projectMembershipsRepo(),
+      });
+      await expect(
+        own.setStage(
+          'org-1',
+          'project-1',
+          'task-1',
+          'user-1',
+          TaskStage.IN_PROGRESS,
+        ),
+      ).resolves.toMatchObject({ stage: TaskStage.IN_PROGRESS });
+
+      const others = makeService({
+        tasksRepo: makeTasksRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...baseTask,
+            stage: TaskStage.TODO,
+            assigneeProjectMembershipId: 'pm-someone-else',
+          }),
+        }),
+        membershipsRepo: memberRole.membershipsRepo(),
+        projectMembershipsRepo: memberRole.projectMembershipsRepo(),
+      });
+      await expect(
+        others.setStage(
+          'org-1',
+          'project-1',
+          'task-1',
+          'user-1',
+          TaskStage.IN_PROGRESS,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects moving a task on an archived project', async () => {
+      const service = makeService({
+        projectsRepo: makeProjectsRepo({
+          findOne: jest.fn().mockResolvedValue(archivedProject),
+        }),
+      });
+
+      await expect(
+        service.setStage(
+          'org-1',
+          'project-1',
+          'task-1',
+          'admin-1',
+          TaskStage.DONE,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('close / reopen keep the stage in step', () => {
+    it('moves a task to Done on close and back to To do on reopen', async () => {
+      const task = { ...baseTask, stage: TaskStage.IN_PROGRESS };
+      const service = makeService({
+        tasksRepo: makeTasksRepo({
+          findOne: jest.fn().mockResolvedValue(task),
+        }),
+      });
+
+      const closed = await service.close(
+        'org-1',
+        'project-1',
+        'task-1',
+        'admin-1',
+      );
+      expect(closed.stage).toBe(TaskStage.DONE);
+
+      const reopened = await service.reopen(
+        'org-1',
+        'project-1',
+        'task-1',
+        'admin-1',
+      );
+      expect(reopened.stage).toBe(TaskStage.TODO);
     });
   });
 });

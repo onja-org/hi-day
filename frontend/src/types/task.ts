@@ -3,6 +3,9 @@ import type { ProjectColour, ProjectStatus } from "./project";
 
 export type TaskStatus = "open" | "closed";
 
+/** Kanban column. "done" is kept in step with `status: "closed"` server-side. */
+export type TaskStage = "todo" | "in_progress" | "done";
+
 export type TaskAssignee = {
   membershipId: string;
   userId: string;
@@ -19,6 +22,7 @@ export type Task = {
   dueDate: string | null;
   status: TaskStatus;
   closedAt: string | null;
+  stage: TaskStage;
   assignee: TaskAssignee | null;
   assignedToMe: boolean;
   createdAt: string;
@@ -65,3 +69,5 @@ export type UpdateTaskResult = ApiResult<{ task: Task }>;
 export type CloseTaskResult = ApiResult<{ task: Task }>;
 
 export type ReopenTaskResult = ApiResult<{ task: Task }>;
+
+export type SetTaskStageResult = ApiResult<{ task: Task }>;

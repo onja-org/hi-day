@@ -10,14 +10,15 @@ type MemberCandidate = {
   email: string;
 };
 
-type MemberSearchChecklistProps = {
+type MemberSearchChecklistProps<TRole extends string> = {
   candidates: MemberCandidate[];
-  selected: Map<string, "member" | "manager">;
+  selected: Map<string, TRole>;
+  /** The first option is the default for a newly-checked row. */
+  roleOptions: { value: TRole; label: string }[];
   onToggle: (id: string, checked: boolean) => void;
-  onRoleChange: (id: string, role: "member" | "manager") => void;
+  onRoleChange: (id: string, role: TRole) => void;
   /** Shown when there are no candidates at all (before any search). */
   emptyMessage: string;
-  managerLabel?: string;
   isLoading?: boolean;
 };
 
@@ -25,15 +26,15 @@ type MemberSearchChecklistProps = {
  * members" modals — extracted so both stay under this codebase's
  * component size guideline, and so the two features can't quietly drift
  * apart in how bulk-selecting members works. */
-export function MemberSearchChecklist({
+export function MemberSearchChecklist<TRole extends string>({
   candidates,
   selected,
+  roleOptions,
   onToggle,
   onRoleChange,
   emptyMessage,
-  managerLabel,
   isLoading,
-}: MemberSearchChecklistProps) {
+}: MemberSearchChecklistProps<TRole>) {
   const [search, setSearch] = useState("");
   const search_ = search.trim().toLowerCase();
   const visible = candidates.filter((candidate) => {
@@ -71,8 +72,8 @@ export function MemberSearchChecklist({
               name={candidate.name}
               email={candidate.email}
               checked={selected.has(candidate.id)}
-              role={selected.get(candidate.id) ?? "member"}
-              managerLabel={managerLabel}
+              role={selected.get(candidate.id) ?? roleOptions[0].value}
+              roleOptions={roleOptions}
               onCheckedChange={(checked) => onToggle(candidate.id, checked)}
               onRoleChange={(role) => onRoleChange(candidate.id, role)}
             />

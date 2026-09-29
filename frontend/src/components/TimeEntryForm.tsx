@@ -167,7 +167,10 @@ export function TimeEntryForm({
         // resetting to "Me".
         <LogTimeForSelect
           key={projectId}
-          members={projectDetailQuery.data?.members ?? []}
+          // A viewer can't have time logged on this project.
+          members={(projectDetailQuery.data?.members ?? []).filter(
+            (member) => member.role !== "viewer",
+          )}
         />
       )}
 

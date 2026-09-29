@@ -7,6 +7,7 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { ORGANISATION_TEAMS_QUERY_KEY } from "@/hooks/useOrganisationTeams";
 import { addTeamMembers } from "@/lib/addTeamMembers";
 import { createTeam } from "@/lib/createTeam";
+import { TEAM_ROLE_OPTIONS } from "@/lib/teamRoleOptions";
 import type { CreateTeamResult, OrganisationTeam } from "@/types/team";
 import { ErrorMessage } from "./ErrorMessage";
 import { MemberSearchChecklist } from "./MemberSearchChecklist";
@@ -107,7 +108,7 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
           selected={selected}
           isLoading={membersQuery.isLoading}
           emptyMessage="No active members to add yet."
-          managerLabel="Team manager"
+          roleOptions={TEAM_ROLE_OPTIONS}
           onToggle={(id, checked) =>
             setSelected((current) => {
               const next = new Map(current);

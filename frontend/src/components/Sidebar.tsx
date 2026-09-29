@@ -5,8 +5,10 @@ import {
   ChartLineUp,
   Clock,
   Desktop,
+  FolderSimple,
   Gauge,
   Gear,
+  ListChecks,
   User,
   Users,
   UsersThree,
@@ -34,24 +36,31 @@ export function Sidebar({
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
-  const peopleLinks: NavLink[] = [
-    ...(canSeeMembers
-      ? [
+  const teamsLink: NavLink = {
+    kind: "link",
+    label: "Teams",
+    href: `/organisations/${organisationId}/teams`,
+    icon: UsersThree,
+  };
+  // Only admins/managers can see Members, so only they get the People
+  // group. Everyone else just sees Teams (only the teams they're on — the
+  // backend scopes that list) as a standalone link.
+  const peopleEntry: NavEntry = canSeeMembers
+    ? {
+        kind: "group",
+        label: "People",
+        icon: User,
+        children: [
           {
-            kind: "link" as const,
+            kind: "link",
             label: "Members",
             href: `/organisations/${organisationId}/members`,
             icon: Users,
           },
-        ]
-      : []),
-    {
-      kind: "link",
-      label: "Teams",
-      href: `/organisations/${organisationId}/teams`,
-      icon: UsersThree,
-    },
-  ];
+          teamsLink,
+        ],
+      }
+    : teamsLink;
 
   const entries: NavEntry[] = [
     {
@@ -73,12 +82,25 @@ export function Sidebar({
       icon: ChartLineUp,
     },
     {
-      kind: "link",
-      label: "Projects",
-      href: `/organisations/${organisationId}/projects`,
+      kind: "group",
+      label: "Project management",
       icon: Briefcase,
+      children: [
+        {
+          kind: "link",
+          label: "Projects",
+          href: `/organisations/${organisationId}/projects`,
+          icon: FolderSimple,
+        },
+        {
+          kind: "link",
+          label: "Tasks",
+          href: `/organisations/${organisationId}/tasks`,
+          icon: ListChecks,
+        },
+      ],
     },
-    { kind: "group", label: "People", icon: User, children: peopleLinks },
+    peopleEntry,
     ...(canSeeMembers
       ? [
           {
@@ -112,7 +134,7 @@ export function Sidebar({
         />
       )}
 
-      <nav className="hidden shrink-0 flex-col bg-sidebar sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-52">
+      <nav className="hidden shrink-0 flex-col bg-sidebar sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-56">
         <div className="flex items-center justify-center gap-2 border-b border-primary-dark/10 px-2 py-4 lg:justify-start lg:px-5">
           <span
             aria-hidden="true"

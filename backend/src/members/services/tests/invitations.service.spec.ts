@@ -8,6 +8,7 @@ import { PasswordService } from '../../../auth/services/password.service';
 import { RefreshTokenService } from '../../../auth/services/refresh-token.service';
 import { TokenService } from '../../../auth/services/token.service';
 import { hashToken } from '../../../common/hash-token.util';
+import { InviteLink } from '../../../database/entities/invite-link.entity';
 import { Invitation } from '../../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../../database/entities/invitation-status.enum';
 import { Membership } from '../../../database/entities/membership.entity';
@@ -84,7 +85,9 @@ describe('InvitationsService', () => {
       Promise.resolve({ id: 'new-id', ...entity }),
     );
     const update = jest.fn().mockResolvedValue(undefined);
-    const find = jest.fn().mockResolvedValue([]);
+    const find = jest.fn((_entity: unknown, options: unknown) =>
+      Promise.resolve(requestedIds(options).map((id) => ({ id }))),
+    );
     const manager = { create, save, update, find } as unknown as EntityManager;
     const transaction = jest.fn((fn: TransactionFn) => fn(manager));
     return {
@@ -98,9 +101,24 @@ describe('InvitationsService', () => {
     };
   }
 
+  // Resolves the ids an `In([...])` where-clause asked for — i.e. by
+  // default every requested team exists in the organisation.
+  function requestedIds(options: unknown): string[] {
+    const id = (options as { where?: { id?: { _value?: string[] } } })?.where
+      ?.id;
+    return id?._value ?? [];
+  }
+
   function makeTeamsRepo(overrides: Partial<Repository<Team>> = {}) {
     return {
-      findOne: jest.fn().mockResolvedValue({ id: 'team-1' }),
+      count: jest.fn((options: unknown) =>
+        Promise.resolve(requestedIds(options).length),
+      ),
+      find: jest.fn((options: unknown) =>
+        Promise.resolve(
+          requestedIds(options).map((id) => ({ id, name: `Team ${id}` })),
+        ),
+      ),
       ...overrides,
     } as unknown as Repository<Team>;
   }
@@ -186,6 +204,7 @@ describe('InvitationsService', () => {
       auditLogService?: AuditLogService;
       teamsRepo?: Repository<Team>;
       projectsRepo?: Repository<Project>;
+      inviteLinksRepo?: Repository<InviteLink>;
     } = {},
   ) {
     return new InvitationsService(
@@ -204,6 +223,10 @@ describe('InvitationsService', () => {
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
       overrides.teamsRepo ?? makeTeamsRepo(),
       overrides.projectsRepo ?? makeProjectsRepo(),
+      overrides.inviteLinksRepo ??
+        ({
+          findOne: jest.fn().mockResolvedValue(null),
+        } as unknown as Repository<InviteLink>),
     );
   }
 
@@ -239,10 +262,10 @@ describe('InvitationsService', () => {
     });
 
     it("rejects a team that isn't in the inviting organisation", async () => {
-      const teamsFindOne = jest.fn().mockResolvedValue(null);
+      const teamsCount = jest.fn().mockResolvedValue(1);
       const { emailService, sendInvitationEmail } = makeEmailService();
       const service = makeService({
-        teamsRepo: makeTeamsRepo({ findOne: teamsFindOne }),
+        teamsRepo: makeTeamsRepo({ count: teamsCount }),
         emailService,
       });
 
@@ -250,18 +273,18 @@ describe('InvitationsService', () => {
         {
           email: 'new@acme.test',
           role: MembershipRole.MEMBER,
-          teamId: 'other-org-team',
+          teamIds: ['team-1', 'other-org-team'],
         },
       ]);
 
-      expect(teamsFindOne).toHaveBeenCalledWith({
-        where: { id: 'other-org-team', organisationId: 'org-1' },
+      expect(teamsCount).toHaveBeenCalledWith({
+        where: expect.objectContaining({ organisationId: 'org-1' }) as unknown,
       });
       expect(results).toEqual([
         {
           email: 'new@acme.test',
           outcome: 'invalid',
-          message: 'Team not found.',
+          message: 'One or more teams were not found.',
         },
       ]);
       expect(sendInvitationEmail).not.toHaveBeenCalled();
@@ -385,7 +408,7 @@ describe('InvitationsService', () => {
         {
           email: 'New@Acme.test',
           role: MembershipRole.MANAGER,
-          teamId: 'team-1',
+          teamIds: ['team-1'],
         },
       ]);
 
@@ -395,7 +418,7 @@ describe('InvitationsService', () => {
         expect.objectContaining({
           email: 'new@acme.test',
           role: MembershipRole.MANAGER,
-          teamId: 'team-1',
+          teamIds: ['team-1'],
           organisationId: 'org-1',
           status: InvitationStatus.PENDING,
           tokenHash: hashToken('the-token'),
@@ -419,7 +442,7 @@ describe('InvitationsService', () => {
         findOne: jest.fn().mockResolvedValue({
           id: 'invitation-1',
           email: 'pending@acme.test',
-          teamId: null,
+          teamIds: [],
         }),
       });
       const { emailService, sendInvitationEmail } = makeEmailService();
@@ -467,7 +490,7 @@ describe('InvitationsService', () => {
           id: 'invitation-1',
           email: 'revoked@acme.test',
           role: MembershipRole.MEMBER,
-          teamId: null,
+          teamIds: [],
           status: InvitationStatus.REVOKED,
         }),
       });
@@ -504,7 +527,7 @@ describe('InvitationsService', () => {
           id: 'invitation-1',
           email: 'joined@acme.test',
           role: MembershipRole.MEMBER,
-          teamId: null,
+          teamIds: [],
           status: InvitationStatus.PENDING,
         }),
       });
@@ -600,7 +623,7 @@ describe('InvitationsService', () => {
             id: 'i-1',
             email: 'a@b.test',
             role: MembershipRole.MEMBER,
-            teamId: null,
+            teamIds: [],
             status: InvitationStatus.PENDING,
             expiresAt: new Date(Date.now() - 1000),
             createdAt: new Date(),
@@ -609,7 +632,7 @@ describe('InvitationsService', () => {
             id: 'i-2',
             email: 'c@d.test',
             role: MembershipRole.ADMIN,
-            teamId: null,
+            teamIds: [],
             status: InvitationStatus.ACCEPTED,
             expiresAt: null,
             createdAt: new Date(),
@@ -642,7 +665,7 @@ describe('InvitationsService', () => {
           email: 'invitee@acme.test',
           role: MembershipRole.MEMBER,
           organisation: { name: 'Acme Inc' },
-          team: null,
+          teamIds: [],
         }),
       });
       const usersRepo = makeUsersRepo({
@@ -667,7 +690,7 @@ describe('InvitationsService', () => {
           id: 'invitation-1',
           email: 'invitee@acme.test',
           role: MembershipRole.MEMBER,
-          teamId: null,
+          teamIds: [],
           projectIds: ['project-1', 'project-archived'],
           organisationId: 'org-1',
           status: InvitationStatus.PENDING,
@@ -715,7 +738,7 @@ describe('InvitationsService', () => {
         id: 'invitation-1',
         email: 'invitee@acme.test',
         role: MembershipRole.MEMBER,
-        teamId: 'team-1',
+        teamIds: ['team-1'],
         organisationId: 'org-1',
         status: InvitationStatus.PENDING,
         expiresAt: new Date(Date.now() + 60_000),
@@ -802,7 +825,7 @@ describe('InvitationsService', () => {
       const invitationsRepo = makeInvitationsRepo({
         findOne: jest
           .fn()
-          .mockResolvedValue(pendingInvitation({ teamId: null })),
+          .mockResolvedValue(pendingInvitation({ teamIds: [] })),
       });
       const { dataSource, create } = makeDataSource();
       const { refreshTokenService } = makeRefreshTokenService();
@@ -937,6 +960,230 @@ describe('InvitationsService', () => {
           code: 'ACCOUNT_EXISTS',
         }) as unknown,
       });
+    });
+  });
+
+  describe('requestViaInviteLink', () => {
+    const link = {
+      id: 'link-1',
+      organisationId: 'org-1',
+      role: MembershipRole.MANAGER,
+      teamIds: ['team-1', 'team-2'],
+      projectIds: ['project-1'],
+      createdByUserId: 'creator-1',
+    } as InviteLink;
+
+    it('creates an invitation from the link and emails it', async () => {
+      const { dataSource, create } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        dataSource,
+        emailService,
+        auditLogService,
+      });
+
+      await service.requestViaInviteLink(link, ' New@Acme.test ');
+
+      expect(create).toHaveBeenCalledWith(
+        Invitation,
+        expect.objectContaining({
+          email: 'new@acme.test',
+          role: MembershipRole.MANAGER,
+          teamIds: ['team-1', 'team-2'],
+          projectIds: ['project-1'],
+          inviteLinkId: 'link-1',
+          invitedByUserId: 'creator-1',
+        }),
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'invitation.requested_via_link' }),
+      );
+      expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing for an invalid email or an existing member', async () => {
+      const { emailService, sendInvitationEmail } = makeEmailService();
+      const { repo: membershipsRepo } = makeMembershipsRepo({ id: 'm-1' });
+      const service = makeService({ emailService, membershipsRepo });
+
+      await service.requestViaInviteLink(link, 'not-an-email');
+      await service.requestViaInviteLink(link, 'member@acme.test');
+
+      expect(sendInvitationEmail).not.toHaveBeenCalled();
+    });
+
+    it("never rewrites a live invitation that didn't come from this link", async () => {
+      const invitationsRepo = makeInvitationsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'admin-invite',
+          status: InvitationStatus.PENDING,
+          expiresAt: new Date(Date.now() + 60 * 60_000),
+          inviteLinkId: null,
+        }),
+      });
+      const { dataSource, update, create } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService();
+      const service = makeService({
+        invitationsRepo,
+        dataSource,
+        emailService,
+      });
+
+      await service.requestViaInviteLink(link, 'invitee@acme.test');
+
+      expect(update).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(sendInvitationEmail).not.toHaveBeenCalled();
+    });
+
+    it('resends through the same link only after the cooldown', async () => {
+      const ttlMs = 72 * 60 * 60 * 1000;
+      const sentAt = (minutesAgo: number) =>
+        new Date(Date.now() - minutesAgo * 60_000 + ttlMs);
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'link-invite',
+          status: InvitationStatus.PENDING,
+          expiresAt: sentAt(2),
+          inviteLinkId: 'link-1',
+        })
+        .mockResolvedValueOnce({
+          id: 'link-invite',
+          status: InvitationStatus.PENDING,
+          expiresAt: sentAt(30),
+          inviteLinkId: 'link-1',
+        });
+      const { dataSource, update } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService();
+      const service = makeService({
+        invitationsRepo: makeInvitationsRepo({ findOne }),
+        dataSource,
+        emailService,
+      });
+
+      await service.requestViaInviteLink(link, 'invitee@acme.test');
+      expect(sendInvitationEmail).not.toHaveBeenCalled();
+
+      await service.requestViaInviteLink(link, 'invitee@acme.test');
+      expect(update).toHaveBeenCalledWith(
+        Invitation,
+        'link-invite',
+        expect.objectContaining({ inviteLinkId: 'link-1' }),
+      );
+      expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('accept through an invite link', () => {
+    function linkInvitation() {
+      return {
+        id: 'invitation-1',
+        email: 'invitee@acme.test',
+        role: MembershipRole.MEMBER,
+        teamIds: [],
+        projectIds: [],
+        inviteLinkId: 'link-1',
+        organisationId: 'org-1',
+        status: InvitationStatus.PENDING,
+        expiresAt: new Date(Date.now() + 60_000),
+        organisation: { id: 'org-1', name: 'Acme Inc' },
+      };
+    }
+
+    function activeLink(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'link-1',
+        enabled: true,
+        expiresAt: null,
+        usageCap: 5,
+        usageCount: 1,
+        ...overrides,
+      };
+    }
+
+    function makeLinkDataSource(affected: number) {
+      const base = makeDataSource();
+      const execute = jest.fn().mockResolvedValue({ affected });
+      const queryBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute,
+      };
+      (
+        base.manager as unknown as { createQueryBuilder: jest.Mock }
+      ).createQueryBuilder = jest.fn().mockReturnValue(queryBuilder);
+      return { ...base, execute };
+    }
+
+    const acceptArgs = [
+      'the-token',
+      { password: 'Password1', firstName: 'Jane', lastName: 'Doe' },
+    ] as const;
+
+    it('rejects when the link has since been disabled, before creating an account', async () => {
+      const { dataSource, create } = makeLinkDataSource(1);
+      const service = makeService({
+        invitationsRepo: makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(linkInvitation()),
+        }),
+        inviteLinksRepo: {
+          findOne: jest.fn().mockResolvedValue(activeLink({ enabled: false })),
+        } as unknown as Repository<InviteLink>,
+        dataSource,
+      });
+
+      await expect(
+        service.accept(...acceptArgs, makeRequest(), makeResponse().response),
+      ).rejects.toThrow('no longer active');
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the link filled up in the meantime (no row counted)', async () => {
+      const { dataSource, execute } = makeLinkDataSource(0);
+      const service = makeService({
+        invitationsRepo: makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(linkInvitation()),
+        }),
+        inviteLinksRepo: {
+          findOne: jest.fn().mockResolvedValue(activeLink()),
+        } as unknown as Repository<InviteLink>,
+        dataSource,
+      });
+
+      await expect(
+        service.accept(...acceptArgs, makeRequest(), makeResponse().response),
+      ).rejects.toThrow('no longer active');
+      expect(execute).toHaveBeenCalled();
+    });
+
+    it('counts the join against the link and creates the membership', async () => {
+      const { dataSource, execute, create } = makeLinkDataSource(1);
+      const service = makeService({
+        invitationsRepo: makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(linkInvitation()),
+        }),
+        inviteLinksRepo: {
+          findOne: jest.fn().mockResolvedValue(activeLink()),
+        } as unknown as Repository<InviteLink>,
+        dataSource,
+      });
+
+      await service.accept(
+        ...acceptArgs,
+        makeRequest(),
+        makeResponse().response,
+      );
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledWith(
+        Membership,
+        expect.objectContaining({ organisationId: 'org-1' }),
+      );
     });
   });
 });

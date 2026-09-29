@@ -26,7 +26,8 @@ export function ImportPreviewTable({ rows, teamNames }: ImportPreviewTableProps)
                 {row.entry ? (
                   <span className="text-slate-900">
                     {formatMembershipRole(row.entry.role)}
-                    {row.entry.teamId && ` · ${teamNames.get(row.entry.teamId) ?? "Team"}`}
+                    {row.entry.teamIds &&
+                      ` · ${row.entry.teamIds.map((id) => teamNames.get(id) ?? "Team").join(", ")}`}
                     {row.entry.projectIds &&
                       ` · ${row.entry.projectIds.length} ${row.entry.projectIds.length === 1 ? "project" : "projects"}`}
                   </span>

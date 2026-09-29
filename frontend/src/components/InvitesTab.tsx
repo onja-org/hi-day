@@ -79,7 +79,7 @@ export function InvitesTab({ organisationId }: InvitesTabProps) {
               key={invitation.id}
               organisationId={organisationId}
               invitation={invitation}
-              teamName={invitation.teamId ? (teamNames.get(invitation.teamId) ?? null) : null}
+              teamNames={teamNames}
             />
           ))}
           {invitations.length === 0 && (

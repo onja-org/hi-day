@@ -17,7 +17,7 @@ describe("getInvitationPreview", () => {
             email: "invitee@acme.test",
             organisationName: "Acme Inc",
             role: "member",
-            teamName: null,
+            teamNames: [],
             accountAlreadyExists: false,
           }),
       }),

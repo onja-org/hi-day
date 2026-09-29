@@ -2,6 +2,7 @@
 
 import { useAssignableProjectMembers } from "@/hooks/useAssignableProjectMembers";
 import { useAssignableProjectTeams } from "@/hooks/useAssignableProjectTeams";
+import { PROJECT_MEMBERSHIP_ROLE_OPTIONS } from "@/lib/projectMembershipRoleOptions";
 import type { ProjectMembershipRole } from "@/types/project";
 import { MemberSearchChecklist } from "./MemberSearchChecklist";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
@@ -54,6 +55,7 @@ export function ProjectAssignmentFields({
         triggerText={pluralCount(selectedMembers.size, "member")}
       >
         <MemberSearchChecklist
+          roleOptions={PROJECT_MEMBERSHIP_ROLE_OPTIONS}
           candidates={membersQuery.data ?? []}
           selected={selectedMembers}
           isLoading={membersQuery.isLoading}

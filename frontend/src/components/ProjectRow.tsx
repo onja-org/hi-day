@@ -17,9 +17,20 @@ type ProjectRowProps = {
   organisationId: string;
   project: ProjectOverviewItem;
   canManage: boolean;
+  /** Including the selection checkbox column, when shown. */
+  columnCount: number;
+  selected: boolean;
+  onToggleSelected: () => void;
 };
 
-export function ProjectRow({ organisationId, project, canManage }: ProjectRowProps) {
+export function ProjectRow({
+  organisationId,
+  project,
+  canManage,
+  columnCount,
+  selected,
+  onToggleSelected,
+}: ProjectRowProps) {
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [editing, setEditing] = useState<"members" | "teams" | null>(null);
   const canEditAssignments = canManage && project.status === "active";
@@ -27,6 +38,17 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
   return (
     <>
       <tr className="group border-b border-input-border last:border-b-0 hover:bg-cream/30">
+        {canManage && (
+          <td className="w-10 py-3 pl-4">
+            <input
+              type="checkbox"
+              aria-label={`Select ${project.name}`}
+              checked={selected}
+              onChange={onToggleSelected}
+              className="cursor-pointer accent-primary"
+            />
+          </td>
+        )}
         <td className="px-4 py-3">
           <Link
             href={`/organisations/${organisationId}/projects/${project.id}`}
@@ -107,7 +129,7 @@ export function ProjectRow({ organisationId, project, canManage }: ProjectRowPro
       </tr>
       {tasksExpanded && (
         <tr className="border-b border-input-border bg-cream/40 last:border-b-0">
-          <td colSpan={5} className="px-4 py-4">
+          <td colSpan={columnCount} className="px-4 py-4">
             <ProjectTasksSection organisationId={organisationId} projectId={project.id} />
           </td>
         </tr>

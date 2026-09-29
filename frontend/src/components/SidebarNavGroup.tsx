@@ -40,12 +40,12 @@ export function SidebarNavGroup({ group, pathname, variant, onNavigate }: Sideba
           !hasActiveChild && "text-slate-900 hover:text-primary-dark",
         )}
       >
-        <group.icon size={20} aria-hidden="true" />
-        <span className="flex-1">{group.label}</span>
+        <group.icon size={20} aria-hidden="true" className="shrink-0" />
+        <span className="flex-1 whitespace-nowrap">{group.label}</span>
         <CaretDown
           size={14}
           aria-hidden="true"
-          className={clsx("transition-transform duration-150", !expanded && "-rotate-90")}
+          className={clsx("shrink-0 transition-transform duration-150", !expanded && "-rotate-90")}
         />
       </button>
 

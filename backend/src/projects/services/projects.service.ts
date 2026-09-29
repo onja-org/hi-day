@@ -13,7 +13,10 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
-import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import {
+  isTimeTrackingRole,
+  ProjectMembershipRole,
+} from '../../database/entities/project-membership-role.enum';
 import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { Team } from '../../database/entities/team.entity';
@@ -26,6 +29,9 @@ import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
+const POSTGRES_FOREIGN_KEY_VIOLATION = '23503';
+const HAS_LOGGED_TIME_MESSAGE =
+  'This project has time logged against it — archive it instead so that history is kept.';
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 
 export interface ProjectSummary {
@@ -300,6 +306,8 @@ export class ProjectsService {
     // others" (see TimeTrackingProjectListItem's own comment).
     const managerProjectIds = new Set<string>();
     for (const pm of projectMemberships) {
+      // A viewer can see the project but not track time on it.
+      if (!isTimeTrackingRole(pm.role)) continue;
       projectsById.set(pm.project.id, pm.project);
       if (pm.role === ProjectMembershipRole.MANAGER) {
         managerProjectIds.add(pm.project.id);
@@ -575,6 +583,52 @@ export class ProjectsService {
     return this.toSummary(project);
   }
 
+  /**
+   * Permanently deletes a Project that has never had time logged against
+   * it, along with its tasks and member/team assignments. One with any time
+   * entry is refused — those feed payroll, so archiving is the only way to
+   * retire it. Pending invitations/invite links that would have added
+   * someone to it just drop it from their list.
+   */
+  async remove(
+    organisationId: string,
+    projectId: string,
+    actorUserId: string,
+  ): Promise<void> {
+    const project = await this.getProjectOrThrow(organisationId, projectId);
+
+    if (await this.timeEntriesService.hasEntriesForProject(projectId)) {
+      throw new ConflictException(HAS_LOGGED_TIME_MESSAGE);
+    }
+
+    await this.dataSource
+      .transaction(async (manager) => {
+        await manager.delete(ProjectMembership, { projectId });
+        await manager.delete(ProjectTeam, { projectId });
+        await manager.delete(Task, { projectId });
+        await manager.delete(Project, { id: projectId, organisationId });
+        for (const table of ['invitations', 'invite_links']) {
+          await manager.query(
+            `UPDATE "${table}" SET "projectIds" = array_remove("projectIds", $1) WHERE "organisationId" = $2 AND $1 = ANY("projectIds")`,
+            [projectId, organisationId],
+          );
+        }
+        await this.auditLogService.record(manager, {
+          action: 'project.deleted',
+          organisationId,
+          actorUserId,
+          metadata: { projectId, name: project.name },
+        });
+      })
+      .catch((error: unknown) => {
+        // A time entry logged between the check above and the delete.
+        if (this.isDriverError(error, POSTGRES_FOREIGN_KEY_VIOLATION)) {
+          throw new ConflictException(HAS_LOGGED_TIME_MESSAGE);
+        }
+        throw error;
+      });
+  }
+
   async addMember(
     organisationId: string,
     projectId: string,
@@ -681,6 +735,15 @@ export class ProjectsService {
     const saved = await this.projectMemberships.save(projectMembership);
 
     await this.dataSource.transaction(async (manager) => {
+      // A viewer can't be assigned tasks, so becoming one leaves their
+      // tasks unassigned rather than in an invalid state.
+      if (!isTimeTrackingRole(saved.role)) {
+        await manager.update(
+          Task,
+          { assigneeProjectMembershipId: saved.id },
+          { assigneeProjectMembershipId: null },
+        );
+      }
       await this.auditLogService.record(manager, {
         action: 'project.member_updated',
         organisationId,
@@ -837,10 +900,13 @@ export class ProjectsService {
   }
 
   private isUniqueViolation(error: unknown): boolean {
+    return this.isDriverError(error, POSTGRES_UNIQUE_VIOLATION);
+  }
+
+  private isDriverError(error: unknown, code: string): boolean {
     return (
       error instanceof QueryFailedError &&
-      (error.driverError as { code?: string } | undefined)?.code ===
-        POSTGRES_UNIQUE_VIOLATION
+      (error.driverError as { code?: string } | undefined)?.code === code
     );
   }
 }

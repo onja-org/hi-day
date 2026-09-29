@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseMemberImportRows } from "@/lib/parseMemberImportRows";
 
 const options = {
-  teams: [{ id: "t-design", name: "Design" }],
+  teams: [
+    { id: "t-design", name: "Design" },
+    { id: "t-sales", name: "Sales" },
+  ],
   projects: [
     { id: "p-web", name: "Website" },
     { id: "p-app", name: "Mobile app" },
@@ -29,7 +32,7 @@ describe("parseMemberImportRows", () => {
         entry: {
           email: "ada@example.com",
           role: "manager",
-          teamId: "t-design",
+          teamIds: ["t-design"],
           projectIds: ["p-web", "p-app"],
         },
       },
@@ -53,7 +56,7 @@ describe("parseMemberImportRows", () => {
         ["email", "role", "team", "projects"],
         ["", "member", "", ""],
         ["a@x.com", "finance", "", ""],
-        ["b@x.com", "member", "Sales", ""],
+        ["b@x.com", "member", "Support", ""],
         ["c@x.com", "member", "", "Website;Intranet"],
       ],
       options,
@@ -62,7 +65,7 @@ describe("parseMemberImportRows", () => {
     expect(result.rows.map((row) => [row.line, row.entry, row.error])).toEqual([
       [2, null, "Missing email."],
       [3, null, 'Unknown role "finance" — use admin, manager or member.'],
-      [4, null, 'Unknown team "Sales".'],
+      [4, null, 'Unknown team "Support".'],
       [5, null, 'Unknown project "Intranet".'],
     ]);
   });
@@ -81,5 +84,17 @@ describe("parseMemberImportRows", () => {
       options,
     );
     expect(result.rows[1].error).toBe("Duplicate of line 2.");
+  });
+
+  it("reads several ;-separated teams from a \"teams\" column", () => {
+    const result = parseMemberImportRows(
+      [["email", "teams"], ["a@x.com", "design; SALES; design"]],
+      options,
+    );
+    expect(result.rows[0].entry).toEqual({
+      email: "a@x.com",
+      role: "member",
+      teamIds: ["t-design", "t-sales"],
+    });
   });
 });

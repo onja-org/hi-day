@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -13,8 +14,12 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
-import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import {
+  isTimeTrackingRole,
+  ProjectMembershipRole,
+} from '../../database/entities/project-membership-role.enum';
 import { Task } from '../../database/entities/task.entity';
+import { TaskStage } from '../../database/entities/task-stage.enum';
 import { CreateTaskDto } from '../dto/create-task.dto';
 import { UpdateTaskDto } from '../dto/update-task.dto';
 
@@ -36,6 +41,7 @@ export interface TaskSummary {
   dueDate: string | null;
   status: 'open' | 'closed';
   closedAt: Date | null;
+  stage: TaskStage;
   assignee: TaskAssigneeSummary | null;
   /** Whether the task's assignee is the caller — lets the UI show a "yours"
    * close/reopen action without the frontend needing to know its own user id. */
@@ -142,6 +148,7 @@ export class TasksService {
       estimate: dto.estimate ?? null,
       dueDate: dto.dueDate ?? null,
       assigneeProjectMembershipId: assignee?.id ?? null,
+      stage: TaskStage.TODO,
     });
 
     const saved = await this.tasks.save(task);
@@ -236,6 +243,59 @@ export class TasksService {
     );
   }
 
+  /**
+   * Moves a task to a Kanban column. Same who-can rule as close/reopen (the
+   * task's assignee or a project admin), and keeps `closedAt` in step:
+   * moving to Done closes the task, moving out of Done reopens it.
+   */
+  async setStage(
+    organisationId: string,
+    projectId: string,
+    taskId: string,
+    actorUserId: string,
+    stage: TaskStage,
+  ): Promise<TaskSummary> {
+    const project = await this.getProjectOrThrow(organisationId, projectId);
+    this.assertNotArchived(project);
+
+    const task = await this.getTaskOrThrow(projectId, taskId);
+    const role = await this.resolveActorRole(
+      organisationId,
+      projectId,
+      actorUserId,
+    );
+
+    if (!this.canCloseOrReopen(role, task)) {
+      throw new ForbiddenException(
+        'Only the assignee or a project admin can move this task.',
+      );
+    }
+
+    if (task.stage === stage) {
+      return this.toSummary(task, { viewerRole: role });
+    }
+
+    const from = task.stage;
+    task.stage = stage;
+    if (stage === TaskStage.DONE && !task.closedAt) {
+      task.closedAt = new Date();
+    } else if (stage !== TaskStage.DONE) {
+      task.closedAt = null;
+    }
+    const saved = await this.tasks.save(task);
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'task.stage_changed',
+        organisationId,
+        actorUserId,
+        metadata: { taskId, projectId, from, to: stage },
+      });
+    });
+
+    return this.toSummary(saved, { viewerRole: role });
+  }
+
   private async setClosed(
     organisationId: string,
     projectId: string,
@@ -267,6 +327,7 @@ export class TasksService {
     }
 
     task.closedAt = closed ? new Date() : null;
+    task.stage = closed ? TaskStage.DONE : TaskStage.TODO;
     const saved = await this.tasks.save(task);
 
     await this.dataSource.transaction(async (manager) => {
@@ -351,6 +412,11 @@ export class TasksService {
     if (!projectMembership) {
       throw new NotFoundException('Assignee is not a member of this project.');
     }
+    if (!isTimeTrackingRole(projectMembership.role)) {
+      throw new BadRequestException(
+        "A project viewer can't be assigned tasks — make them a member first.",
+      );
+    }
 
     return projectMembership;
   }
@@ -422,6 +488,7 @@ export class TasksService {
       dueDate: task.dueDate,
       status: task.closedAt ? 'closed' : 'open',
       closedAt: task.closedAt,
+      stage: task.stage,
       assignedToMe:
         viewerProjectMembershipId != null &&
         task.assigneeProjectMembershipId === viewerProjectMembershipId,

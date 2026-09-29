@@ -1,7 +1,7 @@
 import { getImportFileKind } from "@/lib/getImportFileKind";
 import { parseCsv } from "@/lib/parseCsv";
 
-/** Reads a member-import file into rows of text cells: CSV via `parseCsv`,
+/** Reads an import file (members, projects) into rows of text cells: CSV via `parseCsv`,
  * `.xlsx` via the first sheet (Excel number/date/boolean cells become
  * their text form). The Excel reader is loaded only when needed. */
 export async function readImportFile(file: File): Promise<string[][]> {

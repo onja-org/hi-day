@@ -6,12 +6,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
+import { useProjects } from "@/hooks/useProjects";
 import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import type { MembershipRole } from "@/types/membership";
 import { InviteEmailsField } from "./InviteEmailsField";
-import { InviteProjectsField } from "./InviteProjectsField";
+import { CheckboxDropdownField } from "./CheckboxDropdownField";
 import { InviteResultsList } from "./InviteResultsList";
 import { Spinner } from "./Spinner";
 
@@ -26,18 +27,19 @@ const MANAGER_INVITABLE_ROLES: MembershipRole[] = ["manager", "member"];
 export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
   const queryClient = useQueryClient();
   const teamsQuery = useOrganisationTeams(organisationId);
+  const projectsQuery = useProjects(organisationId, { status: "active" });
   const organisationQuery = useCurrentOrganisation();
   const roles =
     organisationQuery.data?.role === "admin" ? ADMIN_INVITABLE_ROLES : MANAGER_INVITABLE_ROLES;
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set());
   const [emailsText, setEmailsText] = useState("");
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [teamIds, setTeamIds] = useState<Set<string>>(new Set());
 
   const mutation = useMutation({
     mutationFn: (variables: {
       emails: string[];
       role: MembershipRole;
-      teamId?: string;
+      teamIds: string[];
       projectIds: string[];
     }) =>
       inviteMembers(
@@ -45,7 +47,7 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
         variables.emails.map((email) => ({
           email,
           role: variables.role,
-          teamId: variables.teamId,
+          teamIds: variables.teamIds,
           projectIds: variables.projectIds,
         })),
       ),
@@ -57,9 +59,6 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
       }
     },
   });
-
-  const teams = teamsQuery.data ?? [];
-  const effectiveTeamId = selectedTeamId ?? teams[0]?.id ?? "";
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,7 +73,7 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
     mutation.mutate({
       emails,
       role,
-      teamId: effectiveTeamId || undefined,
+      teamIds: [...teamIds],
       projectIds: [...projectIds],
     });
   }
@@ -102,27 +101,24 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
         </select>
       </label>
 
-      <label className="flex flex-col gap-1.5">
-        Team (optional)
-        <select
-          name="teamId"
-          value={effectiveTeamId}
-          onChange={(event) => setSelectedTeamId(event.target.value)}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">No team</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <CheckboxDropdownField
+        id="invite-teams"
+        label="Teams (optional)"
+        items={teamsQuery.data ?? []}
+        selectedIds={teamIds}
+        onChange={setTeamIds}
+        noun={["team", "teams"]}
+        isLoading={teamsQuery.isLoading}
+      />
 
-      <InviteProjectsField
-        organisationId={organisationId}
+      <CheckboxDropdownField
+        id="invite-projects"
+        label="Projects (optional)"
+        items={projectsQuery.data ?? []}
         selectedIds={projectIds}
         onChange={setProjectIds}
+        noun={["project", "projects"]}
+        isLoading={projectsQuery.isLoading}
       />
 
       <button

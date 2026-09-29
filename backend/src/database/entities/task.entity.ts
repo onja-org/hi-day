@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { TaskStage } from './task-stage.enum';
 import { Project } from './project.entity';
 import { ProjectMembership } from './project-membership.entity';
 
@@ -29,6 +30,15 @@ export class Task {
 
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   closedAt: Date | null;
+
+  /** Kanban column — see TaskStage for how it tracks `closedAt`. */
+  @Column({
+    type: 'enum',
+    enum: TaskStage,
+    enumName: 'TaskStage',
+    default: TaskStage.TODO,
+  })
+  stage: TaskStage;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

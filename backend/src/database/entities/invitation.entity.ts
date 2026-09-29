@@ -6,10 +6,10 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { InviteLink } from './invite-link.entity';
 import { InvitationStatus } from './invitation-status.enum';
 import { MembershipRole } from './membership-role.enum';
 import { Organisation } from './organisation.entity';
-import { Team } from './team.entity';
 import { User } from './user.entity';
 
 @Entity({ name: 'invitations' })
@@ -53,16 +53,25 @@ export class Invitation {
   @JoinColumn({ name: 'organisationId' })
   organisation: Organisation;
 
-  @Column({ type: 'uuid', nullable: true })
-  teamId: string | null;
+  /** Teams the invitee joins on accepting. No foreign key (it's an
+   * array), so ids of since-deleted teams are skipped — see
+   * InvitationsService.accept. */
+  @Column({ type: 'uuid', array: true, default: () => "'{}'" })
+  teamIds: string[];
 
-  @ManyToOne(() => Team, (team) => team.invitations, {
+  /** The invite link this invitation was requested through, if any — its
+   * accept re-checks that link is still usable and counts toward its cap.
+   * Null for an ordinary emailed invitation. */
+  @Column({ type: 'uuid', nullable: true })
+  inviteLinkId: string | null;
+
+  @ManyToOne(() => InviteLink, {
     nullable: true,
     onDelete: 'SET NULL',
     onUpdate: 'CASCADE',
   })
-  @JoinColumn({ name: 'teamId' })
-  team: Team | null;
+  @JoinColumn({ name: 'inviteLinkId' })
+  inviteLink: InviteLink | null;
 
   /** Projects the invitee joins (as a project member) on accepting — see
    * InvitationsService.accept. */

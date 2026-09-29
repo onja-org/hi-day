@@ -18,9 +18,12 @@ export class CreateInvitationEntryDto {
   @IsIn(ASSIGNABLE_MEMBERSHIP_ROLES)
   role: MembershipRole;
 
+  /** Teams to add the invitee to on accepting. */
   @IsOptional()
-  @IsUUID()
-  teamId?: string;
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  teamIds?: string[];
 
   /** Projects to add the invitee to (as a project member) on accepting. */
   @IsOptional()

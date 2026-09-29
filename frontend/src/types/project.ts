@@ -12,7 +12,9 @@ export type ProjectColour =
 
 export type ProjectStatus = "active" | "archived";
 
-export type ProjectMembershipRole = "manager" | "member";
+/** A `viewer` can see the project (and, once they exist, its team reports)
+ * but can't log time against it or be assigned its tasks. */
+export type ProjectMembershipRole = "manager" | "member" | "viewer";
 
 export type Project = {
   id: string;
@@ -92,6 +94,25 @@ export type CreateProjectResult = ApiResult<{ project: Project }>;
 export type UpdateProjectResult = ApiResult<{ project: Project }>;
 
 export type ArchiveProjectResult = ApiResult<{ project: Project }>;
+
+export type DeleteProjectResult = ApiResult;
+
+/** One project's outcome in a batch action (archive, delete, edit). */
+export type ProjectBatchOutcome = {
+  projectId: string;
+  name: string;
+  ok: boolean;
+  message: string;
+};
+
+/** What a batch edit applies to every selected project — anything already
+ * on a project is left as is. */
+export type ProjectBatchEdit = {
+  colour?: ProjectColour;
+  teamIds: string[];
+  memberIds: string[];
+  memberRole: ProjectMembershipRole;
+};
 
 export type AddProjectMemberInput = {
   membershipId: string;

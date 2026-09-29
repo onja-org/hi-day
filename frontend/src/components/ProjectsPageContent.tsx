@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { ImportProjectsModal } from "./ImportProjectsModal";
 import { ProjectFormModal } from "./ProjectFormModal";
 import { ProjectsTable } from "./ProjectsTable";
 
@@ -15,6 +16,7 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
     organisationQuery.data?.role === "admin" ||
     organisationQuery.data?.role === "manager";
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,13 +26,22 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
         organisationId={organisationId}
         actions={
           canCreate && (
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
-            >
-              Add project
-            </button>
+            <div className="flex shrink-0 gap-3">
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="cursor-pointer rounded-md border border-primary px-5 py-2 text-sm font-medium text-primary transition-colors duration-150 hover:bg-primary/10"
+              >
+                Import projects
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+              >
+                Add project
+              </button>
+            </div>
           )
         }
       />
@@ -41,6 +52,9 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
           onClose={() => setCreateOpen(false)}
           onSaved={() => setCreateOpen(false)}
         />
+      )}
+      {importOpen && (
+        <ImportProjectsModal organisationId={organisationId} onClose={() => setImportOpen(false)} />
       )}
     </div>
   );

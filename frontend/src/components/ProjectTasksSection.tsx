@@ -9,7 +9,7 @@ import type { Task } from "@/types/task";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { TaskFormModal } from "./TaskFormModal";
-import { TaskStatusBadge } from "./TaskStatusBadge";
+import { TaskStageBadge } from "./TaskStageBadge";
 
 type ProjectTasksSectionProps = {
   organisationId: string;
@@ -120,7 +120,7 @@ export function ProjectTasksSection({
                   </td>
                   <td className="px-3 py-2 text-slate-900">{task.dueDate ?? "—"}</td>
                   <td className="px-3 py-2">
-                    <TaskStatusBadge status={task.status} />
+                    <TaskStageBadge stage={task.stage} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     {canToggleStatus && !isArchived && (

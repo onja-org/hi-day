@@ -8,7 +8,6 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Invitation } from './invitation.entity';
 import { Organisation } from './organisation.entity';
 import { ProjectTeam } from './project-team.entity';
 import { TeamMembership } from './team-membership.entity';
@@ -39,9 +38,6 @@ export class Team {
 
   @OneToMany(() => TeamMembership, (teamMembership) => teamMembership.team)
   teamMemberships: TeamMembership[];
-
-  @OneToMany(() => Invitation, (invitation) => invitation.team)
-  invitations: Invitation[];
 
   @OneToMany(() => ProjectTeam, (projectTeam) => projectTeam.team)
   projectTeams: ProjectTeam[];

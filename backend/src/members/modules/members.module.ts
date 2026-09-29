@@ -10,6 +10,7 @@ import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { DevicesModule } from '../../devices/modules/devices.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
+import { InviteLink } from '../../database/entities/invite-link.entity';
 import { Invitation } from '../../database/entities/invitation.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -20,8 +21,11 @@ import { EmailModule } from '../../email/modules/email.module';
 import { NotesModule } from '../../notes/modules/notes.module';
 import { ScreenshotsModule } from '../../screenshots/modules/screenshots.module';
 import { InvitationAcceptController } from '../controllers/invitation-accept.controller';
+import { InviteLinkJoinController } from '../controllers/invite-link-join.controller';
+import { InviteLinksController } from '../controllers/invite-links.controller';
 import { InvitationsController } from '../controllers/invitations.controller';
 import { MembershipsController } from '../controllers/memberships.controller';
+import { InviteLinksService } from '../services/invite-links.service';
 import { InvitationsService } from '../services/invitations.service';
 import { MembershipsService } from '../services/memberships.service';
 
@@ -35,6 +39,7 @@ function inviteCreateTracker(req: Request): string {
   imports: [
     TypeOrmModule.forFeature([
       Invitation,
+      InviteLink,
       Membership,
       User,
       Organisation,
@@ -65,8 +70,15 @@ function inviteCreateTracker(req: Request): string {
     InvitationsController,
     MembershipsController,
     InvitationAcceptController,
+    InviteLinksController,
+    InviteLinkJoinController,
   ],
-  providers: [InvitationsService, MembershipsService, RoleGuard],
+  providers: [
+    InvitationsService,
+    InviteLinksService,
+    MembershipsService,
+    RoleGuard,
+  ],
   exports: [MembershipsService],
 })
 export class MembersModule {}

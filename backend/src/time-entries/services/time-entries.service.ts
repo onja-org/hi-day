@@ -24,7 +24,10 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Project } from '../../database/entities/project.entity';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
-import { ProjectMembershipRole } from '../../database/entities/project-membership-role.enum';
+import {
+  isTimeTrackingRole,
+  ProjectMembershipRole,
+} from '../../database/entities/project-membership-role.enum';
 import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
@@ -818,6 +821,16 @@ export class TimeEntriesService {
     return running !== null;
   }
 
+  /**
+   * Whether a Project has any time logged against it at all — checked by
+   * ProjectsService before deleting, since time entries feed payroll and
+   * must never disappear along with their Project (archive it instead).
+   */
+  async hasEntriesForProject(projectId: string): Promise<boolean> {
+    const entry = await this.timeEntries.findOne({ where: { projectId } });
+    return entry !== null;
+  }
+
   private async validateStart(
     organisationId: string,
     userId: string,
@@ -982,7 +995,7 @@ export class TimeEntriesService {
     const projectMembership = await this.projectMemberships.findOne({
       where: { projectId, membershipId: membership.id },
     });
-    if (projectMembership) {
+    if (projectMembership && isTimeTrackingRole(projectMembership.role)) {
       return;
     }
 
@@ -993,7 +1006,9 @@ export class TimeEntriesService {
     }
 
     throw new ForbiddenException(
-      'You do not have the required role for this project.',
+      projectMembership
+        ? 'Project viewers can see this project but can’t log time on it.'
+        : 'You do not have the required role for this project.',
     );
   }
 

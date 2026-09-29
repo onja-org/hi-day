@@ -8,12 +8,14 @@ import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useProjects } from "@/hooks/useProjects";
 import { inviteMembers } from "@/lib/inviteMembers";
+import { memberImportTemplateCsv } from "@/lib/memberImportTemplateCsv";
 import { parseMemberImportRows } from "@/lib/parseMemberImportRows";
 import type { MemberImportRow } from "@/lib/parseMemberImportRows";
 import { readImportFile } from "@/lib/readImportFile";
 import type { InviteEntryResult } from "@/types/invitation";
 import { ErrorMessage } from "./ErrorMessage";
 import { ImportPreviewTable } from "./ImportPreviewTable";
+import { ImportTemplateButton } from "./ImportTemplateButton";
 import { InviteResultsList } from "./InviteResultsList";
 import { Modal } from "./Modal";
 import { Spinner } from "./Spinner";
@@ -86,9 +88,18 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         <p className="text-sm text-slate-900">
           Upload a <strong>.csv</strong> or <strong>.xlsx</strong> file. The first row names the
           columns: <code>email</code> (required), <code>role</code> (admin, manager or member),{" "}
-          <code>team</code> (a team name) and <code>projects</code> (project names separated by{" "}
+          <code>teams</code> and <code>projects</code> (names, several separated by{" "}
           <code>;</code>). Everyone listed gets an invite email.
         </p>
+        <ImportTemplateButton
+          filename="members-import-template.csv"
+          buildCsv={() =>
+            memberImportTemplateCsv(
+              teams.map((team) => team.name),
+              (projectsQuery.data ?? []).map((project) => project.name),
+            )
+          }
+        />
 
         {results ? (
           <InviteResultsList results={results} />

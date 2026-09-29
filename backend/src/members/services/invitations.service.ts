@@ -21,6 +21,7 @@ import {
   TokenService,
 } from '../../auth/services/token.service';
 import { JwtService } from '@nestjs/jwt';
+import { InviteLink } from '../../database/entities/invite-link.entity';
 import { Invitation } from '../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../database/entities/invitation-status.enum';
 import { Membership } from '../../database/entities/membership.entity';
@@ -40,10 +41,15 @@ import {
   computeEffectiveInvitationStatus,
   EffectiveInvitationStatus,
 } from '../effective-invitation-status.util';
+import { computeInviteLinkStatus } from '../invite-link-status.util';
 
 const DEFAULT_INVITATION_TTL_HOURS = 72;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
+const INVITE_LINK_INACTIVE_MESSAGE =
+  'The invite link this invitation came from is no longer active. Ask an admin for a new invite.';
+// A repeat join request through the same link resends at most this often.
+const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 
 export type InvitationOutcome =
   'sent' | 'resent' | 'already_member' | 'invalid';
@@ -58,7 +64,7 @@ export interface InvitationSummary {
   id: string;
   email: string;
   role: MembershipRole;
-  teamId: string | null;
+  teamIds: string[];
   projectIds: string[];
   status: EffectiveInvitationStatus;
   createdAt: Date;
@@ -70,7 +76,7 @@ export interface InvitationPreview {
   email?: string;
   organisationName?: string;
   role?: MembershipRole;
-  teamName?: string | null;
+  teamNames?: string[];
   accountAlreadyExists?: boolean;
 }
 
@@ -97,6 +103,8 @@ export class InvitationsService {
     private readonly teams: Repository<Team>,
     @InjectRepository(Project)
     private readonly projects: Repository<Project>,
+    @InjectRepository(InviteLink)
+    private readonly inviteLinks: Repository<InviteLink>,
   ) {}
 
   async createMany(
@@ -181,7 +189,7 @@ export class InvitationsService {
       invitation.id,
       invitation.email,
       invitation.role,
-      invitation.teamId,
+      invitation.teamIds ?? [],
       invitation.projectIds ?? [],
       actorUserId,
     );
@@ -229,6 +237,12 @@ export class InvitationsService {
       where: { organisationId },
       order: { createdAt: 'DESC' },
     });
+    // teamIds has no foreign key, so drop ids of since-deleted teams.
+    const existingTeamIds = new Set(
+      (await this.teams.find({ where: { organisationId } })).map(
+        (team) => team.id,
+      ),
+    );
 
     const now = new Date();
 
@@ -238,7 +252,9 @@ export class InvitationsService {
         id: invitation.id,
         email: invitation.email,
         role: invitation.role,
-        teamId: invitation.teamId,
+        teamIds: (invitation.teamIds ?? []).filter((id) =>
+          existingTeamIds.has(id),
+        ),
         projectIds: invitation.projectIds ?? [],
         status: computeEffectiveInvitationStatus(invitation, now),
         createdAt: invitation.createdAt,
@@ -249,7 +265,7 @@ export class InvitationsService {
   async getPreview(token: string): Promise<InvitationPreview> {
     const invitation = await this.invitations.findOne({
       where: { tokenHash: hashToken(token) },
-      relations: { organisation: true, team: true },
+      relations: { organisation: true },
     });
 
     if (!invitation) {
@@ -260,13 +276,20 @@ export class InvitationsService {
     const invitedUser = await this.users.findOne({
       where: { email: invitation.email },
     });
+    const teamIds = invitation.teamIds ?? [];
+    const teams = teamIds.length
+      ? await this.teams.find({
+          where: { id: In(teamIds), organisationId: invitation.organisationId },
+          order: { name: 'ASC' },
+        })
+      : [];
 
     return {
       status,
       email: invitation.email,
       organisationName: invitation.organisation.name,
       role: invitation.role,
-      teamName: invitation.team?.name ?? null,
+      teamNames: teams.map((team) => team.name),
       accountAlreadyExists: Boolean(invitedUser?.passwordHash),
     };
   }
@@ -287,6 +310,20 @@ export class InvitationsService {
       computeEffectiveInvitationStatus(invitation, new Date()) !== 'pending'
     ) {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+    }
+
+    // Requested through an invite link: that link must still be usable
+    // (checked again, atomically, when counting the join below).
+    if (invitation.inviteLinkId) {
+      const link = await this.inviteLinks.findOne({
+        where: {
+          id: invitation.inviteLinkId,
+          organisationId: invitation.organisationId,
+        },
+      });
+      if (!link || computeInviteLinkStatus(link, new Date()) !== 'active') {
+        throw new UnprocessableEntityException(INVITE_LINK_INACTIVE_MESSAGE);
+      }
     }
 
     const existingUser = await this.users.findOne({
@@ -348,6 +385,26 @@ export class InvitationsService {
     }
 
     await this.dataSource.transaction(async (manager) => {
+      if (invitation.inviteLinkId) {
+        // Conditional increment: two people accepting at once can't both
+        // squeeze past the cap. No row updated means the link filled up
+        // (or was switched off) in the meantime — undo the whole join.
+        const counted = await manager
+          .createQueryBuilder()
+          .update(InviteLink)
+          .set({ usageCount: () => '"usageCount" + 1' })
+          .where('id = :id', { id: invitation.inviteLinkId })
+          .andWhere('enabled = true')
+          .andWhere('("expiresAt" IS NULL OR "expiresAt" > :now)', {
+            now: new Date(),
+          })
+          .andWhere('("usageCap" IS NULL OR "usageCount" < "usageCap")')
+          .execute();
+        if (!counted.affected) {
+          throw new UnprocessableEntityException(INVITE_LINK_INACTIVE_MESSAGE);
+        }
+      }
+
       const newMembership = await manager.save(
         manager.create(Membership, {
           userId,
@@ -357,11 +414,21 @@ export class InvitationsService {
         }),
       );
 
-      if (invitation.teamId) {
+      // Same rule as projects below: only teams still in this organisation.
+      const teamIds = invitation.teamIds ?? [];
+      const teams = teamIds.length
+        ? await manager.find(Team, {
+            where: {
+              id: In(teamIds),
+              organisationId: invitation.organisationId,
+            },
+          })
+        : [];
+      for (const team of teams) {
         await manager.save(
           manager.create(TeamMembership, {
             membershipId: newMembership.id,
-            teamId: invitation.teamId,
+            teamId: team.id,
             isManager: false,
           }),
         );
@@ -448,13 +515,17 @@ export class InvitationsService {
       };
     }
 
-    const teamId = entry.teamId ?? null;
-    if (teamId) {
-      const team = await this.teams.findOne({
-        where: { id: teamId, organisationId: organisation.id },
+    const teamIds = [...new Set(entry.teamIds ?? [])];
+    if (teamIds.length > 0) {
+      const teamCount = await this.teams.count({
+        where: { id: In(teamIds), organisationId: organisation.id },
       });
-      if (!team) {
-        return { email, outcome: 'invalid', message: 'Team not found.' };
+      if (teamCount !== teamIds.length) {
+        return {
+          email,
+          outcome: 'invalid',
+          message: 'One or more teams were not found.',
+        };
       }
     }
 
@@ -489,9 +560,88 @@ export class InvitationsService {
       existingInvitation?.id ?? null,
       email,
       entry.role,
-      teamId,
+      teamIds,
       projectIds,
       actorUserId,
+      // An admin/manager inviting directly takes over from any link.
+      { inviteLinkId: null },
+    );
+  }
+
+  /**
+   * The invite-link join path (see InviteLinksService.requestJoin): sends an
+   * ordinary invitation carrying the link's role, teams and projects as
+   * they are right now. Never reveals anything to the anonymous caller —
+   * it silently does nothing when the email is invalid, already a member,
+   * or already has a live invitation from somewhere else (a public request
+   * must never rewrite an invite an admin sent). A repeat request through
+   * the same link resends at most once per RESEND_COOLDOWN_MS.
+   */
+  async requestViaInviteLink(
+    link: InviteLink,
+    rawEmail: string,
+  ): Promise<void> {
+    const email = rawEmail.trim().toLowerCase();
+    if (!isEmail(email)) return;
+
+    if (await this.findActiveMemberByEmail(link.organisationId, email)) return;
+
+    const pending = await this.invitations.findOne({
+      where: {
+        organisationId: link.organisationId,
+        email,
+        status: InvitationStatus.PENDING,
+      },
+    });
+    const now = new Date();
+    const pendingIsLive =
+      pending !== null &&
+      computeEffectiveInvitationStatus(pending, now) === 'pending';
+
+    if (pending && pendingIsLive && pending.inviteLinkId !== link.id) return;
+    if (
+      pending &&
+      pendingIsLive &&
+      this.sentWithin(pending, RESEND_COOLDOWN_MS, now)
+    ) {
+      return;
+    }
+
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: link.organisationId },
+    });
+    await this.stampAndSendToken(
+      organisation,
+      pending?.id ?? null,
+      email,
+      link.role,
+      link.teamIds,
+      link.projectIds,
+      link.createdByUserId,
+      { inviteLinkId: link.id, auditAction: 'invitation.requested_via_link' },
+    );
+  }
+
+  /** Invitations don't store when they were sent, but every send stamps
+   * `expiresAt` a fixed TTL ahead — so the send time is recoverable. */
+  private sentWithin(
+    invitation: Invitation,
+    windowMs: number,
+    now: Date,
+  ): boolean {
+    if (!invitation.expiresAt) return false;
+    const sentAt = invitation.expiresAt.getTime() - this.invitationTtlMs();
+    return now.getTime() - sentAt < windowMs;
+  }
+
+  private invitationTtlMs(): number {
+    return (
+      Number(
+        this.configService.get(
+          'INVITATION_TTL_HOURS',
+          DEFAULT_INVITATION_TTL_HOURS,
+        ),
+      ) * MS_PER_HOUR
     );
   }
 
@@ -523,53 +673,61 @@ export class InvitationsService {
     invitationId: string | null,
     email: string,
     role: MembershipRole,
-    teamId: string | null,
+    teamIds: string[],
     projectIds: string[],
-    actorUserId: string,
+    actorUserId: string | null,
+    options: {
+      /** Which invite link this came through — `null` for an email invite
+       * (clearing any link a reused row had), omitted to leave it as is. */
+      inviteLinkId?: string | null;
+      auditAction?: string;
+    } = {},
   ): Promise<InvitationEntryResult> {
     const isResend = invitationId !== null;
+    const linkFields =
+      options.inviteLinkId === undefined
+        ? {}
+        : { inviteLinkId: options.inviteLinkId };
     const token = this.tokenService.generateToken();
-    const ttlHours = Number(
-      this.configService.get(
-        'INVITATION_TTL_HOURS',
-        DEFAULT_INVITATION_TTL_HOURS,
-      ),
-    );
-    const expiresAt = new Date(Date.now() + ttlHours * MS_PER_HOUR);
+    const expiresAt = new Date(Date.now() + this.invitationTtlMs());
     const tokenHash = hashToken(token);
 
     await this.dataSource.transaction(async (manager) => {
       if (invitationId) {
         await manager.update(Invitation, invitationId, {
           role,
-          teamId,
+          teamIds,
           projectIds,
           status: InvitationStatus.PENDING,
           tokenHash,
           expiresAt,
           invitedByUserId: actorUserId,
+          ...linkFields,
         });
       } else {
         await manager.save(
           manager.create(Invitation, {
             email,
             role,
-            teamId,
+            teamIds,
             projectIds,
             organisationId: organisation.id,
             tokenHash,
             expiresAt,
             invitedByUserId: actorUserId,
             status: InvitationStatus.PENDING,
+            ...linkFields,
           }),
         );
       }
 
       await this.auditLogService.record(manager, {
-        action: isResend ? 'invitation.resent' : 'invitation.created',
+        action:
+          options.auditAction ??
+          (isResend ? 'invitation.resent' : 'invitation.created'),
         organisationId: organisation.id,
         actorUserId,
-        metadata: { email, role },
+        metadata: { email, role, inviteLinkId: options.inviteLinkId },
       });
     });
 

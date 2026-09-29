@@ -188,6 +188,22 @@ export class ProjectsController {
     return { project, message: 'Project unarchived' };
   }
 
+  // Refused (409) once the project has any time logged — see
+  // ProjectsService.remove; archive is the way to retire those.
+  @Delete(':projectId')
+  @UseGuards(ProjectRoleGuard)
+  async remove(
+    @Param('projectId') projectId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ message: string }> {
+    await this.projectsService.remove(
+      request.organisationId!,
+      projectId,
+      request.userId,
+    );
+    return { message: 'Project deleted' };
+  }
+
   @Post(':projectId/members')
   @UseGuards(ProjectRoleGuard)
   async addMember(

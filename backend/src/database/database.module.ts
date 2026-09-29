@@ -10,6 +10,7 @@ import { DevicePairingRequest } from './entities/device-pairing-request.entity';
 import { DeviceSession } from './entities/device-session.entity';
 import { DisclosureVersion } from './entities/disclosure-version.entity';
 import { Invitation } from './entities/invitation.entity';
+import { InviteLink } from './entities/invite-link.entity';
 import { Membership } from './entities/membership.entity';
 import { Note } from './entities/note.entity';
 import { Organisation } from './entities/organisation.entity';
@@ -44,6 +45,7 @@ import { User } from './entities/user.entity';
           ProjectTeam,
           Task,
           Invitation,
+          InviteLink,
           AuditLog,
           RefreshToken,
           Device,

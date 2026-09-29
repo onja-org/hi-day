@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { ProjectMemberGuard } from '../../projects/guards/project-member.guard';
 import { ProjectRoleGuard } from '../../projects/guards/project-role.guard';
 import { CreateTaskDto } from '../dto/create-task.dto';
+import { SetTaskStageDto } from '../dto/set-task-stage.dto';
 import { UpdateTaskDto } from '../dto/update-task.dto';
 import type { ProjectTasksList, TaskSummary } from '../services/tasks.service';
 import { TasksService } from '../services/tasks.service';
@@ -104,6 +105,25 @@ export class TasksController {
       request.userId,
     );
     return { task, message: 'Task closed' };
+  }
+
+  // Kanban moves: same looser gate as close/reopen, same service-side rule.
+  @Post(':taskId/stage')
+  @UseGuards(ProjectMemberGuard)
+  async setStage(
+    @Param('projectId') projectId: string,
+    @Param('taskId') taskId: string,
+    @Body() dto: SetTaskStageDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ task: TaskSummary; message: string }> {
+    const task = await this.tasksService.setStage(
+      request.organisationId!,
+      projectId,
+      taskId,
+      request.userId,
+      dto.stage,
+    );
+    return { task, message: 'Task moved' };
   }
 
   @Post(':taskId/reopen')
