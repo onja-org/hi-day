@@ -3,8 +3,10 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Between, EntityManager, Repository } from 'typeorm';
+import { Between, EntityManager, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
+import { CaptureCleanupService } from '../../../captures/services/capture-cleanup.service';
+import type { PrunedCaptures } from '../../../captures/services/capture-cleanup.service';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Project } from '../../../database/entities/project.entity';
@@ -96,12 +98,16 @@ describe('TimeEntriesService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn().mockResolvedValue(undefined),
     };
+    const remove = jest.fn().mockResolvedValue({ affected: 1 });
+    const find = jest.fn().mockResolvedValue([]);
     const manager = {
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
       ),
       create: jest.fn((_entity: unknown, input: Partial<TimeEntry>) => input),
       findOne: jest.fn().mockResolvedValue(null),
+      find: find,
+      delete: remove,
       getRepository: jest.fn().mockReturnValue(pausesRepo),
     } as unknown as EntityManager;
     const transaction = jest.fn(
@@ -111,7 +117,28 @@ describe('TimeEntriesService', () => {
       dataSource: { transaction } as unknown,
       transaction,
       save,
+      remove,
+      find,
       manager,
+    };
+  }
+
+  function makeCaptureCleanup(pruned: Partial<PrunedCaptures> = {}) {
+    const pruneUncovered = jest.fn().mockResolvedValue({
+      appEvents: 0,
+      urlSessions: 0,
+      screenshots: 0,
+      storageKeys: [],
+      ...pruned,
+    });
+    const deleteStoredObjects = jest.fn().mockResolvedValue(undefined);
+    return {
+      captureCleanup: {
+        pruneUncovered,
+        deleteStoredObjects,
+      } as unknown as CaptureCleanupService,
+      pruneUncovered,
+      deleteStoredObjects,
     };
   }
 
@@ -134,6 +161,7 @@ describe('TimeEntriesService', () => {
       tasksRepo?: Repository<Task>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
+      captureCleanup?: CaptureCleanupService;
     } = {},
   ) {
     return new TimeEntriesService(
@@ -146,6 +174,7 @@ describe('TimeEntriesService', () => {
       overrides.tasksRepo ?? makeTasksRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      overrides.captureCleanup ?? makeCaptureCleanup().captureCleanup,
     );
   }
 
@@ -398,9 +427,22 @@ describe('TimeEntriesService', () => {
   });
 
   describe('createManual', () => {
+    // Manual entry is admin-only, so every baseline case here needs an
+    // admin caller — a plain member can't reach any of this code.
+    function makeAdminMembershipsRepo() {
+      return makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
+      });
+    }
+
     it('creates a completed entry with source=manual and records an audit log entry', async () => {
       const { auditLogService, record } = makeAuditLogService();
-      const service = makeService({ auditLogService });
+      const service = makeService({
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
 
       const result = await service.createManual(
         'org-1',
@@ -421,7 +463,9 @@ describe('TimeEntriesService', () => {
     });
 
     it('rejects an end time before the start time', async () => {
-      const service = makeService();
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
 
       await expect(
         service.createManual('org-1', 'user-1', 'project-1', {
@@ -432,7 +476,9 @@ describe('TimeEntriesService', () => {
     });
 
     it('rejects an end time in the future', async () => {
-      const service = makeService();
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
 
       await expect(
         service.createManual('org-1', 'user-1', 'project-1', {
@@ -442,14 +488,36 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('rejects a plain member with no ProjectMembership on this project', async () => {
+    // Note there's deliberately no "allowed caller without project access"
+    // case: the only role that may create manually is admin, and an admin
+    // always clears assertProjectAccess, so that combination describes
+    // nobody.
+    it('rejects a plain member logging their own time manually', async () => {
       const projectMembershipsRepo = makeProjectMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(null),
+        findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'member' }),
       });
       const service = makeService({ projectMembershipsRepo });
 
       await expect(
         service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager logging their own time manually', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-manager',
+            role: MembershipRole.MANAGER,
+          }),
+        }),
+      });
+
+      await expect(
+        service.createManual('org-1', 'manager-1', 'project-1', {
           startedAt: '2026-01-01T09:00:00.000Z',
           endedAt: '2026-01-01T10:00:00.000Z',
         }),
@@ -483,8 +551,9 @@ describe('TimeEntriesService', () => {
           { id: 'm-1', role: MembershipRole.MEMBER },
           { id: 'm-2' },
         );
-        // Caller's own ProjectMembership exists (they can log for
-        // themselves) but isn't manager-tier.
+        // Their own ProjectMembership exists and they're on the project —
+        // irrelevant now, since the org-admin gate rejects them before any
+        // project-level tier is consulted.
         const projectMembershipsRepo = makeProjectMembershipsRepo({
           findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'member' }),
         });
@@ -502,13 +571,41 @@ describe('TimeEntriesService', () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
       });
 
-      it('lets a project-manager-tier caller log time for a teammate on that project', async () => {
+      // Project-manager tier used to be enough to log for a teammate. The
+      // org-admin gate now sits in front of it, so this path is closed to
+      // anyone who isn't an org admin, however senior on the project.
+      it('rejects a project-manager-tier caller logging time for a teammate', async () => {
         const membershipsRepo = makeMembershipsRepoFor(
           { id: 'm-1', role: MembershipRole.MEMBER },
           { id: 'm-2' },
         );
         const projectMembershipsRepo = makeProjectMembershipsRepo({
           findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        await expect(
+          service.createManual('org-1', 'user-1', 'project-1', {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      // How an admin fills an untracked gap on a member's timesheet: the
+      // entry is attributed to that member, while the audit row records
+      // the admin as the actor.
+      it('attributes a delegated entry to the target and the audit row to the admin', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          { id: 'm-admin', role: MembershipRole.ADMIN },
+          { id: 'm-2' },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-2' }),
         });
         const { auditLogService, record } = makeAuditLogService();
         const service = makeService({
@@ -519,7 +616,7 @@ describe('TimeEntriesService', () => {
 
         const result = await service.createManual(
           'org-1',
-          'user-1',
+          'admin-1',
           'project-1',
           {
             membershipId: 'm-2',
@@ -539,7 +636,7 @@ describe('TimeEntriesService', () => {
           },
         ];
         expect(call[1].action).toBe('time_entry.created_manually');
-        expect(call[1].actorUserId).toBe('user-1');
+        expect(call[1].actorUserId).toBe('admin-1');
         expect(call[1].metadata.membershipId).toBe('m-2');
       });
 
@@ -613,9 +710,9 @@ describe('TimeEntriesService', () => {
         ).rejects.toBeInstanceOf(NotFoundException);
       });
 
-      it("treats membershipId equal to the caller's own as a self-entry, no elevated permission needed", async () => {
+      it("treats membershipId equal to the caller's own as a self-entry, skipping the delegation checks", async () => {
         const membershipsRepo = makeMembershipsRepoFor(
-          { id: 'm-1', role: MembershipRole.MEMBER },
+          { id: 'm-1', role: MembershipRole.ADMIN },
           null,
         );
         const projectMembershipsRepo = makeProjectMembershipsRepo({
@@ -643,6 +740,13 @@ describe('TimeEntriesService', () => {
   });
 
   describe('update', () => {
+    /** The entry itself on the first lookup, then nothing — the overlap
+     * guard's own `findOne` must not be answered with the entry under edit,
+     * or every update would read as clashing with itself. */
+    function findEntryThenNoOverlap(entry: Partial<TimeEntry>) {
+      return jest.fn().mockResolvedValueOnce(entry).mockResolvedValue(null);
+    }
+
     const completedEntry = {
       id: 'entry-done',
       membershipId: 'm-other',
@@ -672,7 +776,7 @@ describe('TimeEntriesService', () => {
 
     it("lets an admin edit someone else's entry and records an audit diff", async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
       });
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({
@@ -697,9 +801,10 @@ describe('TimeEntriesService', () => {
 
     it('lets an admin edit their own entry', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ ...completedEntry, membershipId: 'm-admin' }),
+        findOne: findEntryThenNoOverlap({
+          ...completedEntry,
+          membershipId: 'm-admin',
+        }),
       });
       const service = makeService({
         timeEntriesRepo,
@@ -715,9 +820,9 @@ describe('TimeEntriesService', () => {
       });
     });
 
-    it("lets a manager edit someone else's entry", async () => {
+    it("rejects a manager editing someone else's entry", async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
       });
       const service = makeService({
         timeEntriesRepo,
@@ -728,9 +833,7 @@ describe('TimeEntriesService', () => {
         service.update('org-1', 'manager-1', 'entry-done', {
           endedAt: '2026-01-01T11:00:00.000Z',
         }),
-      ).resolves.toMatchObject({
-        endedAt: new Date('2026-01-01T11:00:00.000Z'),
-      });
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('rejects a manager editing their own entry', async () => {
@@ -766,9 +869,104 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    // Shortening an entry strands whatever it captured outside the new span;
+    // the window checked is the *old* one, since that is where those
+    // captures are.
+    it('prunes captures stranded by a moved boundary, against the old span', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
+      });
+      const cleanup = makeCaptureCleanup({ appEvents: 3 });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        captureCleanup: cleanup.captureCleanup,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.update('org-1', 'admin-1', 'entry-done', {
+        endedAt: '2026-01-01T09:30:00.000Z',
+      });
+
+      expect(cleanup.pruneUncovered).toHaveBeenCalledWith(
+        expect.anything(),
+        'm-other',
+        { from: completedEntry.startedAt, to: completedEntry.endedAt },
+      );
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: { prunedCaptures?: Record<string, number> } },
+      ];
+      expect(call[1].metadata.prunedCaptures).toEqual({
+        appEvents: 3,
+        urlSessions: 0,
+        screenshots: 0,
+      });
+    });
+
+    it('leaves captures alone when only the project changes', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
+      });
+      const cleanup = makeCaptureCleanup();
+      const service = makeService({
+        timeEntriesRepo,
+        captureCleanup: cleanup.captureCleanup,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.update('org-1', 'admin-1', 'entry-done', {
+        projectId: 'project-2',
+      });
+
+      expect(cleanup.pruneUncovered).not.toHaveBeenCalled();
+    });
+
+    // Touching endpoints are adjacency, not overlap — that is exactly what
+    // `switch` produces, and blocking it would make switched entries
+    // uneditable.
+    it("rejects times that overlap another of this person's entries", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce({ ...completedEntry })
+          .mockResolvedValue({ id: 'other-entry' }),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await expect(
+        service.update('org-1', 'admin-1', 'entry-done', {
+          endedAt: '2026-01-01T10:30:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('excludes the entry being edited from its own overlap check', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce({ ...completedEntry })
+        .mockResolvedValue(null);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.update('org-1', 'admin-1', 'entry-done', {
+        endedAt: '2026-01-01T10:30:00.000Z',
+      });
+
+      const calls = findOne.mock.calls as unknown[][];
+      const overlapQuery = calls[1][0] as { where: { id: unknown }[] };
+      expect(overlapQuery.where[0].id).toEqual(Not('entry-done'));
+    });
+
     it('is a no-op (no audit entry) when nothing actually changes', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
       });
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({
@@ -784,11 +982,47 @@ describe('TimeEntriesService', () => {
       expect(record).not.toHaveBeenCalled();
     });
 
-    it('rejects editing a still-running entry', async () => {
+    // Paused isn't accruing, so an end just closes it where it left off —
+    // and the open pause span is closed at the same instant, exactly as
+    // `stop` does, so the break doesn't become worked time.
+    it('lets a paused entry be given an end time, closing its open pause', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ ...runningEntry, membershipId: 'm-admin' }),
+        findOne: findEntryThenNoOverlap({
+          ...runningEntry,
+          membershipId: 'm-admin',
+        }),
+      });
+      const openPause = {
+        id: 'pause-1',
+        timeEntryId: 'entry-running',
+        pausedAt: new Date('2026-01-01T09:30:00Z'),
+        resumedAt: null as Date | null,
+      };
+      const pausesRepo = makeTimeEntryPausesRepo({
+        findOne: jest.fn().mockResolvedValue(openPause),
+        save: jest.fn().mockResolvedValue(undefined),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        timeEntryPausesRepo: pausesRepo,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      const endedAt = new Date(Date.now() - 60_000).toISOString();
+      const result = await service.update('org-1', 'admin-1', 'entry-running', {
+        endedAt,
+      });
+
+      expect(result.endedAt).toEqual(new Date(endedAt));
+      expect(openPause.resumedAt).toEqual(new Date(endedAt));
+    });
+
+    it('rejects setting an end time on an entry that is still ticking', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({
+          ...runningEntry,
+          membershipId: 'm-admin',
+        }),
       });
       const service = makeService({
         timeEntriesRepo,
@@ -798,6 +1032,56 @@ describe('TimeEntriesService', () => {
       await expect(
         service.update('org-1', 'admin-1', 'entry-running', {
           endedAt: new Date().toISOString(),
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    // Pausing leaves `endedAt` null, so a paused entry reaches `update`
+    // looking exactly like a ticking one — and both may have their Project
+    // corrected without stopping first.
+    it('lets an unstopped entry be moved to another project', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({
+          ...runningEntry,
+          membershipId: 'm-admin',
+        }),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      const result = await service.update('org-1', 'admin-1', 'entry-running', {
+        projectId: 'project-2',
+      });
+
+      expect(result.projectId).toBe('project-2');
+      expect(result.endedAt).toBeNull();
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: { changed: Record<string, unknown> } },
+      ];
+      expect(call[1].metadata.changed).toHaveProperty('projectId');
+      expect(call[1].metadata.changed).not.toHaveProperty('endedAt');
+    });
+
+    it('rejects a start time in the future on an unstopped entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({
+          ...runningEntry,
+          membershipId: 'm-admin',
+        }),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await expect(
+        service.update('org-1', 'admin-1', 'entry-running', {
+          startedAt: new Date(Date.now() + 60_000).toISOString(),
         }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
@@ -816,9 +1100,10 @@ describe('TimeEntriesService', () => {
 
     it('clears the task when the project changes without an explicit new task', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ ...completedEntry, taskId: 'task-1' }),
+        findOne: findEntryThenNoOverlap({
+          ...completedEntry,
+          taskId: 'task-1',
+        }),
       });
       const projectsRepo = makeProjectsRepo({
         findOne: jest
@@ -841,7 +1126,7 @@ describe('TimeEntriesService', () => {
 
     it('rejects changing to an archived project', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
       });
       const projectsRepo = makeProjectsRepo({
         findOne: jest.fn().mockResolvedValue({
@@ -861,6 +1146,520 @@ describe('TimeEntriesService', () => {
           projectId: 'project-2',
         }),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('split', () => {
+    const completedEntry = {
+      id: 'entry-done',
+      membershipId: 'm-other',
+      projectId: 'project-1',
+      taskId: 'task-9',
+      startedAt: new Date('2026-01-01T09:00:00Z'),
+      endedAt: new Date('2026-01-01T11:00:00Z'),
+      source: TimeEntrySource.AGENT,
+      deviceId: 'device-1',
+    } as TimeEntry;
+
+    function makeAdminMembershipsRepo() {
+      return makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
+      });
+    }
+
+    function makeSplitService(overrides: { entry?: Partial<TimeEntry> } = {}) {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...completedEntry, ...overrides.entry }),
+      });
+      const dataSourceParts = makeDataSource();
+      const auditParts = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource: dataSourceParts.dataSource,
+        auditLogService: auditParts.auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+      return { service, ...dataSourceParts, ...auditParts };
+    }
+
+    it('shortens the original to the split point and opens a second half', async () => {
+      const { service } = makeSplitService();
+
+      const result = await service.split('org-1', 'admin-1', 'entry-done', {
+        at: '2026-01-01T10:00:00.000Z',
+      });
+
+      expect(result.first.endedAt).toEqual(new Date('2026-01-01T10:00:00Z'));
+      expect(result.second.startedAt).toEqual(new Date('2026-01-01T10:00:00Z'));
+      expect(result.second.endedAt).toEqual(new Date('2026-01-01T11:00:00Z'));
+    });
+
+    // The second half is the same work by the same person — inheriting the
+    // source keeps a tracked span from turning into a "manual" one just
+    // because someone cut it.
+    it('carries project, task, source and device onto the second half', async () => {
+      const { service, manager } = makeSplitService();
+
+      await service.split('org-1', 'admin-1', 'entry-done', {
+        at: '2026-01-01T10:00:00.000Z',
+      });
+
+      const createCalls = (manager.create as jest.Mock).mock
+        .calls as unknown[][];
+      const created = createCalls[0][1] as Partial<TimeEntry>;
+      expect(created).toMatchObject({
+        membershipId: 'm-other',
+        projectId: 'project-1',
+        taskId: 'task-9',
+        source: TimeEntrySource.AGENT,
+        deviceId: 'device-1',
+      });
+    });
+
+    it('records a time_entry.split audit row naming both halves', async () => {
+      const { service, record } = makeSplitService();
+
+      await service.split('org-1', 'admin-1', 'entry-done', {
+        at: '2026-01-01T10:00:00.000Z',
+      });
+
+      const call = record.mock.calls[0] as [
+        unknown,
+        { action: string; metadata: Record<string, unknown> },
+      ];
+      expect(call[1].action).toBe('time_entry.split');
+      expect(call[1].metadata).toMatchObject({
+        timeEntryId: 'entry-done',
+        at: new Date('2026-01-01T10:00:00Z'),
+        originalEndedAt: new Date('2026-01-01T11:00:00Z'),
+      });
+      expect(call[1].metadata.newTimeEntryId).toBeDefined();
+    });
+
+    it('rejects a split point on the boundary', async () => {
+      const { service } = makeSplitService();
+
+      await expect(
+        service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T09:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects a split point outside the entry', async () => {
+      const { service } = makeSplitService();
+
+      await expect(
+        service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T12:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects splitting an entry that has not stopped', async () => {
+      const { service } = makeSplitService({ entry: { endedAt: null } });
+
+      await expect(
+        service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects a non-admin', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(
+        service.split('org-1', 'user-1', 'entry-done', {
+          at: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    describe('pause spans', () => {
+      it('moves a pause that falls wholly after the cut to the second half', async () => {
+        const { service, find, manager } = makeSplitService();
+        find.mockResolvedValue([
+          {
+            id: 'pause-1',
+            organisationId: 'org-1',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T10:30:00Z'),
+            resumedAt: new Date('2026-01-01T10:45:00Z'),
+          },
+        ]);
+
+        await service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T10:00:00.000Z',
+        });
+
+        const saveCalls = (manager.save as jest.Mock).mock.calls as unknown[][];
+        const moved = saveCalls
+          .map((call) => call[0] as { id?: string; timeEntryId?: string })
+          .find((saved) => saved.id === 'pause-1');
+        expect(moved?.timeEntryId).toBe('entry-2');
+      });
+
+      it('leaves a pause that falls wholly before the cut alone', async () => {
+        const { service, find, manager } = makeSplitService();
+        find.mockResolvedValue([
+          {
+            id: 'pause-1',
+            organisationId: 'org-1',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T09:10:00Z'),
+            resumedAt: new Date('2026-01-01T09:20:00Z'),
+          },
+        ]);
+
+        await service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T10:00:00.000Z',
+        });
+
+        const saveCalls = (manager.save as jest.Mock).mock.calls as unknown[][];
+        const touched = saveCalls
+          .map((call) => call[0] as { id?: string })
+          .filter((saved) => saved.id === 'pause-1');
+        expect(touched).toHaveLength(0);
+      });
+
+      // Otherwise one half would report paused time covering minutes it no
+      // longer spans, and its duration would come out short.
+      it('divides a pause that straddles the cut', async () => {
+        const { service, find, manager } = makeSplitService();
+        find.mockResolvedValue([
+          {
+            id: 'pause-1',
+            organisationId: 'org-1',
+            timeEntryId: 'entry-done',
+            pausedAt: new Date('2026-01-01T09:50:00Z'),
+            resumedAt: new Date('2026-01-01T10:20:00Z'),
+          },
+        ]);
+
+        await service.split('org-1', 'admin-1', 'entry-done', {
+          at: '2026-01-01T10:00:00.000Z',
+        });
+
+        const saveCalls = (manager.save as jest.Mock).mock.calls as unknown[][];
+        const original = saveCalls
+          .map((call) => call[0] as { id?: string; resumedAt?: Date })
+          .find((saved) => saved.id === 'pause-1');
+        expect(original?.resumedAt).toEqual(new Date('2026-01-01T10:00:00Z'));
+
+        const createCalls = (manager.create as jest.Mock).mock
+          .calls as unknown[][];
+        const createdPause = createCalls
+          .map((call) => call[1] as { pausedAt?: Date; resumedAt?: Date })
+          .find(
+            (created) =>
+              created.pausedAt?.getTime() ===
+              Date.parse('2026-01-01T10:00:00Z'),
+          );
+        expect(createdPause?.resumedAt).toEqual(
+          new Date('2026-01-01T10:20:00Z'),
+        );
+      });
+    });
+  });
+
+  describe('remove', () => {
+    const completedEntry = {
+      id: 'entry-done',
+      membershipId: 'm-other',
+      projectId: 'project-1',
+      taskId: 'task-9',
+      startedAt: new Date('2026-01-01T09:00:00Z'),
+      endedAt: new Date('2026-01-01T10:00:00Z'),
+      source: TimeEntrySource.MANUAL,
+      deviceId: null,
+    } as TimeEntry;
+
+    function makeAdminMembershipsRepo() {
+      return makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
+      });
+    }
+
+    it("lets an admin delete someone else's entry", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const { dataSource, remove } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(remove).toHaveBeenCalledWith(TimeEntry, { id: 'entry-done' });
+    });
+
+    it('lets an admin delete their own entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...completedEntry, membershipId: 'm-admin' }),
+      });
+      const { dataSource, remove } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+
+    // The row is gone after this, so the audit metadata is the only
+    // surviving record of what was deleted — it has to be the whole entry,
+    // not just its id.
+    it('records a time_entry.deleted audit row snapshotting the whole entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(record).toHaveBeenCalledTimes(1);
+      const call = record.mock.calls[0] as [
+        unknown,
+        {
+          action: string;
+          actorUserId: string;
+          metadata: Record<string, unknown>;
+        },
+      ];
+      expect(call[1].action).toBe('time_entry.deleted');
+      expect(call[1].actorUserId).toBe('admin-1');
+      expect(call[1].metadata).toEqual({
+        timeEntryId: 'entry-done',
+        membershipId: 'm-other',
+        projectId: 'project-1',
+        taskId: 'task-9',
+        startedAt: completedEntry.startedAt,
+        endedAt: completedEntry.endedAt,
+        source: TimeEntrySource.MANUAL,
+        deviceId: null,
+        prunedCaptures: { appEvents: 0, urlSessions: 0, screenshots: 0 },
+      });
+    });
+
+    it('deletes and audits inside one transaction', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const { dataSource, transaction } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects a manager deleting someone else's entry — deleting is not scoped by role, only by ownership", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const service = makeService({
+        timeEntriesRepo,
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-manager',
+            role: MembershipRole.MANAGER,
+          }),
+        }),
+      });
+
+      await expect(
+        service.remove('org-1', 'manager-1', 'entry-done'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    // Deleting is deliberately wider than editing: withdrawing your own
+    // mistimed entry isn't the same power as rewriting recorded hours, and
+    // the audit row keeps the act on record either way.
+    it('lets a plain member delete their own entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...completedEntry, membershipId: 'm-1' }),
+      });
+      const { dataSource, remove } = makeDataSource();
+      const service = makeService({ timeEntriesRepo, dataSource });
+
+      await service.remove('org-1', 'user-1', 'entry-done');
+
+      expect(remove).toHaveBeenCalledWith(TimeEntry, { id: 'entry-done' });
+    });
+
+    // A plain member can only ever *list* their own timesheet, but that's a
+    // read rule — without this the endpoint would take any id from anyone.
+    it("rejects a plain member deleting someone else's entry", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(
+        service.remove('org-1', 'user-1', 'entry-done'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    // Hard delete frees the one-running-timer slot along with the row, so
+    // there's nothing to protect against here — a bogus running or paused
+    // entry can simply go.
+    it('deletes a still-running entry', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ ...completedEntry, endedAt: null }),
+      });
+      const { dataSource, remove } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo,
+        dataSource,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(remove).toHaveBeenCalledWith(TimeEntry, { id: 'entry-done' });
+    });
+
+    it('404s on an unknown entry', async () => {
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await expect(
+        service.remove('org-1', 'admin-1', 'nope'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // Capture only runs because a timer is running, so activity recorded
+    // for an entry that turned out to be wrong is wrong too.
+    it('prunes the captures the deleted entry used to cover', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const cleanup = makeCaptureCleanup({
+        appEvents: 12,
+        screenshots: 2,
+        storageKeys: ['shots/a.jpg', 'shots/b.jpg'],
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        captureCleanup: cleanup.captureCleanup,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(cleanup.pruneUncovered).toHaveBeenCalledWith(
+        expect.anything(),
+        'm-other',
+        { from: completedEntry.startedAt, to: completedEntry.endedAt },
+      );
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: { prunedCaptures: Record<string, number> } },
+      ];
+      expect(call[1].metadata.prunedCaptures).toEqual({
+        appEvents: 12,
+        urlSessions: 0,
+        screenshots: 2,
+      });
+    });
+
+    // Object storage can't roll back, so the objects go only once the rows
+    // are safely committed.
+    it('deletes screenshot objects after the transaction, never inside it', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const cleanup = makeCaptureCleanup({ storageKeys: ['shots/a.jpg'] });
+      const service = makeService({
+        timeEntriesRepo,
+        captureCleanup: cleanup.captureCleanup,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      expect(cleanup.deleteStoredObjects).toHaveBeenCalledWith(['shots/a.jpg']);
+      expect(
+        cleanup.deleteStoredObjects.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(cleanup.pruneUncovered.mock.invocationCallOrder[0]);
+    });
+
+    it('keeps the deletion reason on the audit row when one is given', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done', {
+        reason: 'Forgot to stop timer',
+      });
+
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: { reason?: string } },
+      ];
+      expect(call[1].metadata.reason).toBe('Forgot to stop timer');
+    });
+
+    // Batch delete removes many at once with nowhere to ask per entry, so
+    // the field has to stay absent rather than be recorded empty.
+    it('omits the reason entirely when none is given', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest.fn().mockResolvedValue({ ...completedEntry }),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.remove('org-1', 'admin-1', 'entry-done');
+
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: Record<string, unknown> },
+      ];
+      expect(call[1].metadata).not.toHaveProperty('reason');
     });
   });
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -13,6 +14,8 @@ import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
+import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
+import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { StopTimeEntryDto } from '../dto/stop-time-entry.dto';
 import { SwitchTimeEntryDto } from '../dto/switch-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
@@ -86,6 +89,40 @@ export class TimeEntriesController {
       dto,
     );
     return { entry, message: 'Time entry updated' };
+  }
+
+  @Post(':timeEntryId/split')
+  async split(
+    @Param('timeEntryId') timeEntryId: string,
+    @Body() dto: SplitTimeEntryDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{
+    first: TimeEntrySummary;
+    second: TimeEntrySummary;
+    message: string;
+  }> {
+    const { first, second } = await this.timeEntriesService.split(
+      request.organisationId!,
+      request.userId,
+      timeEntryId,
+      dto,
+    );
+    return { first, second, message: 'Time entry split' };
+  }
+
+  @Delete(':timeEntryId')
+  async remove(
+    @Param('timeEntryId') timeEntryId: string,
+    @Body() dto: DeleteTimeEntryDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ message: string }> {
+    await this.timeEntriesService.remove(
+      request.organisationId!,
+      request.userId,
+      timeEntryId,
+      dto,
+    );
+    return { message: 'Time entry deleted' };
   }
 
   @Post('switch')
