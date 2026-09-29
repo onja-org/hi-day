@@ -18,7 +18,10 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
     pausedAt: null,
     pausedSeconds: 0,
     durationSeconds: 3600,
+    memberName: "Sam Rivers",
+    memberEmail: "sam@example.test",
     canEdit: true,
+    canDelete: true,
     pauses: [],
     ...overrides,
   };
@@ -35,6 +38,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 7, 9, 0),
         end: new Date(2026, 0, 7, 10, 30),
         kind: "work",
@@ -58,6 +62,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 5, 9, 0),
         end: now,
         kind: "work",
@@ -85,6 +90,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 6, 9, 0),
         end: new Date(2026, 0, 6, 9, 30),
         kind: "work",
@@ -94,6 +100,7 @@ describe("buildCalendarEvents", () => {
         isRunning: false,
       },
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 6, 9, 30),
         end: new Date(2026, 0, 6, 9, 45),
         kind: "paused",
@@ -103,6 +110,7 @@ describe("buildCalendarEvents", () => {
         isRunning: false,
       },
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 6, 9, 45),
         end: new Date(2026, 0, 6, 11, 0),
         kind: "work",
@@ -128,6 +136,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 5, 17, 11),
         end: new Date(new Date(2026, 0, 6, 0, 0).getTime() - 1),
         kind: "work",
@@ -137,6 +146,7 @@ describe("buildCalendarEvents", () => {
         isRunning: false,
       },
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 6, 0, 0),
         end: new Date(2026, 0, 6, 10, 1),
         kind: "work",
@@ -158,6 +168,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 5, 17, 11),
         end: new Date(new Date(2026, 0, 6, 0, 0).getTime() - 1),
         kind: "work",
@@ -181,6 +192,7 @@ describe("buildCalendarEvents", () => {
 
     expect(events).toEqual([
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 5, 22, 0),
         end: new Date(new Date(2026, 0, 6, 0, 0).getTime() - 1),
         kind: "work",
@@ -190,6 +202,7 @@ describe("buildCalendarEvents", () => {
         isRunning: true,
       },
       {
+        entryId: "te-1",
         start: new Date(2026, 0, 6, 0, 0),
         end: now,
         kind: "work",

@@ -63,9 +63,9 @@ export interface AppActivityDay {
 }
 
 interface AppActivityFilter {
-  /** undefined = every project; null = untracked (no covering TimeEntry)
-   * only; a string = that project only. */
-  projectId?: string | null;
+  /** undefined = every project; a string = that project only. Samples no
+   * TimeEntry covers are never returned regardless. */
+  projectId?: string;
 }
 
 @Injectable()
@@ -201,6 +201,17 @@ export class AppEventsService {
     for (const row of rows) {
       const projectId =
         findEntryCovering(coveringEntries, row.sampledAt)?.projectId ?? null;
+      // Samples no Time entry covers are hidden, not deleted: the capture
+      // happened, but without an entry behind it there is nothing to
+      // attribute it to. Shorten an entry and its samples drop out of view;
+      // put the time back and they return, because coverage is recomputed on
+      // every read.
+      if (projectId === null) {
+        // Reset the session run too — the covered samples either side of a
+        // hidden stretch aren't one continuous session.
+        previousAppName = null;
+        continue;
+      }
       const hourStart = new Date(
         Math.floor(row.sampledAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
       ).toISOString();

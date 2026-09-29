@@ -17,14 +17,13 @@ type AppActivityPageContentProps = {
 export function AppActivityPageContent({
   organisationId,
 }: AppActivityPageContentProps) {
-  const { date, membershipId, untracked, projectId, canViewOthers } =
+  const { date, membershipId, projectId, canViewOthers } =
     useActivityDayFilters();
 
   const dayQuery = useAppActivityDay(organisationId, {
     date,
     membershipId,
     projectId,
-    untracked,
   });
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const day = dayQuery.data;
@@ -60,7 +59,7 @@ export function AppActivityPageContent({
 
       {day && day.buckets.length === 0 && (
         <p className="text-slate-900">
-          {projectId || untracked
+          {projectId
             ? "No app activity matches this filter for this day."
             : "No app activity recorded this day — this fills in once window tracking is turned on and a timer is running."}
         </p>

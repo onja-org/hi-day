@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { HALF_HOUR_MS, useNow } from "@/hooks/useNow";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { bucketWeekly, buildDailyTotals, fromDateKey } from "@/lib/buildDailyTotals";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -38,6 +39,9 @@ export function TimesheetDailyChart({
     from: range?.from,
     to: range?.to,
   });
+  // Before the early returns below — hooks can't sit after a conditional
+  // return.
+  const now = useNow(HALF_HOUR_MS);
 
   if (!range) {
     return null;
@@ -56,7 +60,7 @@ export function TimesheetDailyChart({
     return <ErrorMessage message="Could not load this timesheet's chart." />;
   }
 
-  const daily = buildDailyTotals(entriesQuery.data, range.from, range.to);
+  const daily = buildDailyTotals(entriesQuery.data, range.from, range.to, now);
   const bars: ChartBar[] =
     daily.length <= MAX_DAILY_BARS
       ? daily.map((day) => {

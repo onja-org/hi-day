@@ -1,6 +1,7 @@
 "use client";
 
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { HALF_HOUR_MS, useNow } from "@/hooks/useNow";
 import { formatDuration } from "@/lib/formatDuration";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
@@ -17,12 +18,12 @@ type TimesheetSummaryTilesProps = {
 
 export function TimesheetSummaryTiles({ entries, isSingleDay }: TimesheetSummaryTilesProps) {
   const organisationQuery = useCurrentOrganisation();
-  const dayGroups = groupTimeEntriesByDay(entries);
+  const now = useNow(HALF_HOUR_MS);
+  const dayGroups = groupTimeEntriesByDay(entries, now);
   const totalSeconds = dayGroups.reduce((sum, group) => sum + group.totalSeconds, 0);
   const averageSecondsPerDay =
     dayGroups.length > 0 ? totalSeconds / dayGroups.length : 0;
   const projects = new Map(entries.map((entry) => [entry.projectId, entry]));
-  const hasRunningEntry = entries.some((entry) => entry.durationSeconds === null);
   const dailyTarget = organisationQuery.data?.workingHoursPerDay;
   const showDailyTarget =
     dailyTarget !== undefined && isSingleDay;
@@ -65,11 +66,6 @@ export function TimesheetSummaryTiles({ entries, isSingleDay }: TimesheetSummary
           subLabel={soleProject ? soleProject.projectName : undefined}
         />
       </div>
-      {hasRunningEntry && (
-        <p className="text-xs text-slate-900/60">
-          Totals above exclude the entry still in progress.
-        </p>
-      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { entrySeconds } from "./entrySeconds";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type DailyTotal = {
@@ -33,6 +34,7 @@ export function buildDailyTotals(
   entries: TimeEntryListItem[],
   from: Date,
   to: Date,
+  elapsedNow: Date | null = null,
 ): DailyTotal[] {
   const totals = new Map<string, number>();
   let cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
@@ -43,10 +45,9 @@ export function buildDailyTotals(
   }
 
   for (const entry of entries) {
-    if (entry.durationSeconds === null) continue;
     const key = toDateKey(new Date(entry.startedAt));
     if (totals.has(key)) {
-      totals.set(key, totals.get(key)! + entry.durationSeconds);
+      totals.set(key, totals.get(key)! + entrySeconds(entry, elapsedNow));
     }
   }
 

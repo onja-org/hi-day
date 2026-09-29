@@ -34,12 +34,13 @@ export type TimeEntryListItem = TimeEntry & {
   taskName: string | null;
   /** null while the entry is still running. */
   durationSeconds: number | null;
-  /**
-   * Whether the *viewer* can edit this entry — admin can edit anyone's,
-   * manager can edit anyone's but their own, a plain member/finance can't
-   * edit anyone's, not even their own.
-   */
+  memberName: string | null;
+  memberEmail: string | null;
+  /** Whether the viewer can edit *and split* this entry — admin only. */
   canEdit: boolean;
+  /** Whether the viewer can delete it — their own always, anyone's if an
+   * admin. Deliberately wider than `canEdit`. */
+  canDelete: boolean;
   /** Every pause span on this entry, oldest first. */
   pauses: PauseSpan[];
 };
@@ -83,3 +84,14 @@ export type UpdateTimeEntryInput = {
 export type CreateManualTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
 
 export type UpdateTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
+
+/** Split returns both halves: the shortened original and the new second
+ * entry it was cut from. */
+export type SplitTimeEntryResult = ApiResult<{
+  first: TimeEntry;
+  second: TimeEntry;
+}>;
+
+/** Delete returns no entry — the row is gone, and the only surviving
+ * record of it is the backend's `time_entry.deleted` audit row. */
+export type DeleteTimeEntryResult = ApiResult;

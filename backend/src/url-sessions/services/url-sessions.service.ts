@@ -68,9 +68,9 @@ export interface UrlActivityDay {
 }
 
 interface UrlActivityFilter {
-  /** undefined = every project; null = untracked only; a string = that
-   * project only. */
-  projectId?: string | null;
+  /** undefined = every project; a string = that project only. Sessions no
+   * TimeEntry covers are never returned regardless. */
+  projectId?: string;
 }
 
 @Injectable()
@@ -233,6 +233,9 @@ export class UrlSessionsService {
     for (const row of rows) {
       const projectId =
         findEntryCovering(coveringEntries, row.startedAt)?.projectId ?? null;
+      // Hidden, not deleted, while no Time entry covers it — see
+      // AppEventsService for the reasoning.
+      if (projectId === null) continue;
       const hourStart = new Date(
         Math.floor(row.startedAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
       ).toISOString();

@@ -37,14 +37,13 @@ export class UrlSessionsController {
     @Query('membershipId') membershipId: string | undefined,
     @Query('date') date: string | undefined,
     @Query('projectId') projectId: string | undefined,
-    @Query('untracked') untracked: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<UrlActivityDay> {
     return this.urlSessionsService.getDayGroupedByUrl(
       request.organisationId!,
       request.userId,
       date,
-      { projectId: untracked === '1' ? null : projectId },
+      { projectId },
       membershipId,
     );
   }

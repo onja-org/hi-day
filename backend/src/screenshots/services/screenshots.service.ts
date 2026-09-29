@@ -38,9 +38,9 @@ export interface ScreenshotSummaryItem {
 }
 
 export interface ScreenshotsFilter {
-  /** undefined = every project; null = untracked only; a string = that
-   * project only. */
-  projectId?: string | null;
+  /** undefined = every project; a string = that project only. Screenshots
+   * no TimeEntry covers are never returned regardless. */
+  projectId?: string;
 }
 
 @Injectable()
@@ -198,8 +198,14 @@ export class ScreenshotsService {
       ),
     ]);
 
+    // Hidden, not deleted, while no Time entry covers it — see
+    // AppEventsService for the reasoning.
+    const covered = rows.filter(
+      (row) => findEntryCovering(coveringEntries, row.capturedAt) !== undefined,
+    );
+
     const items = await Promise.all(
-      rows.map(async (row) => {
+      covered.map(async (row) => {
         const projectId =
           findEntryCovering(coveringEntries, row.capturedAt)?.projectId ?? null;
         return {

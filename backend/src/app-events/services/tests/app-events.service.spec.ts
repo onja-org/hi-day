@@ -39,7 +39,16 @@ describe('AppEventsService', () => {
     } as unknown as Repository<Membership>;
   }
 
-  function makeTimeEntriesService(coveringEntries: FakeCoveringEntry[] = []) {
+  const ALL_DAY: FakeCoveringEntry = {
+    id: 'entry-day',
+    projectId: 'project-day',
+    startedAt: new Date('2026-09-08T00:00:00.000Z'),
+    endedAt: new Date('2026-09-09T00:00:00.000Z'),
+  };
+
+  function makeTimeEntriesService(
+    coveringEntries: FakeCoveringEntry[] = [ALL_DAY],
+  ) {
     return {
       listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
     } as unknown as TimeEntriesService;
@@ -137,7 +146,7 @@ describe('AppEventsService', () => {
             hourStart: '2026-09-08T09:00:00.000Z',
             items: [
               {
-                projectId: null,
+                projectId: 'project-day',
                 appName: 'Google Chrome',
                 secondsSpent: 10,
                 sessionCount: 1,
@@ -148,7 +157,7 @@ describe('AppEventsService', () => {
             hourStart: '2026-09-08T10:00:00.000Z',
             items: [
               {
-                projectId: null,
+                projectId: 'project-day',
                 appName: 'Slack',
                 secondsSpent: 5,
                 sessionCount: 1,
@@ -189,7 +198,10 @@ describe('AppEventsService', () => {
       expect(appB.secondsSpent).toBe(5);
     });
 
-    it('attributes a sample to whichever project covers it, and null when none does', async () => {
+    // Samples outside every entry are dropped, not labelled "untracked":
+    // shortening an entry hides its samples and widening it back shows them
+    // again, since coverage is recomputed on every read.
+    it('attributes a sample to the project covering it, and omits uncovered ones', async () => {
       const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
       const { repo: appEventsRepo } = makeAppEventsRepo([
         { appName: 'Chrome', sampledAt: new Date('2026-09-08T09:00:00.000Z') },
@@ -214,11 +226,11 @@ describe('AppEventsService', () => {
       const covered = day.buckets.find(
         (b) => b.hourStart === '2026-09-08T09:00:00.000Z',
       )!;
-      const uncovered = day.buckets.find(
-        (b) => b.hourStart === '2026-09-08T11:00:00.000Z',
-      )!;
       expect(covered.items[0].projectId).toBe('project-1');
-      expect(uncovered.items[0].projectId).toBeNull();
+      expect(
+        day.buckets.find((b) => b.hourStart === '2026-09-08T11:00:00.000Z'),
+      ).toBeUndefined();
+      expect(day.totalSecondsSpent).toBe(5);
     });
 
     it('splits a session spanning two hours: duration in both, count once in the start hour', async () => {
@@ -242,13 +254,13 @@ describe('AppEventsService', () => {
         (b) => b.hourStart === '2026-09-08T10:00:00.000Z',
       )!;
       expect(hour9.items[0]).toEqual({
-        projectId: null,
+        projectId: 'project-day',
         appName: 'Chrome',
         secondsSpent: 5,
         sessionCount: 1,
       });
       expect(hour10.items[0]).toEqual({
-        projectId: null,
+        projectId: 'project-day',
         appName: 'Chrome',
         secondsSpent: 5,
         sessionCount: 0,
@@ -307,33 +319,22 @@ describe('AppEventsService', () => {
       ]);
     });
 
-    it('filters items to untracked (no covering entry) when projectId is null', async () => {
+    it('returns nothing for a day no entry covers at all', async () => {
       const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
       const { repo: appEventsRepo } = makeAppEventsRepo([
         { appName: 'Chrome', sampledAt: new Date('2026-09-08T09:00:00.000Z') },
         { appName: 'Slack', sampledAt: new Date('2026-09-08T09:00:05.000Z') },
       ]);
-      const coveringEntries: FakeCoveringEntry[] = [
-        {
-          id: 'te-1',
-          projectId: 'project-1',
-          startedAt: new Date('2026-09-08T09:00:00.000Z'),
-          endedAt: new Date('2026-09-08T09:00:01.000Z'),
-        },
-      ];
       const service = new AppEventsService(
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
-        makeTimeEntriesService(coveringEntries),
+        makeTimeEntriesService([]),
       );
 
-      const day = await service.getMyDay('org-1', 'user-1', '2026-09-08', {
-        projectId: null,
-      });
+      const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
 
-      expect(day.buckets[0].items).toEqual([
-        { projectId: null, appName: 'Slack', secondsSpent: 5, sessionCount: 1 },
-      ]);
+      expect(day.buckets).toEqual([]);
+      expect(day.totalSecondsSpent).toBe(0);
     });
 
     it('defaults to today when no date is given', async () => {

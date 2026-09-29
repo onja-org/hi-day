@@ -9,14 +9,19 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   Between,
   DataSource,
+  EntityManager,
   In,
   IsNull,
   LessThan,
   LessThanOrEqual,
+  MoreThan,
   MoreThanOrEqual,
+  Not,
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
+import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -32,6 +37,8 @@ import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity'
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
+import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
+import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
 
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
@@ -76,16 +83,17 @@ export interface TimeEntryListItem extends TimeEntrySummary {
   projectName: string;
   projectColour: ProjectColour;
   taskName: string | null;
+  /** Whose hours these are, for naming them in confirmations. `memberName`
+   * is null when the User never set one — fall back to the email. */
+  memberName: string | null;
+  memberEmail: string | null;
   /** null while the entry is still running (endedAt is null). */
   durationSeconds: number | null;
-  /**
-   * Whether the *viewer* (not the entry's owner) can edit this entry —
-   * admin can edit anyone's, manager can edit anyone's but their own, a
-   * plain member/finance can edit no one's, not even their own. Lets the
-   * frontend hide the Edit action per-row without re-deriving the rule
-   * itself.
-   */
+  /** Whether the *viewer* can edit and split this entry — admin only. */
   canEdit: boolean;
+  /** Whether the viewer can delete it — their own always, anyone's if an
+   * admin. Wider than `canEdit` on purpose; see `canDeleteEntry`. */
+  canDelete: boolean;
   /**
    * Every pause span on this entry, oldest first — the historical timesheet
    * view surfaces these (when a person paused and resumed) rather than only
@@ -143,6 +151,7 @@ export class TimeEntriesService {
     private readonly tasks: Repository<Task>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    private readonly captureCleanup: CaptureCleanupService,
   ) {}
 
   /**
@@ -390,7 +399,9 @@ export class TimeEntriesService {
               ? { startedAt: LessThanOrEqual(to) }
               : {}),
       },
-      relations: { project: true, task: true },
+      // `membership.user` is loaded only for the member's display name, so
+      // confirmations can say whose hours they are about to touch.
+      relations: { project: true, task: true, membership: { user: true } },
       order: { startedAt: 'DESC' },
       take: LIST_LIMIT,
     });
@@ -563,12 +574,11 @@ export class TimeEntriesService {
   }
 
   /**
-   * Directly logs a completed span of time with an explicit start/end,
-   * rather than starting a live timer — same base access rule as `start`
-   * (org admin/manager, or a ProjectMembership on this Project), plus an
-   * optional delegated target: `dto.membershipId` lets an org admin/manager
-   * or a project-level `manager` log the span against someone *else's*
-   * timesheet instead of their own — see resolveManualEntryTarget.
+   * Directly logs a completed span with an explicit start/end rather than
+   * running a live timer. Admin-only — everyone else logs time by running a
+   * timer, not by typing hours in (the gate lives in
+   * `resolveManualEntryTarget`). `dto.membershipId` puts the span on someone
+   * else's timesheet.
    */
   async createManual(
     organisationId: string,
@@ -620,13 +630,22 @@ export class TimeEntriesService {
   }
 
   /**
-   * Edits a completed Time entry. Admins may edit anyone's including their
-   * own; managers anyone's except their own, so the role that can edit
-   * others cannot quietly adjust its own hours. See `canEditEntry`.
+   * Edits a Time entry. Admin-only, anyone's including their own — see
+   * `canEditEntry`.
    *
-   * Rejects a still-running entry (409): setting `endedAt` here would stop
-   * a timer without emitting `time_entry.stopped`, and re-attributing a
-   * live entry has no clean boundary.
+   * An unstopped entry (`endedAt IS NULL`, which a *paused* one also is)
+   * can still have its Project, Task and start corrected. Only `endedAt` is
+   * refused: setting it here would end the timer without emitting
+   * `time_entry.stopped`, leaving no account of how it ended — use `stop`.
+   *
+   * Moving an unstopped entry to another Project takes the time already
+   * accrued with it; nothing is split at the edit point (see `split`).
+   *
+   * Moving a boundary **deletes** the captures left outside the new span
+   * unless another entry covers them (see `CaptureCleanupService`), so only
+   * activity recorded during the entry as it now stands survives. The new
+   * span must also not overlap another of this person's entries — one
+   * moment can't belong to two of them.
    */
   async update(
     organisationId: string,
@@ -641,14 +660,22 @@ export class TimeEntriesService {
     if (!entry) {
       throw new NotFoundException('Time entry not found.');
     }
-    if (!this.canEditEntry(membership, entry.membershipId)) {
-      throw new ForbiddenException(
-        'Only an admin or manager can edit a time entry — and a manager cannot edit their own.',
-      );
+    if (!this.canEditEntry(membership)) {
+      throw new ForbiddenException('Only an admin can edit a time entry.');
     }
-    if (entry.endedAt === null) {
+    // A paused entry isn't accruing, so giving it an end just closes it where
+    // it already left off — allowed, and handled as a stop below. A *ticking*
+    // one still refuses: ending a live timer here would leave no record of
+    // how it ended, which is what `stop` is for.
+    const openPause =
+      entry.endedAt === null
+        ? await this.timeEntryPauses.findOne({
+            where: { timeEntryId: entry.id, resumedAt: IsNull() },
+          })
+        : null;
+    if (entry.endedAt === null && dto.endedAt !== undefined && !openPause) {
       throw new ConflictException(
-        'This timer is still running — stop or switch it before editing.',
+        'This timer is still running — pause or stop it before setting an end time.',
       );
     }
 
@@ -676,7 +703,19 @@ export class TimeEntriesService {
       ? new Date(dto.startedAt)
       : entry.startedAt;
     const nextEndedAt = dto.endedAt ? new Date(dto.endedAt) : entry.endedAt;
-    this.assertValidRange(nextStartedAt, nextEndedAt);
+    if (nextEndedAt) {
+      this.assertValidRange(nextStartedAt, nextEndedAt);
+      await this.assertNoOverlap(
+        entry.membershipId,
+        entry.id,
+        nextStartedAt,
+        nextEndedAt,
+      );
+    } else if (nextStartedAt.getTime() > Date.now()) {
+      // No end to bracket the start against — but a future start would still
+      // render as a negative elapsed time.
+      throw new ConflictException('Start time cannot be in the future.');
+    }
 
     const changed: Record<string, { from: unknown; to: unknown }> = {};
     if (projectChanged) {
@@ -688,29 +727,321 @@ export class TimeEntriesService {
     if (nextStartedAt.getTime() !== entry.startedAt.getTime()) {
       changed.startedAt = { from: entry.startedAt, to: nextStartedAt };
     }
-    if (nextEndedAt.getTime() !== entry.endedAt.getTime()) {
+    if (nextEndedAt?.getTime() !== entry.endedAt?.getTime()) {
       changed.endedAt = { from: entry.endedAt, to: nextEndedAt };
     }
 
+    const previousSpan = {
+      from: entry.startedAt,
+      to: entry.endedAt ?? new Date(),
+    };
+    // Ending a paused entry closes its open pause at the same instant, the
+    // same way `stop` does — otherwise the entry would end mid-pause and
+    // report the break as worked time.
+    if (openPause && nextEndedAt) {
+      await this.closeOpenPause(this.timeEntryPauses, entry.id, nextEndedAt);
+    }
     entry.projectId = nextProjectId;
     entry.taskId = nextTaskId;
     entry.startedAt = nextStartedAt;
     entry.endedAt = nextEndedAt;
-
     const saved = await this.timeEntries.save(entry);
 
-    if (Object.keys(changed).length > 0) {
-      await this.dataSource.transaction(async (manager) => {
-        await this.auditLogService.record(manager, {
-          action: 'time_entry.updated',
-          organisationId,
-          actorUserId: userId,
-          metadata: { timeEntryId: saved.id, changed },
-        });
-      });
+    if (Object.keys(changed).length === 0) {
+      return await this.toSummary(saved);
     }
 
+    // Only a moved boundary can strand captures; a project or task change
+    // leaves the covered span exactly as it was.
+    const spanMoved = Boolean(changed.startedAt ?? changed.endedAt);
+
+    const pruned = await this.dataSource.transaction(async (manager) => {
+      const result = spanMoved
+        ? await this.captureCleanup.pruneUncovered(
+            manager,
+            entry.membershipId,
+            previousSpan,
+          )
+        : null;
+
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.updated',
+        organisationId,
+        actorUserId: userId,
+        metadata: {
+          timeEntryId: saved.id,
+          changed,
+          ...(result ? { prunedCaptures: this.capturesSummary(result) } : {}),
+        },
+      });
+      return result;
+    });
+
+    await this.captureCleanup.deleteStoredObjects(pruned?.storageKeys ?? []);
+
     return await this.toSummary(saved);
+  }
+
+  /**
+   * Cuts one completed entry into two at `dto.at`, so a span covering two
+   * different pieces of work can be attributed separately instead of being
+   * deleted and retyped.
+   *
+   * The original survives as the *first* half, keeping its id — pause rows
+   * point at it and earlier AuditLog entries name it — with only its
+   * `endedAt` moved back. The second half is a new row inheriting Project,
+   * Task, source and Device.
+   *
+   * Admin-only (`canEditEntry`). An unstopped entry can't be split: with no
+   * end, the second half would have no span.
+   */
+  async split(
+    organisationId: string,
+    userId: string,
+    timeEntryId: string,
+    dto: SplitTimeEntryDto,
+  ): Promise<{ first: TimeEntrySummary; second: TimeEntrySummary }> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const entry = await this.timeEntries.findOne({
+      where: { id: timeEntryId, organisationId },
+    });
+    if (!entry) {
+      throw new NotFoundException('Time entry not found.');
+    }
+    if (!this.canEditEntry(membership)) {
+      throw new ForbiddenException('Only an admin can split a time entry.');
+    }
+    if (entry.endedAt === null) {
+      throw new ConflictException(
+        'This timer has not stopped yet — stop it before splitting.',
+      );
+    }
+
+    const at = new Date(dto.at);
+    if (
+      at.getTime() <= entry.startedAt.getTime() ||
+      at.getTime() >= entry.endedAt.getTime()
+    ) {
+      throw new ConflictException(
+        'The split point must fall between the start and end of the entry.',
+      );
+    }
+
+    const originalEndedAt = entry.endedAt;
+
+    const { first, second } = await this.dataSource.transaction(
+      async (manager) => {
+        const secondHalf = await manager.save(
+          manager.create(TimeEntry, {
+            organisationId,
+            membershipId: entry.membershipId,
+            projectId: entry.projectId,
+            taskId: entry.taskId,
+            startedAt: at,
+            endedAt: originalEndedAt,
+            source: entry.source,
+            deviceId: entry.deviceId,
+          }),
+        );
+
+        entry.endedAt = at;
+        const firstHalf = await manager.save(entry);
+
+        await this.movePausesAcrossSplit(
+          manager,
+          organisationId,
+          entry.id,
+          secondHalf.id,
+          at,
+        );
+
+        await this.auditLogService.record(manager, {
+          action: 'time_entry.split',
+          organisationId,
+          actorUserId: userId,
+          metadata: {
+            timeEntryId: entry.id,
+            newTimeEntryId: secondHalf.id,
+            at,
+            originalEndedAt,
+          },
+        });
+
+        return { first: firstHalf, second: secondHalf };
+      },
+    );
+
+    return {
+      first: await this.toSummary(first),
+      second: await this.toSummary(second),
+    };
+  }
+
+  /**
+   * Re-homes pause spans either side of a split point: spans wholly after
+   * the cut move to the new entry, and one straddling it becomes two — so
+   * each half's paused time still matches the span it now covers.
+   */
+  private async movePausesAcrossSplit(
+    manager: EntityManager,
+    organisationId: string,
+    firstHalfId: string,
+    secondHalfId: string,
+    at: Date,
+  ): Promise<void> {
+    const pauses = await manager.find(TimeEntryPause, {
+      where: { timeEntryId: firstHalfId },
+    });
+
+    for (const pause of pauses) {
+      const pausedAtMs = pause.pausedAt.getTime();
+      // The entry is stopped, so every span here is closed; the fallback
+      // only guards the type.
+      const resumedAtMs = pause.resumedAt?.getTime() ?? pausedAtMs;
+
+      if (pausedAtMs >= at.getTime()) {
+        pause.timeEntryId = secondHalfId;
+        await manager.save(pause);
+        continue;
+      }
+
+      if (resumedAtMs > at.getTime()) {
+        await manager.save(
+          manager.create(TimeEntryPause, {
+            organisationId,
+            timeEntryId: secondHalfId,
+            pausedAt: at,
+            resumedAt: pause.resumedAt,
+          }),
+        );
+        pause.resumedAt = at;
+        await manager.save(pause);
+      }
+    }
+  }
+
+  /**
+   * Deletes a Time entry outright — the row really goes, so no read path
+   * needs a `deletedAt` filter it could forget. `time_entry_pauses` rows
+   * follow via their own `onDelete: 'CASCADE'`, and the app events, URL
+   * sessions and screenshots captured during its span go with it unless
+   * another entry still covers them (see `CaptureCleanupService`): capture
+   * only runs because a timer is running, so activity recorded for an entry
+   * that turned out to be wrong is wrong too.
+   *
+   * Its own entries always, anyone's for an admin — see `canDeleteEntry`,
+   * which is wider than the edit rule.
+   *
+   * The `time_entry.deleted` audit row therefore snapshots the whole entry
+   * rather than referencing an id that no longer resolves, plus the
+   * caller's `reason` when one was given.
+   *
+   * An unstopped entry can go too: deleting the row frees that person's
+   * one-running-timer slot with it, and a desktop agent polling
+   * `/device/time-entries/current` then finds none — the state it already
+   * handles when a timer is stopped server-side.
+   */
+  async remove(
+    organisationId: string,
+    userId: string,
+    timeEntryId: string,
+    dto: DeleteTimeEntryDto = {},
+  ): Promise<void> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const entry = await this.timeEntries.findOne({
+      where: { id: timeEntryId, organisationId },
+    });
+    if (!entry) {
+      throw new NotFoundException('Time entry not found.');
+    }
+    if (!this.canDeleteEntry(membership, entry.membershipId)) {
+      throw new ForbiddenException(
+        "You can only delete your own time entries — an admin can delete anyone's.",
+      );
+    }
+    const span = { from: entry.startedAt, to: entry.endedAt ?? new Date() };
+
+    // Snapshot, delete and prune in one transaction so a deleted entry can
+    // never exist without its audit trail, nor the reverse. The prune runs
+    // after the delete so coverage no longer counts this entry.
+    const pruned = await this.dataSource.transaction(async (manager) => {
+      await manager.delete(TimeEntry, { id: entry.id });
+      const result = await this.captureCleanup.pruneUncovered(
+        manager,
+        entry.membershipId,
+        span,
+      );
+
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.deleted',
+        organisationId,
+        actorUserId: userId,
+        metadata: {
+          timeEntryId: entry.id,
+          membershipId: entry.membershipId,
+          projectId: entry.projectId,
+          taskId: entry.taskId,
+          startedAt: entry.startedAt,
+          endedAt: entry.endedAt,
+          source: entry.source,
+          deviceId: entry.deviceId,
+          prunedCaptures: this.capturesSummary(result),
+          // Only present when the caller gave one — see DeleteTimeEntryDto
+          // for why it isn't mandatory.
+          ...(dto.reason ? { reason: dto.reason } : {}),
+        },
+      });
+      return result;
+    });
+
+    await this.captureCleanup.deleteStoredObjects(pruned.storageKeys);
+  }
+
+  /**
+   * Rejects a span that would sit on top of another of this person's
+   * entries. Touching endpoints are fine — one entry ending exactly where
+   * the next begins is adjacency, not overlap, and is what `switch`
+   * produces — so the comparison is strict at both ends.
+   *
+   * An entry that hasn't stopped counts as occupying everything from its
+   * start, since there is no end yet to bound it.
+   */
+  private async assertNoOverlap(
+    membershipId: string,
+    timeEntryId: string,
+    startedAt: Date,
+    endedAt: Date,
+  ): Promise<void> {
+    const clash = await this.timeEntries.findOne({
+      where: [
+        {
+          membershipId,
+          id: Not(timeEntryId),
+          startedAt: LessThan(endedAt),
+          endedAt: MoreThan(startedAt),
+        },
+        {
+          membershipId,
+          id: Not(timeEntryId),
+          startedAt: LessThan(endedAt),
+          endedAt: IsNull(),
+        },
+      ],
+    });
+    if (clash) {
+      throw new ConflictException(
+        'These times overlap another time entry for this person — one moment cannot belong to two entries. Adjust the times so they do not cover the same period.',
+      );
+    }
+  }
+
+  /** The audit-facing shape of a prune: counts only, never storage keys. */
+  private capturesSummary(pruned: PrunedCaptures): Record<string, number> {
+    return {
+      appEvents: pruned.appEvents,
+      urlSessions: pruned.urlSessions,
+      screenshots: pruned.screenshots,
+    };
   }
 
   /**
@@ -857,9 +1188,10 @@ export class TimeEntriesService {
 
   /**
    * Like `validateStart`, but for `createManual` specifically: resolves
-   * which Membership the entry should be attributed to — the caller's own
-   * by default, or (when `targetMembershipId` names someone else) that
-   * person's, gated by `assertCanLogTimeForOthers`. The target still needs
+   * which Membership the entry should be attributed to, after first
+   * rejecting any caller who isn't an org admin. The entry lands on the
+   * caller's own timesheet by default, or (when `targetMembershipId` names
+   * someone else) that person's. The target still needs
    * their own access to the Project (checked via `assertProjectAccess`,
    * same as the caller) — delegation grants the *caller* extra reach, it
    * never lets them log time against a Project the target has no relation
@@ -873,6 +1205,15 @@ export class TimeEntriesService {
     targetMembershipId: string | undefined,
   ): Promise<ValidatedStart> {
     const caller = await this.getActiveMembership(organisationId, userId);
+    // Admin-only, the same gate as editing and deleting (`canEditEntry`):
+    // hand-authored hours are the ones nobody's timer witnessed, so the
+    // ability to write them sits with the same single role trusted to
+    // rewrite them. Everyone else logs time by running a timer.
+    if (!this.canEditEntry(caller)) {
+      throw new ForbiddenException(
+        'Only an admin can add a time entry manually.',
+      );
+    }
     await this.assertProjectAccess(caller, projectId);
 
     let membership = caller;
@@ -1120,32 +1461,44 @@ export class TimeEntriesService {
       projectName: entry.project.name,
       projectColour: entry.project.colour,
       taskName: entry.task?.name ?? null,
+      memberName: entry.membership?.user?.name ?? null,
+      memberEmail: entry.membership?.user?.email ?? null,
       durationSeconds: entry.endedAt
         ? Math.round(
             (entry.endedAt.getTime() - entry.startedAt.getTime()) / 1000,
           ) - pauseState.pausedSeconds
         : null,
-      canEdit: this.canEditEntry(viewerMembership, entry.membershipId),
+      canEdit: this.canEditEntry(viewerMembership),
+      canDelete: this.canDeleteEntry(viewerMembership, entry.membershipId),
       pauses: pauseState.spans,
     };
   }
 
   /**
-   * Admin can edit any entry, including their own. Manager can edit any
-   * entry *except* their own. Everyone else (plain member, finance) can't
-   * edit any entry, including their own — see `update`'s doc comment for
-   * why a manager doesn't get to self-edit.
+   * Only an admin may edit or split an entry, anyone's including their own.
+   * Rewriting recorded hours sits with one role; *deleting* is a separate,
+   * wider rule — see `canDeleteEntry`.
    */
-  private canEditEntry(
+  private canEditEntry(viewerMembership: Membership): boolean {
+    return viewerMembership.role === MembershipRole.ADMIN;
+  }
+
+  /**
+   * Wider than editing: a mistimed timer is yours to withdraw, and the
+   * `time_entry.deleted` audit row keeps the act on record. Admins may
+   * delete anyone's.
+   *
+   * Non-admins are still held to their own entries — a member can only
+   * *list* their own timesheet, but that's a read rule, and without this
+   * the endpoint would accept any id from anyone.
+   */
+  private canDeleteEntry(
     viewerMembership: Membership,
     entryMembershipId: string,
   ): boolean {
-    if (viewerMembership.role === MembershipRole.ADMIN) {
-      return true;
-    }
-    if (viewerMembership.role === MembershipRole.MANAGER) {
-      return entryMembershipId !== viewerMembership.id;
-    }
-    return false;
+    return (
+      viewerMembership.role === MembershipRole.ADMIN ||
+      entryMembershipId === viewerMembership.id
+    );
   }
 }

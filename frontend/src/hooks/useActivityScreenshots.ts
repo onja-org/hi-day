@@ -11,7 +11,7 @@ export const ACTIVITY_SCREENSHOTS_QUERY_KEY = (
   organisationId,
   filter.membershipId ?? "self",
   filter.date ?? null,
-  filter.untracked ? "untracked" : (filter.projectId ?? "all"),
+  filter.projectId ?? "all",
 ];
 
 export function useActivityScreenshots(

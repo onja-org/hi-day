@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
+import { CapturesModule } from '../../captures/modules/captures.module';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
@@ -29,6 +30,7 @@ import { TimeEntriesService } from '../services/time-entries.service';
       Task,
     ]),
     AuditLogModule,
+    CapturesModule,
     JwtAuthModule,
   ],
   controllers: [TimeEntriesController, ProjectTimeEntriesController],
