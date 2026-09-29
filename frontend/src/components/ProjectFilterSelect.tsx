@@ -34,7 +34,6 @@ export function ProjectFilterSelect({
       options={[
         { value: "", label: "All projects" },
         ...(projectsQuery.data?.map((project) => ({ value: project.id, label: project.name })) ?? []),
-        { value: UNTRACKED_PROJECT_VALUE, label: "Untracked" },
       ]}
     />
   );
