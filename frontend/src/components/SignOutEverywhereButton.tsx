@@ -27,7 +27,7 @@ export function SignOutEverywhereButton() {
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        className="cursor-pointer self-start rounded-md border border-primary-dark/20 px-4 py-2 text-sm font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
+        className="cursor-pointer self-start rounded-md border border-primary-dark/20 px-4 h-11 text-sm font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
       >
         Sign out everywhere
       </button>

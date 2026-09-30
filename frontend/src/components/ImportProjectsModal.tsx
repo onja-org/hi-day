@@ -117,7 +117,7 @@ export function ImportProjectsModal({ organisationId, onClose }: ImportProjectsM
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-slate-900"
+            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
           >
             {mutation.data ? "Done" : "Cancel"}
           </button>
@@ -126,7 +126,7 @@ export function ImportProjectsModal({ organisationId, onClose }: ImportProjectsM
               type="button"
               onClick={() => mutation.mutate()}
               disabled={validRows.length === 0 || mutation.isPending}
-              className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {mutation.isPending && <Spinner />}
               Import {validRows.length} {validRows.length === 1 ? "project" : "projects"}

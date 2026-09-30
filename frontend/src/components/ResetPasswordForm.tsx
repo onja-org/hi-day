@@ -79,7 +79,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50 disabled:hover:scale-100"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50 disabled:hover:scale-100"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Resetting…" : "Reset password"}

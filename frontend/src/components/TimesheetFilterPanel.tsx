@@ -111,7 +111,7 @@ export function TimesheetFilterPanel({
           <select
             value={memberValue}
             onChange={(event) => onMemberChange(event.target.value)}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900"
+            className="rounded-md border border-input-border bg-white px-3 h-11 text-sm text-slate-900"
           >
             <option value="">{ownLabel}</option>
             {otherMembers.map((member) => (
@@ -167,7 +167,7 @@ export function TimesheetFilterPanel({
         type="button"
         disabled={activeCount === 0}
         onClick={() => onChange({ projectIds: new Set(), sources: new Set() })}
-        className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
+        className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
       >
         Clear filters
       </button>

@@ -45,7 +45,7 @@ export function InviteLinksTab({ organisationId }: InviteLinksTabProps) {
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+          className="shrink-0 cursor-pointer rounded-md bg-primary px-5 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
         >
           Create link
         </button>

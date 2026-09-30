@@ -2,8 +2,10 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useProjects } from "@/hooks/useProjects";
+import { Label } from "@/components/ui/form/Label";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectTaskBoard } from "./ProjectTaskBoard";
+import { SearchableSelect } from "./SearchableSelect";
 import { SegmentedControl } from "./SegmentedControl";
 import { Spinner } from "./Spinner";
 
@@ -69,20 +71,20 @@ export function TasksPageContent({ organisationId }: TasksPageContentProps) {
 
       {projectId && (
         <>
-          <label className="flex w-full flex-col gap-1.5 text-xs font-medium tracking-wide text-slate-900/70 uppercase sm:max-w-sm">
-            Project
-            <select
+          <div className="flex flex-col gap-1">
+            <Label>Project</Label>
+            <SearchableSelect
               value={projectId}
-              onChange={(event) => updateQuery({ project: event.target.value })}
-              className="rounded-md border border-input-border bg-white px-3 py-2 text-sm font-normal tracking-normal text-slate-900 normal-case focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={(value) => updateQuery({ project: value })}
+              ariaLabel="Project"
+              placeholder="Search projects…"
+              noMatchesLabel="No matching projects"
+              options={projects.map((project) => ({
+                value: project.id,
+                label: project.name,
+              }))}
+            />
+          </div>
           <ProjectTaskBoard key={projectId} organisationId={organisationId} projectId={projectId} view={view} />
         </>
       )}

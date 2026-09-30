@@ -102,7 +102,7 @@ export function TimeEntryDeleteModal({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream"
+            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream"
           >
             Cancel
           </button>
@@ -110,7 +110,7 @@ export function TimeEntryDeleteModal({
             type="button"
             disabled={trimmedReason === "" || deleteMutation.isPending}
             onClick={() => deleteMutation.mutate(trimmedReason)}
-            className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40"
+            className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40"
           >
             {deleteMutation.isPending && <Spinner />}
             Delete

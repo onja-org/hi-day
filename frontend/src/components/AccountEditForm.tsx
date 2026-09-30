@@ -103,7 +103,7 @@ function AvatarEditor({ profile }: { profile: MyProfile }) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={avatarMutation.isPending}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-all duration-150 hover:bg-primary/10 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center gap-1.5 rounded-md border border-primary px-3 h-11 text-sm text-primary transition-all duration-150 hover:bg-primary/10 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Camera size={16} aria-hidden="true" />
             Change photo
@@ -113,7 +113,7 @@ function AvatarEditor({ profile }: { profile: MyProfile }) {
               type="button"
               onClick={handleRemove}
               disabled={avatarMutation.isPending}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 h-11 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash size={16} aria-hidden="true" />
               Remove
@@ -214,7 +214,7 @@ export function AccountEditForm() {
         <button
           type="submit"
           disabled={updateMutation.isPending}
-          className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-md bg-primary px-4 py-2 text-white transition-all duration-150 hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-md bg-primary px-4 h-11 text-white transition-all duration-150 hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50"
         >
           {updateMutation.isPending && <Spinner />}
           {updateMutation.isPending ? "Saving…" : "Save changes"}

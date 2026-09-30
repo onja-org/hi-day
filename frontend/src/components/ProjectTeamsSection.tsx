@@ -38,7 +38,7 @@ export function ProjectTeamsSection({
             onClick={() => setAddOpen(true)}
             disabled={isArchived}
             title={isArchived ? "Unarchive this project to change teams." : undefined}
-            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer rounded-md border border-primary px-3 h-11 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Add team
           </button>

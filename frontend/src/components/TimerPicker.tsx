@@ -65,7 +65,7 @@ export function TimerPicker({
             type="button"
             onClick={onSwitch}
             disabled={isSwitching}
-            className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-md bg-secondary px-4 py-2 text-white transition-colors duration-150 hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-md bg-secondary px-4 h-11 text-white transition-colors duration-150 hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ArrowsClockwiseIcon size={16} aria-hidden="true" />
             Stop the other timer and start this one
@@ -121,7 +121,7 @@ export function TimerPicker({
           onClick={onStart}
           disabled={!projectId || isStarting}
           className={clsx(
-            "flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50",
+            "flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-5 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50",
             layout === "stacked" && "w-full",
           )}
         >

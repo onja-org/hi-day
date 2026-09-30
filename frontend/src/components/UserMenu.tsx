@@ -66,13 +66,6 @@ export function UserMenu() {
           </Link>
           <button
             type="button"
-            disabled
-            className="cursor-not-allowed rounded-md px-3 py-2 text-left text-slate-900 opacity-50"
-          >
-            Settings
-          </button>
-          <button
-            type="button"
             onClick={handleLogout}
             disabled={loggingOut}
             className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"

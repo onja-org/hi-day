@@ -74,7 +74,7 @@ export function ProjectTasksSection({
             onClick={() => setFormTask("new")}
             disabled={isArchived}
             title={isArchived ? "Unarchive this project to add tasks." : undefined}
-            className="cursor-pointer rounded-md border border-primary px-3 py-1.5 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer rounded-md border border-primary px-3 h-11 text-sm text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             New task
           </button>

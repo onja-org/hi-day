@@ -64,7 +64,7 @@ export function ProjectTaskBoard({ organisationId, projectId, view }: ProjectTas
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="shrink-0 cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+            className="shrink-0 cursor-pointer rounded-md bg-primary px-5 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
           >
             Add task
           </button>

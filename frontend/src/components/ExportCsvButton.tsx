@@ -26,7 +26,7 @@ export function ExportCsvButton({ entries, filename }: ExportCsvButtonProps) {
       type="button"
       onClick={handleExport}
       disabled={entries.length === 0}
-      className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
     >
       <DownloadSimpleIcon size={16} aria-hidden="true" />
       Export CSV

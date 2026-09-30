@@ -41,7 +41,7 @@ export function ActionsMenu({ items, label = "Actions", align = "right" }: Actio
         aria-expanded={open}
         aria-haspopup="true"
         className={clsx(
-          "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-primary-dark transition-colors duration-150 hover:border-primary hover:text-primary",
+          "flex h-11 cursor-pointer items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-primary-dark transition-colors duration-150 hover:border-primary hover:text-primary",
           open && "border-primary text-primary",
           !open && "border-input-border",
         )}

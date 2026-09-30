@@ -60,7 +60,7 @@ export function BatchProjectActionModal({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-slate-900"
+            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
           >
             {mutation.data ? "Done" : "Cancel"}
           </button>
@@ -69,7 +69,7 @@ export function BatchProjectActionModal({
               type="button"
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
-              className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 py-2 text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {mutation.isPending && <Spinner />}
               {kind === "archive" ? `Archive ${count}` : `Delete ${count}`}

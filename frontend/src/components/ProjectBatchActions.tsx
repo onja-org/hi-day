@@ -42,14 +42,14 @@ export function ProjectBatchActions({
               <button
                 type="button"
                 onClick={() => start("edit")}
-                className="cursor-pointer rounded-md border border-input-border bg-white px-3 py-1.5 text-slate-900 hover:bg-cream"
+                className="cursor-pointer rounded-md border border-input-border bg-white px-3 h-11 text-slate-900 hover:bg-cream"
               >
                 Edit
               </button>
               <button
                 type="button"
                 onClick={() => start("archive")}
-                className="cursor-pointer rounded-md border border-input-border bg-white px-3 py-1.5 text-slate-900 hover:bg-cream"
+                className="cursor-pointer rounded-md border border-input-border bg-white px-3 h-11 text-slate-900 hover:bg-cream"
               >
                 Archive
               </button>
@@ -58,7 +58,7 @@ export function ProjectBatchActions({
           <button
             type="button"
             onClick={() => start("delete")}
-            className="cursor-pointer rounded-md border border-error bg-white px-3 py-1.5 text-error hover:bg-error/10"
+            className="cursor-pointer rounded-md border border-error bg-white px-3 h-11 text-error hover:bg-error/10"
           >
             Delete
           </button>

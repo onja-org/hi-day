@@ -49,7 +49,7 @@ export function MultiSelectDropdown({
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex cursor-pointer items-center justify-between gap-2 rounded-md border border-input-border bg-white px-3 py-2 text-left text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex cursor-pointer items-center justify-between gap-2 rounded-md border border-input-border bg-white px-3 h-11 text-left text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {triggerText}
         <CaretDown

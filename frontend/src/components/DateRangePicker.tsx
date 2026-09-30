@@ -151,14 +151,14 @@ export function DateRangePicker({
               <button
                 type="button"
                 onClick={apply}
-                className="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+                className="cursor-pointer rounded-md bg-primary px-3 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
               >
                 Apply
               </button>
               <button
                 type="button"
                 onClick={close}
-                className="cursor-pointer rounded-md border border-input-border px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-cream"
+                className="cursor-pointer rounded-md border border-input-border px-3 h-11 text-sm font-medium text-slate-900 hover:bg-cream"
               >
                 Cancel
               </button>

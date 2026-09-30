@@ -56,7 +56,7 @@ export function TimesheetBatchActions({
         aria-expanded={isOpen}
         aria-haspopup="menu"
         className={clsx(
-          "inline-flex cursor-pointer items-center gap-2 rounded-md border border-input-border bg-white px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary",
+          "inline-flex cursor-pointer items-center gap-2 rounded-md border border-input-border bg-white px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary",
           isEmpty && "invisible",
         )}
       >

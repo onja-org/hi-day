@@ -56,7 +56,7 @@ export function EditMemberNameModal({ organisationId, member, onClose }: EditMem
               onChange={(event) => setFirstName(event.target.value)}
               maxLength={100}
               required
-              className="rounded-md border border-input-border px-3 py-2 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+              className="rounded-md border border-input-border px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
             />
           </label>
           <label className="flex flex-1 flex-col gap-1.5 text-sm text-slate-900">
@@ -67,7 +67,7 @@ export function EditMemberNameModal({ organisationId, member, onClose }: EditMem
               onChange={(event) => setLastName(event.target.value)}
               maxLength={100}
               required
-              className="rounded-md border border-input-border px-3 py-2 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+              className="rounded-md border border-input-border px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
             />
           </label>
         </div>
@@ -81,14 +81,14 @@ export function EditMemberNameModal({ organisationId, member, onClose }: EditMem
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-slate-900"
+            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!canSave || mutation.isPending}
-            className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {mutation.isPending && <Spinner />}
             Save
