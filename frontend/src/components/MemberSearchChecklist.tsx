@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { MemberSelectRow } from "./MemberSelectRow";
-import { Spinner } from "./Spinner";
+import { TextField } from "@/components/ui/form/TextField";
+import { MemberSelectRow } from "@/components/MemberSelectRow";
+import { Spinner } from "@/components/Spinner";
 
 type MemberCandidate = {
   id: string;
@@ -46,16 +47,13 @@ export function MemberSearchChecklist<TRole extends string>({
 
   return (
     <div className="flex flex-col gap-3">
-      <label className="sr-only" htmlFor="member-search-checklist-search">
-        Search members
-      </label>
-      <input
-        id="member-search-checklist-search"
+      <TextField
+        label="Search members"
+        compact
         type="search"
         placeholder="Search by name or email"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        className="rounded-md border border-input-border px-3 py-2 text-sm text-slate-900"
       />
 
       {isLoading ? (
@@ -68,7 +66,6 @@ export function MemberSearchChecklist<TRole extends string>({
           {visible.map((candidate) => (
             <MemberSelectRow
               key={candidate.id}
-              id={candidate.id}
               name={candidate.name}
               email={candidate.email}
               checked={selected.has(candidate.id)}

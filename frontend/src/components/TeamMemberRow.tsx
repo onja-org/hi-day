@@ -5,6 +5,7 @@ import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMember } from "@/lib/addTeamMember";
 import { removeTeamMember } from "@/lib/removeTeamMember";
 import type { TeamMember } from "@/types/team";
+import { CheckboxField } from "@/components/ui/form/CheckboxField";
 
 type TeamMemberRowProps = {
   organisationId: string;
@@ -35,7 +36,8 @@ export function TeamMemberRow({
   });
 
   const removeMutation = useMutation({
-    mutationFn: () => removeTeamMember(organisationId, teamId, member.membershipId),
+    mutationFn: () =>
+      removeTeamMember(organisationId, teamId, member.membershipId),
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
@@ -48,19 +50,21 @@ export function TeamMemberRow({
       <span>
         {member.name ?? member.email}
         {member.name && (
-          <span className="block text-xs text-slate-900/70">{member.email}</span>
+          <span className="block text-xs text-slate-900/70">
+            {member.email}
+          </span>
         )}
       </span>
       <div className="flex items-center gap-4">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={member.isManager}
-            onChange={(event) => toggleManagerMutation.mutate(event.target.checked)}
-            disabled={!canManage || toggleManagerMutation.isPending}
-          />
-          Manager
-        </label>
+        <CheckboxField
+          label="Manager"
+          className="text-sm"
+          checked={member.isManager}
+          onChange={(event) =>
+            toggleManagerMutation.mutate(event.target.checked)
+          }
+          disabled={!canManage || toggleManagerMutation.isPending}
+        />
         {canManage && (
           <button
             type="button"

@@ -36,7 +36,7 @@ export function ExportButtons({
             )
           }
           disabled={disabled}
-          className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
         >
           <DownloadSimpleIcon size={16} aria-hidden="true" />
           Export CSV
@@ -47,7 +47,7 @@ export function ExportButtons({
           type="button"
           onClick={() => downloadBlob(buildPdf(), `${filenameBase}.pdf`)}
           disabled={disabled}
-          className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
         >
           <DownloadSimpleIcon size={16} aria-hidden="true" />
           Export PDF

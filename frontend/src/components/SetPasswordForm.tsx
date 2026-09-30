@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
-import { PasswordInput } from "./PasswordInput";
-import { Spinner } from "./Spinner";
+import { PasswordField } from "@/components/ui/form/PasswordField";
+import { Spinner } from "@/components/Spinner";
 
 const REDIRECT_DELAY_MS = 900;
 
@@ -41,26 +41,22 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
       onSubmit={handleSubmit}
       className="flex w-full max-w-4xl flex-col gap-6"
     >
-      <label className="flex flex-col gap-1.5">
-        Password
-        <PasswordInput
-          name="password"
-          autoComplete="new-password"
-          required
-          minLength={6}
-          pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-          title="At least 6 characters, including a letter and a number"
-          disabled={mutation.data?.ok}
-        />
-        <span className="text-sm text-slate-900">
-          At least 6 characters, including a letter and a number.
-        </span>
-      </label>
+      <PasswordField
+        label="Password"
+        hint="At least 6 characters, including a letter and a number."
+        name="password"
+        autoComplete="new-password"
+        required
+        minLength={6}
+        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
+        title="At least 6 characters, including a letter and a number"
+        disabled={mutation.data?.ok}
+      />
 
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Setting password…" : "Set password"}

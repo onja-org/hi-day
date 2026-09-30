@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { ImportProjectsModal } from "./ImportProjectsModal";
-import { ProjectFormModal } from "./ProjectFormModal";
-import { ProjectsTable } from "./ProjectsTable";
+import { ImportProjectsModal } from "@/components/ImportProjectsModal";
+import { ProjectFormModal } from "@/components/ProjectFormModal";
+import { ProjectsTable } from "@/components/ProjectsTable";
 
 type ProjectsPageContentProps = {
   organisationId: string;
@@ -30,14 +30,14 @@ export function ProjectsPageContent({ organisationId }: ProjectsPageContentProps
               <button
                 type="button"
                 onClick={() => setImportOpen(true)}
-                className="cursor-pointer rounded-md border border-primary px-5 py-2 text-sm font-medium text-primary transition-colors duration-150 hover:bg-primary/10"
+                className="cursor-pointer rounded-md border border-primary px-5 h-11 text-sm font-medium text-primary transition-colors duration-150 hover:bg-primary/10"
               >
                 Import projects
               </button>
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="cursor-pointer rounded-md bg-primary px-5 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+                className="cursor-pointer rounded-md bg-primary px-5 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
               >
                 Add project
               </button>

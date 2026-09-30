@@ -8,7 +8,8 @@ import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { forgotPassword } from "@/lib/forgotPassword";
 import { markResetEmailSent } from "@/lib/resetEmailSentNotice";
-import { Spinner } from "./Spinner";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 export function ForgotPasswordForm() {
   const router = useRouter();
@@ -31,22 +32,19 @@ export function ForgotPasswordForm() {
       onSubmit={handleSubmit}
       className="flex w-full sm:px-20 lg:px-0 flex-col gap-6"
     >
-      <label className="flex flex-col gap-1.5">
-        Email address
-        <input
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          disabled={mutation.data?.ok}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-        />
-      </label>
+      <TextField
+        label="Email address"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        disabled={mutation.data?.ok}
+      />
 
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Sending…" : "Send instructions"}

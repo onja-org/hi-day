@@ -8,16 +8,16 @@ import type { FormEvent } from "react";
 import type { LoginInput } from "@/types/login";
 import { login } from "@/lib/login";
 import { consumeResetEmailSent } from "@/lib/resetEmailSentNotice";
-import { PasswordInput } from "./PasswordInput";
-import { RobotCheckScreen } from "./RobotCheckScreen";
-import { Spinner } from "./Spinner";
-import { SuccessMessage } from "./SuccessMessage";
+import { PasswordField } from "@/components/ui/form/PasswordField";
+import { TextField } from "@/components/ui/form/TextField";
+import { RobotCheckScreen } from "@/components/RobotCheckScreen";
+import { Spinner } from "@/components/Spinner";
+import { SuccessMessage } from "@/components/SuccessMessage";
 
 const REDIRECT_DELAY_MS = 900;
 const RESET_EMAIL_SENT_MESSAGE = "Email sent with password reset instructions.";
 
 type LoginFormProps = {
-  /** Where to go after a successful login — defaults to the dashboard. */
   next?: string;
 };
 
@@ -92,28 +92,23 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
         <SuccessMessage message={RESET_EMAIL_SENT_MESSAGE} />
       )}
 
-      <label className="flex flex-col gap-1.5">
-        Email address
-        <input
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          defaultValue={lastEmail}
-          disabled={mutation.data?.ok}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-        />
-      </label>
+      <TextField
+        label="Email address"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        defaultValue={lastEmail}
+        disabled={mutation.data?.ok}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Password
-        <PasswordInput
-          name="password"
-          autoComplete="current-password"
-          required
-          disabled={mutation.data?.ok}
-        />
-      </label>
+      <PasswordField
+        label="Password"
+        name="password"
+        autoComplete="current-password"
+        required
+        disabled={mutation.data?.ok}
+      />
 
       <Link
         href="/forgot-password"
@@ -125,7 +120,7 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex items-center justify-center gap-2 cursor-pointer rounded-md px-4 py-2 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
+        className="flex items-center justify-center gap-2 cursor-pointer rounded-md px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Logging in…" : "Log in"}

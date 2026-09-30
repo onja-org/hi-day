@@ -94,7 +94,7 @@ export function TimeEntryActionsMenu({
         onClick={toggle}
         aria-expanded={position !== null}
         aria-haspopup="menu"
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-xs font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
+        className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
       >
         Actions
         <CaretDownIcon size={11} aria-hidden="true" />

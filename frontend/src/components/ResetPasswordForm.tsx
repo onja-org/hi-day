@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { resetPassword } from "@/lib/resetPassword";
-import { ErrorMessage } from "./ErrorMessage";
-import { PasswordInput } from "./PasswordInput";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { PasswordField } from "@/components/ui/form/PasswordField";
+import { Spinner } from "@/components/Spinner";
 
 const REDIRECT_DELAY_MS = 900;
 const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match.";
@@ -55,37 +55,31 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         <ErrorMessage message={mismatchError} />
       )}
 
-      <label className="flex flex-col gap-1.5">
-        New password
-        <PasswordInput
-          name="password"
-          autoComplete="new-password"
-          required
-          minLength={6}
-          pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-          title="At least 6 characters, including a letter and a number"
-          disabled={mutation.data?.ok}
-        />
-        <span className="text-sm text-slate-900">
-          At least 6 characters, including a letter and a number.
-        </span>
-      </label>
+      <PasswordField
+        label="New password"
+        hint="At least 6 characters, including a letter and a number."
+        name="password"
+        autoComplete="new-password"
+        required
+        minLength={6}
+        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
+        title="At least 6 characters, including a letter and a number"
+        disabled={mutation.data?.ok}
+      />
 
-      <label className="flex flex-col gap-1.5">
-        Confirm new password
-        <PasswordInput
-          name="confirmPassword"
-          autoComplete="new-password"
-          required
-          minLength={6}
-          disabled={mutation.data?.ok}
-        />
-      </label>
+      <PasswordField
+        label="Confirm new password"
+        name="confirmPassword"
+        autoComplete="new-password"
+        required
+        minLength={6}
+        disabled={mutation.data?.ok}
+      />
 
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50 disabled:hover:scale-100"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:bg-primary/50 disabled:hover:scale-100"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Resetting…" : "Reset password"}

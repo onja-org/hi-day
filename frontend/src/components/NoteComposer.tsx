@@ -5,20 +5,21 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/useProjects";
 import { createNote } from "@/lib/createNote";
-import { Spinner } from "./Spinner";
+import { SelectField } from "@/components/ui/form/SelectField";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 type NoteComposerProps = {
   organisationId: string;
-  /** The day this note is written for — always the day the page currently
-   * shows, not a separately-editable field in this form. */
   noteDate: string;
   onCreated: () => void;
 };
 
-/** A note's day comes from whichever day the page is currently showing —
- * "write a note about the day you're looking at" — so this form only asks
- * for an optional project and the note's content. */
-export function NoteComposer({ organisationId, noteDate, onCreated }: NoteComposerProps) {
+export function NoteComposer({
+  organisationId,
+  noteDate,
+  onCreated,
+}: NoteComposerProps) {
   const [projectId, setProjectId] = useState("");
   const queryClient = useQueryClient();
   const projectsQuery = useProjects(organisationId, { status: "active" });
@@ -32,7 +33,9 @@ export function NoteComposer({ organisationId, noteDate, onCreated }: NoteCompos
       }),
     onSuccess: (result) => {
       if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["notes", organisationId] });
+        void queryClient.invalidateQueries({
+          queryKey: ["notes", organisationId],
+        });
         onCreated();
       }
     },
@@ -56,23 +59,20 @@ export function NoteComposer({ organisationId, noteDate, onCreated }: NoteCompos
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <label className="sr-only" htmlFor="note-content">
-          What are you working on?
-        </label>
-        <input
-          id="note-content"
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <TextField
+          label="What are you working on?"
           name="content"
           type="text"
           placeholder="What are you working on?"
           required
-          className="flex-1 rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="flex-1"
         />
-        <select
+        <SelectField
+          label="Project (optional)"
+          compact
           value={projectId}
           onChange={(event) => setProjectId(event.target.value)}
-          aria-label="Project (optional)"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900"
         >
           <option value="">No project</option>
           {projectsQuery.data?.map((project) => (
@@ -80,11 +80,11 @@ export function NoteComposer({ organisationId, noteDate, onCreated }: NoteCompos
               {project.name}
             </option>
           ))}
-        </select>
+        </SelectField>
         <button
           type="submit"
           disabled={createMutation.isPending}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
         >
           {createMutation.isPending && <Spinner />}
           {createMutation.isPending ? "Posting…" : "Add note"}

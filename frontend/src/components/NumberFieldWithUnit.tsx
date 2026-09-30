@@ -17,7 +17,6 @@ type NumberFieldWithUnitProps =
       defaultValue?: never;
     });
 
-/** A number input with a fixed unit suffix (e.g. "5 | min"), used across the Settings page. */
 export function NumberFieldWithUnit({
   name,
   label,
@@ -32,7 +31,7 @@ export function NumberFieldWithUnit({
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-slate-900">{label}</span>
-      <span className="flex items-center overflow-hidden rounded-md border border-input-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30">
+      <span className="flex h-11 items-center overflow-hidden rounded-md border border-input-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30">
         <input
           name={name}
           type="number"
@@ -46,9 +45,9 @@ export function NumberFieldWithUnit({
                   onChange(Number(event.target.value)),
               }
             : { defaultValue })}
-          className="w-full min-w-0 flex-1 px-3 py-2 text-slate-900 focus:outline-none"
+          className="h-full w-full min-w-0 flex-1 px-3 text-slate-900 focus:outline-none"
         />
-        <span className="shrink-0 border-l border-input-border bg-sidebar px-3 py-2 text-sm text-slate-900/60">
+        <span className="flex h-full shrink-0 items-center border-l border-input-border bg-sidebar px-3 text-sm text-slate-900/60">
           {unit}
         </span>
       </span>

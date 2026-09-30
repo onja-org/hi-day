@@ -26,7 +26,7 @@ export function JoinExistingAccountView({
         type="button"
         onClick={onJoin}
         disabled={isPending || result?.ok}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
       >
         {isPending && <Spinner />}
         {isPending ? "Joining…" : `Join ${organisationName}`}

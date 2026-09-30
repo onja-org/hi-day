@@ -11,9 +11,11 @@ import {
 import { disclosureVersionHistoryQueryKey } from "@/hooks/useDisclosureVersionHistory";
 import { publishDisclosureVersion } from "@/lib/publishDisclosureVersion";
 import { updateDisclosureDraft } from "@/lib/updateDisclosureDraft";
-import { DisclosureVersionHistory } from "./DisclosureVersionHistory";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
+import { DisclosureVersionHistory } from "@/components/DisclosureVersionHistory";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { TextareaField } from "@/components/ui/form/TextareaField";
+import { TextField } from "@/components/ui/form/TextField";
+import { Spinner } from "@/components/Spinner";
 
 const PUBLISH_CONFIRM_MESSAGE =
   "Publishing re-prompts every device that needs to consent to this region's disclosure text before it can keep capturing. Continue?";
@@ -103,38 +105,33 @@ export function DisclosureDraftForm() {
 
   return (
     <div className="flex w-full max-w-4xl flex-col gap-8">
-      <label className="flex max-w-xs flex-col gap-1.5">
-        Region code (optional)
-        <input
-          type="text"
-          value={region}
-          onChange={(event) => setRegion(event.target.value)}
-          placeholder="e.g. FR — leave blank for the org default"
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+      <TextField
+        label="Region code (optional)"
+        className="max-w-xs"
+        type="text"
+        value={region}
+        onChange={(event) => setRegion(event.target.value)}
+        placeholder="e.g. FR — leave blank for the org default"
+      />
 
       <form
         key={draft.id}
         onSubmit={handleSaveDraft}
         className="flex flex-col gap-4"
       >
-        <label className="flex flex-col gap-1.5">
-          Disclosure text
-          <textarea
-            name="text"
-            defaultValue={draft.text}
-            rows={10}
-            required
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextareaField
+          label="Disclosure text"
+          name="text"
+          defaultValue={draft.text}
+          rows={10}
+          required
+        />
 
         <div className="flex gap-3">
           <button
             type="submit"
             disabled={saveDraftMutation.isPending}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary px-4 py-2 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary px-4 h-11 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saveDraftMutation.isPending && <Spinner />}
             {saveDraftMutation.isPending ? "Saving…" : "Save draft"}
@@ -143,7 +140,7 @@ export function DisclosureDraftForm() {
             type="button"
             onClick={handlePublish}
             disabled={publishMutation.isPending}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
           >
             {publishMutation.isPending && <Spinner />}
             {publishMutation.isPending ? "Publishing…" : "Publish"}

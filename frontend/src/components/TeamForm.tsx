@@ -9,9 +9,10 @@ import { addTeamMembers } from "@/lib/addTeamMembers";
 import { createTeam } from "@/lib/createTeam";
 import { TEAM_ROLE_OPTIONS } from "@/lib/teamRoleOptions";
 import type { CreateTeamResult, OrganisationTeam } from "@/types/team";
-import { ErrorMessage } from "./ErrorMessage";
-import { MemberSearchChecklist } from "./MemberSearchChecklist";
-import { Spinner } from "./Spinner";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { TextField } from "@/components/ui/form/TextField";
+import { MemberSearchChecklist } from "@/components/MemberSearchChecklist";
+import { Spinner } from "@/components/Spinner";
 
 type TeamFormProps = {
   organisationId: string;
@@ -21,9 +22,6 @@ type TeamFormProps = {
 export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
   const queryClient = useQueryClient();
   const membersQuery = useActiveMembers(organisationId);
-  // membershipId -> role, for every member checked to be added right away —
-  // entirely optional, a team can still be created with nobody selected and
-  // members added afterward from the team's own row.
   const [selected, setSelected] = useState<Map<string, "member" | "manager">>(
     new Map(),
   );
@@ -35,10 +33,6 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
         return result;
       }
 
-      // The team exists from here on regardless of how member-adding below
-      // goes, so refresh the list now rather than only on full success —
-      // otherwise a partial member-add failure would also hide the newly
-      // created team from the list behind this still-open modal.
       queryClient.invalidateQueries({
         queryKey: ORGANISATION_TEAMS_QUERY_KEY(organisationId),
       });
@@ -89,17 +83,17 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
   const members = membersQuery.data ?? [];
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-      <label className="flex flex-col gap-1.5">
-        Name
-        <input
-          name="name"
-          type="text"
-          required
-          maxLength={120}
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </label>
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full max-w-lg flex-col gap-5"
+    >
+      <TextField
+        label="Name"
+        name="name"
+        type="text"
+        required
+        maxLength={120}
+      />
 
       <div className="flex flex-col gap-1.5">
         <span>Add members (optional)</span>
@@ -133,7 +127,7 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
       >
         {mutation.isPending && <Spinner />}
         Create team

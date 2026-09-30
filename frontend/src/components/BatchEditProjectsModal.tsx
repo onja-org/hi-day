@@ -104,7 +104,7 @@ export function BatchEditProjectsModal({
               <select
                 value={memberRole}
                 onChange={(event) => setMemberRole(event.target.value as ProjectMembershipRole)}
-                className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="rounded-md border border-input-border bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
                 {PROJECT_MEMBERSHIP_ROLE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -121,7 +121,7 @@ export function BatchEditProjectsModal({
         <button
           type="button"
           onClick={onClose}
-          className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-slate-900"
+          className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
         >
           {mutation.data ? "Done" : "Cancel"}
         </button>
@@ -130,7 +130,7 @@ export function BatchEditProjectsModal({
             type="button"
             onClick={() => mutation.mutate()}
             disabled={!hasChanges || mutation.isPending}
-            className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {mutation.isPending && <Spinner />}
             Apply changes

@@ -7,8 +7,9 @@ import { useAssignableProjectTeams } from "@/hooks/useAssignableProjectTeams";
 import { useInvalidateProject } from "@/hooks/useInvalidateProject";
 import { useProject } from "@/hooks/useProject";
 import { addProjectTeam } from "@/lib/addProjectTeam";
-import { Modal } from "./Modal";
-import { Spinner } from "./Spinner";
+import { SelectField } from "@/components/ui/form/SelectField";
+import { Modal } from "@/components/Modal";
+import { Spinner } from "@/components/Spinner";
 
 type AddProjectTeamModalProps = {
   organisationId: string;
@@ -37,7 +38,8 @@ export function AddProjectTeamModal({
     },
   });
 
-  const assignedTeamIds = projectQuery.data?.teams.map((team) => team.teamId) ?? [];
+  const assignedTeamIds =
+    projectQuery.data?.teams.map((team) => team.teamId) ?? [];
   const availableTeams = (teamsQuery.data ?? []).filter(
     (team) => !assignedTeamIds.includes(team.id),
   );
@@ -53,29 +55,29 @@ export function AddProjectTeamModal({
 
   return (
     <Modal title="Add team to project" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
+      <form
+        onSubmit={handleSubmit}
+        className="flex w-full max-w-lg flex-col gap-5"
+      >
         <p className="text-sm text-slate-900">
-          Everyone on the team gains access to log time and be assigned tasks
-          on this project.
+          Everyone on the team gains access to log time and be assigned tasks on
+          this project.
         </p>
 
-        <label className="flex flex-col gap-1.5">
-          Team
-          <select
-            value={teamId}
-            onChange={(event) => setTeamId(event.target.value)}
-            required
-            disabled={isLoading}
-            className="rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="">Select a team</option>
-            {availableTeams.map((team) => (
-              <option key={team.id} value={team.id}>
-                {team.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          label="Team"
+          value={teamId}
+          onChange={(event) => setTeamId(event.target.value)}
+          required
+          disabled={isLoading}
+        >
+          <option value="">Select a team</option>
+          {availableTeams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </SelectField>
 
         {availableTeams.length === 0 && !isLoading && (
           <p className="text-sm text-slate-900">
@@ -86,7 +88,7 @@ export function AddProjectTeamModal({
         <button
           type="submit"
           disabled={mutation.isPending || !teamId}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
         >
           {mutation.isPending && <Spinner />}
           Add to project

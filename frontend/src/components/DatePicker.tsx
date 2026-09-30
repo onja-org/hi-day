@@ -3,25 +3,30 @@
 import { useCallback, useRef, useState } from "react";
 import { CalendarBlankIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
-import { addMonths, isBefore, isSameDay, startOfDay, startOfMonth, subMonths } from "date-fns";
+import {
+  addMonths,
+  isBefore,
+  isSameDay,
+  startOfDay,
+  startOfMonth,
+  subMonths,
+} from "date-fns";
 import { useDismissOnOutsideClick } from "@/hooks/useDismissOnOutsideClick";
-import { MonthCalendar } from "./MonthCalendar";
+import { MonthCalendar } from "@/components/MonthCalendar";
 
 type DatePickerProps = {
   value: Date;
   onChange: (date: Date) => void;
-  /** Accessible name for the field, e.g. "Activity day". */
   label: string;
-  /** Borderless compact trigger (icon, bold day without the year, "Today"
-   * tag) for sitting inside another control like `DayNavigator`, instead
-   * of the standalone bordered field. */
   embedded?: boolean;
 };
 
-/** A single-date field that opens a one-month calendar popover. Picking a
- * day applies it immediately and closes the popover; days after today
- * aren't selectable. The single-day counterpart of `DateRangePicker`. */
-export function DatePicker({ value, onChange, label, embedded = false }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  label,
+  embedded = false,
+}: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(value));
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,7 +57,8 @@ export function DatePicker({ value, onChange, label, embedded = false }: DatePic
         onClick={toggle}
         className={clsx(
           "flex h-10 cursor-pointer items-center text-sm text-slate-900 transition-colors duration-150",
-          !embedded && "w-64 justify-between gap-3 rounded-md border bg-white px-3",
+          !embedded &&
+            "w-64 justify-between gap-3 rounded-md border bg-white px-3",
           !embedded && open && "border-primary",
           !embedded && !open && "border-input-border hover:border-primary/50",
           embedded && "gap-2 px-4 hover:bg-cream",
@@ -61,11 +67,21 @@ export function DatePicker({ value, onChange, label, embedded = false }: DatePic
       >
         {embedded ? (
           <>
-            <CalendarBlankIcon size={18} aria-hidden="true" className="text-primary" />
+            <CalendarBlankIcon
+              size={18}
+              aria-hidden="true"
+              className="text-primary"
+            />
             <span className="font-semibold">
-              {value.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+              {value.toLocaleDateString([], {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}
             </span>
-            {isToday && <span className="text-xs text-slate-900/60">Today</span>}
+            {isToday && (
+              <span className="text-xs text-slate-900/60">Today</span>
+            )}
           </>
         ) : (
           <>
@@ -75,7 +91,11 @@ export function DatePicker({ value, onChange, label, embedded = false }: DatePic
               day: "numeric",
               year: "numeric",
             })}
-            <CalendarBlankIcon size={18} aria-hidden="true" className="text-primary" />
+            <CalendarBlankIcon
+              size={18}
+              aria-hidden="true"
+              className="text-primary"
+            />
           </>
         )}
       </button>

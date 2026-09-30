@@ -35,7 +35,7 @@ export function PasswordInput({
         pattern={pattern}
         title={title}
         disabled={disabled}
-        className="w-full rounded-md border border-input-border bg-white px-3 py-2 pr-10 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+        className="w-full rounded-md border border-input-border bg-white pl-3 h-11 pr-10 text-slate-900 transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
       />
       <button
         type="button"

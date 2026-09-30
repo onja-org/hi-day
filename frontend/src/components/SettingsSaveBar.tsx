@@ -40,14 +40,14 @@ export function SettingsSaveBar({
           type="button"
           onClick={onDiscard}
           disabled={!isDirty || isPending}
-          className="cursor-pointer rounded-md border border-white/30 px-4 py-2 text-sm transition-colors duration-150 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="cursor-pointer rounded-md border border-white/30 px-4 h-11 text-sm transition-colors duration-150 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Discard
         </button>
         <button
           type="submit"
           disabled={isPending}
-          className="cursor-pointer rounded-md bg-primary px-4 py-2 text-sm transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="cursor-pointer rounded-md bg-primary px-4 h-11 text-sm transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
         >
           Save changes
         </button>

@@ -3,18 +3,17 @@
 import { isSameDay } from "date-fns";
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
 import type { TimeEntryListItem } from "@/types/timeEntry";
-import { DateRangePicker } from "./DateRangePicker";
-import { DATE_RANGE_PRESET_LABELS } from "./DateRangePresetList";
-import { ErrorMessage } from "./ErrorMessage";
-import { Spinner } from "./Spinner";
-import { TimesheetProjectBreakdown } from "./TimesheetProjectBreakdown";
-import { TimesheetSummaryTiles } from "./TimesheetSummaryTiles";
-import { TimesheetTable } from "./TimesheetTable";
+import { DateRangePicker } from "@/components/DateRangePicker";
+import { DATE_RANGE_PRESET_LABELS } from "@/components/DateRangePresetList";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { Spinner } from "@/components/Spinner";
+import { TimesheetProjectBreakdown } from "@/components/TimesheetProjectBreakdown";
+import { TimesheetSummaryTiles } from "@/components/TimesheetSummaryTiles";
+import { TimesheetTable } from "@/components/TimesheetTable";
 
 type TimesheetDailyViewProps = {
   organisationId: string;
   isOwnTimesheet: boolean;
-  /** null while a custom calendar range is applied. */
   datePreset: DateRangePreset | null;
   defaultDatePreset: DateRangePreset;
   range: DateRange;
@@ -25,9 +24,6 @@ type TimesheetDailyViewProps = {
   errorMessage?: string;
 };
 
-/** The Timesheets page's Daily tab body: date-range picker, then the
- * summary tiles / project breakdown / entries table — split out of `TimeEntriesPageContent` to keep that file under the
- * components size guideline. */
 export function TimesheetDailyView({
   organisationId,
   isOwnTimesheet,
@@ -47,6 +43,8 @@ export function TimesheetDailyView({
   return (
     <>
       <DateRangePicker
+        id="timesheet-date-range"
+        label="Date range"
         value={range}
         preset={datePreset}
         defaultPreset={defaultDatePreset}
@@ -60,11 +58,18 @@ export function TimesheetDailyView({
         </p>
       )}
 
-      {isError && <ErrorMessage message={errorMessage ?? "Could not load this timesheet."} />}
+      {isError && (
+        <ErrorMessage
+          message={errorMessage ?? "Could not load this timesheet."}
+        />
+      )}
 
       {entries && (
         <>
-          <TimesheetSummaryTiles entries={entries} isSingleDay={isSameDay(range.from, range.to)} />
+          <TimesheetSummaryTiles
+            entries={entries}
+            isSingleDay={isSameDay(range.from, range.to)}
+          />
 
           <TimesheetProjectBreakdown entries={entries} />
 

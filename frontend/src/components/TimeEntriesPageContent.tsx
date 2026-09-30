@@ -19,15 +19,15 @@ import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
-import { ErrorMessage } from "./ErrorMessage";
-import { ExportButtons } from "./ExportButtons";
-import { Spinner } from "./Spinner";
-import { TimeEntryFormModal } from "./TimeEntryFormModal";
-import { TimesheetFilterPanel } from "./TimesheetFilterPanel";
-import { TimesheetCalendarGrid } from "./TimesheetCalendarGrid";
-import { TimesheetDailyView } from "./TimesheetDailyView";
-import { TimesheetWeeklyMatrix } from "./TimesheetWeeklyMatrix";
-import { WeekNavigator } from "./WeekNavigator";
+import { ErrorMessage } from "@/components/ErrorMessage";
+import { ExportButtons } from "@/components/ExportButtons";
+import { Spinner } from "@/components/Spinner";
+import { TimeEntryFormModal } from "@/components/TimeEntryFormModal";
+import { TimesheetCalendarGrid } from "@/components/TimesheetCalendarGrid";
+import { TimesheetDailyView } from "@/components/TimesheetDailyView";
+import { TimesheetFilterPanel } from "@/components/TimesheetFilterPanel";
+import { TimesheetWeeklyMatrix } from "@/components/TimesheetWeeklyMatrix";
+import { WeekNavigator } from "@/components/WeekNavigator";
 
 type TimeEntriesPageContentProps = {
   organisationId: string;
@@ -43,7 +43,9 @@ const VIEW_MODE_LABELS: Record<TimesheetViewMode, string> = {
 
 const DEFAULT_DATE_PRESET: DateRangePreset = "last_7_days";
 
-export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageContentProps) {
+export function TimeEntriesPageContent({
+  organisationId,
+}: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
@@ -51,15 +53,12 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   // admins/managers.
   const [viewingMembershipId, setViewingMembershipId] = useState("");
   const [viewMode, setViewMode] = useState<TimesheetViewMode>("daily");
-  // null while a custom calendar range is applied. A preset's range is
-  // re-resolved every render (below) rather than stored, so "Today" keeps
-  // meaning today if the page stays open past midnight.
-  const [datePreset, setDatePreset] = useState<DateRangePreset | null>(DEFAULT_DATE_PRESET);
+  const [datePreset, setDatePreset] = useState<DateRangePreset | null>(
+    DEFAULT_DATE_PRESET,
+  );
   const [customRange, setCustomRange] = useState<DateRange>(() =>
     getTimesheetDateRange(DEFAULT_DATE_PRESET),
   );
-  // Shared by the Weekly and Calendar tabs so switching between them keeps
-  // the same week in view.
   const [weekOffset, setWeekOffset] = useState(0);
 
   const organisationQuery = useCurrentOrganisation();
@@ -86,7 +85,9 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
 
-  const dailyRange = datePreset ? getTimesheetDateRange(datePreset) : customRange;
+  const dailyRange = datePreset
+    ? getTimesheetDateRange(datePreset)
+    : customRange;
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
     { membershipId, from: dailyRange.from, to: dailyRange.to },
@@ -131,14 +132,16 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white">
             <ClockIcon size={18} aria-hidden="true" />
           </span>
-          <h1 className="text-2xl font-semibold text-primary-dark">Timesheets</h1>
+          <h1 className="text-2xl font-semibold text-primary-dark">
+            Timesheets
+          </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => setShowFilters(true)}
             aria-expanded={showFilters}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
+            className="flex h-11 cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
           >
             <FunnelIcon size={16} aria-hidden="true" />
             Filter
@@ -150,7 +153,7 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
             <button
               type="button"
               onClick={() => setAddingTime(true)}
-              className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+              className="flex h-11 cursor-pointer items-center rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90"
             >
               Add time
             </button>
@@ -163,7 +166,11 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
         </div>
       </div>
 
-      <nav role="tablist" aria-label="View mode" className="flex gap-1 border-b border-input-border">
+      <nav
+        role="tablist"
+        aria-label="View mode"
+        className="flex gap-1 border-b border-input-border"
+      >
         {Object.entries(VIEW_MODE_LABELS).map(([value, label]) => (
           <button
             key={value}
@@ -198,14 +205,20 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
           isLoading={dailyEntriesQuery.isLoading}
           isError={dailyEntriesQuery.isError}
           errorMessage={
-            dailyEntriesQuery.error instanceof Error ? dailyEntriesQuery.error.message : undefined
+            dailyEntriesQuery.error instanceof Error
+              ? dailyEntriesQuery.error.message
+              : undefined
           }
         />
       )}
 
       {(viewMode === "weekly" || viewMode === "calendar") && (
         <div className="flex flex-col gap-3">
-          <WeekNavigator weekOffset={weekOffset} onChange={setWeekOffset} />
+          <WeekNavigator
+            label="Week"
+            weekOffset={weekOffset}
+            onChange={setWeekOffset}
+          />
 
           {weekEntriesQuery.isLoading && (
             <p className="flex items-center gap-2 text-slate-900">
@@ -214,7 +227,9 @@ export function TimeEntriesPageContent({ organisationId }: TimeEntriesPageConten
             </p>
           )}
 
-          {weekEntriesQuery.isError && <ErrorMessage message="Could not load this timesheet." />}
+          {weekEntriesQuery.isError && (
+            <ErrorMessage message="Could not load this timesheet." />
+          )}
 
           {weekEntries && viewMode === "weekly" && (
             <TimesheetWeeklyMatrix entries={weekEntries} start={weekStart} />

@@ -63,7 +63,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
                 type="button"
                 onClick={timer.onResume}
                 disabled={timer.isResuming}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <PlayIcon size={18} weight="fill" aria-hidden="true" />
                 Resume
@@ -73,7 +73,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
                 type="button"
                 onClick={timer.onPause}
                 disabled={timer.isPausing}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary-dark/20 px-4 py-2.5 text-primary-dark transition-colors duration-150 hover:bg-primary-dark/5 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary-dark/20 px-4 h-11 text-primary-dark transition-colors duration-150 hover:bg-primary-dark/5 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <PauseIcon size={18} weight="fill" aria-hidden="true" />
                 Pause
@@ -83,7 +83,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
               type="button"
               onClick={timer.onStop}
               disabled={timer.isStopping}
-              className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary-dark px-5 py-2.5 text-white transition-colors duration-150 hover:bg-primary-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary-dark px-5 h-11 text-white transition-colors duration-150 hover:bg-primary-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <StopIcon size={18} weight="fill" aria-hidden="true" />
               Stop
