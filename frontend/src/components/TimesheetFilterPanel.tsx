@@ -14,6 +14,8 @@ import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import type { ActiveMember } from "@/types/membership";
 import type { TimeEntrySource, TimeEntryType } from "@/types/timeEntry";
 import { MultiSelectFilter } from "./MultiSelectFilter";
+import { SearchableSelect } from "./SearchableSelect";
+import type { SearchableSelectOption } from "./SearchableSelect";
 
 /** Our three real sources, named as a person would describe them rather than
  * by the enum value stored on the entry. */
@@ -30,8 +32,20 @@ const TIME_TYPE_OPTIONS: { id: TimeEntryType; name: string }[] = [
   { id: "manual", name: "Manual" },
 ];
 
-const FIELD_CLASSES =
-  "rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
+/** The signed-in account first, then everyone else — the same list the
+ * header picker shows, built once so the two can't drift. */
+export function memberOptions(
+  ownLabel: string,
+  otherMembers: ActiveMember[],
+): SearchableSelectOption[] {
+  return [
+    { value: "", label: ownLabel },
+    ...otherMembers.map((member) => ({
+      value: member.id,
+      label: member.name ?? member.email,
+    })),
+  ];
+}
 
 type TimesheetFilterPanelProps = {
   filters: TimesheetFilters;
@@ -107,23 +121,19 @@ export function TimesheetFilterPanel({
       </div>
 
       {canViewOthers && (
-        <label className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
             Member
           </span>
-          <select
+          <SearchableSelect
+            ariaLabel="Whose timesheet to view"
             value={memberValue}
-            onChange={(event) => onMemberChange(event.target.value)}
-            className={FIELD_CLASSES}
-          >
-            <option value="">{ownLabel}</option>
-            {otherMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name ?? member.email}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={onMemberChange}
+            options={memberOptions(ownLabel, otherMembers)}
+            placeholder="Search members"
+            noMatchesLabel="No members match"
+          />
+        </div>
       )}
 
       <MultiSelectFilter
@@ -170,7 +180,7 @@ export function TimesheetFilterPanel({
                 : null,
             })
           }
-          className={FIELD_CLASSES}
+          className="rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">All levels</option>
           {ACTIVITY_LEVEL_THRESHOLDS.map((threshold) => (

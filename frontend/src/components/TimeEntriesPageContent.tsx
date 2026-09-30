@@ -28,6 +28,8 @@ import { TimesheetDailyView } from "@/components/TimesheetDailyView";
 import { TimesheetFilterPanel } from "@/components/TimesheetFilterPanel";
 import { TimesheetWeeklyMatrix } from "@/components/TimesheetWeeklyMatrix";
 import { WeekNavigator } from "@/components/WeekNavigator";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { memberOptions } from "@/components/TimesheetFilterPanel";
 
 type TimeEntriesPageContentProps = {
   organisationId: string;
@@ -137,6 +139,30 @@ export function TimeEntriesPageContent({
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {/* Kept alongside the drawer's own member filter, not replaced by
+              it: switching whose timesheet you are looking at is the most
+              frequent move on this page, and it changes which entries are
+              fetched rather than which are shown. Both bind to the same
+              state, so they can never disagree. */}
+          {canViewOthers && membersQuery.data && (
+            <SearchableSelect
+              ariaLabel="Whose timesheet to view"
+              value={viewingMembershipId}
+              onChange={setViewingMembershipId}
+              options={memberOptions(ownLabel, otherMembers)}
+              placeholder="Search members"
+              noMatchesLabel="No members match"
+            />
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setAddingTime(true)}
+              className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+            >
+              Add time
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowFilters(true)}
@@ -149,15 +175,6 @@ export function TimeEntriesPageContent({
               <span className="tabular-nums">({activeFilterCount})</span>
             )}
           </button>
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setAddingTime(true)}
-              className="flex h-11 cursor-pointer items-center rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90"
-            >
-              Add time
-            </button>
-          )}
           <ExportButtons
             csv={entriesToCsv(activeEntries ?? [])}
             filenameBase={activeFilenameBase}
