@@ -163,32 +163,28 @@ export function TimesheetFilterPanel({
         }
       />
 
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
-          Activity level
-        </span>
-        {/* The one single-value filter: thresholds nest, so "> 90%" and
-            "> 60%" together could only ever mean "> 60%". */}
-        <select
-          value={filters.minActivePercentage ?? ""}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              minActivePercentage: event.target.value
-                ? Number(event.target.value)
-                : null,
-            })
-          }
-          className="rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">All levels</option>
-          {ACTIVITY_LEVEL_THRESHOLDS.map((threshold) => (
-            <option key={threshold} value={threshold}>
-              &gt; {threshold}%
-            </option>
-          ))}
-        </select>
-      </label>
+      <MultiSelectFilter
+        label="Activity level"
+        placeholder="All levels"
+        single
+        options={ACTIVITY_LEVEL_THRESHOLDS.map((threshold) => ({
+          id: String(threshold),
+          name: `> ${threshold}%`,
+        }))}
+        selected={
+          filters.minActivePercentage === null
+            ? []
+            : [String(filters.minActivePercentage)]
+        }
+        onChange={(chosen) =>
+          onChange({
+            ...filters,
+            // "All levels" is the placeholder, not an option: clearing the
+            // chip is what returns to every level.
+            minActivePercentage: chosen.length === 0 ? null : Number(chosen[0]),
+          })
+        }
+      />
 
       <button
         type="button"

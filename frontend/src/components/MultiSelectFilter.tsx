@@ -23,6 +23,10 @@ type MultiSelectFilterProps = {
   searchable?: boolean;
   /** Shown when there is nothing to choose from at all. */
   emptyLabel?: string;
+  /** Holds one value at a time: picking replaces rather than adds. Used
+   * where several choices could not mean anything — activity thresholds
+   * nest, so "> 90%" and "> 60%" together would only ever mean "> 60%". */
+  single?: boolean;
 };
 
 /**
@@ -41,6 +45,7 @@ export function MultiSelectFilter({
   onChange,
   searchable,
   emptyLabel = "Nothing to choose from.",
+  single,
 }: MultiSelectFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -61,6 +66,10 @@ export function MultiSelectFilter({
   const chosen = options.filter((option) => selected.includes(option.id));
 
   function toggle(id: string): void {
+    if (single) {
+      onChange(selected.includes(id) ? [] : [id]);
+      return;
+    }
     onChange(
       selected.includes(id)
         ? selected.filter((value) => value !== id)
@@ -172,7 +181,10 @@ export function MultiSelectFilter({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
-                    onClick={() => toggle(option.id)}
+                    onClick={() => {
+                      toggle(option.id);
+                      if (single) setIsOpen(false);
+                    }}
                     className={clsx(
                       "w-full cursor-pointer px-3 py-2 text-left text-sm transition-colors duration-150",
                       isSelected
