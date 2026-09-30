@@ -1,7 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  MagnifyingGlassIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
 
@@ -13,6 +17,12 @@ type MultiSelectFilterProps = {
   options: Option[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  /** Adds a search box to the list. Opt-in rather than automatic: it earns
+   * its place on a project list that grows with the organisation, and is
+   * noise on a fixed four-item one. */
+  searchable?: boolean;
+  /** Shown when there is nothing to choose from at all. */
+  emptyLabel?: string;
 };
 
 /**
@@ -29,10 +39,24 @@ export function MultiSelectFilter({
   options,
   selected,
   onChange,
+  searchable,
+  emptyLabel = "Nothing to choose from.",
 }: MultiSelectFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
-  useDismissOnOutside(isOpen, [containerRef], () => setIsOpen(false));
+  useDismissOnOutside(isOpen, [containerRef], () => {
+    setIsOpen(false);
+    // Reset so reopening starts from the whole list.
+    setSearch("");
+  });
+
+  const visible =
+    searchable && search
+      ? options.filter((option) =>
+          option.name.toLowerCase().includes(search.toLowerCase()),
+        )
+      : options;
 
   const chosen = options.filter((option) => selected.includes(option.id));
 
@@ -113,12 +137,34 @@ export function MultiSelectFilter({
             aria-multiselectable="true"
             className="absolute top-full right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-input-border bg-white shadow-lg"
           >
-            {options.length === 0 && (
-              <li className="px-3 py-2 text-sm text-slate-900/60">
-                Nothing to choose from.
+            {searchable && (
+              <li className="p-2">
+                <span className="flex items-center gap-2 rounded-full border border-primary px-3 py-1.5">
+                  <MagnifyingGlassIcon
+                    size={14}
+                    aria-hidden="true"
+                    className="text-icon"
+                  />
+                  <input
+                    type="search"
+                    autoFocus
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={`Search ${label.toLowerCase()}`}
+                    className="w-full text-sm text-slate-900 focus:outline-none"
+                  />
+                </span>
               </li>
             )}
-            {options.map((option) => {
+            {options.length === 0 && (
+              <li className="px-3 py-2 text-sm text-slate-900/60">{emptyLabel}</li>
+            )}
+            {options.length > 0 && visible.length === 0 && (
+              <li className="px-3 py-2 text-sm text-slate-900/60">
+                Nothing matches that search.
+              </li>
+            )}
+            {visible.map((option) => {
               const isSelected = selected.includes(option.id);
               return (
                 <li key={option.id}>

@@ -84,9 +84,6 @@ export function TimesheetFilterPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(true, [panelRef], onClose);
 
-  // Off-screen on the first paint, then slid in on the next frame — setting
-  // both states in one render would give the browser nothing to animate
-  // between. Same approach as `Modal`.
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const frame = requestAnimationFrame(() => setVisible(true));
@@ -142,6 +139,8 @@ export function TimesheetFilterPanel({
         options={projectOptions}
         selected={filters.projectIds}
         onChange={(projectIds) => onChange({ ...filters, projectIds })}
+        searchable
+        emptyLabel="You're not assigned to any projects."
       />
 
       <MultiSelectFilter

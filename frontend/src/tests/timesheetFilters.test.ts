@@ -3,7 +3,7 @@ import {
   EMPTY_TIMESHEET_FILTERS,
   countActiveFilters,
   filterTimeEntries,
-  projectOptionsFrom,
+  projectFilterOptions,
 } from "@/lib/timesheetFilters";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -151,27 +151,61 @@ describe("filterTimeEntries by activity level", () => {
   });
 });
 
-describe("projectOptionsFrom", () => {
-  it("lists each project once, by name", () => {
-    const options = projectOptionsFrom([
-      makeEntry({ projectId: "p-2", projectName: "Mobile" }),
-      makeEntry({ projectId: "p-1", projectName: "Website" }),
-      makeEntry({ projectId: "p-2", projectName: "Mobile" }),
+describe("projectFilterOptions", () => {
+  const ASSIGNED = [
+    { id: "p-1", name: "Website" },
+    { id: "p-2", name: "Mobile" },
+  ];
+
+  // The point of sourcing from the assignment list: a project you could log
+  // against still appears even with no time logged in this range.
+  it("offers every assigned project, including ones with no entries", () => {
+    const options = projectFilterOptions(ASSIGNED, []);
+
+    expect(options.map((option) => option.id)).toEqual(["p-2", "p-1"]);
+  });
+
+  // Archived projects are absent from the assignment list but keep their
+  // history, so the filter has to reach them when they are on screen.
+  it("adds a project that only appears in the entries", () => {
+    const options = projectFilterOptions(ASSIGNED, [
+      makeEntry({ projectId: "p-old", projectName: "Retired" }),
     ]);
 
-    expect(options).toEqual([
-      { id: "p-2", name: "Mobile" },
-      { id: "p-1", name: "Website" },
+    expect(options.map((option) => option.id)).toContain("p-old");
+  });
+
+  it("lists each project once when it is both assigned and on screen", () => {
+    const options = projectFilterOptions(ASSIGNED, [
+      makeEntry({ projectId: "p-1", projectName: "Website" }),
     ]);
+
+    expect(options).toHaveLength(2);
+  });
+
+  // An entry's copy of the name can be stale after a rename.
+  it("prefers the assigned list's name over an entry's", () => {
+    const options = projectFilterOptions(ASSIGNED, [
+      makeEntry({ projectId: "p-1", projectName: "Old name" }),
+    ]);
+
+    expect(options.find((option) => option.id === "p-1")?.name).toBe("Website");
   });
 
   it("sorts by name so the list doesn't reorder as entries change", () => {
-    const options = projectOptionsFrom([
-      makeEntry({ projectId: "p-1", projectName: "Zebra" }),
-      makeEntry({ projectId: "p-2", projectName: "Alpha" }),
-    ]);
+    const options = projectFilterOptions(
+      [
+        { id: "p-1", name: "Zebra" },
+        { id: "p-2", name: "Alpha" },
+      ],
+      [],
+    );
 
     expect(options.map((option) => option.name)).toEqual(["Alpha", "Zebra"]);
+  });
+
+  it("is empty for someone assigned to nothing, with nothing on screen", () => {
+    expect(projectFilterOptions([], [])).toEqual([]);
   });
 });
 

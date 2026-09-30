@@ -74,14 +74,30 @@ export function filterTimeEntries(
   );
 }
 
-/** The projects present in the entries on screen, named and de-duplicated,
- * so the picker only offers projects that could actually match. */
-export function projectOptionsFrom(
+/**
+ * What the project filter offers: every project the viewer may log time
+ * against, plus any project already present in the entries on screen.
+ *
+ * The second half matters for history. `my-projects` excludes archived
+ * projects — right for starting a timer, wrong for a filter over past time,
+ * since a project archived last month still has entries in the timesheet.
+ * Unioning what's on screen means the filter can always reach what you are
+ * looking at, without listing archived projects you can do nothing with.
+ */
+export function projectFilterOptions(
+  assigned: { id: string; name: string }[],
   entries: TimeEntryListItem[],
 ): { id: string; name: string }[] {
   const byId = new Map<string, string>();
+  for (const project of assigned) {
+    byId.set(project.id, project.name);
+  }
   for (const entry of entries) {
-    byId.set(entry.projectId, entry.projectName);
+    // Only when absent: the assigned list is the authoritative name, and an
+    // entry's copy could be stale after a rename.
+    if (!byId.has(entry.projectId)) {
+      byId.set(entry.projectId, entry.projectName);
+    }
   }
   return [...byId.entries()]
     .map(([id, name]) => ({ id, name }))

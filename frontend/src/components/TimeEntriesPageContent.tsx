@@ -7,13 +7,14 @@ import { format } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
+import { useMyProjects } from "@/hooks/useMyProjects";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import {
   EMPTY_TIMESHEET_FILTERS,
   countActiveFilters,
   filterTimeEntries,
-  projectOptionsFrom,
+  projectFilterOptions,
 } from "@/lib/timesheetFilters";
 import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
@@ -66,20 +67,11 @@ export function TimeEntriesPageContent({
   const organisationQuery = useCurrentOrganisation();
   const canViewOthers =
     organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
-  // Adding, editing and deleting entries are all admin-only — a member
-  // logs time by running a timer, not by typing it in.
   const isAdmin = organisationQuery.data?.role === "admin";
   const membersQuery = useActiveMembers(organisationId);
-  // The picker names the signed-in account rather than saying "My
-  // timesheet": an admin switching between people reads a list of names, and
-  // one entry phrased in the first person doesn't tell them *which* name it
-  // stands for.
   const profileQuery = useMyProfile();
+  const myProjectsQuery = useMyProjects(organisationId);
   const ownLabel = profileQuery.data?.name ?? profileQuery.data?.email ?? "Me";
-  // The signed-in account is already the first option, so drop it from the
-  // rest of the list — otherwise the same name appears twice, once meaning
-  // "self" and once meaning "that membership", which is exactly the
-  // confusion this naming was meant to end.
   const otherMembers = (membersQuery.data ?? []).filter(
     (member) => member.userId !== organisationQuery.data?.userId,
   );
@@ -114,9 +106,10 @@ export function TimeEntriesPageContent({
     ? filterTimeEntries(weekEntriesQuery.data, filters)
     : undefined;
 
-  // Options come from the *unfiltered* entries: narrowing to one project
-  // shouldn't make every other project disappear from the picker.
-  const projectOptions = projectOptionsFrom(
+  // Built from the *unfiltered* entries, so narrowing to one project does
+  // not make the others vanish from the picker.
+  const projectOptions = projectFilterOptions(
+    myProjectsQuery.data ?? [],
     (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
   );
   const activeFilterCount = countActiveFilters(filters);

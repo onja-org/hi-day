@@ -32,8 +32,6 @@ const POSTGRES_UNIQUE_VIOLATION = '23505';
 const POSTGRES_FOREIGN_KEY_VIOLATION = '23503';
 const HAS_LOGGED_TIME_MESSAGE =
   'This project has time logged against it — archive it instead so that history is kept.';
-const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
-
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -147,7 +145,11 @@ export class ProjectsService {
 
     let projects: Project[];
     let managerProjectIds = new Set<string>();
-    const isOrgWide = ORG_WIDE_ROLES.includes(membership.role);
+    // Admin only. A manager is org-wide for *viewing* people, but not for
+    // logging time: they reach the projects they hold a ProjectMembership
+    // on, plus whatever their Teams are assigned — the same rule as a plain
+    // member, which is what `getProjectsAccessibleTo` already computes.
+    const isOrgWide = membership.role === MembershipRole.ADMIN;
     if (isOrgWide) {
       projects = await this.projects.find({
         where: { organisationId, archivedAt: IsNull() },

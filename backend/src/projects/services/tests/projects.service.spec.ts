@@ -1109,6 +1109,36 @@ describe('ProjectsService', () => {
       expect(projectMembershipsFind).not.toHaveBeenCalled();
     });
 
+    // A manager is org-wide for *viewing people*, but not for logging time:
+    // this endpoint backs the timer picker and the timesheet's project
+    // filter, and offering projects they have no part in would both
+    // over-reveal and let them track against work that isn't theirs.
+    it('scopes a manager to their own projects, not the whole organisation', async () => {
+      const projectsFind = jest.fn().mockResolvedValue([{ ...baseProject }]);
+      const projectsRepo = makeProjectsRepo({ find: projectsFind });
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'm-manager', role: MembershipRole.MANAGER }),
+      });
+      const projectMembershipsFind = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        projectsRepo,
+        membershipsRepo,
+        projectMembershipsRepo: makeProjectMembershipsRepo({
+          find: projectMembershipsFind,
+        }),
+      });
+
+      const result = await service.listForTimeTracking('org-1', 'manager-1');
+
+      // Assigned to nothing, so they see nothing — the org-wide query is
+      // never even reached.
+      expect(result).toEqual([]);
+      expect(projectMembershipsFind).toHaveBeenCalled();
+      expect(projectsFind).not.toHaveBeenCalled();
+    });
+
     it('returns only projects the caller holds a ProjectMembership on, for a plain member', async () => {
       const membershipsRepo = makeMembershipsRepo({
         findOne: jest
