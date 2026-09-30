@@ -5,11 +5,15 @@ import { createPortal } from "react-dom";
 import { XIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
-import { countActiveFilters } from "@/lib/timesheetFilters";
+import {
+  ACTIVITY_LEVEL_THRESHOLDS,
+  EMPTY_TIMESHEET_FILTERS,
+  countActiveFilters,
+} from "@/lib/timesheetFilters";
 import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import type { ActiveMember } from "@/types/membership";
-import type { TimeEntrySource } from "@/types/timeEntry";
-import { FilterCheckboxList } from "./FilterCheckboxList";
+import type { TimeEntrySource, TimeEntryType } from "@/types/timeEntry";
+import { MultiSelectFilter } from "./MultiSelectFilter";
 
 /** Our three real sources, named as a person would describe them rather than
  * by the enum value stored on the entry. */
@@ -18,6 +22,16 @@ const SOURCE_OPTIONS: { id: TimeEntrySource; name: string }[] = [
   { id: "web", name: "Web timer" },
   { id: "manual", name: "Added by hand" },
 ];
+
+const TIME_TYPE_OPTIONS: { id: TimeEntryType; name: string }[] = [
+  { id: "normal", name: "Normal" },
+  { id: "idle", name: "Idle" },
+  { id: "resumed", name: "Resumed" },
+  { id: "manual", name: "Manual" },
+];
+
+const FIELD_CLASSES =
+  "rounded-md border border-input-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30";
 
 type TimesheetFilterPanelProps = {
   filters: TimesheetFilters;
@@ -33,20 +47,9 @@ type TimesheetFilterPanelProps = {
   onClose: () => void;
 };
 
-function toggled(set: Set<string>, id: string): Set<string> {
-  const next = new Set(set);
-  if (!next.delete(id)) next.add(id);
-  return next;
-}
-
 /**
  * The timesheet's filter drawer. Every section narrows the same list and they
  * apply together — see `filterTimeEntries`.
- *
- * Deliberately not a copy of every filter Hubstaff offers: activity level and
- * idle time have no data behind them in this product (activity samples were
- * dropped, and idle time is never recorded per entry), and a control that
- * silently matches nothing is worse than one that isn't there.
  *
  * Portalled into document.body for the same reason `Modal` is: the page
  * content sits inside `FadeIn`, whose translate classes make it the
@@ -84,7 +87,7 @@ export function TimesheetFilterPanel({
       role="dialog"
       aria-label="Timesheet filters"
       className={clsx(
-        "fixed top-0 right-0 z-40 flex h-full w-full max-w-sm flex-col gap-6 overflow-y-auto border-l border-input-border bg-white p-6 shadow-lg",
+        "fixed top-0 right-0 z-40 flex h-full w-full max-w-sm flex-col gap-5 overflow-y-auto border-l border-input-border bg-white p-6 shadow-lg",
         "transition-transform duration-300 ease-out",
         visible ? "translate-x-0" : "translate-x-full",
       )}
@@ -104,14 +107,14 @@ export function TimesheetFilterPanel({
       </div>
 
       {canViewOthers && (
-        <label className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
             Member
           </span>
           <select
             value={memberValue}
             onChange={(event) => onMemberChange(event.target.value)}
-            className="rounded-md border border-input-border bg-white px-3 h-11 text-sm text-slate-900"
+            className={FIELD_CLASSES}
           >
             <option value="">{ownLabel}</option>
             {otherMembers.map((member) => (
@@ -123,51 +126,66 @@ export function TimesheetFilterPanel({
         </label>
       )}
 
-      <FilterCheckboxList
-        label="Project"
-        searchable
+      <MultiSelectFilter
+        label="Project / work order"
+        placeholder="All projects / work orders"
         options={projectOptions}
         selected={filters.projectIds}
-        onToggle={(id) =>
-          onChange({ ...filters, projectIds: toggled(filters.projectIds, id) })
-        }
-        onSelectAll={(ids) =>
-          onChange({
-            ...filters,
-            projectIds: ids.every((id) => filters.projectIds.has(id))
-              ? new Set()
-              : new Set(ids),
-          })
-        }
-        emptyLabel="No projects in this date range."
+        onChange={(projectIds) => onChange({ ...filters, projectIds })}
       />
 
-      <FilterCheckboxList
+      <MultiSelectFilter
+        label="Time type"
+        placeholder="All types"
+        options={TIME_TYPE_OPTIONS}
+        selected={filters.timeTypes}
+        onChange={(timeTypes) =>
+          onChange({ ...filters, timeTypes: timeTypes as TimeEntryType[] })
+        }
+      />
+
+      <MultiSelectFilter
         label="Source"
+        placeholder="All sources"
         options={SOURCE_OPTIONS}
         selected={filters.sources}
-        onToggle={(id) =>
-          onChange({
-            ...filters,
-            sources: toggled(filters.sources, id) as Set<TimeEntrySource>,
-          })
+        onChange={(sources) =>
+          onChange({ ...filters, sources: sources as TimeEntrySource[] })
         }
-        onSelectAll={(ids) =>
-          onChange({
-            ...filters,
-            sources: ids.every((id) => filters.sources.has(id as TimeEntrySource))
-              ? new Set()
-              : (new Set(ids) as Set<TimeEntrySource>),
-          })
-        }
-        emptyLabel="No sources available."
       />
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
+          Activity level
+        </span>
+        {/* The one single-value filter: thresholds nest, so "> 90%" and
+            "> 60%" together could only ever mean "> 60%". */}
+        <select
+          value={filters.minActivePercentage ?? ""}
+          onChange={(event) =>
+            onChange({
+              ...filters,
+              minActivePercentage: event.target.value
+                ? Number(event.target.value)
+                : null,
+            })
+          }
+          className={FIELD_CLASSES}
+        >
+          <option value="">All levels</option>
+          {ACTIVITY_LEVEL_THRESHOLDS.map((threshold) => (
+            <option key={threshold} value={threshold}>
+              &gt; {threshold}%
+            </option>
+          ))}
+        </select>
+      </label>
 
       <button
         type="button"
         disabled={activeCount === 0}
-        onClick={() => onChange({ projectIds: new Set(), sources: new Set() })}
-        className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
+        onClick={() => onChange(EMPTY_TIMESHEET_FILTERS)}
+        className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
       >
         Clear filters
       </button>

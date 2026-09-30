@@ -144,7 +144,7 @@ export function TimeEntriesPageContent({
             className="flex h-11 cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
           >
             <FunnelIcon size={16} aria-hidden="true" />
-            Filter
+            Filters
             {activeFilterCount > 0 && (
               <span className="tabular-nums">({activeFilterCount})</span>
             )}

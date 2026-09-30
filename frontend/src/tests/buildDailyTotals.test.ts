@@ -18,6 +18,8 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
     projectColour: "blue",
     taskName: null,
     durationSeconds: 3600,
+    type: "normal",
+    activePercentage: null,
     memberName: "Sam Rivers",
     memberEmail: "sam@example.test",
     canEdit: true,
