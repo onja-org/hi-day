@@ -20,7 +20,8 @@
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:run": "pnpm typeorm migration:run",
     "migration:revert": "pnpm typeorm migration:revert",
-    "prune:orphaned-captures": "ts-node -r tsconfig-paths/register src/scripts/prune-orphaned-captures.ts"
+    "prune:orphaned-captures": "ts-node -r tsconfig-paths/register src/scripts/prune-orphaned-captures.ts",
+    "seed:test-accounts": "ts-node -r tsconfig-paths/register src/scripts/seed-test-accounts.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",

@@ -11,6 +11,8 @@ import {
 import type { PairingPollResult, TrackingResult } from "./api-client";
 import { ApiClient } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
+import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
+import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { CaptureSettingsGate } from "./capture-settings-gate";
@@ -439,6 +441,27 @@ async function registerIpcHandlers(): Promise<void> {
     getGnomeFocus: () => gnomeWindowFocusTracker?.getLastFocus() ?? null,
   });
 
+  const activitySampleUploader = new ActivitySampleUploader(
+    authStore,
+    apiClient,
+    offlineQueue,
+  );
+  offlineQueue.registerSender(activitySampleUploader);
+
+  // Reads idle rather than hooking input: a segment counts as active when
+  // the last input landed inside it. Same reading the idle banner uses, so
+  // activity needs no native input hook (see docs/adr/0013-...).
+  const activitySampler = new ActivitySampler(activitySampleUploader.enqueue, {
+    readIdleSeconds: async () => {
+      const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
+      if (gnomeMs !== null && gnomeMs !== undefined) {
+        return Math.floor(gnomeMs / 1000);
+      }
+      return powerMonitor.getSystemIdleTime();
+    },
+  });
+  let activityTicker: ReturnType<typeof setInterval> | null = null;
+
   const screenshotUploader = new ScreenshotUploader(
     authStore,
     apiClient,
@@ -473,6 +496,18 @@ async function registerIpcHandlers(): Promise<void> {
       // DEFAULT_APP_EVENT_FLUSH_INTERVAL_MS — tracking just turned off, so
       // there's no reason to sit on a partial batch.
       void appEventUploader.flush();
+    }
+
+    // Activity rides the same gate as window tracking: it measures how
+    // busy *tracked* time was, so it has nothing to say while no timer runs.
+    if (windowTrackingEnabled && timerRunning) {
+      activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
+    } else if (activityTicker) {
+      clearInterval(activityTicker);
+      activityTicker = null;
+      // Emit the part-finished period rather than discarding the minutes
+      // already measured, then push it out with the rest.
+      void activitySampler.flush().then(() => activitySampleUploader.flush());
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);

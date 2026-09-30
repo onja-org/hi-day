@@ -7,6 +7,7 @@ import { Between, EntityManager, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../../captures/services/capture-cleanup.service';
+import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Project } from '../../../database/entities/project.entity';
@@ -143,6 +144,12 @@ describe('TimeEntriesService', () => {
     };
   }
 
+  function makeActivitySamplesRepo(rows: ActivitySample[] = []) {
+    return {
+      find: jest.fn().mockResolvedValue(rows),
+    } as unknown as Repository<ActivitySample>;
+  }
+
   function makeAuditLogService() {
     const record = jest.fn().mockResolvedValue(undefined);
     return {
@@ -160,6 +167,7 @@ describe('TimeEntriesService', () => {
       projectTeamsRepo?: Repository<ProjectTeam>;
       projectsRepo?: Repository<Project>;
       tasksRepo?: Repository<Task>;
+      activitySamplesRepo?: Repository<ActivitySample>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
       captureCleanup?: CaptureCleanupService;
@@ -173,6 +181,7 @@ describe('TimeEntriesService', () => {
       overrides.projectTeamsRepo ?? makeProjectTeamsRepo(),
       overrides.projectsRepo ?? makeProjectsRepo(),
       overrides.tasksRepo ?? makeTasksRepo(),
+      overrides.activitySamplesRepo ?? makeActivitySamplesRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
       overrides.captureCleanup ?? makeCaptureCleanup().captureCleanup,
@@ -2164,6 +2173,90 @@ describe('TimeEntriesService', () => {
       await expect(
         service.list('org-1', 'user-1', 'm-other'),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('activity level on listed entries', () => {
+    function makeSample(
+      periodStart: string,
+      periodEnd: string,
+      activePercentage: number,
+    ): ActivitySample {
+      return {
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd),
+        activePercentage,
+      } as ActivitySample;
+    }
+
+    function listWith(samples: ActivitySample[], entry: Partial<TimeEntry>) {
+      const listed = {
+        id: 'entry-1',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: null,
+        startedAt: new Date('2026-01-05T09:00:00Z'),
+        endedAt: new Date('2026-01-05T10:00:00Z'),
+        source: TimeEntrySource.AGENT,
+        deviceId: null,
+        project: { name: 'Website', colour: 'blue' },
+        task: null,
+        ...entry,
+      } as unknown as TimeEntry;
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([listed]),
+        }),
+        activitySamplesRepo: makeActivitySamplesRepo(samples),
+      });
+      return service.list('org-1', 'user-1');
+    }
+
+    it('averages the samples covering an entry', async () => {
+      const result = await listWith(
+        [
+          makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:30:00Z', 40),
+          makeSample('2026-01-05T09:30:00Z', '2026-01-05T10:00:00Z', 80),
+        ],
+        {},
+      );
+
+      expect(result[0].activePercentage).toBe(60);
+    });
+
+    // Sample periods are fixed 10-minute blocks and rarely line up with an
+    // entry, so one half outside it should count half.
+    it('weights a sample by how much of it falls inside the entry', async () => {
+      const result = await listWith(
+        [
+          makeSample('2026-01-05T08:00:00Z', '2026-01-05T09:30:00Z', 0),
+          makeSample('2026-01-05T09:30:00Z', '2026-01-05T10:00:00Z', 100),
+        ],
+        {},
+      );
+
+      // 30 min at 0% and 30 min at 100%, not 90 min at 0% and 30 at 100%.
+      expect(result[0].activePercentage).toBe(50);
+    });
+
+    // Null, not 0 — "nothing was measured" is a different claim from "they
+    // did nothing".
+    it('reports null when no sample covers the entry', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T14:00:00Z', '2026-01-05T14:10:00Z', 90)],
+        {},
+      );
+
+      expect(result[0].activePercentage).toBeNull();
+    });
+
+    it('reports null for an entry that has not stopped', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 90)],
+        { endedAt: null },
+      );
+
+      expect(result[0].activePercentage).toBeNull();
     });
   });
 
