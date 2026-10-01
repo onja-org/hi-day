@@ -128,4 +128,54 @@ describe('EmailService', () => {
     );
     errorSpy.mockRestore();
   });
+
+  describe('sendReportEmail', () => {
+    const report = {
+      to: ['a@acme.test', 'b@acme.test'],
+      subject: 'Weekly report',
+      message: 'See <b>attached</b> & enjoy',
+      senderName: 'Ada <script>',
+      senderEmail: 'ada@acme.test',
+      organisationName: 'Acme & Co',
+      attachment: { filename: 'report.csv', content: Buffer.from('a,b') },
+    };
+
+    it('sends to every recipient with the attachment and replies to the sender', async () => {
+      const sent = await service.sendReportEmail(report);
+
+      expect(sent).toBe(true);
+      expect(sendMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: 'noreply@example.com',
+          to: ['a@acme.test', 'b@acme.test'],
+          replyTo: 'ada@acme.test',
+          subject: 'Weekly report',
+          attachments: [
+            { filename: 'report.csv', content: Buffer.from('a,b') },
+          ],
+        }),
+      );
+    });
+
+    it('escapes the sender-supplied text so it cannot inject markup', async () => {
+      await service.sendReportEmail(report);
+
+      const [[sent]] = sendMock.mock.calls as [[{ html: string }]];
+      const { html } = sent;
+      expect(html).toContain('See &lt;b&gt;attached&lt;/b&gt; &amp; enjoy');
+      expect(html).toContain('Ada &lt;script&gt;');
+      expect(html).toContain('Acme &amp; Co');
+      expect(html).not.toContain('<script>');
+    });
+
+    it('reports a provider failure instead of swallowing it', async () => {
+      sendMock.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'boom' },
+      });
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      expect(await service.sendReportEmail(report)).toBe(false);
+    });
+  });
 });

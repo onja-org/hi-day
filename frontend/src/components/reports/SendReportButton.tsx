@@ -7,14 +7,15 @@ import { SendReportModal } from "./SendReportModal";
 
 type SendReportButtonProps = {
   defaultSubject: string;
-  /** Throw or return a message to keep the modal open and show it; return nothing once sent. */
-  onSend: (input: SendReportInput) => string | void;
+  /** Resolves with a message to keep the modal open and show it, or with nothing once sent. */
+  onSend: (input: SendReportInput) => Promise<string | void>;
 };
 
 /** An icon button that opens the send-report modal. */
 export function SendReportButton({ defaultSubject, onSend }: SendReportButtonProps) {
   const [open, setOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
+  const [isPending, setIsPending] = useState(false);
 
   function close() {
     setOpen(false);
@@ -36,9 +37,13 @@ export function SendReportButton({ defaultSubject, onSend }: SendReportButtonPro
         <SendReportModal
           defaultSubject={defaultSubject}
           errorMessage={errorMessage}
+          isPending={isPending}
           onClose={close}
-          onSend={(input) => {
-            const failure = onSend(input);
+          onSend={async (input) => {
+            setIsPending(true);
+            setErrorMessage(undefined);
+            const failure = await onSend(input);
+            setIsPending(false);
             if (failure) setErrorMessage(failure);
             else close();
           }}

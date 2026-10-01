@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { FloppyDiskIcon } from "@phosphor-icons/react";
+import { useModalSubmit } from "@/hooks/useModalSubmit";
 import { SaveReportModal } from "./SaveReportModal";
 
 type SaveReportButtonProps = {
@@ -11,12 +12,19 @@ type SaveReportButtonProps = {
   /** Prefills the modal when updating an existing saved report. */
   initialName?: string;
   initialScheduled?: boolean;
-  onSave: (input: { name: string; scheduled: boolean }) => void;
+  /** Resolves with a message to keep the modal open and show it, or with nothing once handled. */
+  onSave: (input: { name: string; scheduled: boolean }) => Promise<string | void>;
 };
 
 /** The primary Save button, opening the save-report modal. Closes the modal once saved. */
 export function SaveReportButton({ settings, initialName, initialScheduled, onSave }: SaveReportButtonProps) {
   const [open, setOpen] = useState(false);
+  const { isPending, errorMessage, submit, reset } = useModalSubmit();
+
+  function close() {
+    setOpen(false);
+    reset();
+  }
 
   return (
     <>
@@ -33,11 +41,12 @@ export function SaveReportButton({ settings, initialName, initialScheduled, onSa
         <SaveReportModal
           initialName={initialName}
           initialScheduled={initialScheduled}
-          onSave={(input) => {
-            onSave(input);
-            setOpen(false);
+          isPending={isPending}
+          errorMessage={errorMessage}
+          onSave={async (input) => {
+            if (await submit(() => onSave(input))) close();
           }}
-          onClose={() => setOpen(false)}
+          onClose={close}
         >
           {settings}
         </SaveReportModal>

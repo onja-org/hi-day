@@ -71,12 +71,6 @@ describe("buildTimeActivityRows", () => {
     expect(row.subRows?.[0].cells.total).toBe("00:03:30");
   });
 
-  it("gives a member on two teams a separate row for each team", () => {
-    const [row] = build([entry({ id: "a" })], "day", { teamNames: new Map([["m1", ["Dev", "Design"]]]) });
-    expect(row.subRows?.map((r) => r.cells.team)).toEqual(["Dev", "Design"]);
-    expect(row.teams).toEqual(["Dev", "Design"]);
-  });
-
   it("under a team group, only that team's row appears", () => {
     const rows = build([entry({ id: "a" })], "team", {
       sumDates: true,
@@ -84,6 +78,13 @@ describe("buildTimeActivityRows", () => {
     });
     const dev = rows.find((r) => String(r.cells.date).startsWith("Dev"));
     expect(dev?.subRows?.map((r) => r.cells.team)).toEqual(["Dev"]);
+  });
+
+  it("gives a member on two teams one row, listing both teams", () => {
+    const [row] = build([entry({ id: "a" })], "day", { teamNames: new Map([["m1", ["Dev", "Design"]]]) });
+    expect(row.subRows).toHaveLength(1);
+    expect(row.subRows?.[0].cells.team).toBe("Dev, Design");
+    expect(row.cells.date).toMatch(/\(1\)$/);
   });
 
   it("keeps different members on the same project as separate rows", () => {
@@ -152,6 +153,31 @@ describe("buildTimeActivityRows", () => {
   it("sums paused seconds into break time", () => {
     const [row] = build([entry({ pausedSeconds: 90 })], "day");
     expect(row.cells.breakTime).toBe("00:01:30");
+  });
+});
+
+describe("buildTimeActivityRows week grouping", () => {
+  const twoTeams = new Map([["m1", ["Dev", "Design"]]]);
+
+  it("labels the week with both end days, in full", () => {
+    const [row] = build([entry({ id: "a" })], "week");
+    expect(row.cells.date).toMatch(/^Mon, Sep 28, 2026 - Sun, Oct 4, 2026 \(1\)$/);
+  });
+
+  it("gives a member on two teams one row per day and project, listing both teams", () => {
+    const [row] = build([entry({ id: "a" })], "week", { teamNames: twoTeams });
+    expect(row.subRows).toHaveLength(1);
+    expect(row.subRows?.[0].cells.team).toBe("Dev, Design");
+    expect(row.cells.date).toMatch(/\(1\)$/);
+  });
+
+  it("still gives one row per day", () => {
+    const [row] = build(
+      [entry({ id: "a" }), entry({ id: "b", startedAt: "2026-09-29T09:00:00" })],
+      "week",
+      { teamNames: twoTeams },
+    );
+    expect(row.subRows).toHaveLength(2);
   });
 });
 

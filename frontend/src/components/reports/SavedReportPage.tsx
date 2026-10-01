@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { Spinner } from "@/components/Spinner";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
@@ -12,7 +13,7 @@ type SavedReportPageProps = {
 
 /** Opens a saved report: the report page with its stored settings restored. */
 export function SavedReportPage({ organisationId, savedReportId }: SavedReportPageProps) {
-  const { reports, isReady } = useSavedReports(organisationId);
+  const { reports, isReady, error } = useSavedReports(organisationId);
   const savedReport = reports.find((report) => report.id === savedReportId);
 
   if (!isReady) {
@@ -23,6 +24,8 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
       </p>
     );
   }
+
+  if (error) return <ErrorMessage message={error.message} />;
 
   if (!savedReport) {
     return (

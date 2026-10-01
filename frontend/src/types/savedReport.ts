@@ -15,15 +15,38 @@ export type SavedReportSettings = {
   filters: ReportFilters;
 };
 
+/** A report saved to the user's account — see the backend's SavedReportView. */
 export type SavedReport = {
   id: string;
   name: string;
   reportType: "time-and-activity";
   settings: SavedReportSettings;
-  /** The "schedule report to be sent" choice from the save modal. Email delivery itself isn't built yet. */
-  scheduled: boolean;
-  /** Set once the report has been scheduled; nothing delivers it yet. */
-  schedule?: ReportSchedule;
+  /** When and to whom it is emailed; null when it isn't scheduled. */
+  schedule: ReportSchedule | null;
   /** ISO instant of the last save. */
   modifiedAt: string;
+  /** ISO instant of the last scheduled email that went out. */
+  lastSentAt: string | null;
+  /** Why the last scheduled email failed; null after a success. */
+  lastError: string | null;
 };
+
+export type SaveReportInput = {
+  /** Pass to update an existing saved report instead of adding a new one. */
+  id?: string;
+  name: string;
+  settings: SavedReportSettings;
+  schedule: ReportSchedule | null;
+};
+
+export type GetSavedReportsResult =
+  | { ok: true; reports: SavedReport[] }
+  | { ok: false; message: string };
+
+export type SaveReportResult =
+  | { ok: true; report: SavedReport }
+  | { ok: false; message: string };
+
+export type DeleteSavedReportResult =
+  | { ok: true }
+  | { ok: false; message: string };

@@ -50,7 +50,7 @@ function describeGroups(
       return [
         {
           id: format(start, "yyyy-MM-dd"),
-          label: `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`,
+          label: `${formatReportDay(format(start, "yyyy-MM-dd"))} - ${formatReportDay(format(end, "yyyy-MM-dd"))}`,
           sortKey: start.getTime(),
         },
       ];

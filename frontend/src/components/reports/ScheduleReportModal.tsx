@@ -26,6 +26,8 @@ type ScheduleReportModalProps = {
   /** Shows a "Send preview" button when given. */
   onSendPreview?: () => void;
   isPending?: boolean;
+  /** A failure from the caller's save, shown with the form's own validation errors. */
+  errorMessage?: string;
   /** Prefill when editing an already-scheduled report. */
   initialName?: string;
   initialSchedule?: ReportSchedule;
@@ -38,6 +40,7 @@ export function ScheduleReportModal({
   onClose,
   onSendPreview,
   isPending = false,
+  errorMessage,
   initialName = "",
   initialSchedule,
 }: ScheduleReportModalProps) {
@@ -126,7 +129,7 @@ export function ScheduleReportModal({
           the All Reports or Customized Reports pages.
         </ReportCallout>
 
-        {error && <ErrorMessage message={error} />}
+        {(error ?? errorMessage) && <ErrorMessage message={error ?? errorMessage ?? ""} />}
 
         <div className="flex items-center justify-between gap-3">
           {onSendPreview ? (

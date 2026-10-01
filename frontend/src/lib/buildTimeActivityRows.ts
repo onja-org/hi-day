@@ -60,10 +60,19 @@ function mergeEntries(
   perDay: boolean,
   teamNames: MembershipTeamNames,
   onlyTeam?: string,
+  splitTeams = true,
 ): MergedRow[] {
   const merged = new Map<string, MergedRow>();
   for (const entry of entries) {
     const names = teamNames.get(entry.membershipId) ?? [];
+    if (!splitTeams) {
+      // One row per member and project whatever their teams; the Team cell lists them all.
+      const key = [perDay ? entryDayLabel(entry) : "", entry.membershipId, entry.projectId, entry.taskId ?? ""].join("|");
+      const existing = merged.get(key);
+      if (existing) existing.entries.push(entry);
+      else merged.set(key, { key, entries: [entry], team: names.join(", ") || null });
+      continue;
+    }
     const teams: (string | null)[] = onlyTeam
       ? [names.length > 0 ? onlyTeam : null]
       : names.length > 0
@@ -88,8 +97,9 @@ function leafRows(
   teamNames: MembershipTeamNames,
   onlyTeam: string | undefined,
   isTopLevel: boolean,
+  splitTeams: boolean,
 ): ReportTableRow[] {
-  return mergeEntries(entries, perDay, teamNames, onlyTeam).map(({ key, entries: merged, team }) => {
+  return mergeEntries(entries, perDay, teamNames, onlyTeam, splitTeams).map(({ key, entries: merged, team }) => {
     const [first] = merged;
     return {
       id: path ? `${path}|${key}` : key,
@@ -117,19 +127,23 @@ export function buildTimeActivityRows(
   { sumDates, teamNames, idleMembers = [] }: RowOptions,
 ): ReportTableRow[] {
   if (grouping === "none") {
-    return leafRows(entries, "", true, grouping, teamNames, undefined, true);
+    return leafRows(entries, "", true, grouping, teamNames, undefined, true, true);
   }
 
   const splitsByDay = grouping !== "day" && grouping !== "week" && !sumDates;
   // Rows that sit directly under a single day don't need the day in their key.
   const leavesPerDay = grouping !== "day" && !splitsByDay;
+  // Under a day or a week there is one row per member and project, so a
+  // member on two teams isn't shown twice with nothing but the team to tell
+  // the rows apart. Other groupings still give each team its own row.
+  const splitTeams = grouping !== "week" && grouping !== "day";
 
   const rows = groupEntriesBy(entries, grouping, teamNames).map((group) => {
     const onlyTeam = grouping === "team" ? group.label : undefined;
     const days = splitsByDay ? groupEntriesBy(group.entries, "day") : [];
     const count = splitsByDay
-      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam).length, 0)
-      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam).length;
+      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams).length, 0)
+      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam, splitTeams).length;
     return {
       id: group.id,
       sortKey: group.sortKey,
@@ -140,13 +154,13 @@ export function buildTimeActivityRows(
             id: `${group.id}|${day.id}`,
             sortKey: day.sortKey,
             cells: {
-              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam).length})`,
+              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams).length})`,
               ...entryCells(day.entries),
               team: teamsOf(day.entries, teamNames).join(", ") || "-",
             },
-            subRows: leafRows(day.entries, `${group.id}|${day.id}`, false, grouping, teamNames, onlyTeam, false),
+            subRows: leafRows(day.entries, `${group.id}|${day.id}`, false, grouping, teamNames, onlyTeam, false, splitTeams),
           }))
-        : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false),
+        : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false, splitTeams),
     };
   });
 

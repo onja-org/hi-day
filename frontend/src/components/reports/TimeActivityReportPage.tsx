@@ -47,9 +47,10 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
   } = useTimeActivityReportData(organisationId, scope, range, filters);
 
   // Saves (or, on an already-saved report, updates) this report's current
-  // settings; a brand-new one opens at its own address.
-  function persist(input: { name: string; scheduled: boolean; schedule?: ReportSchedule }) {
-    const id = saveReport({
+  // settings; a brand-new one then opens at its own address. Resolves with
+  // a message when it couldn't be saved.
+  async function persist(input: { name: string; schedule: ReportSchedule | null }): Promise<string | void> {
+    const result = await saveReport({
       id: savedReport?.id,
       ...input,
       settings: {
@@ -60,7 +61,8 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
         filters: activeFilters,
       },
     });
-    if (!savedReport) router.push(`/organisations/${organisationId}/reports/saved/${id}`);
+    if (!result.ok) return result.message;
+    if (!savedReport) router.push(`/organisations/${organisationId}/reports/saved/${result.report.id}`);
   }
 
   return (
@@ -96,6 +98,9 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
           />
         </div>
         <TimeActivityReportActions
+          organisationId={organisationId}
+          teamNames={teamNames}
+          idleMembers={idleMembers}
           entries={entries}
           range={range}
           grouping={grouping}

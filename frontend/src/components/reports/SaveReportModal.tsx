@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { CaretDownIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
+import { ErrorMessage } from "../ErrorMessage";
 import { Modal } from "../Modal";
 import { Spinner } from "../Spinner";
 import { Toggle } from "../Toggle";
@@ -13,6 +14,8 @@ type SaveReportModalProps = {
   onClose: () => void;
   onSendPreview?: () => void;
   isPending?: boolean;
+  /** A failure from the caller's save, shown above the buttons. */
+  errorMessage?: string;
   /** Prefill when editing an already-saved report. */
   initialName?: string;
   initialScheduled?: boolean;
@@ -24,6 +27,7 @@ export function SaveReportModal({
   onClose,
   onSendPreview,
   isPending = false,
+  errorMessage,
   initialName = "",
   initialScheduled = false,
   children,
@@ -88,6 +92,8 @@ export function SaveReportModal({
         />
 
         <ScheduleReportCallout />
+
+        {errorMessage && <ErrorMessage message={errorMessage} />}
 
         <div className="flex items-center justify-between gap-3">
           {onSendPreview ? (

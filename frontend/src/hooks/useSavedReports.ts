@@ -1,90 +1,54 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { parseSavedReports, removeSavedReport, upsertSavedReport } from "@/lib/savedReports";
-import type { ReportSchedule } from "@/types/reportSchedule";
-import type { SavedReport, SavedReportSettings } from "@/types/savedReport";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { deleteSavedReport } from "@/lib/deleteSavedReport";
+import { getSavedReports } from "@/lib/getSavedReports";
+import { saveSavedReport } from "@/lib/saveSavedReport";
+import type { DeleteSavedReportResult, SaveReportInput, SaveReportResult } from "@/types/savedReport";
 
-const CHANGE_EVENT = "saved-reports-change";
-
-type SaveInput = {
-  /** Pass to update an existing report instead of adding a new one. */
-  id?: string;
-  name: string;
-  scheduled: boolean;
-  settings: SavedReportSettings;
-  schedule?: ReportSchedule;
-};
-
-function subscribe(onStoreChange: () => void): () => void {
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(CHANGE_EVENT, onStoreChange);
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(CHANGE_EVENT, onStoreChange);
-  };
-}
-
-function readRaw(key: string): string {
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
+export const SAVED_REPORTS_QUERY_KEY = (organisationId: string) => ["saved-reports", organisationId];
 
 /**
- * The reports this user saved in one organisation, kept in localStorage —
- * so they stay in this browser, not on the account — shared between the
- * report page, the Customised reports list and the sidebar (same tab via a
- * custom event, other tabs via `storage`). `isReady` is false during server
- * rendering and hydration, when storage can't be read yet, so a page can
- * tell "not loaded" from "no such report". The snapshot is the raw string so
- * `useSyncExternalStore` compares by value.
+ * The reports this user saved in one organisation, kept on their account —
+ * shared by the report page, the Customised reports list and the sidebar
+ * through one query. `isReady` is true once the list has loaded (or
+ * failed), so a page can tell "still loading" from "no such report".
  */
 export function useSavedReports(organisationId: string) {
-  const key = `saved-reports:${organisationId}`;
-  const raw = useSyncExternalStore(
-    subscribe,
-    () => readRaw(key),
-    () => null,
-  );
-  const reports = useMemo(() => parseSavedReports(raw), [raw]);
+  const queryClient = useQueryClient();
+  const queryKey = SAVED_REPORTS_QUERY_KEY(organisationId);
 
-  const write = useCallback(
-    (next: SavedReport[]) => {
-      try {
-        window.localStorage.setItem(key, JSON.stringify(next));
-      } catch {
-        return;
-      }
-      window.dispatchEvent(new Event(CHANGE_EVENT));
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const result = await getSavedReports(organisationId);
+      if (!result.ok) throw new Error(result.message);
+      return result.reports;
     },
-    [key],
-  );
+  });
 
-  /** Returns the saved report's id. */
   const saveReport = useCallback(
-    (input: SaveInput): string => {
-      const id = input.id ?? crypto.randomUUID();
-      write(
-        upsertSavedReport(parseSavedReports(readRaw(key)), {
-          id,
-          name: input.name,
-          reportType: "time-and-activity",
-          settings: input.settings,
-          scheduled: input.scheduled,
-          schedule: input.schedule,
-          modifiedAt: new Date().toISOString(),
-        }),
-      );
-      return id;
+    async (input: SaveReportInput): Promise<SaveReportResult> => {
+      const result = await saveSavedReport(organisationId, input);
+      if (result.ok) await queryClient.invalidateQueries({ queryKey: SAVED_REPORTS_QUERY_KEY(organisationId) });
+      return result;
     },
-    [key, write],
+    [organisationId, queryClient],
   );
 
   const deleteReport = useCallback(
-    (id: string) => write(removeSavedReport(parseSavedReports(readRaw(key)), id)),
-    [key, write],
+    async (id: string): Promise<DeleteSavedReportResult> => {
+      const result = await deleteSavedReport(organisationId, id);
+      if (result.ok) await queryClient.invalidateQueries({ queryKey: SAVED_REPORTS_QUERY_KEY(organisationId) });
+      return result;
+    },
+    [organisationId, queryClient],
   );
 
-  return { reports, isReady: raw !== null, saveReport, deleteReport };
+  return {
+    reports: query.data ?? [],
+    isReady: query.isSuccess || query.isError,
+    error: query.error,
+    saveReport,
+    deleteReport,
+  };
 }
