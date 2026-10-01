@@ -63,9 +63,8 @@ export class UpdateOrganisationDto {
   workingHoursPerDay?: number;
 
   /** The Organisation's own IANA zone — one of the three the timesheet's
-   * timezone selector offers, alongside the viewer's and the viewed
-   * member's. Existed as a settings key from the start but was fixed at
-   * 'UTC' and read by nothing until then. */
+   * selector offers. A settings key from the start, but fixed at 'UTC' and
+   * read by nothing until now. */
   @IsOptional()
   @IsString()
   @Validate(IsIanaTimezone)

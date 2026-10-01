@@ -12,8 +12,8 @@ const HEADER = [
   "Duration",
   "Paused (min)",
   "Source",
-  // Named in the file, because the same entry reads as a different time —
-  // sometimes a different day — depending on where it is read.
+  // Named in the file: the same entry reads as a different time, sometimes
+  // a different day, depending on where it is read.
   "Time zone",
 ];
 
@@ -22,8 +22,7 @@ function formatDateTime(iso: string | null, zone: string): string {
   return new Date(iso).toLocaleString([], { timeZone: zone });
 }
 
-/** Exported in the zone the page was being read in, so the file and the
- * screen it came from agree. */
+/** Exported in the zone the page was read in, so file and screen agree. */
 export function entriesToCsv(
   entries: TimeEntryListItem[],
   zone: string = detectTimezone(),

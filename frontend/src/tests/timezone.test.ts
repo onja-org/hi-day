@@ -15,7 +15,6 @@ const ANTANANARIVO = "Indian/Antananarivo"; // UTC+3, no DST
 const NEW_YORK = "America/New_York"; // UTC-5/-4, DST
 
 describe("dateKeyInZone", () => {
-  // The whole point: one instant, two different calendar days.
   it("puts the same instant on different days in different zones", () => {
     const lateEvening = "2026-01-05T22:30:00.000Z";
 
@@ -42,8 +41,7 @@ describe("startOfDayInZone", () => {
     );
   });
 
-  // The offset is what we are solving for, so it cannot just be added —
-  // these are the days where a naive implementation lands an hour out.
+  // The days a naive implementation lands an hour out.
   it("is correct on the day the clocks go forward", () => {
     // US DST begins 2026-03-08; that day starts at 05:00Z, still on EST.
     expect(startOfDayInZone("2026-03-08", NEW_YORK).toISOString()).toBe(
@@ -159,9 +157,8 @@ describe("describeTimezone", () => {
 });
 
 describe("asZonedWallClock", () => {
-  // The shifted Date is for layout only: its local clock is made to read
-  // what the chosen zone reads, so a library that positions by local time
-  // lands the block in the right place.
+  // Layout only: the local clock is made to read what the chosen zone
+  // does, so a library positioning by local time lands it right.
   it("shifts an instant so its local clock matches the chosen zone's", () => {
     const instant = new Date("2026-01-05T09:00:00.000Z");
     const shifted = asZonedWallClock(instant, "Africa/Nairobi");

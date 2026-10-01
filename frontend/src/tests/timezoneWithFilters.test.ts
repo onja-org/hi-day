@@ -34,10 +34,9 @@ const NAIROBI = "Africa/Nairobi";
 const NEW_YORK = "America/New_York";
 
 /**
- * The two are independent by design: filters decide *which* entries are on
- * screen, the zone decides which day they are grouped under. These pin that
- * they compose, since each is easy to apply in a way that silently defeats
- * the other.
+ * Filters decide *which* entries are on screen, the zone decides which day
+ * they group under. These pin that the two compose — each is easy to apply
+ * in a way that silently defeats the other.
  */
 describe("timezone alongside the other filters", () => {
   const web = makeEntry({ id: "web", source: "web", projectId: "p-1" });

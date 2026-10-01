@@ -24,9 +24,8 @@ import { TimeEntryDetailModal } from "./TimeEntryDetailModal";
 type TimesheetCalendarGridProps = {
   organisationId: string;
   entries: TimeEntryListItem[];
-  /** Which zone the grid reads in. Events are shifted to that zone's wall
-   * clock before being handed to react-big-calendar, which lays out by a
-   * Date's local time — see `asZonedWallClock`. */
+  /** Events are shifted to this zone's wall clock for layout — see
+   * `asZonedWallClock`. */
   zone: string;
   start: Date;
   now: Date;

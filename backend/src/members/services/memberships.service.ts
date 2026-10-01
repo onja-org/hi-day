@@ -26,8 +26,7 @@ export interface ActiveMemberSummary {
   status: MembershipStatus;
   joinedAt: Date;
   disclosureRegion: string | null;
-  /** Their own IANA zone, null until a client has reported one — lets the
-   * timesheet offer "read this in their local time" (see `User.timezone`). */
+  /** Their own IANA zone; null until a client has reported one. */
   timezone: string | null;
 }
 

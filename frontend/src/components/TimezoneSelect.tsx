@@ -9,8 +9,7 @@ import type { TimezoneSource } from "@/lib/timezone";
 
 export type TimezoneOption = {
   source: TimezoneSource;
-  /** What this option is — "Member's time zone", "My time zone", or the
-   * organisation's own name. */
+  /** "Member's time zone", "My time zone", or the organisation's name. */
   heading: string;
   /** Null when nobody has reported one for that person yet. */
   zone: string | null;
@@ -23,16 +22,11 @@ type TimezoneSelectProps = {
 };
 
 /**
- * Chooses which timezone the timesheet is *read* in — the stored entries
- * never move, only the clock they are shown against.
+ * Chooses which timezone the timesheet is read in — entries never move,
+ * only the clock they are shown against.
  *
- * Three choices rather than a zone picker: the people whose day you might be
- * trying to reconstruct are the member whose timesheet this is, yourself,
- * and the organisation. A full IANA list would be more powerful and much
- * less useful.
- *
- * The trigger shows only the abbreviation, since it sits in a row of
- * controls and the full name is a line long.
+ * Three choices rather than a full IANA list: the only days worth
+ * reconstructing are the viewed member's, your own, and the organisation's.
  */
 export function TimezoneSelect({ options, value, onChange }: TimezoneSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -61,9 +55,8 @@ export function TimezoneSelect({ options, value, onChange }: TimezoneSelectProps
           className="absolute top-full right-0 z-20 mt-1 w-72 rounded-md border border-input-border bg-white py-1 shadow-lg"
         >
           {options.map((option) => {
-            // A person who has not signed in since we started recording has
-            // no zone. Saying so beats silently showing someone else's hours
-            // as if they were theirs.
+            // No zone recorded — saying so beats showing their hours on
+            // someone else's clock.
             const unavailable = option.zone === null;
             return (
               <li key={option.source}>

@@ -65,8 +65,6 @@ describe("entriesToCsv", () => {
     expect(entriesToCsv([]).split("\n")).toHaveLength(1);
   });
 
-  // The same entry is a different time — sometimes a different day — in a
-  // different zone, so the file has to say which one it was written in.
   it("writes the times in the given zone, and names it", () => {
     const csv = entriesToCsv(
       [makeEntry({ startedAt: "2026-01-05T22:30:00.000Z", endedAt: "2026-01-05T23:00:00.000Z" })],

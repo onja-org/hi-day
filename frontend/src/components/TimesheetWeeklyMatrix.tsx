@@ -9,7 +9,6 @@ import { ProjectColourBadge } from "./ProjectColourBadge";
 type TimesheetWeeklyMatrixProps = {
   entries: TimeEntryListItem[];
   start: Date;
-  /** Day columns and their labels are read in this zone. */
   zone: string;
 };
 

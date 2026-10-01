@@ -13,7 +13,6 @@ type TimesheetTableProps = {
   entries: TimeEntryListItem[];
   /** True when viewing the caller's own timesheet — only changes the empty-state copy. */
   isOwnTimesheet: boolean;
-  /** Decides which day each entry is grouped under, and its clock times. */
   zone: string;
   /** The period named in the empty-state copy ("for <label>"). Defaults to "today". */
   emptyPeriodLabel?: string;

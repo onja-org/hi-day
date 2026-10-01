@@ -11,7 +11,6 @@ import { TimeEntryActionsMenu } from "./TimeEntryActionsMenu";
 type TimesheetEntryRowProps = {
   organisationId: string;
   entry: TimeEntryListItem;
-  /** Clock times are read in this zone, not the viewer's. */
   zone: string;
   onEdit: (entry: TimeEntryListItem) => void;
   isSelected: boolean;

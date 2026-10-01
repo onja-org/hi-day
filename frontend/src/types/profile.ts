@@ -6,8 +6,7 @@ export type MyProfile = {
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
-  /** Reported by whichever client they last signed in from; null until one
-   * has. See `useReportTimezone`. */
+  /** Reported by their last-used client — see `useReportTimezone`. */
   timezone: string | null;
 };
 

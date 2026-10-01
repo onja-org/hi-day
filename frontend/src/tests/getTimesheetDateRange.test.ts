@@ -73,8 +73,7 @@ describe("getTimesheetDateRange", () => {
     const NAIROBI = "Africa/Nairobi"; // UTC+3
     const NEW_YORK = "America/New_York"; // UTC-5 in January
 
-    // 22:30 UTC is already tomorrow in Nairobi, so "today" is a different
-    // day there than in New York — the whole reason the range needs a zone.
+    // 22:30Z is already tomorrow in Nairobi, but not in New York.
     const lateEvening = new Date("2026-01-07T22:30:00.000Z");
 
     it("resolves 'today' to the day it is in that zone", () => {
@@ -97,8 +96,6 @@ describe("getTimesheetDateRange", () => {
       expect(range.from.toISOString()).toBe("2026-01-01T21:00:00.000Z");
     });
 
-    // The day the clocks go forward is 23 hours long, so a range ending on
-    // it is an hour shorter than a naive calculation would give.
     it("respects a short day at a daylight-saving transition", () => {
       const range = getTimesheetDateRange(
         "today",

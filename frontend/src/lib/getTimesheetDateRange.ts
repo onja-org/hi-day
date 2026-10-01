@@ -12,9 +12,7 @@ import {
   subMonthsFromKey,
 } from "./timezone";
 
-/** The calendar days a preset covers, as YYYY-MM-DD. Timezone-free: a
- * preset is a statement about *days*, and only turning those days back into
- * instants needs a zone. */
+/** The calendar days a preset covers. Zone-free — a preset names days. */
 function keysFor(preset: DateRangePreset, todayKey: string): [string, string] {
   switch (preset) {
     case "today":
@@ -44,17 +42,11 @@ function keysFor(preset: DateRangePreset, todayKey: string): [string, string] {
 }
 
 /**
- * Resolves a preset into a `{from, to}` instant range, with the calendar
- * days read in `zone`.
+ * Resolves a preset into a `{from, to}` instant range, its calendar days
+ * read in `zone` (the viewer's by default).
  *
- * Two steps on purpose. A preset names *days* — "today", "last week" — and
- * days are timezone-free, so the arithmetic happens on date keys. Only the
- * final conversion back to instants needs a zone, and that is where a day's
- * real length is respected: a day the clocks change is 23 or 25 hours, not
- * 24.
- *
- * Defaults to the viewer's own zone, so callers with no timezone choice
- * behave exactly as before.
+ * The arithmetic runs on date keys and becomes instants only at the end,
+ * which is what respects a day the clocks change being 23 or 25 hours.
  */
 export function getTimesheetDateRange(
   preset: DateRangePreset,
@@ -64,10 +56,8 @@ export function getTimesheetDateRange(
   const [fromKey, toKey] = keysFor(preset, dateKeyInZone(now, zone));
   return {
     from: startOfDayInZone(fromKey, zone),
-    // Inclusive: the last millisecond of the day, not the next day's
-    // midnight. The backend filters with `Between`, which includes both
-    // ends, so an exclusive end would pull in an entry starting exactly at
-    // midnight the following day.
+    // Inclusive: the backend filters with `Between`, so the next day's
+    // midnight would pull in that day's first entry.
     to: new Date(endOfDayInZone(toKey, zone).getTime() - 1),
   };
 }

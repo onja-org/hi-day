@@ -1,9 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Adds `users.timezone`, so the timesheet can be read in another person's
- * local time. Nullable with no backfill: nothing has ever recorded one, and
- * a guessed value would be indistinguishable from a reported one.
+ * Adds `users.timezone`, so a timesheet can be read in someone's local time.
+ * Nullable, no backfill: a guessed zone would be indistinguishable from a
+ * reported one.
  */
 export class AddUserTimezone1790500000000 implements MigrationInterface {
   name = 'AddUserTimezone1790500000000';

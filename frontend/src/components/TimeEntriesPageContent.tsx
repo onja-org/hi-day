@@ -56,8 +56,7 @@ export function TimeEntriesPageContent({
 }: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  // Which of the three zones the timesheet is *read* in. Never changes a
-  // stored entry — only the clock it is shown against.
+  // Which zone the timesheet is read in; never changes a stored entry.
   const [timezoneSource, setTimezoneSource] = useState<TimezoneSource>("viewer");
   const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
   // "" means "my own timesheet" — the default for everyone, including
@@ -87,9 +86,8 @@ export function TimeEntriesPageContent({
 
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
-  // From the browser rather than their stored value: it is where they are
-  // right now, which is what "my time zone" means. Null until hydration —
-  // the server's zone is not theirs.
+  // From the browser, not their stored value: where they are right now is
+  // what "my time zone" means. Null until hydration.
   const viewerZone = useViewerTimezone();
   const viewedMember = otherMembers.find(
     (member) => member.id === viewingMembershipId,
@@ -98,8 +96,7 @@ export function TimeEntriesPageContent({
     {
       source: "member",
       heading: "Member's time zone",
-      // Viewing your own timesheet makes the member you — no separate zone
-      // to offer, and none to be missing.
+      // Your own timesheet makes the member you.
       zone: isOwnTimesheet
         ? viewerZone
         : (viewedMember?.timezone ?? null),
@@ -111,10 +108,8 @@ export function TimeEntriesPageContent({
       zone: organisationQuery.data?.timezone ?? null,
     },
   ];
-  // Switching to a member who has never signed in would otherwise leave the
-  // selector pointing at a source with no zone — showing their name while
-  // reading the viewer's clock. Falling back to "viewer" keeps the label and
-  // the times telling the same story.
+  // A member who has never signed in has no zone; falling back keeps the
+  // selector's label and the times telling the same story.
   const activeSource: TimezoneSource =
     timezoneOptions.find((option) => option.source === timezoneSource)?.zone ==
     null
@@ -124,7 +119,6 @@ export function TimeEntriesPageContent({
   const activeZone =
     timezoneOptions.find((option) => option.source === activeSource)?.zone ??
     "UTC";
-
 
   const dailyRange = datePreset
     ? getTimesheetDateRange(datePreset, new Date(), activeZone)
@@ -164,7 +158,6 @@ export function TimeEntriesPageContent({
     (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
   );
   const activeFilterCount = countActiveFilters(filters);
-
 
   const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
   const activeFilenameBase =

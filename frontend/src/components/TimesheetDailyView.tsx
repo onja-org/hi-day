@@ -14,10 +14,7 @@ import { TimesheetTable } from "@/components/TimesheetTable";
 
 type TimesheetDailyViewProps = {
   organisationId: string;
-  /** The timezone selector, rendered beside the date range — the two
-   * together decide which days the page is showing. */
   timezoneSelect: ReactNode;
-  /** Which zone the entries are read in; decides their day and clock time. */
   zone: string;
   isOwnTimesheet: boolean;
   datePreset: DateRangePreset | null;

@@ -1,13 +1,12 @@
 /** Where a timezone came from, so the selector can label each option. */
 export type TimezoneSource = "member" | "viewer" | "organisation";
 
-/** The browser's own zone — what "my timezone" means, and what gets reported
- * to the server so others can read a timesheet in this person's local time. */
+/** The browser's own zone — what "my time zone" means. */
 export function detectTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** ICU's own name for a zone, in the requested width, on a given date. */
+/** ICU's own name for a zone, at the given width and date. */
 function zoneName(
   zone: string,
   at: Date,
@@ -21,16 +20,12 @@ function zoneName(
 /**
  * The abbreviation a zone goes by on a given date — "EAT", "EST", "IST".
  *
- * ICU's short name is preferred where it gives a real abbreviation, but for
- * most of the world it answers with a GMT offset instead ("GMT+3" for
- * Africa/Nairobi). In that case the initials of its *long* name are the
- * abbreviation: "East Africa Time" is EAT, "Japan Standard Time" is JST.
+ * ICU's short name is a GMT offset for most of the world ("GMT+3" for
+ * Africa/Nairobi); there, the initials of its long name are the
+ * abbreviation. The date matters: a zone reads "EST" or "EDT" by season.
  *
- * The date matters — the same zone reads "EST" or "EDT" by season.
- *
- * Known imprecision: ICU writes European winter time as "Central European
- * Standard Time", so this yields CEST where CET is conventional. Wrong-ish
- * label, right zone; nothing downstream reads it.
+ * Imprecise for Europe, where ICU says "Central European Standard Time" and
+ * so yields CEST where CET is conventional. Nothing downstream reads it.
  */
 export function timezoneAbbreviation(zone: string, at: Date = new Date()): string {
   const short = zoneName(zone, at, "short");
@@ -46,13 +41,11 @@ export function timezoneAbbreviation(zone: string, at: Date = new Date()): strin
     .map((word) => word[0])
     .join("")
     .toUpperCase();
-  // A single-word name ("Greenwich"?) initials down to noise — keep ICU's
-  // own answer rather than inventing a one-letter abbreviation.
+  // A one-word name initials down to one letter, which is not an abbreviation.
   return initials.length >= 2 ? initials : (short ?? long);
 }
 
-/** "Indian - Antananarivo" from "Indian/Antananarivo" — area and city,
- * spelled for reading rather than for lookup. */
+/** "Indian/Antananarivo" spelled for reading: "Indian - Antananarivo". */
 export function timezoneLabel(zone: string): string {
   return zone.split("/").join(" - ").replace(/_/g, " ");
 }
@@ -63,11 +56,9 @@ export function describeTimezone(zone: string, at: Date = new Date()): string {
 }
 
 /**
- * The calendar date an instant falls on *in a given zone*, as YYYY-MM-DD.
- *
- * This is the distinction the whole feature turns on: an entry has one
- * instant, but the day it belongs to is a function of the zone you read it
- * in. `en-CA` is used because it formats as YYYY-MM-DD natively.
+ * The calendar date an instant falls on *in a given zone*, as YYYY-MM-DD —
+ * the distinction the feature turns on, since one instant is Monday in
+ * Nairobi and Sunday in New York. `en-CA` formats that way natively.
  */
 export function dateKeyInZone(value: string | Date, zone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -87,8 +78,7 @@ export function formatTimeInZone(value: string | Date, zone: string): string {
   }).format(new Date(value));
 }
 
-/** The instant read back as if its zone's clock were UTC, so two readings
- * can be compared numerically. */
+/** A zone's clock read back as if it were UTC, so two can be subtracted. */
 function readClockAsUtc(at: Date, zone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,
@@ -116,11 +106,9 @@ function readClockAsUtc(at: Date, zone: string): number {
 /**
  * The instant a calendar day begins in `zone`.
  *
- * Found by correction rather than arithmetic: the offset is the very thing
- * being solved for, so it can't simply be added. Reading the clock back at a
- * guess and shifting by the difference converges in two passes, which is
- * what makes it right across a daylight-saving boundary, where the offset
- * before and after the guess differ.
+ * By correction, not arithmetic: the offset is the thing being solved for,
+ * so it can't simply be added. Re-reading the clock at a guess and shifting
+ * by the difference converges in two passes, DST boundaries included.
  */
 export function startOfDayInZone(dateKey: string, zone: string): Date {
   const [year, month, day] = dateKey.split("-").map(Number);
@@ -132,8 +120,7 @@ export function startOfDayInZone(dateKey: string, zone: string): Date {
   return new Date(guess);
 }
 
-/** The instant the day *after* `dateKey` begins — a day's exclusive end,
- * which is a day's length only when no DST transition falls inside it. */
+/** The instant the day after `dateKey` begins — a day's exclusive end. */
 export function endOfDayInZone(dateKey: string, zone: string): Date {
   const [year, month, day] = dateKey.split("-").map(Number);
   const next = new Date(Date.UTC(year, month - 1, day + 1));
@@ -144,11 +131,9 @@ export function endOfDayInZone(dateKey: string, zone: string): Date {
 }
 
 /**
- * Calendar arithmetic on a YYYY-MM-DD key.
- *
- * A date key carries no timezone, so it is manipulated through UTC getters
- * — using local ones would let the runtime's own offset shift the answer by
- * a day, which is the bug this whole module exists to avoid.
+ * Calendar arithmetic on a YYYY-MM-DD key. Through UTC getters: a key
+ * carries no zone, and local ones would let the runtime's own offset shift
+ * the answer by a day.
  */
 export function addDaysToKey(dateKey: string, days: number): string {
   const [year, month, day] = dateKey.split("-").map(Number);
@@ -178,8 +163,8 @@ export function endOfMonthKey(dateKey: string): string {
   return toKey(new Date(Date.UTC(year, month, 0)));
 }
 
-/** Months, by calendar rather than by 30 days — clamped to the last day
- * when the target month is shorter (31 Mar minus a month is 28 Feb). */
+/** Months by calendar, clamped when the target is shorter: 31 Mar - 1 month
+ * is 28 Feb. */
 export function subMonthsFromKey(dateKey: string, months: number): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, month - months, 0)).getUTCDate();
@@ -197,17 +182,11 @@ function toKey(at: Date): string {
 }
 
 /**
- * The instant whose *runtime-local* clock reads the same as `zone`'s clock
- * does at `instant`.
+ * The instant whose runtime-local clock reads the same as `zone`'s does at
+ * `instant` — for react-big-calendar, which lays out by a Date's local
+ * clock and has no zone of its own.
  *
- * For libraries that lay things out by a Date's local wall-clock and offer
- * no timezone of their own — react-big-calendar being the one here. Shifting
- * the Date makes the library place a block where the chosen zone says it
- * belongs, instead of where the viewer's machine does.
- *
- * The result is a *display* value and nothing else: it is not the instant
- * anything happened, and must never be stored, sent, or used to identify an
- * entry.
+ * Display only: not when anything happened, so never store or send it.
  */
 export function asZonedWallClock(instant: Date, zone: string): Date {
   const zoneClock = readClockAsUtc(instant, zone);

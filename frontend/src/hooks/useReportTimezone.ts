@@ -4,13 +4,9 @@ import { detectTimezone } from "@/lib/timezone";
 import { updateMyProfile } from "@/lib/updateMyProfile";
 
 /**
- * Tells the server which timezone this browser is in, whenever it differs
- * from what is stored.
- *
- * Recorded rather than asked for: a profile setting nobody fills in is a
- * setting nobody has, and the timesheet's "read this in their local time"
- * only works if everyone's zone is known. Fire-and-forget — a failure just
- * means the stored zone stays as it was.
+ * Reports this browser's timezone whenever it differs from the stored one —
+ * recorded rather than asked for, since a setting nobody fills in is a
+ * setting nobody has. Fire-and-forget: a failure leaves the stored zone.
  */
 export function useReportTimezone(storedTimezone: string | null | undefined): void {
   const { mutate } = useMutation({
@@ -18,8 +14,7 @@ export function useReportTimezone(storedTimezone: string | null | undefined): vo
   });
 
   useEffect(() => {
-    // undefined means the profile has not loaded yet — only a real null says
-    // "nothing recorded".
+    // undefined is "not loaded yet"; only null means nothing recorded.
     if (storedTimezone === undefined) return;
     const detected = detectTimezone();
     if (detected && detected !== storedTimezone) {

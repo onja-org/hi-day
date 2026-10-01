@@ -19,8 +19,8 @@ function labelFor(dateKey: string, todayKey: string): string {
   if (dateKey === todayKey) {
     return "Today";
   }
-  // Built from the key's own numbers rather than by parsing it as an
-  // instant, so the label never drifts a day from the group it heads.
+  // From the key's own numbers, not by parsing it as an instant, so the
+  // label can't drift a day from the group it heads.
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString([], {
     weekday: "short",
@@ -35,9 +35,8 @@ function labelFor(dateKey: string, todayKey: string): string {
  * first appear (the API already returns them most-recent-first, so this
  * preserves that).
  *
- * `zone` decides which calendar day each entry falls on, and what counts as
- * "Today" — defaulting to the viewer's own so callers that have no timezone
- * choice behave exactly as before.
+ * `zone` decides which day each entry falls on and what counts as "Today",
+ * defaulting to the viewer's own.
  *
  * `elapsedNow` is deliberately not defaulted to the current time: it's the
  * clock reading a still-running entry's accrued time is measured against,
@@ -58,9 +57,6 @@ export function groupTimeEntriesByDay(
   const todayKey = dateKeyInZone(new Date(), zone);
 
   for (const entry of entries) {
-    // Which day an entry belongs to is a property of the zone it is read
-    // in, not of the entry — the same instant is Monday in Nairobi and
-    // Sunday in New York.
     const dateKey = dateKeyInZone(entry.startedAt, zone);
     let group = groupsByKey.get(dateKey);
     if (!group) {

@@ -10,7 +10,6 @@ import { DashboardKpiTile } from "./DashboardKpiTile";
 
 type TimesheetSummaryTilesProps = {
   entries: TimeEntryListItem[];
-  /** Day totals depend on where the day boundaries fall. */
   zone: string;
   /** True when the viewed range covers one day — a daily-hours target only
    * makes sense as a comparison then; "12h of 8h target" for a whole

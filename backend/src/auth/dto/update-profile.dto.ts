@@ -20,8 +20,8 @@ export class UpdateProfileDto {
   @MinLength(1)
   lastName?: string;
 
-  /** Reported by the client rather than chosen by the person — see
-   * `User.timezone`. Validated because it arrives from a browser. */
+  /** Reported by the client, not chosen — see `User.timezone`. Validated
+   * because it arrives from a browser. */
   @IsOptional()
   @IsString()
   @Validate(IsIanaTimezone)

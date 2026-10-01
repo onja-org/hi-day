@@ -19,10 +19,9 @@ export type ProjectDayMatrix = {
 const DAYS_PER_WEEK = 7;
 
 /**
- * Which column of the week an entry belongs in, counted in calendar days of
- * `zone` — not in elapsed hours, which would be off by one across a
- * daylight-saving change, and not in the viewer's own days, which can put
- * the entry in a different column than the Daily view groups it under.
+ * Which column of the week an entry falls in, counted in `zone`'s calendar
+ * days — elapsed hours would be off by one across a DST change, and the
+ * viewer's days can disagree with the Daily view's grouping.
  */
 function dayIndexOf(
   entry: TimeEntryListItem,
@@ -36,8 +35,7 @@ function dayIndexOf(
   );
 }
 
-/** A date key read as a plain calendar date, so two keys can be subtracted
- * without any zone's offset entering the arithmetic. */
+/** A key as a plain calendar date, so two subtract without an offset. */
 function keyAsUtc(dateKey: string): number {
   const [year, month, day] = dateKey.split("-").map(Number);
   return Date.UTC(year, month - 1, day);

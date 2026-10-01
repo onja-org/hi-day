@@ -73,10 +73,9 @@ export function buildCalendarEvents(
       for (const piece of splitSegmentByDay(segment)) {
         events.push({
           entryId: entry.id,
-          // Shifted for layout: react-big-calendar positions by a Date's
-          // local clock and has no timezone of its own, so these read as
-          // the chosen zone's wall time. Display only — `entryId` is what
-          // identifies the entry.
+          // Shifted so react-big-calendar, which lays out by a Date's
+          // local clock, places these at the chosen zone's wall time.
+          // Display only — `entryId` identifies the entry.
           start: asZonedWallClock(piece.startedAt, zone),
           end: asZonedWallClock(piece.endedAt, zone),
           kind: piece.kind,

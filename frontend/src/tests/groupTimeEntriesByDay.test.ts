@@ -120,8 +120,6 @@ describe("groupTimeEntriesByDay", () => {
     expect(groupTimeEntriesByDay(entries)[0].label).toContain("2026");
   });
 
-  // The edge case the whole timezone feature exists for: one instant, two
-  // calendar days, depending on where you read it.
   it("groups an entry under the day it falls on in the chosen zone", () => {
     const lateEvening = makeEntry({
       startedAt: "2026-01-05T22:30:00.000Z",

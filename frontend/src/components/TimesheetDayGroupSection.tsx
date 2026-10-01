@@ -10,7 +10,6 @@ import { TimesheetEntryRow } from "./TimesheetEntryRow";
 type TimesheetDayGroupSectionProps = {
   organisationId: string;
   group: TimeEntryDayGroup;
-  /** Passed to each row for its clock times. */
   zone: string;
   onEdit: (entry: TimeEntryListItem) => void;
   selectedIds: Set<string>;
