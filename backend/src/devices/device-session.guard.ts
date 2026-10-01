@@ -46,9 +46,12 @@ export class DeviceSessionGuard implements CanActivate {
 
     const session = await this.deviceSessions.findOne({
       where: { tokenHash: hashToken(token), revokedAt: IsNull() },
+      relations: { organisation: true },
     });
 
-    if (!session) {
+    // A suspended organisation's sessions are revoked at suspension; this
+    // also covers a session issued in the instant around it.
+    if (!session || session.organisation.suspendedAt) {
       throw new UnauthorizedException(SIGNED_OUT_MESSAGE);
     }
 

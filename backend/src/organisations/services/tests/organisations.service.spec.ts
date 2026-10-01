@@ -182,6 +182,10 @@ describe('OrganisationsService', () => {
         screenshotRetentionDays: 30,
         workingHoursPerDay: 8,
         userId: 'user-1',
+        isOwner: false,
+        deletionScheduledFor: null,
+        suspendedAt: null,
+        purgeAt: null,
       });
     });
 

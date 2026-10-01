@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -99,5 +100,48 @@ export class ScreenshotStorageService {
         }),
       );
     }
+  }
+
+  /**
+   * Deletes every object under a key prefix and returns how many were
+   * removed — used by account purge, where "nothing left behind" has to hold
+   * even for objects no DB row points at any more (an orphan from a failed
+   * upload, say). Re-listing until empty rather than trusting one pass.
+   */
+  async deleteByPrefix(prefix: string): Promise<number> {
+    let deleted = 0;
+    for (;;) {
+      const keys = await this.listKeys(prefix);
+      if (keys.length === 0) {
+        return deleted;
+      }
+      await this.deleteObjects(keys);
+      deleted += keys.length;
+    }
+  }
+
+  /** True if any object still exists under the prefix. */
+  async hasObjectsWithPrefix(prefix: string): Promise<boolean> {
+    const result = await this.client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+        MaxKeys: 1,
+      }),
+    );
+    return (result.KeyCount ?? 0) > 0;
+  }
+
+  private async listKeys(prefix: string): Promise<string[]> {
+    const result = await this.client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+        MaxKeys: MAX_DELETE_BATCH_SIZE,
+      }),
+    );
+    return (result.Contents ?? []).flatMap((object) =>
+      object.Key ? [object.Key] : [],
+    );
   }
 }

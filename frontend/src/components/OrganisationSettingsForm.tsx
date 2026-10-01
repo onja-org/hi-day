@@ -35,9 +35,6 @@ export function OrganisationSettingsForm() {
 
   return (
     <OrganisationSettingsFields
-      // Remounts on every save (new organisation snapshot) and every Discard
-      // (resetNonce bump) so uncontrolled inputs and child field state reset
-      // to the last-saved values instead of drifting from them.
       key={`${JSON.stringify(organisation)}::${resetNonce}`}
       organisation={organisation}
       onDiscard={() => setResetNonce((n) => n + 1)}

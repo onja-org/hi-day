@@ -31,6 +31,21 @@ describe("approveDevicePairing", () => {
     });
   });
 
+  it("surfaces the backend's message when the organisation is suspended (403)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: () => Promise.resolve({ message: "Your account is suspended." }),
+      }),
+    );
+
+    const result = await approveDevicePairing("the-code");
+
+    expect(result).toEqual({ ok: false, message: "Your account is suspended." });
+  });
+
   it("returns a generic error message when the request throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 

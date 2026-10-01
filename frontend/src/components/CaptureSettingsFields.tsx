@@ -23,7 +23,7 @@ export function CaptureSettingsFields({
     useState(Math.round(organisation.screenshotFrequencySeconds / 60));
 
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-input-border bg-white p-5">
+    <div className="@container flex flex-col gap-1 rounded-lg border border-input-border bg-white p-5">
       <div className="divide-y divide-input-border">
         <Toggle
           name="windowTrackingEnabled"
@@ -45,7 +45,7 @@ export function CaptureSettingsFields({
         <span className="text-sm font-medium text-slate-900">
           Screenshot options
         </span>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 @md:grid-cols-2">
           <NumberFieldWithUnit
             name="screenshotFrequencyMinutes"
             label="Capture every"

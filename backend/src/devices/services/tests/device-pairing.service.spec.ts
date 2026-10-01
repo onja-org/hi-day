@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
@@ -31,6 +31,7 @@ describe('DevicePairingService', () => {
   ) {
     return {
       findOne: jest.fn().mockResolvedValue({ organisationId: 'org-1' }),
+      find: jest.fn().mockResolvedValue([]),
       ...overrides,
     } as unknown as Repository<Membership>;
   }
@@ -225,11 +226,14 @@ describe('DevicePairingService', () => {
         update,
       });
       const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue({
-          userId: 'user-1',
-          organisationId: 'org-1',
-          status: MembershipStatus.ACTIVE,
-        }),
+        find: jest.fn().mockResolvedValue([
+          {
+            userId: 'user-1',
+            organisationId: 'org-1',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: null },
+          },
+        ]),
       });
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({
@@ -259,13 +263,71 @@ describe('DevicePairingService', () => {
         findOne: jest.fn().mockResolvedValue(pendingRequest),
       });
       const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn().mockResolvedValue(null),
+        find: jest.fn().mockResolvedValue([]),
       });
       const service = makeService({ pairingRequestsRepo, membershipsRepo });
 
       await expect(
         service.approve('raw-code', 'user-1'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses with a clear message when the only organisation is suspended', async () => {
+      const update = jest.fn();
+      const pairingRequestsRepo = makePairingRequestsRepo({
+        findOne: jest.fn().mockResolvedValue(pendingRequest),
+        update,
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            organisationId: 'org-1',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: new Date() },
+          },
+        ]),
+      });
+      const service = makeService({ pairingRequestsRepo, membershipsRepo });
+
+      await expect(
+        service.approve('raw-code', 'user-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('pairs into a non-suspended organisation when the user also has a suspended one', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const pairingRequestsRepo = makePairingRequestsRepo({
+        findOne: jest.fn().mockResolvedValue(pendingRequest),
+        update,
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            organisationId: 'org-dead',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: new Date() },
+          },
+          {
+            organisationId: 'org-live',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: null },
+          },
+        ]),
+      });
+      const { auditLogService } = makeAuditLogService();
+      const service = makeService({
+        pairingRequestsRepo,
+        membershipsRepo,
+        auditLogService,
+      });
+
+      await service.approve('raw-code', 'user-1');
+
+      expect(update).toHaveBeenCalledWith(
+        'pairing-1',
+        expect.objectContaining({ approvedOrganisationId: 'org-live' }),
+      );
     });
   });
 

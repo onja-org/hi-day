@@ -68,7 +68,7 @@ export function OrganisationSettingsFields({
     Number(windowTrackingEnabled) + Number(screenshotsEnabled);
 
   return (
-    <div className="flex w-full max-w-5xl flex-col gap-1">
+    <div className="flex w-full max-w-6xl flex-col gap-1">
       <h1 className="text-2xl font-semibold text-primary-dark">Settings</h1>
       <p className="mb-4 text-sm text-slate-900/60">
         Company details and how the desktop agent tracks time for your team.

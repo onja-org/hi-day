@@ -41,6 +41,12 @@ export interface OrganisationProfile {
   screenshotRetentionDays: number;
   workingHoursPerDay: number;
   userId: string;
+  /** Only the owner may start or cancel account deletion. */
+  isOwner: boolean;
+  /** ISO timestamps; all `null` for a normal active organisation. */
+  deletionScheduledFor: string | null;
+  suspendedAt: string | null;
+  purgeAt: string | null;
 }
 
 interface OrganisationSettings {
@@ -92,6 +98,7 @@ export class OrganisationsService {
         name: input.name,
         slug: generateSlug(input.name),
         region: OrganisationRegion.US,
+        ownerUserId: userId,
         settings: {
           timezone: DEFAULT_TIMEZONE,
           currency: DEFAULT_CURRENCY,
@@ -354,6 +361,11 @@ export class OrganisationsService {
       workingHoursPerDay:
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       userId,
+      isOwner: organisation.ownerUserId === userId,
+      deletionScheduledFor:
+        organisation.deletionScheduledFor?.toISOString() ?? null,
+      suspendedAt: organisation.suspendedAt?.toISOString() ?? null,
+      purgeAt: organisation.purgeAt?.toISOString() ?? null,
     };
   }
 }

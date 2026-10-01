@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { ErrorMessage } from "./ErrorMessage";
+import { OrganisationSuspendedNotice } from "./OrganisationSuspendedNotice";
 import { Spinner } from "./Spinner";
 
 type OrganisationGuardProps = {
@@ -55,6 +56,10 @@ export function OrganisationGuard({
         }
       />
     );
+  }
+
+  if (organisationQuery.data.suspendedAt) {
+    return <OrganisationSuspendedNotice organisation={organisationQuery.data} />;
   }
 
   return <>{children}</>;

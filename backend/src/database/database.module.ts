@@ -15,6 +15,7 @@ import { InviteLink } from './entities/invite-link.entity';
 import { Membership } from './entities/membership.entity';
 import { Note } from './entities/note.entity';
 import { Organisation } from './entities/organisation.entity';
+import { OrganisationDeletionRequest } from './entities/organisation-deletion-request.entity';
 import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { ProjectTeam } from './entities/project-team.entity';
@@ -38,6 +39,7 @@ import { User } from './entities/user.entity';
         entities: [
           Organisation,
           ActivitySample,
+          OrganisationDeletionRequest,
           User,
           Membership,
           Team,

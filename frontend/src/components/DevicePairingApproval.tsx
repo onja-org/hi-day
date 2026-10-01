@@ -57,6 +57,12 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
 
   const summary = pairingQuery.data;
 
+  // A refusal (e.g. the organisation was deleted) replaces the login prompt
+  // so the person isn't invited to retry something that can't work.
+  if (approveMutation.data && !approveMutation.data.ok) {
+    return <ErrorMessage message={approveMutation.data.message} />;
+  }
+
   return (
     <div className="flex w-full max-w-sm flex-col gap-4">
       <p className="text-slate-900">

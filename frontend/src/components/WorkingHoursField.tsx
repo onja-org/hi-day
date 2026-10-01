@@ -22,7 +22,7 @@ export function WorkingHoursField({ organisation }: WorkingHoursFieldProps) {
         max={24}
         value={hoursPerDay}
         onChange={setHoursPerDay}
-        hint={`= ${hoursPerDay * 5} h over a 5-day week`}
+        hint={`= ${hoursPerDay * 5}h over a 5-day week`}
       />
     </div>
   );

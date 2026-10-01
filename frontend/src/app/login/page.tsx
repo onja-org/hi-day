@@ -5,11 +5,11 @@ import { isAuthenticated } from "@/lib/isAuthenticated";
 import { safeRedirectPath } from "@/lib/safeRedirectPath";
 
 type LoginPageProps = {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; reason?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { next } = await searchParams;
+  const { next, reason } = await searchParams;
   const target = safeRedirectPath(next);
 
   if (await isAuthenticated()) {
@@ -26,6 +26,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             activity.
           </p>
         </div>
+        {reason === "session-ended" && (
+          <p
+            role="status"
+            className="rounded-md border border-input-border bg-cream px-4 py-3 text-sm text-slate-900 md:mx-20 lg:mx-0"
+          >
+            Your session has ended. If your organisation was deleted, contact
+            its owner. Otherwise, log in again to continue.
+          </p>
+        )}
         <div className="animate-fade-in-up-delay md:px-20 lg:px-0">
           <LoginForm next={target} />
         </div>

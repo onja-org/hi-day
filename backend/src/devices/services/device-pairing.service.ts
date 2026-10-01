@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -15,6 +19,8 @@ import { StartDevicePairingDto } from '../dto/start-device-pairing.dto';
 import { DeviceSessionService } from './device-session.service';
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
+const ORGANISATION_SUSPENDED_MESSAGE =
+  'Your account is suspended because your organisation was deleted, so you can no longer log in to the desktop app. Contact the organisation owner if this is a mistake.';
 const PAIRING_NOT_FOUND_MESSAGE =
   'This pairing link is invalid or has expired.';
 
@@ -94,11 +100,20 @@ export class DevicePairingService {
 
   async approve(code: string, userId: string): Promise<void> {
     const request = await this.findPending(code);
-    const membership = await this.memberships.findOne({
+    const activeMemberships = await this.memberships.find({
       where: { userId, status: MembershipStatus.ACTIVE },
+      relations: { organisation: true },
     });
+    // A suspended organisation can't be paired into: its sessions would be
+    // refused on first use anyway, so say why now instead of "logged in".
+    const membership = activeMemberships.find(
+      (candidate) => !candidate.organisation.suspendedAt,
+    );
 
     if (!membership) {
+      if (activeMemberships.length > 0) {
+        throw new ForbiddenException(ORGANISATION_SUSPENDED_MESSAGE);
+      }
       throw new NotFoundException(PAIRING_NOT_FOUND_MESSAGE);
     }
 

@@ -66,7 +66,11 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
           !visible && "scale-95 opacity-0",
         )}
       >
-        <div className="flex items-center justify-between">
+        {/* Pinned so a dialog taller than the viewport keeps its title and
+            close button in view while the body scrolls. The negative top
+            margin and matching padding let it cover the dialog's own p-6
+            gutter instead of leaving a gap that content scrolls through. */}
+        <div className="sticky top-0 z-10 -mt-6 flex items-center justify-between bg-white pt-6 pb-2">
           <h2
             id="modal-title"
             className="text-lg font-semibold text-primary-dark"

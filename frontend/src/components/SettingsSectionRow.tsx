@@ -15,13 +15,13 @@ export function SettingsSectionRow({
   children,
 }: SettingsSectionRowProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3 sm:gap-8">
+    <div className="grid gap-y-8 md:grid-cols-3 md:gap-x-8">
       <div className="flex flex-col gap-1.5">
         <h2 className="font-medium text-primary-dark">{title}</h2>
         <p className="text-sm text-slate-900/60">{description}</p>
         {badge}
       </div>
-      <div className="sm:col-span-2">{children}</div>
+      <div className="min-w-0 md:col-span-2">{children}</div>
     </div>
   );
 }

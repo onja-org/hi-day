@@ -18,7 +18,26 @@ export type OrganisationProfile = {
   /** Admin-configurable, default 8 — informational only, never enforced. */
   workingHoursPerDay: number;
   userId: string;
+  /** Only the owner may start or cancel account deletion. */
+  isOwner: boolean;
+  /** ISO timestamps; all null for a normal active organisation. */
+  deletionScheduledFor: string | null;
+  suspendedAt: string | null;
+  purgeAt: string | null;
 };
+
+export type OrganisationDeletionState = "active" | "scheduled" | "suspended";
+
+export type OrganisationDeletionMode = "now" | "scheduled";
+
+export type RequestOrganisationDeletionInput = {
+  mode: OrganisationDeletionMode;
+  /** ISO timestamp, required when mode is "scheduled". */
+  scheduledFor?: string;
+  confirmName: string;
+};
+
+export type OrganisationDeletionResult = ApiResult;
 
 export type GetOrganisationResult =
   | { ok: true; organisation: OrganisationProfile }
@@ -40,3 +59,18 @@ export type UpdateOrganisationInput = {
 export type UpdateOrganisationResult = ApiResult<{
   organisation: OrganisationProfile;
 }>;
+
+export type OrganisationDeletionStatus = {
+  state: OrganisationDeletionState;
+  graceDays: number;
+  isOwner: boolean;
+  /** What deleting would remove. */
+  impact: {
+    people: number;
+    projects: number;
+    trackedSeconds: number;
+    devices: number;
+  };
+  /** Where the confirmation link is sent; null unless the caller is the owner. */
+  ownerEmail: string | null;
+};
