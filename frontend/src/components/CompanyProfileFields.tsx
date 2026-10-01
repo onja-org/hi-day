@@ -9,8 +9,8 @@ export function CompanyProfileFields({
   organisation,
 }: CompanyProfileFieldsProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-input-border bg-white p-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="@container flex flex-col gap-4 rounded-lg border border-input-border bg-white p-5">
+      <div className="grid gap-4 @md:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-slate-900">
             Company name

@@ -13,6 +13,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { ALLOW_SUSPENDED_ORGANISATION_KEY } from '../decorators/allow-suspended-organisation.decorator';
 import { REQUIRE_ROLE_KEY } from '../decorators/require-role.decorator';
 
 @Injectable()
@@ -42,6 +43,18 @@ export class RoleGuard implements CanActivate {
     }
 
     request.organisationId = organisation.id;
+
+    const allowSuspended = this.reflector.getAllAndOverride<
+      boolean | undefined
+    >(ALLOW_SUSPENDED_ORGANISATION_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (organisation.suspendedAt && !allowSuspended) {
+      throw new ForbiddenException(
+        'This organisation has been suspended and is scheduled for deletion.',
+      );
+    }
 
     const membership = await this.memberships.findOne({
       where: {

@@ -107,4 +107,46 @@ export class EmailService {
       );
     }
   }
+
+  async sendOrganisationDeletionConfirmationEmail(
+    to: string,
+    token: string,
+    organisationPublicId: number,
+    organisationName: string,
+    when: string,
+  ): Promise<void> {
+    const confirmUrl = `${this.frontendUrl}/organisations/${organisationPublicId}/settings?confirmDeletion=${encodeURIComponent(token)}`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `Confirm deletion of ${organisationName}`,
+      html: `<p>You asked to delete <strong>${organisationName}</strong> on ${APP_NAME} (${when}). Nothing happens until you confirm. This link expires soon and can only be used once.</p>${this.button(confirmUrl, 'Confirm deletion')}<p>If you didn't request this, ignore this email and consider changing your password.</p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send deletion confirmation to ${to}: ${error.message}`,
+      );
+    }
+  }
+
+  async sendOrganisationDeletionNotice(
+    to: string,
+    organisationName: string,
+    details: string,
+  ): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `${organisationName}: account deletion`,
+      html: `<p>${details}</p><p>Organisation: <strong>${organisationName}</strong></p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send deletion notice to ${to}: ${error.message}`,
+      );
+    }
+  }
 }

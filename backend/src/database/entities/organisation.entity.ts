@@ -3,6 +3,8 @@ import {
   CreateDateColumn,
   Entity,
   Generated,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -12,6 +14,7 @@ import { Membership } from './membership.entity';
 import { OrganisationRegion } from './organisation-region.enum';
 import { Project } from './project.entity';
 import { Team } from './team.entity';
+import { User } from './user.entity';
 
 @Entity({ name: 'organisations' })
 export class Organisation {
@@ -52,6 +55,34 @@ export class Organisation {
 
   @Column({ type: 'jsonb', default: {} })
   settings: Record<string, unknown>;
+
+  /**
+   * The one admin allowed to start or cancel account deletion (see
+   * CONTEXT.md's Owner entry). Set to the founding admin at creation;
+   * `null` only for an org whose owner's User row has since been erased.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  ownerUserId: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'ownerUserId' })
+  owner: User | null;
+
+  /**
+   * Account-deletion lifecycle (see docs/adr/0021-...): `deletionScheduledFor`
+   * is a future instant at which the org will be suspended; `suspendedAt`
+   * means access is already cut off; `purgeAt` (always `suspendedAt` + the
+   * grace window) is when the data is irreversibly erased. All `null` =
+   * a normal, active org.
+   */
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  deletionScheduledFor: Date | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  suspendedAt: Date | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  purgeAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

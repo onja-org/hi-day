@@ -34,12 +34,12 @@ export function IdleTimeFields({ organisation }: IdleTimeFieldsProps) {
   const [handling, setHandling] = useState(organisation.idleHandling);
 
   return (
-    <div className="flex flex-col gap-5 rounded-lg border border-input-border bg-white p-5">
+    <div className="@container flex flex-col gap-5 rounded-lg border border-input-border bg-white p-5">
       <div className="flex flex-col gap-3">
         <span className="text-sm font-medium text-slate-900">
           When idle time is detected
         </span>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 @md:grid-cols-3">
           {IDLE_OPTIONS.map((option) => (
             <label
               key={option.value}

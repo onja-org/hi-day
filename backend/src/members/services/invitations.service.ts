@@ -307,6 +307,7 @@ export class InvitationsService {
 
     if (
       !invitation ||
+      invitation.organisation.suspendedAt ||
       computeEffectiveInvitationStatus(invitation, new Date()) !== 'pending'
     ) {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
