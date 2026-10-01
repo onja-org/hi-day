@@ -23,6 +23,8 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
     canEdit: false,
     canDelete: false,
     pauses: [],
+    type: "normal",
+    activePercentage: null,
     ...overrides,
   };
 }

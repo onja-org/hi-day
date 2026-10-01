@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CaretLeftIcon } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { DateRangePicker } from "@/components/DateRangePicker";
@@ -9,36 +9,47 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { Spinner } from "@/components/Spinner";
+import { useSavedReports } from "@/hooks/useSavedReports";
+import { useTimeActivityReportControls, DEFAULT_TIME_ACTIVITY_PRESET } from "@/hooks/useTimeActivityReportControls";
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
+import { countReportFilters } from "@/lib/reportFilters";
+import { dateKeyInZone } from "@/lib/timezone";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
-import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
-import type { DateRange, DateRangePreset } from "@/types/dateRange";
-import type { ReportScope } from "@/types/reportScope";
+import type { SavedReport } from "@/types/savedReport";
 import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
+import { SaveReportButton } from "./SaveReportButton";
+import { TimeActivityFilter } from "./TimeActivityFilter";
 import { ReportScopeTabs } from "./ReportScopeTabs";
 import { TimeActivityReportBody } from "./TimeActivityReportBody";
+import { TimeActivityReportSettings } from "./TimeActivityReportSettings";
 
 type TimeActivityReportPageProps = {
   organisationId: string;
+  /** Set when a saved report is opened: restores its settings and updates it on Save. */
+  savedReport?: SavedReport;
 };
 
-const DEFAULT_PRESET: DateRangePreset = "last_7_days";
+export function TimeActivityReportPage({ organisationId, savedReport }: TimeActivityReportPageProps) {
+  const router = useRouter();
+  const { saveReport } = useSavedReports(organisationId);
+  const controls = useTimeActivityReportControls(savedReport?.settings);
+  const { scope, setScope, grouping, setGrouping, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
+    controls;
 
-export function TimeActivityReportPage({ organisationId }: TimeActivityReportPageProps) {
-  const [scope, setScope] = useState<ReportScope>("me");
-  const [grouping, setGrouping] = useState<TimeActivityGrouping>("day");
-  const [preset, setPreset] = useState<DateRangePreset | null>(DEFAULT_PRESET);
-  const [customRange, setCustomRange] = useState<DateRange>(() =>
-    getTimesheetDateRange(DEFAULT_PRESET),
-  );
-  const range = preset ? getTimesheetDateRange(preset) : customRange;
-
-  const { canViewOthers, teamNames, entries, isLoading, error } = useTimeActivityReportData(
-    organisationId,
-    scope,
-    range,
-  );
+  const {
+    canViewOthers,
+    showsEveryone,
+    activeFilters,
+    teamNames,
+    members,
+    teams,
+    idleMembers,
+    entries,
+    projectOptions,
+    isLoading,
+    error,
+  } = useTimeActivityReportData(organisationId, scope, range, filters);
 
   return (
     <div className="flex flex-col gap-6">
@@ -50,7 +61,9 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
           <CaretLeftIcon size={14} aria-hidden="true" />
           Reports
         </Link>
-        <h1 className="text-2xl font-semibold text-primary-dark">Time and activity report</h1>
+        <h1 className="text-2xl font-semibold text-primary-dark">
+          Time and activity report{savedReport && ` - ${savedReport.name}`}
+        </h1>
       </header>
 
       {canViewOthers && <ReportScopeTabs value={scope} onChange={setScope} />}
@@ -62,18 +75,59 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
             label="Date range"
             value={range}
             preset={preset}
-            defaultPreset={DEFAULT_PRESET}
+            defaultPreset={DEFAULT_TIME_ACTIVITY_PRESET}
+            zone={zone}
             onChange={(next, nextPreset) => {
-              setCustomRange(next);
+              setCustomDays({ from: dateKeyInZone(next.from, zone), to: dateKeyInZone(next.to, zone) });
               setPreset(nextPreset);
             }}
           />
         </div>
-        <ExportButtons
-          csv={entriesToCsv(entries ?? [])}
-          filenameBase={`time-and-activity-${format(range.from, "yyyy-MM-dd")}-to-${format(range.to, "yyyy-MM-dd")}`}
-          disabled={(entries ?? []).length === 0}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportButtons
+            csv={entriesToCsv(entries ?? [])}
+            filenameBase={`time-and-activity-${format(range.from, "yyyy-MM-dd")}-to-${format(range.to, "yyyy-MM-dd")}`}
+            disabled={(entries ?? []).length === 0}
+          />
+          <TimeActivityFilter
+            filters={activeFilters}
+            onChange={setFilters}
+            projectOptions={projectOptions}
+            memberOptions={
+              showsEveryone
+                ? (members ?? []).map((member) => ({ id: member.id, name: member.name ?? member.email }))
+                : undefined
+            }
+            teamOptions={teams}
+          />
+          <SaveReportButton
+            settings={
+              <TimeActivityReportSettings
+                range={range}
+                showsEveryone={showsEveryone}
+                grouping={grouping}
+                filterCount={countReportFilters(activeFilters)}
+              />
+            }
+            initialName={savedReport?.name}
+            initialScheduled={savedReport?.scheduled}
+            onSave={({ name, scheduled }) => {
+              const id = saveReport({
+                id: savedReport?.id,
+                name,
+                scheduled,
+                settings: {
+                  datePreset: preset,
+                  days: { from: dateKeyInZone(range.from, zone), to: dateKeyInZone(range.to, zone) },
+                  scope: showsEveryone ? "all" : "me",
+                  grouping,
+                  filters: activeFilters,
+                },
+              });
+              if (!savedReport) router.push(`/organisations/${organisationId}/reports/saved/${id}`);
+            }}
+          />
+        </div>
       </div>
 
       <SelectField
@@ -82,7 +136,7 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
         onChange={(event) => setGrouping(event.target.value as TimeActivityGrouping)}
         className="w-fit"
       >
-        {TIME_ACTIVITY_GROUPINGS.filter((option) => option.value !== "team" || canViewOthers).map((option) => (
+        {TIME_ACTIVITY_GROUPINGS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -102,7 +156,7 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
         </p>
       )}
       {error && <ErrorMessage message={error.message} />}
-      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} teamNames={teamNames} />}
+      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} teamNames={teamNames} idleMembers={idleMembers} />}
     </div>
   );
 }

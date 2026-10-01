@@ -13,6 +13,9 @@ type SaveReportModalProps = {
   onClose: () => void;
   onSendPreview?: () => void;
   isPending?: boolean;
+  /** Prefill when editing an already-saved report. */
+  initialName?: string;
+  initialScheduled?: boolean;
   children?: ReactNode;
 };
 
@@ -21,10 +24,12 @@ export function SaveReportModal({
   onClose,
   onSendPreview,
   isPending = false,
+  initialName = "",
+  initialScheduled = false,
   children,
 }: SaveReportModalProps) {
-  const [name, setName] = useState("");
-  const [scheduled, setScheduled] = useState(false);
+  const [name, setName] = useState(initialName);
+  const [scheduled, setScheduled] = useState(initialScheduled);
   const trimmed = name.trim();
 
   function handleSubmit(event: FormEvent) {

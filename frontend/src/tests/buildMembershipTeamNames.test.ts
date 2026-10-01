@@ -1,23 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { buildMembershipTeamNames } from "@/lib/buildMembershipTeamNames";
+import { buildMembershipTeamIds, buildMembershipTeamNames } from "@/lib/buildMembershipTeamNames";
+
+const member = (membershipId: string) => ({
+  membershipId,
+  userId: `u-${membershipId}`,
+  name: null,
+  email: `${membershipId}@example.com`,
+  isManager: false,
+});
+
+const teams = [
+  { id: "t1", name: "Dev", members: [member("m1"), member("m2")] },
+  { id: "t2", name: "Design", members: [member("m1")] },
+];
 
 describe("buildMembershipTeamNames", () => {
-  const teams = [
-    { id: "t1", name: "Dev" },
-    { id: "t2", name: "Design" },
-  ];
-
-  it("maps each membership to its team names", () => {
-    const result = buildMembershipTeamNames([{ id: "m1", teamIds: ["t1", "t2"] }], teams);
-    expect(result.get("m1")).toEqual(["Dev", "Design"]);
+  it("lists every team a membership is on, in team order", () => {
+    expect(buildMembershipTeamNames(teams).get("m1")).toEqual(["Dev", "Design"]);
   });
 
-  it("gives a member with no teams an empty list", () => {
-    expect(buildMembershipTeamNames([{ id: "m1", teamIds: [] }], teams).get("m1")).toEqual([]);
+  it("lists a single team for a member on one", () => {
+    expect(buildMembershipTeamNames(teams).get("m2")).toEqual(["Dev"]);
   });
 
-  it("skips team ids that aren't in the teams list", () => {
-    const result = buildMembershipTeamNames([{ id: "m1", teamIds: ["gone", "t1"] }], teams);
-    expect(result.get("m1")).toEqual(["Dev"]);
+  it("has no entry for someone on no visible team", () => {
+    expect(buildMembershipTeamNames(teams).get("m3")).toBeUndefined();
+  });
+});
+
+describe("buildMembershipTeamIds", () => {
+  it("maps a membership to its team ids", () => {
+    expect(buildMembershipTeamIds(teams).get("m1")).toEqual(["t1", "t2"]);
   });
 });

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
+import { useSavedReports } from "@/hooks/useSavedReports";
 import { filterReports } from "@/lib/filterReports";
 import { REPORT_SECTIONS, REPORTS } from "@/lib/reportCatalog";
 import { ReportsCard } from "./ReportsCard";
@@ -14,6 +16,7 @@ type AllReportsPageContentProps = {
 export function AllReportsPageContent({ organisationId }: AllReportsPageContentProps) {
   const [query, setQuery] = useState("");
   const { favouriteIds, toggleFavourite } = useFavouriteReports(organisationId);
+  const { reports: savedReports } = useSavedReports(String(organisationId));
   const visibleReports = filterReports(REPORTS, query);
 
   return (
@@ -31,9 +34,24 @@ export function AllReportsPageContent({ organisationId }: AllReportsPageContentP
       </div>
 
       <ReportsSection title="Customised reports">
-        <p className="rounded-lg border border-input-border bg-white p-6 text-center text-sm text-slate-900/70">
-          No customised reports yet.
-        </p>
+        {savedReports.length === 0 ? (
+          <p className="rounded-lg border border-input-border bg-white p-6 text-center text-sm text-slate-900/70">
+            No customised reports yet.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {savedReports.map((saved) => (
+              <li key={saved.id}>
+                <Link
+                  href={`/organisations/${organisationId}/reports/saved/${saved.id}`}
+                  className="block rounded-lg border border-input-border bg-white p-4 text-sm font-semibold text-primary-dark transition-colors hover:border-primary"
+                >
+                  {saved.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </ReportsSection>
 
       {visibleReports.length === 0 && (

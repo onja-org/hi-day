@@ -2,6 +2,7 @@
 
 import {
   Briefcase,
+  BookmarkSimple,
   ChartBar,
   ChartLineUp,
   Clock,
@@ -18,6 +19,7 @@ import {
 import { usePathname } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
+import { useSavedReports } from "@/hooks/useSavedReports";
 import { REPORTS } from "@/lib/reportCatalog";
 import type { NavEntry, NavLink } from "@/types/navigation";
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
@@ -37,6 +39,10 @@ export function Sidebar({
   const pathname = usePathname();
   const organisationQuery = useCurrentOrganisation();
   const { favouriteIds } = useFavouriteReports(organisationId);
+  const { reports: savedReports } = useSavedReports(String(organisationId));
+  // A saved report is listed only while it's open; the Customised reports
+  // page is where the full list lives.
+  const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
   const organisationName = organisationQuery.data?.name ?? "Workforce";
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
@@ -118,10 +124,26 @@ export function Sidebar({
             icon: Star,
           }),
         ),
+        ...savedReports
+          .filter((saved) => saved.id === openSavedReportId)
+          .map(
+          (saved): NavLink => ({
+            kind: "link",
+            label: saved.name,
+            href: `/organisations/${organisationId}/reports/saved/${saved.id}`,
+            icon: BookmarkSimple,
+          }),
+        ),
         {
           kind: "link",
           label: "All reports",
           href: `/organisations/${organisationId}/reports/all`,
+          icon: ListChecks,
+        },
+        {
+          kind: "link",
+          label: "Customised reports",
+          href: `/organisations/${organisationId}/reports/customised`,
           icon: ListChecks,
         },
       ],

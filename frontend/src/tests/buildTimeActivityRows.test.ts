@@ -24,6 +24,8 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
     canEdit: false,
     canDelete: false,
     pauses: [],
+    type: "normal",
+    activePercentage: null,
     ...overrides,
   };
 }
@@ -31,11 +33,16 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
 const build = (
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
-  options: { sumDates?: boolean; teamNames?: Map<string, string[]> } = {},
+  options: {
+    sumDates?: boolean;
+    teamNames?: Map<string, string[]>;
+    idleMembers?: { id: string; label: string }[];
+  } = {},
 ) =>
   buildTimeActivityRows(entries, grouping, {
     sumDates: options.sumDates ?? false,
     teamNames: options.teamNames ?? new Map(),
+    idleMembers: options.idleMembers,
   });
 
 describe("buildTimeActivityRows", () => {
@@ -145,6 +152,28 @@ describe("buildTimeActivityRows", () => {
   it("sums paused seconds into break time", () => {
     const [row] = build([entry({ pausedSeconds: 90 })], "day");
     expect(row.cells.breakTime).toBe("00:01:30");
+  });
+});
+
+describe("buildTimeActivityRows idle members", () => {
+  const idle = [
+    { id: "m1", label: "Ada" },
+    { id: "m2", label: "Bob" },
+  ];
+
+  it("lists a member with no entries as a zero-hour row under member grouping", () => {
+    const rows = build([entry({ id: "a" })], "member", { idleMembers: idle });
+    expect(rows.map((r) => r.cells.date)).toEqual(["Ada (1)", "Bob (0)"]);
+    expect(rows[1].cells.total).toBe("00:00:00");
+    expect(rows[1].subRows).toBeUndefined();
+  });
+
+  it("doesn't duplicate a member who already has a row", () => {
+    expect(build([entry({ id: "a" })], "member", { idleMembers: [idle[0]] })).toHaveLength(1);
+  });
+
+  it("only adds them under member grouping", () => {
+    expect(build([entry({ id: "a" })], "day", { idleMembers: idle })).toHaveLength(1);
   });
 });
 

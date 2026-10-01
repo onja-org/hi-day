@@ -10,6 +10,8 @@ type RowOptions = {
   /** Skip the per-day level under project/member/team/to-do groups. */
   sumDates: boolean;
   teamNames: MembershipTeamNames;
+  /** Members to list under "Member" grouping even when they have no entries, as zero-hour rows. */
+  idleMembers?: { id: string; label: string }[];
 };
 
 function hours(seconds: number): string {
@@ -112,7 +114,7 @@ function leafRows(
 export function buildTimeActivityRows(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
-  { sumDates, teamNames }: RowOptions,
+  { sumDates, teamNames, idleMembers = [] }: RowOptions,
 ): ReportTableRow[] {
   if (grouping === "none") {
     return leafRows(entries, "", true, grouping, teamNames, undefined, true);
@@ -122,7 +124,7 @@ export function buildTimeActivityRows(
   // Rows that sit directly under a single day don't need the day in their key.
   const leavesPerDay = grouping !== "day" && !splitsByDay;
 
-  return groupEntriesBy(entries, grouping, teamNames).map((group) => {
+  const rows = groupEntriesBy(entries, grouping, teamNames).map((group) => {
     const onlyTeam = grouping === "team" ? group.label : undefined;
     const days = splitsByDay ? groupEntriesBy(group.entries, "day") : [];
     const count = splitsByDay
@@ -147,6 +149,18 @@ export function buildTimeActivityRows(
         : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false),
     };
   });
+
+  if (grouping !== "member") return rows;
+  const listed = new Set(rows.map((row) => row.id));
+  const idleRows = idleMembers
+    .filter((member) => !listed.has(member.id))
+    .map((member) => ({
+      id: member.id,
+      sortKey: member.label,
+      cells: { date: `${member.label} (0)`, ...entryCells([]) },
+      teams: teamNames.get(member.id) ?? [],
+    }));
+  return [...rows, ...idleRows];
 }
 
 /** Total seconds across `entries`, the figure behind the "Total time" tile. */

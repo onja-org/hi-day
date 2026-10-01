@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ClockIcon, CreditCardIcon } from "@phosphor-icons/react";
+import { CaretUpIcon, ClockIcon, CreditCardIcon } from "@phosphor-icons/react";
 import { buildTimeActivityChartRows } from "@/lib/buildTimeActivityChartRows";
 import { buildTimeActivityRows, totalEntrySeconds } from "@/lib/buildTimeActivityRows";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -24,6 +24,7 @@ type TimeActivityReportBodyProps = {
   entries: TimeEntryListItem[];
   grouping: TimeActivityGrouping;
   teamNames: MembershipTeamNames;
+  idleMembers: { id: string; label: string }[];
 };
 
 /** Avatars on a top-level row; nested rows carry their team names as plain text. */
@@ -37,7 +38,7 @@ function renderTeamCell(row: ReportTableRow) {
   );
 }
 
-export function TimeActivityReportBody({ entries, grouping, teamNames }: TimeActivityReportBodyProps) {
+export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembers }: TimeActivityReportBodyProps) {
   const [sumDates, setSumDates] = useState(false);
 
   return (
@@ -57,8 +58,13 @@ export function TimeActivityReportBody({ entries, grouping, teamNames }: TimeAct
         </p>
       ) : (
         <details open className="group rounded-lg border border-input-border bg-white">
-          <summary className="cursor-pointer list-none p-4 text-lg font-semibold text-primary-dark">
+          <summary className="flex cursor-pointer list-none items-center justify-between p-4 text-lg font-semibold text-primary-dark">
             Chart
+            <CaretUpIcon
+              size={16}
+              aria-hidden="true"
+              className="text-primary rotate-180 transition-transform duration-150 group-open:rotate-0"
+            />
           </summary>
           <div className="p-4 pt-0">
             <ReportsBarChart
@@ -74,7 +80,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames }: TimeAct
         columns={timeActivityColumns(grouping).map((column) =>
           column.key === "team" ? { ...column, renderCell: renderTeamCell } : column,
         )}
-        rows={buildTimeActivityRows(entries, grouping, { sumDates, teamNames })}
+        rows={buildTimeActivityRows(entries, grouping, { sumDates, teamNames, idleMembers })}
         defaultHiddenKeys={TIME_ACTIVITY_DEFAULT_HIDDEN_COLUMNS}
         toolbarExtra={
           canSumDates(grouping) && (

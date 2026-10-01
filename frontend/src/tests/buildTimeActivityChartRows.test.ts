@@ -23,6 +23,8 @@ function entry(id: string, startedAt: string, source: "web" | "manual", duration
     canEdit: false,
     canDelete: false,
     pauses: [],
+    type: "normal",
+    activePercentage: null,
   };
 }
 
