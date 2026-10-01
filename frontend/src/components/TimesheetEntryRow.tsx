@@ -46,11 +46,23 @@ export function TimesheetEntryRow({
           </span>
         </span>
       </td>
-      {/* Activity and Idle stand empty: `activity_samples` was dropped from
-          this product, and idle time is only ever discarded, never measured
-          as a proportion. The columns wait for a data source. */}
-      <td className="px-3 py-3 text-slate-900/40">—</td>
-      <td className="px-3 py-3 text-slate-900/40">—</td>
+      {/* Null is "nothing measured", which a bare 0% would misreport. */}
+      <td className="px-3 py-3 tabular-nums text-slate-900">
+        {entry.activePercentage === null ? (
+          <span className="text-slate-900/40">—</span>
+        ) : (
+          `${entry.activePercentage}%`
+        )}
+      </td>
+      <td className="px-3 py-3 text-slate-900">
+        {entry.type === "idle" || entry.type === "resumed" ? (
+          <span className="rounded-full bg-cream px-2 py-0.5 text-xs text-primary-dark capitalize">
+            {entry.type}
+          </span>
+        ) : (
+          <span className="text-slate-900/40">—</span>
+        )}
+      </td>
       {/* Entries are entirely hand-entered or entirely tracked — no partial
           manual time exists here — so this is 100% or 0%, not a proportion. */}
       <td className="px-3 py-3 tabular-nums text-slate-900">

@@ -3,6 +3,10 @@ import type { ProjectColour } from "./project";
 
 export type TimeEntrySource = "web" | "agent" | "manual";
 
+/** What kind of time an entry holds, as opposed to where it was tracked.
+ * `idle` is a stretch kept as its own entry instead of being deleted. */
+export type TimeEntryType = "normal" | "idle" | "resumed" | "manual";
+
 export type TimeEntry = {
   id: string;
   membershipId: string;
@@ -36,6 +40,10 @@ export type TimeEntryListItem = TimeEntry & {
   durationSeconds: number | null;
   memberName: string | null;
   memberEmail: string | null;
+  type: TimeEntryType;
+  /** Keyboard/mouse activity across the entry, 0-100, or null when nothing
+   * measured it — which is not the same as 0%. */
+  activePercentage: number | null;
   /** Whether the viewer can edit *and split* this entry — admin only. */
   canEdit: boolean;
   /** Whether the viewer can delete it — their own always, anyone's if an

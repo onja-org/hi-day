@@ -14,6 +14,7 @@ import { Organisation } from './organisation.entity';
 import { Project } from './project.entity';
 import { Task } from './task.entity';
 import { TimeEntrySource } from './time-entry-source.enum';
+import { TimeEntryType } from './time-entry-type.enum';
 
 /**
  * A single start/stop timer run, attributed to the org Membership it
@@ -84,6 +85,19 @@ export class TimeEntry {
 
   @Column({ type: 'enum', enum: TimeEntrySource, enumName: 'TimeEntrySource' })
   source: TimeEntrySource;
+
+  /**
+   * What kind of time this is — see `TimeEntryType`. Separate from `source`:
+   * an entry tracked by the agent can still be idle or resumed, and the two
+   * answer different questions.
+   */
+  @Column({
+    type: 'enum',
+    enum: TimeEntryType,
+    enumName: 'TimeEntryType',
+    default: TimeEntryType.NORMAL,
+  })
+  type: TimeEntryType;
 
   @Column({ type: 'uuid', nullable: true })
   deviceId: string | null;

@@ -1,4 +1,5 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { ActivitySample } from './activity-sampler';
 import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
@@ -335,6 +336,15 @@ export class ApiClient {
   ): Promise<TrackingResult<void>> {
     return this.deviceRequest('POST', '/device/app-events', deviceToken, {
       events,
+    });
+  }
+
+  postActivitySamples(
+    deviceToken: string,
+    samples: ActivitySample[],
+  ): Promise<TrackingResult<void>> {
+    return this.deviceRequest('POST', '/device/activity-samples', deviceToken, {
+      samples,
     });
   }
 

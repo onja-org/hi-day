@@ -37,7 +37,9 @@ import { ProjectTeam } from '../../database/entities/project-team.entity';
 import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
+import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
+import { TimeEntryType } from '../../database/entities/time-entry-type.enum';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
@@ -90,6 +92,16 @@ export interface TimeEntryListItem extends TimeEntrySummary {
    * is null when the User never set one — fall back to the email. */
   memberName: string | null;
   memberEmail: string | null;
+  /** What kind of time this is — see `TimeEntryType`. */
+  type: TimeEntryType;
+  /**
+   * Keyboard/mouse activity across the entry, 0-100, or null when no
+   * activity sample covers it — an agent that never reported, or time
+   * tracked before this existed. Weighted by how much of each 10-minute
+   * sample actually falls inside the entry, so a sample half outside it
+   * counts half.
+   */
+  activePercentage: number | null;
   /** null while the entry is still running (endedAt is null). */
   durationSeconds: number | null;
   /** Whether the *viewer* can edit and split this entry — admin only. */
@@ -152,6 +164,8 @@ export class TimeEntriesService {
     private readonly projects: Repository<Project>,
     @InjectRepository(Task)
     private readonly tasks: Repository<Task>,
+    @InjectRepository(ActivitySample)
+    private readonly activitySamples: Repository<ActivitySample>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
     private readonly captureCleanup: CaptureCleanupService,
@@ -412,11 +426,13 @@ export class TimeEntriesService {
     const pauseStates = await this.getPauseStatesFor(
       entries.map((entry) => entry.id),
     );
+    const activity = await this.getActivityFor(subjectMembershipId, entries);
     return entries.map((entry) =>
       this.toListItem(
         entry,
         membership,
         pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
+        activity.get(entry.id),
       ),
     );
   }
@@ -609,6 +625,7 @@ export class TimeEntriesService {
       startedAt,
       endedAt,
       source: TimeEntrySource.MANUAL,
+      type: TimeEntryType.MANUAL,
       deviceId: null,
     });
     const saved = await this.timeEntries.save(entry);
@@ -1038,6 +1055,57 @@ export class TimeEntriesService {
     }
   }
 
+  /**
+   * Average keyboard/mouse activity per entry, 0-100.
+   *
+   * Samples cover fixed 10-minute periods that rarely line up with an
+   * entry's boundaries, so each is weighted by how much of it actually falls
+   * inside the entry — a period half outside counts half. An entry no sample
+   * covers is absent from the map rather than reported as 0%, which would
+   * read as "they did nothing" instead of "nothing was measured".
+   */
+  private async getActivityFor(
+    membershipId: string,
+    entries: TimeEntry[],
+  ): Promise<Map<string, number>> {
+    const spans = entries.filter((entry) => entry.endedAt !== null);
+    if (spans.length === 0) return new Map();
+
+    const from = new Date(
+      Math.min(...spans.map((entry) => entry.startedAt.getTime())),
+    );
+    const to = new Date(
+      Math.max(...spans.map((entry) => entry.endedAt!.getTime())),
+    );
+
+    const samples = await this.activitySamples.find({
+      where: {
+        membershipId,
+        periodStart: LessThan(to),
+        periodEnd: MoreThan(from),
+      },
+    });
+    if (samples.length === 0) return new Map();
+
+    const byEntry = new Map<string, number>();
+    for (const entry of spans) {
+      let weighted = 0;
+      let seconds = 0;
+      for (const sample of samples) {
+        const overlap =
+          Math.min(entry.endedAt!.getTime(), sample.periodEnd.getTime()) -
+          Math.max(entry.startedAt.getTime(), sample.periodStart.getTime());
+        if (overlap <= 0) continue;
+        weighted += sample.activePercentage * overlap;
+        seconds += overlap;
+      }
+      if (seconds > 0) {
+        byEntry.set(entry.id, Math.round(weighted / seconds));
+      }
+    }
+    return byEntry;
+  }
+
   /** The audit-facing shape of a prune: counts only, never storage keys. */
   private capturesSummary(pruned: PrunedCaptures): Record<string, number> {
     return {
@@ -1461,6 +1529,7 @@ export class TimeEntriesService {
     entry: TimeEntry,
     viewerMembership: Membership,
     pauseState: PauseState,
+    activePercentage?: number,
   ): TimeEntryListItem {
     return {
       id: entry.id,
@@ -1478,6 +1547,8 @@ export class TimeEntriesService {
       taskName: entry.task?.name ?? null,
       memberName: entry.membership?.user?.name ?? null,
       memberEmail: entry.membership?.user?.email ?? null,
+      type: entry.type,
+      activePercentage: activePercentage ?? null,
       durationSeconds: entry.endedAt
         ? Math.round(
             (entry.endedAt.getTime() - entry.startedAt.getTime()) / 1000,
