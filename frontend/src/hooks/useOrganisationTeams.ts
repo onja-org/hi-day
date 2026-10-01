@@ -7,7 +7,10 @@ export const ORGANISATION_TEAMS_QUERY_KEY = (organisationId: string) => [
   "teams",
 ];
 
-export function useOrganisationTeams(organisationId: string) {
+export function useOrganisationTeams(
+  organisationId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ORGANISATION_TEAMS_QUERY_KEY(organisationId),
     queryFn: async () => {
@@ -17,5 +20,6 @@ export function useOrganisationTeams(organisationId: string) {
       }
       return result.teams;
     },
+    enabled: options.enabled ?? true,
   });
 }

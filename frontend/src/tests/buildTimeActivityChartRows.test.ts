@@ -31,7 +31,7 @@ describe("buildTimeActivityChartRows", () => {
     const rows = buildTimeActivityChartRows([
       entry("b", "2026-09-29T09:00:00", "web", 60),
       entry("a", "2026-09-28T09:00:00", "web", 60),
-    ], "day");
+    ], "day", new Map());
     expect(rows.map((r) => r.label)).toEqual([expect.stringContaining("28"), expect.stringContaining("29")]);
   });
 
@@ -39,11 +39,15 @@ describe("buildTimeActivityChartRows", () => {
     const [row] = buildTimeActivityChartRows([
       entry("a", "2026-09-28T09:00:00", "web", 100),
       entry("b", "2026-09-28T10:00:00", "manual", 40),
-    ], "day");
+    ], "day", new Map());
     expect(row.values).toEqual({ tracked: 100, manual: 40 });
   });
 
+  it("has no chart rows when grouped by none", () => {
+    expect(buildTimeActivityChartRows([entry("a", "2026-09-28T09:00:00", "web", 60)], "none", new Map())).toEqual([]);
+  });
+
   it("returns nothing for no entries", () => {
-    expect(buildTimeActivityChartRows([], "day")).toEqual([]);
+    expect(buildTimeActivityChartRows([], "day", new Map())).toEqual([]);
   });
 });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { CaretUpDownIcon, ColumnsIcon } from "@phosphor-icons/react";
 import { groupColumns } from "@/lib/groupColumns";
 import type { ReportTableColumn } from "@/types/reportTable";
@@ -7,7 +8,10 @@ type ReportsTableToolbarProps = {
   toggleableColumns: ReportTableColumn[];
   hiddenKeys: Set<string>;
   onToggleColumn: (key: string) => void;
-  onToggleExpandAll: () => void;
+  /** Omit when no row has anything to expand — the button is hidden. */
+  onToggleExpandAll?: () => void;
+  /** Extra controls placed before the built-in buttons. */
+  leading?: ReactNode;
 };
 
 export function ReportsTableToolbar({
@@ -15,19 +19,23 @@ export function ReportsTableToolbar({
   hiddenKeys,
   onToggleColumn,
   onToggleExpandAll,
+  leading,
 }: ReportsTableToolbarProps) {
   const groups = groupColumns(toggleableColumns);
 
   return (
-    <div className="flex justify-end gap-2 p-3">
-      <button
-        type="button"
-        onClick={onToggleExpandAll}
-        aria-label="Expand or collapse all rows"
-        className="cursor-pointer rounded-md border border-input-border p-2 text-icon hover:bg-primary/10"
-      >
-        <CaretUpDownIcon size={16} aria-hidden="true" />
-      </button>
+    <div className="flex items-center justify-end gap-2 p-3">
+      {leading}
+      {onToggleExpandAll && (
+        <button
+          type="button"
+          onClick={onToggleExpandAll}
+          aria-label="Expand or collapse all rows"
+          className="cursor-pointer rounded-md border border-input-border p-2 text-icon hover:bg-primary/10"
+        >
+          <CaretUpDownIcon size={16} aria-hidden="true" />
+        </button>
+      )}
       <details className="relative">
         <summary
           aria-label="Choose columns"

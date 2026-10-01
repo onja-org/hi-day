@@ -16,7 +16,6 @@ export const TIME_ACTIVITY_CHART_SERIES: ReportChartSeries[] = [
 // are left empty and render as "-".
 export const TIME_ACTIVITY_COLUMNS: ReportTableColumn[] = [
   { key: "date", header: "Date" },
-  { key: "member", header: "Member", group: "Info" },
   { key: "project", header: "Project / Work order", group: "Info" },
   { key: "todo", header: "To-do / Job", group: "Info" },
   { key: "team", header: "Team", group: "Info" },
@@ -41,16 +40,37 @@ export const TIME_ACTIVITY_GROUPINGS: { value: TimeActivityGrouping; label: stri
   { value: "week", label: "Date per week" },
   { value: "project", label: "Project / Work order" },
   { value: "member", label: "Member" },
+  { value: "team", label: "Team" },
   { value: "todo", label: "To-do / Job" },
 ];
 
-/** The first column names whatever the rows are grouped by. */
+const FIRST_COLUMN_HEADERS: Record<TimeActivityGrouping, string> = {
+  none: "Member",
+  day: "Date",
+  week: "Date",
+  project: "Project / Work order",
+  member: "Member",
+  team: "Team",
+  todo: "To-do / Job",
+};
+
+/** Columns the grouping already spells out in its first column, so repeating them would be noise. */
+const REDUNDANT_COLUMN: Partial<Record<TimeActivityGrouping, string>> = {
+  project: "project",
+  team: "team",
+};
+
+/** The first column names whatever the rows are grouped by (and its own column is dropped); "None" lists entries by member, so it gets a separate Date column. */
 export function timeActivityColumns(grouping: TimeActivityGrouping): ReportTableColumn[] {
-  const firstHeader =
-    grouping === "none" || grouping === "day" || grouping === "week"
-      ? "Date"
-      : (TIME_ACTIVITY_GROUPINGS.find((option) => option.value === grouping)?.label ?? "Date");
-  return TIME_ACTIVITY_COLUMNS.map((column, index) =>
-    index === 0 ? { ...column, header: firstHeader } : column,
-  );
+  const [, ...rest] = TIME_ACTIVITY_COLUMNS;
+  return [
+    { key: "date", header: FIRST_COLUMN_HEADERS[grouping] },
+    ...(grouping === "none" ? [{ key: "when", header: "Date", group: "Info" }] : []),
+    ...rest.filter((column) => column.key !== REDUNDANT_COLUMN[grouping]),
+  ];
+}
+
+/** Groupings that split into days underneath, where "Sum dates" can fold that level away. */
+export function canSumDates(grouping: TimeActivityGrouping): boolean {
+  return ["project", "member", "team", "todo"].includes(grouping);
 }

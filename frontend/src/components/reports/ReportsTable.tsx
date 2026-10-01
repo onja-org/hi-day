@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { ArrowDownIcon, ArrowUpIcon } from "@phosphor-icons/react";
+import { collectExpandableIds } from "@/lib/collectExpandableIds";
 import { paginateRows } from "@/lib/paginateRows";
 import { sortReportRows } from "@/lib/sortReportRows";
 import type { ReportTableColumn, ReportTableRow, SortDirection } from "@/types/reportTable";
@@ -15,6 +17,8 @@ type ReportsTableProps = {
   rows: ReportTableRow[];
   /** Keys of columns that start hidden — the user can still turn them on. */
   defaultHiddenKeys?: string[];
+  /** Extra controls shown in the toolbar, before the built-in buttons. */
+  toolbarExtra?: ReactNode;
 };
 
 function toggled<T>(set: Set<T>, value: T): Set<T> {
@@ -23,7 +27,7 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function ReportsTable({ columns, rows, defaultHiddenKeys = [] }: ReportsTableProps) {
+export function ReportsTable({ columns, rows, defaultHiddenKeys = [], toolbarExtra }: ReportsTableProps) {
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(
@@ -36,7 +40,7 @@ export function ReportsTable({ columns, rows, defaultHiddenKeys = [] }: ReportsT
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage));
   const currentPage = Math.min(page, pageCount);
   const pageRows = paginateRows(sortReportRows(rows, direction), currentPage, perPage);
-  const expandableIds = rows.filter((row) => row.subRows?.length).map((row) => row.id);
+  const expandableIds = collectExpandableIds(rows);
   const SortIcon = direction === "asc" ? ArrowUpIcon : ArrowDownIcon;
 
   function toggleExpandAll() {
@@ -50,7 +54,8 @@ export function ReportsTable({ columns, rows, defaultHiddenKeys = [] }: ReportsT
         toggleableColumns={columns.slice(1)}
         hiddenKeys={hiddenKeys}
         onToggleColumn={(key) => setHiddenKeys(toggled(hiddenKeys, key))}
-        onToggleExpandAll={toggleExpandAll}
+        onToggleExpandAll={expandableIds.length > 0 ? toggleExpandAll : undefined}
+        leading={toolbarExtra}
       />
       <div className="overflow-x-auto">
         <table className="w-full text-left">
@@ -87,8 +92,8 @@ export function ReportsTable({ columns, rows, defaultHiddenKeys = [] }: ReportsT
                 key={row.id}
                 columns={visibleColumns}
                 row={row}
-                expanded={expandedIds.has(row.id)}
-                onToggle={() => setExpandedIds(toggled(expandedIds, row.id))}
+                expandedIds={expandedIds}
+                onToggle={(id) => setExpandedIds(toggled(expandedIds, id))}
               />
             ))}
           </tbody>

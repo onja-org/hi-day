@@ -9,10 +9,7 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { Spinner } from "@/components/Spinner";
-import { useActiveMembers } from "@/hooks/useActiveMembers";
-import { useAllMembersTimeEntries } from "@/hooks/useAllMembersTimeEntries";
-import { useCanViewOthers } from "@/hooks/useCanViewOthers";
-import { useTimeEntries } from "@/hooks/useTimeEntries";
+import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
@@ -37,26 +34,11 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
   );
   const range = preset ? getTimesheetDateRange(preset) : customRange;
 
-  // Only admins/managers get the "All" tab; everyone else only ever sees
-  // their own data. The membership list the backend returns is already
-  // limited to who the viewer's role may see, so "All" can't over-reach.
-  const canViewOthers = useCanViewOthers();
-  const membersQuery = useActiveMembers(organisationId, { enabled: canViewOthers });
-  const isAll = canViewOthers && scope === "all";
-  const ownQuery = useTimeEntries(
+  const { canViewOthers, teamNames, entries, isLoading, error } = useTimeActivityReportData(
     organisationId,
-    { from: range.from, to: range.to },
-    { enabled: !isAll },
-  );
-  const allQuery = useAllMembersTimeEntries(
-    organisationId,
-    (membersQuery.data ?? []).map((member) => member.id),
+    scope,
     range,
-    isAll && !membersQuery.isLoading,
   );
-  const isLoading = isAll ? membersQuery.isLoading || allQuery.isLoading : ownQuery.isLoading;
-  const error = isAll ? (membersQuery.error ?? allQuery.error) : ownQuery.error;
-  const entries = isAll ? (membersQuery.isLoading ? undefined : allQuery.data) : ownQuery.data;
 
   return (
     <div className="flex flex-col gap-6">
@@ -100,12 +82,18 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
         onChange={(event) => setGrouping(event.target.value as TimeActivityGrouping)}
         className="w-fit"
       >
-        {TIME_ACTIVITY_GROUPINGS.map((option) => (
+        {TIME_ACTIVITY_GROUPINGS.filter((option) => option.value !== "team" || canViewOthers).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
       </SelectField>
+
+      {grouping === "team" && (
+        <p className="text-xs text-slate-900/70 italic">
+          When grouping by team, members who belong to multiple teams may be counted more than once.
+        </p>
+      )}
 
       {isLoading && (
         <p className="flex items-center gap-2 text-slate-900">
@@ -114,7 +102,7 @@ export function TimeActivityReportPage({ organisationId }: TimeActivityReportPag
         </p>
       )}
       {error && <ErrorMessage message={error.message} />}
-      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} scope={isAll ? "all" : "me"} />}
+      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} teamNames={teamNames} />}
     </div>
   );
 }

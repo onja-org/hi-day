@@ -1,11 +1,16 @@
 import { entrySeconds } from "@/lib/entrySeconds";
-import { formatClockTime } from "@/lib/formatClockTime";
 import { formatElapsed } from "@/lib/formatElapsed";
-import { describeEntryWhen, groupEntriesBy, memberLabelOf } from "@/lib/groupEntriesBy";
+import { entryDayLabel, groupEntriesBy, memberLabelOf } from "@/lib/groupEntriesBy";
 import { splitEntrySeconds } from "@/lib/splitEntrySeconds";
 import type { ReportTableRow } from "@/types/reportTable";
-import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
+import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+
+type RowOptions = {
+  /** Skip the per-day level under project/member/team/to-do groups. */
+  sumDates: boolean;
+  teamNames: MembershipTeamNames;
+};
 
 function hours(seconds: number): string {
   return formatElapsed(seconds * 1000);
@@ -16,10 +21,16 @@ function distinct(values: (string | null)[]): string {
   return unique.length > 0 ? unique.join(", ") : "-";
 }
 
-function timeCells(entries: TimeEntryListItem[]): Record<string, string> {
+function teamsOf(entries: TimeEntryListItem[], teamNames: MembershipTeamNames): string[] {
+  return [...new Set(entries.flatMap((entry) => teamNames.get(entry.membershipId) ?? []))];
+}
+
+function entryCells(entries: TimeEntryListItem[]): Record<string, string> {
   const { tracked, manual } = splitEntrySeconds(entries);
   const paused = entries.reduce((sum, entry) => sum + entry.pausedSeconds, 0);
   return {
+    project: distinct(entries.map((entry) => entry.projectName)),
+    todo: distinct(entries.map((entry) => entry.taskName)),
     regular: hours(tracked),
     manual: hours(manual),
     total: hours(tracked + manual),
@@ -27,48 +38,113 @@ function timeCells(entries: TimeEntryListItem[]): Record<string, string> {
   };
 }
 
-function entryCells(entries: TimeEntryListItem[]): Record<string, string> {
-  return {
-    member: distinct(entries.map(memberLabelOf)),
-    project: distinct(entries.map((entry) => entry.projectName)),
-    todo: distinct(entries.map((entry) => entry.taskName)),
-    ...timeCells(entries),
-  };
+type MergedRow = {
+  key: string;
+  entries: TimeEntryListItem[];
+  /** The one team this row is for, or null when the member has none. */
+  team: string | null;
+};
+
+/**
+ * Entries merged into one row per member + project + task + team (and per
+ * day when the rows aren't already inside a single day) — a person who
+ * starts and stops the timer six times on one project in a day is one row
+ * with the summed hours, not six identical-looking ones. A member on
+ * several teams gets a row for each, so that team's hours are visible on
+ * its own. Under a team group, `onlyTeam` keeps just that group's team.
+ */
+function mergeEntries(
+  entries: TimeEntryListItem[],
+  perDay: boolean,
+  teamNames: MembershipTeamNames,
+  onlyTeam?: string,
+): MergedRow[] {
+  const merged = new Map<string, MergedRow>();
+  for (const entry of entries) {
+    const names = teamNames.get(entry.membershipId) ?? [];
+    const teams: (string | null)[] = onlyTeam
+      ? [names.length > 0 ? onlyTeam : null]
+      : names.length > 0
+        ? names
+        : [null];
+    for (const team of teams) {
+      const key = [perDay ? entryDayLabel(entry) : "", entry.membershipId, entry.projectId, entry.taskId ?? "", team ?? ""].join("|");
+      const existing = merged.get(key);
+      if (existing) existing.entries.push(entry);
+      else merged.set(key, { key, entries: [entry], team });
+    }
+  }
+  return [...merged.values()];
+}
+
+/** The merged rows under a group (or, for "None", the top-level rows themselves — only top-level rows carry `teams` for avatars; nested rows show team names as text). The first cell names who did the work — or, under a member group (whose own row already names them), the project. */
+function leafRows(
+  entries: TimeEntryListItem[],
+  path: string,
+  perDay: boolean,
+  grouping: TimeActivityGrouping,
+  teamNames: MembershipTeamNames,
+  onlyTeam: string | undefined,
+  isTopLevel: boolean,
+): ReportTableRow[] {
+  return mergeEntries(entries, perDay, teamNames, onlyTeam).map(({ key, entries: merged, team }) => {
+    const [first] = merged;
+    return {
+      id: path ? `${path}|${key}` : key,
+      sortKey: Math.min(...merged.map((entry) => new Date(entry.startedAt).getTime())),
+      cells: {
+        date: grouping === "member" ? first.projectName : memberLabelOf(first),
+        when: entryDayLabel(first),
+        ...entryCells(merged),
+        ...(isTopLevel ? {} : { team: team ?? "-" }),
+      },
+      ...(isTopLevel ? { teams: team ? [team] : [] } : {}),
+    };
+  });
 }
 
 /**
- * One row per group, each expandable into its individual entries. "None"
- * skips grouping: every entry is its own flat row. Under a day group a
- * sub-row only needs the time of day; any other grouping spans days, so
- * its sub-rows carry the date too.
+ * The report's table rows. "Date per day"/"week" go group → rows. Project,
+ * member, team and to-do go group → day → rows, or group → rows when
+ * `sumDates` is on. "None" is a flat list of rows. A group's "(n)" counts
+ * the merged rows beneath it, not raw timer sessions.
  */
 export function buildTimeActivityRows(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
+  { sumDates, teamNames }: RowOptions,
 ): ReportTableRow[] {
-  return groupEntriesBy(entries, grouping).map((group) => {
-    if (grouping === "none") {
-      return {
-        id: group.id,
-        sortKey: group.sortKey,
-        cells: { date: group.label, ...entryCells(group.entries) },
-      };
-    }
+  if (grouping === "none") {
+    return leafRows(entries, "", true, grouping, teamNames, undefined, true);
+  }
+
+  const splitsByDay = grouping !== "day" && grouping !== "week" && !sumDates;
+  // Rows that sit directly under a single day don't need the day in their key.
+  const leavesPerDay = grouping !== "day" && !splitsByDay;
+
+  return groupEntriesBy(entries, grouping, teamNames).map((group) => {
+    const onlyTeam = grouping === "team" ? group.label : undefined;
+    const days = splitsByDay ? groupEntriesBy(group.entries, "day") : [];
+    const count = splitsByDay
+      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam).length, 0)
+      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam).length;
     return {
       id: group.id,
       sortKey: group.sortKey,
-      cells: { date: `${group.label} (${group.entries.length})`, ...entryCells(group.entries) },
-      subRows: group.entries.map((entry) => ({
-        id: entry.id,
-        sortKey: new Date(entry.startedAt).getTime(),
-        cells: {
-          date:
-            grouping === "day"
-              ? `${formatClockTime(entry.startedAt)} – ${entry.endedAt ? formatClockTime(entry.endedAt) : "now"}`
-              : describeEntryWhen(entry),
-          ...entryCells([entry]),
-        },
-      })),
+      cells: { date: `${group.label} (${count})`, ...entryCells(group.entries) },
+      teams: teamsOf(group.entries, teamNames),
+      subRows: splitsByDay
+        ? days.map((day) => ({
+            id: `${group.id}|${day.id}`,
+            sortKey: day.sortKey,
+            cells: {
+              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam).length})`,
+              ...entryCells(day.entries),
+              team: teamsOf(day.entries, teamNames).join(", ") || "-",
+            },
+            subRows: leafRows(day.entries, `${group.id}|${day.id}`, false, grouping, teamNames, onlyTeam, false),
+          }))
+        : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false),
     };
   });
 }
