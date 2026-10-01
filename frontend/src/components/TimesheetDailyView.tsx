@@ -3,6 +3,7 @@
 import { isSameDay } from "date-fns";
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import type { ReactNode } from "react";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { DATE_RANGE_PRESET_LABELS } from "@/components/DateRangePresetList";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -13,6 +14,11 @@ import { TimesheetTable } from "@/components/TimesheetTable";
 
 type TimesheetDailyViewProps = {
   organisationId: string;
+  /** The timezone selector, rendered beside the date range — the two
+   * together decide which days the page is showing. */
+  timezoneSelect: ReactNode;
+  /** Which zone the entries are read in; decides their day and clock time. */
+  zone: string;
   isOwnTimesheet: boolean;
   datePreset: DateRangePreset | null;
   defaultDatePreset: DateRangePreset;
@@ -26,6 +32,8 @@ type TimesheetDailyViewProps = {
 
 export function TimesheetDailyView({
   organisationId,
+  timezoneSelect,
+  zone,
   isOwnTimesheet,
   datePreset,
   defaultDatePreset,
@@ -42,14 +50,17 @@ export function TimesheetDailyView({
 
   return (
     <>
-      <DateRangePicker
-        id="timesheet-date-range"
-        label="Date range"
-        value={range}
-        preset={datePreset}
-        defaultPreset={defaultDatePreset}
-        onChange={onDateRangeChange}
-      />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangePicker
+          id="timesheet-date-range"
+          label="Date range"
+          value={range}
+          preset={datePreset}
+          defaultPreset={defaultDatePreset}
+          onChange={onDateRangeChange}
+        />
+        {timezoneSelect}
+      </div>
 
       {isLoading && (
         <p className="flex items-center gap-2 text-slate-900">
@@ -68,6 +79,7 @@ export function TimesheetDailyView({
         <>
           <TimesheetSummaryTiles
             entries={entries}
+            zone={zone}
             isSingleDay={isSameDay(range.from, range.to)}
           />
 
@@ -83,6 +95,7 @@ export function TimesheetDailyView({
             <TimesheetTable
               organisationId={organisationId}
               entries={entries}
+              zone={zone}
               isOwnTimesheet={isOwnTimesheet}
               emptyPeriodLabel={emptyPeriodLabel}
             />

@@ -40,6 +40,8 @@ export interface OrganisationProfile {
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
   workingHoursPerDay: number;
+  /** Falls back to UTC, the value every Organisation was created with. */
+  timezone: string;
   userId: string;
 }
 
@@ -53,6 +55,7 @@ interface OrganisationSettings {
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
   workingHoursPerDay?: number;
+  timezone?: string;
 }
 
 export interface TeamOverviewMember {
@@ -250,6 +253,7 @@ export class OrganisationsService {
       ...(dto.workingHoursPerDay !== undefined
         ? { workingHoursPerDay: dto.workingHoursPerDay }
         : {}),
+      ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
     };
 
     await this.organisations.save(organisation);
@@ -353,6 +357,7 @@ export class OrganisationsService {
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
       workingHoursPerDay:
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
+      timezone: settings.timezone ?? DEFAULT_TIMEZONE,
       userId,
     };
   }

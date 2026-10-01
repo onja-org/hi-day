@@ -10,6 +10,8 @@ import { TimesheetEntryRow } from "./TimesheetEntryRow";
 type TimesheetDayGroupSectionProps = {
   organisationId: string;
   group: TimeEntryDayGroup;
+  /** Passed to each row for its clock times. */
+  zone: string;
   onEdit: (entry: TimeEntryListItem) => void;
   selectedIds: Set<string>;
   onToggleSelected: (entryId: string) => void;
@@ -22,6 +24,7 @@ type TimesheetDayGroupSectionProps = {
 export function TimesheetDayGroupSection({
   organisationId,
   group,
+  zone,
   onEdit,
   selectedIds,
   onToggleSelected,
@@ -92,6 +95,7 @@ export function TimesheetDayGroupSection({
           key={entry.id}
           organisationId={organisationId}
           entry={entry}
+          zone={zone}
           onEdit={onEdit}
           isSelected={selectedIds.has(entry.id)}
           onToggleSelected={onToggleSelected}

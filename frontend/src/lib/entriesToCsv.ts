@@ -1,24 +1,43 @@
 import { formatElapsed } from "@/lib/formatElapsed";
+import { detectTimezone } from "@/lib/timezone";
 import { toCsvString } from "@/lib/toCsvString";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
-const HEADER = ["Date", "Project", "Task", "Start", "End", "Duration", "Paused (min)", "Source"];
+const HEADER = [
+  "Date",
+  "Project",
+  "Task",
+  "Start",
+  "End",
+  "Duration",
+  "Paused (min)",
+  "Source",
+  // Named in the file, because the same entry reads as a different time —
+  // sometimes a different day — depending on where it is read.
+  "Time zone",
+];
 
-function formatDateTime(iso: string | null): string {
+function formatDateTime(iso: string | null, zone: string): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString([], { timeZone: zone });
 }
 
-export function entriesToCsv(entries: TimeEntryListItem[]): string {
+/** Exported in the zone the page was being read in, so the file and the
+ * screen it came from agree. */
+export function entriesToCsv(
+  entries: TimeEntryListItem[],
+  zone: string = detectTimezone(),
+): string {
   const rows = entries.map((entry) => [
-    new Date(entry.startedAt).toLocaleDateString(),
+    new Date(entry.startedAt).toLocaleDateString([], { timeZone: zone }),
     entry.projectName,
     entry.taskName ?? "",
-    formatDateTime(entry.startedAt),
-    entry.endedAt ? formatDateTime(entry.endedAt) : "In progress",
+    formatDateTime(entry.startedAt, zone),
+    entry.endedAt ? formatDateTime(entry.endedAt, zone) : "In progress",
     entry.durationSeconds === null ? "" : formatElapsed(entry.durationSeconds * 1000),
     String(Math.round(entry.pausedSeconds / 60)),
     entry.source,
+    zone,
   ]);
 
   return toCsvString(HEADER, rows);

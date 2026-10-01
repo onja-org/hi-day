@@ -26,6 +26,9 @@ export interface ActiveMemberSummary {
   status: MembershipStatus;
   joinedAt: Date;
   disclosureRegion: string | null;
+  /** Their own IANA zone, null until a client has reported one — lets the
+   * timesheet offer "read this in their local time" (see `User.timezone`). */
+  timezone: string | null;
 }
 
 /** A Members-page row — list-only, since `update()` doesn't load the
@@ -413,6 +416,7 @@ export class MembershipsService {
       userId: membership.userId,
       email: membership.user.email,
       name: membership.user.name,
+      timezone: membership.user.timezone,
       role: membership.role,
       teamIds: (membership.teamMemberships ?? []).map(
         (teamMembership) => teamMembership.teamId,

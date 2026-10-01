@@ -24,6 +24,10 @@ import { TimeEntryDetailModal } from "./TimeEntryDetailModal";
 type TimesheetCalendarGridProps = {
   organisationId: string;
   entries: TimeEntryListItem[];
+  /** Which zone the grid reads in. Events are shifted to that zone's wall
+   * clock before being handed to react-big-calendar, which lays out by a
+   * Date's local time — see `asZonedWallClock`. */
+  zone: string;
   start: Date;
   now: Date;
 };
@@ -65,13 +69,14 @@ function CalendarEventContent({ event }: EventProps<CalendarEvent>) {
 export function TimesheetCalendarGrid({
   organisationId,
   entries,
+  zone,
   start,
   now,
 }: TimesheetCalendarGridProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const events = useMemo(
-    () => buildCalendarEvents(entries, now),
-    [entries, now],
+    () => buildCalendarEvents(entries, now, zone),
+    [entries, now, zone],
   );
   // Resolved from the live `entries` rather than stored, so the card can't
   // outlive its entry — after an edit the list refetches and this picks up

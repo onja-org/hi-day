@@ -59,6 +59,8 @@ export interface UserProfile {
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
+  /** Null until a client has reported one — see `User.timezone`. */
+  timezone: string | null;
 }
 
 @Injectable()
@@ -478,6 +480,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       avatarUrl: user.avatarUrl,
+      timezone: user.timezone,
     };
   }
 
@@ -497,6 +500,7 @@ export class AuthService {
       ...(dto.avatarUrl !== undefined
         ? { avatarUrl: dto.avatarUrl === '' ? null : dto.avatarUrl }
         : {}),
+      ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
     });
 
     return this.getProfile(userId);

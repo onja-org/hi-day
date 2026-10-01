@@ -181,6 +181,7 @@ describe('OrganisationsService', () => {
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
         workingHoursPerDay: 8,
+        timezone: 'UTC',
         userId: 'user-1',
       });
     });

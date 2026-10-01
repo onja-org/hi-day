@@ -1,4 +1,5 @@
 import { entrySeconds } from "./entrySeconds";
+import { dateKeyInZone, detectTimezone } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type TimeEntryDayGroup = {
@@ -7,14 +8,6 @@ export type TimeEntryDayGroup = {
   entries: TimeEntryListItem[];
   totalSeconds: number;
 };
-
-function toDateKey(isoString: string): string {
-  const date = new Date(isoString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 /**
  * "Today" for the current day, and the real dated label for every other —
@@ -26,6 +19,8 @@ function labelFor(dateKey: string, todayKey: string): string {
   if (dateKey === todayKey) {
     return "Today";
   }
+  // Built from the key's own numbers rather than by parsing it as an
+  // instant, so the label never drifts a day from the group it heads.
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString([], {
     weekday: "short",
@@ -40,6 +35,10 @@ function labelFor(dateKey: string, todayKey: string): string {
  * first appear (the API already returns them most-recent-first, so this
  * preserves that).
  *
+ * `zone` decides which calendar day each entry falls on, and what counts as
+ * "Today" — defaulting to the viewer's own so callers that have no timezone
+ * choice behave exactly as before.
+ *
  * `elapsedNow` is deliberately not defaulted to the current time: it's the
  * clock reading a still-running entry's accrued time is measured against,
  * and there isn't one during server rendering — passing it in keeps day
@@ -49,16 +48,20 @@ function labelFor(dateKey: string, todayKey: string): string {
 export function groupTimeEntriesByDay(
   entries: TimeEntryListItem[],
   elapsedNow: Date | null = null,
+  zone: string = detectTimezone(),
 ): TimeEntryDayGroup[] {
   const groups: TimeEntryDayGroup[] = [];
   const groupsByKey = new Map<string, TimeEntryDayGroup>();
   // Safe to read the clock here despite this running during render: the
   // table and tiles only call this once entries have loaded, which is always
   // client-side, so there is no server-rendered label to disagree with.
-  const todayKey = toDateKey(new Date().toISOString());
+  const todayKey = dateKeyInZone(new Date(), zone);
 
   for (const entry of entries) {
-    const dateKey = toDateKey(entry.startedAt);
+    // Which day an entry belongs to is a property of the zone it is read
+    // in, not of the entry — the same instant is Monday in Nairobi and
+    // Sunday in New York.
+    const dateKey = dateKeyInZone(entry.startedAt, zone);
     let group = groupsByKey.get(dateKey);
     if (!group) {
       group = { dateKey, label: labelFor(dateKey, todayKey), entries: [], totalSeconds: 0 };

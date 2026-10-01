@@ -8,8 +8,11 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useReportTimezone } from "@/hooks/useReportTimezone";
+import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import type { TimezoneSource } from "@/lib/timezone";
 import {
   EMPTY_TIMESHEET_FILTERS,
   countActiveFilters,
@@ -31,6 +34,8 @@ import { TimesheetWeeklyMatrix } from "@/components/TimesheetWeeklyMatrix";
 import { WeekNavigator } from "@/components/WeekNavigator";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { memberOptions } from "@/components/TimesheetFilterPanel";
+import { TimezoneSelect } from "@/components/TimezoneSelect";
+import type { TimezoneOption } from "@/components/TimezoneSelect";
 
 type TimeEntriesPageContentProps = {
   organisationId: string;
@@ -51,6 +56,9 @@ export function TimeEntriesPageContent({
 }: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // Which of the three zones the timesheet is *read* in. Never changes a
+  // stored entry — only the clock it is shown against.
+  const [timezoneSource, setTimezoneSource] = useState<TimezoneSource>("viewer");
   const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
   // "" means "my own timesheet" — the default for everyone, including
   // admins/managers.
@@ -70,6 +78,7 @@ export function TimeEntriesPageContent({
   const isAdmin = organisationQuery.data?.role === "admin";
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();
+  useReportTimezone(profileQuery.data?.timezone);
   const myProjectsQuery = useMyProjects(organisationId);
   const ownLabel = profileQuery.data?.name ?? profileQuery.data?.email ?? "Me";
   const otherMembers = (membersQuery.data ?? []).filter(
@@ -78,9 +87,47 @@ export function TimeEntriesPageContent({
 
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
+  // From the browser rather than their stored value: it is where they are
+  // right now, which is what "my time zone" means. Null until hydration —
+  // the server's zone is not theirs.
+  const viewerZone = useViewerTimezone();
+  const viewedMember = otherMembers.find(
+    (member) => member.id === viewingMembershipId,
+  );
+  const timezoneOptions: TimezoneOption[] = [
+    {
+      source: "member",
+      heading: "Member's time zone",
+      // Viewing your own timesheet makes the member you — no separate zone
+      // to offer, and none to be missing.
+      zone: isOwnTimesheet
+        ? viewerZone
+        : (viewedMember?.timezone ?? null),
+    },
+    { source: "viewer", heading: "My time zone", zone: viewerZone },
+    {
+      source: "organisation",
+      heading: organisationQuery.data?.name ?? "Organisation",
+      zone: organisationQuery.data?.timezone ?? null,
+    },
+  ];
+  // Switching to a member who has never signed in would otherwise leave the
+  // selector pointing at a source with no zone — showing their name while
+  // reading the viewer's clock. Falling back to "viewer" keeps the label and
+  // the times telling the same story.
+  const activeSource: TimezoneSource =
+    timezoneOptions.find((option) => option.source === timezoneSource)?.zone ==
+    null
+      ? "viewer"
+      : timezoneSource;
+  // UTC is only ever reached before hydration, when no entries are on screen.
+  const activeZone =
+    timezoneOptions.find((option) => option.source === activeSource)?.zone ??
+    "UTC";
+
 
   const dailyRange = datePreset
-    ? getTimesheetDateRange(datePreset)
+    ? getTimesheetDateRange(datePreset, new Date(), activeZone)
     : customRange;
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
@@ -89,7 +136,11 @@ export function TimeEntriesPageContent({
   );
 
   const now = new Date();
-  const { start: weekStart, end: weekEnd } = getWeekRange(now, weekOffset);
+  const { start: weekStart, end: weekEnd } = getWeekRange(
+    now,
+    weekOffset,
+    activeZone,
+  );
   const weekEntriesQuery = useTimeEntries(
     organisationId,
     { membershipId, from: weekStart, to: weekEnd },
@@ -113,6 +164,7 @@ export function TimeEntriesPageContent({
     (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
   );
   const activeFilterCount = countActiveFilters(filters);
+
 
   const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
   const activeFilenameBase =
@@ -169,7 +221,7 @@ export function TimeEntriesPageContent({
             )}
           </button>
           <ExportButtons
-            csv={entriesToCsv(activeEntries ?? [])}
+            csv={entriesToCsv(activeEntries ?? [], activeZone)}
             filenameBase={activeFilenameBase}
             disabled={(activeEntries ?? []).length === 0}
           />
@@ -203,6 +255,14 @@ export function TimeEntriesPageContent({
       {viewMode === "daily" && (
         <TimesheetDailyView
           organisationId={organisationId}
+          zone={activeZone}
+          timezoneSelect={
+            <TimezoneSelect
+              options={timezoneOptions}
+              value={activeSource}
+              onChange={setTimezoneSource}
+            />
+          }
           isOwnTimesheet={isOwnTimesheet}
           datePreset={datePreset}
           defaultDatePreset={DEFAULT_DATE_PRESET}
@@ -242,13 +302,18 @@ export function TimeEntriesPageContent({
           )}
 
           {weekEntries && viewMode === "weekly" && (
-            <TimesheetWeeklyMatrix entries={weekEntries} start={weekStart} />
+            <TimesheetWeeklyMatrix
+              entries={weekEntries}
+              start={weekStart}
+              zone={activeZone}
+            />
           )}
 
           {weekEntries && viewMode === "calendar" && (
             <TimesheetCalendarGrid
               organisationId={organisationId}
               entries={weekEntries}
+              zone={activeZone}
               start={weekStart}
               now={now}
             />

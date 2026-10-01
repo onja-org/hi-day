@@ -8,7 +8,9 @@ import {
   Max,
   Min,
   MinLength,
+  Validate,
 } from 'class-validator';
+import { IsIanaTimezone } from '../../auth/dto/is-iana-timezone.validator';
 import { IDLE_HANDLING_VALUES } from '../idle-policy';
 import type { IdleHandling } from '../idle-policy';
 
@@ -59,4 +61,13 @@ export class UpdateOrganisationDto {
   @Min(1)
   @Max(24)
   workingHoursPerDay?: number;
+
+  /** The Organisation's own IANA zone — one of the three the timesheet's
+   * timezone selector offers, alongside the viewer's and the viewed
+   * member's. Existed as a settings key from the start but was fixed at
+   * 'UTC' and read by nothing until then. */
+  @IsOptional()
+  @IsString()
+  @Validate(IsIanaTimezone)
+  timezone?: string;
 }

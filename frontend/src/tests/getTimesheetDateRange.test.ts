@@ -68,4 +68,58 @@ describe("getTimesheetDateRange", () => {
 
     expect(range.from.getDate()).toBe(today.getDate());
   });
+
+  describe("in a chosen timezone", () => {
+    const NAIROBI = "Africa/Nairobi"; // UTC+3
+    const NEW_YORK = "America/New_York"; // UTC-5 in January
+
+    // 22:30 UTC is already tomorrow in Nairobi, so "today" is a different
+    // day there than in New York — the whole reason the range needs a zone.
+    const lateEvening = new Date("2026-01-07T22:30:00.000Z");
+
+    it("resolves 'today' to the day it is in that zone", () => {
+      const nairobi = getTimesheetDateRange("today", lateEvening, NAIROBI);
+      const newYork = getTimesheetDateRange("today", lateEvening, NEW_YORK);
+
+      expect(nairobi.from.toISOString()).toBe("2026-01-07T21:00:00.000Z");
+      expect(newYork.from.toISOString()).toBe("2026-01-07T05:00:00.000Z");
+    });
+
+    it("ends on the last millisecond of that zone's day", () => {
+      const range = getTimesheetDateRange("today", lateEvening, NAIROBI);
+
+      expect(range.to.toISOString()).toBe("2026-01-08T20:59:59.999Z");
+    });
+
+    it("spans seven of that zone's days for 'last 7 days'", () => {
+      const range = getTimesheetDateRange("last_7_days", lateEvening, NAIROBI);
+
+      expect(range.from.toISOString()).toBe("2026-01-01T21:00:00.000Z");
+    });
+
+    // The day the clocks go forward is 23 hours long, so a range ending on
+    // it is an hour shorter than a naive calculation would give.
+    it("respects a short day at a daylight-saving transition", () => {
+      const range = getTimesheetDateRange(
+        "today",
+        new Date("2026-03-08T12:00:00.000Z"),
+        NEW_YORK,
+      );
+
+      expect(range.from.toISOString()).toBe("2026-03-08T05:00:00.000Z");
+      // The 9th begins at 04:00Z, not 05:00Z, because the clocks went
+      // forward — so the 8th ends an hour "early" and is 23 hours long.
+      expect(range.to.toISOString()).toBe("2026-03-09T03:59:59.999Z");
+      expect(
+        Math.round((range.to.getTime() + 1 - range.from.getTime()) / 3_600_000),
+      ).toBe(23);
+    });
+
+    it("starts last month on the first of that month in the chosen zone", () => {
+      const range = getTimesheetDateRange("last_month", lateEvening, NAIROBI);
+
+      expect(range.from.toISOString()).toBe("2025-11-30T21:00:00.000Z");
+      expect(range.to.toISOString()).toBe("2025-12-31T20:59:59.999Z");
+    });
+  });
 });

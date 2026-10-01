@@ -31,6 +31,16 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   passwordHash: string | null;
 
+  /**
+   * The person's own IANA timezone, recorded from whichever client they last
+   * signed in from rather than asked for — a setting nobody fills in is a
+   * setting nobody has. Null until a client has reported one, which is why
+   * the timesheet's timezone selector can say "not recorded yet" instead of
+   * guessing.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  timezone: string | null;
+
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   emailVerifiedAt: Date | null;
 

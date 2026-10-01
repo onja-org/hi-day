@@ -1,4 +1,5 @@
 import type { ProjectColour } from "@/types/project";
+import { dateKeyInZone, detectTimezone } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type ProjectDayMatrixRow = {
@@ -17,15 +18,29 @@ export type ProjectDayMatrix = {
 
 const DAYS_PER_WEEK = 7;
 
-function dayIndexOf(entry: TimeEntryListItem, weekStart: Date): number {
-  const entryDayStart = new Date(entry.startedAt);
-  const fromUtc = Date.UTC(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
-  const toUtc = Date.UTC(
-    entryDayStart.getFullYear(),
-    entryDayStart.getMonth(),
-    entryDayStart.getDate(),
+/**
+ * Which column of the week an entry belongs in, counted in calendar days of
+ * `zone` — not in elapsed hours, which would be off by one across a
+ * daylight-saving change, and not in the viewer's own days, which can put
+ * the entry in a different column than the Daily view groups it under.
+ */
+function dayIndexOf(
+  entry: TimeEntryListItem,
+  weekStart: Date,
+  zone: string,
+): number {
+  const fromKey = dateKeyInZone(weekStart, zone);
+  const toKey = dateKeyInZone(entry.startedAt, zone);
+  return Math.round(
+    (keyAsUtc(toKey) - keyAsUtc(fromKey)) / 86_400_000,
   );
-  return Math.round((toUtc - fromUtc) / 86_400_000);
+}
+
+/** A date key read as a plain calendar date, so two keys can be subtracted
+ * without any zone's offset entering the arithmetic. */
+function keyAsUtc(dateKey: string): number {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return Date.UTC(year, month - 1, day);
 }
 
 /**
@@ -38,13 +53,14 @@ function dayIndexOf(entry: TimeEntryListItem, weekStart: Date): number {
 export function buildProjectDayMatrix(
   entries: TimeEntryListItem[],
   weekStart: Date,
+  zone: string = detectTimezone(),
 ): ProjectDayMatrix {
   const rowsByProject = new Map<string, ProjectDayMatrixRow>();
   const dailyTotals = new Array<number>(DAYS_PER_WEEK).fill(0);
 
   for (const entry of entries) {
     if (entry.durationSeconds === null) continue;
-    const dayIndex = dayIndexOf(entry, weekStart);
+    const dayIndex = dayIndexOf(entry, weekStart, zone);
     if (dayIndex < 0 || dayIndex >= DAYS_PER_WEEK) continue;
 
     let row = rowsByProject.get(entry.projectId);

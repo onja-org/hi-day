@@ -10,16 +10,18 @@ import { DashboardKpiTile } from "./DashboardKpiTile";
 
 type TimesheetSummaryTilesProps = {
   entries: TimeEntryListItem[];
+  /** Day totals depend on where the day boundaries fall. */
+  zone: string;
   /** True when the viewed range covers one day — a daily-hours target only
    * makes sense as a comparison then; "12h of 8h target" for a whole
    * week/month would be misleading. */
   isSingleDay: boolean;
 };
 
-export function TimesheetSummaryTiles({ entries, isSingleDay }: TimesheetSummaryTilesProps) {
+export function TimesheetSummaryTiles({ entries, zone, isSingleDay }: TimesheetSummaryTilesProps) {
   const organisationQuery = useCurrentOrganisation();
   const now = useNow(HALF_HOUR_MS);
-  const dayGroups = groupTimeEntriesByDay(entries, now);
+  const dayGroups = groupTimeEntriesByDay(entries, now, zone);
   const totalSeconds = dayGroups.reduce((sum, group) => sum + group.totalSeconds, 0);
   const averageSecondsPerDay =
     dayGroups.length > 0 ? totalSeconds / dayGroups.length : 0;
