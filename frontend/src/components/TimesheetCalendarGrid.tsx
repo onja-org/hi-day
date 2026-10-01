@@ -13,6 +13,7 @@ import {
   buildCalendarEvents,
   type CalendarEvent,
 } from "@/lib/buildCalendarEvents";
+import { asZonedWallClock } from "@/lib/timezone";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import {
@@ -24,6 +25,9 @@ import { TimeEntryDetailModal } from "./TimeEntryDetailModal";
 type TimesheetCalendarGridProps = {
   organisationId: string;
   entries: TimeEntryListItem[];
+  /** Events are shifted to this zone's wall clock for layout — see
+   * `asZonedWallClock`. */
+  zone: string;
   start: Date;
   now: Date;
 };
@@ -65,13 +69,14 @@ function CalendarEventContent({ event }: EventProps<CalendarEvent>) {
 export function TimesheetCalendarGrid({
   organisationId,
   entries,
+  zone,
   start,
   now,
 }: TimesheetCalendarGridProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const events = useMemo(
-    () => buildCalendarEvents(entries, now),
-    [entries, now],
+    () => buildCalendarEvents(entries, now, zone),
+    [entries, now, zone],
   );
   // Resolved from the live `entries` rather than stored, so the card can't
   // outlive its entry — after an edit the list refetches and this picks up
@@ -85,8 +90,8 @@ export function TimesheetCalendarGrid({
         <Calendar
           localizer={localizer}
           events={events}
-          date={start}
-          getNow={() => now}
+          date={asZonedWallClock(start, zone)}
+          getNow={() => asZonedWallClock(now, zone)}
           min={GRID_START_TIME}
           view="week"
           views={["week"]}

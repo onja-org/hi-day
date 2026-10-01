@@ -40,6 +40,8 @@ export interface OrganisationProfile {
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
   workingHoursPerDay: number;
+  /** Falls back to UTC, the value every Organisation was created with. */
+  timezone: string;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -59,6 +61,7 @@ interface OrganisationSettings {
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
   workingHoursPerDay?: number;
+  timezone?: string;
 }
 
 export interface TeamOverviewMember {
@@ -257,6 +260,7 @@ export class OrganisationsService {
       ...(dto.workingHoursPerDay !== undefined
         ? { workingHoursPerDay: dto.workingHoursPerDay }
         : {}),
+      ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
     };
 
     await this.organisations.save(organisation);
@@ -360,6 +364,7 @@ export class OrganisationsService {
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
       workingHoursPerDay:
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
+      timezone: settings.timezone ?? DEFAULT_TIMEZONE,
       userId,
       isOwner: organisation.ownerUserId === userId,
       deletionScheduledFor:

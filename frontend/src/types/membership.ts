@@ -15,6 +15,8 @@ export type ActiveMember = {
   joinedAt: string;
   /** Which disclosure/consent text this person sees — see CONTEXT.md's Disclosure region entry. `null` means the org's region-less default. */
   disclosureRegion: string | null;
+  /** Their own IANA zone; null until a client has reported one. */
+  timezone: string | null;
 };
 
 /** A Members-page row — see the backend's ActiveMemberListItem. */

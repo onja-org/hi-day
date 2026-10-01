@@ -120,6 +120,29 @@ describe("groupTimeEntriesByDay", () => {
     expect(groupTimeEntriesByDay(entries)[0].label).toContain("2026");
   });
 
+  it("groups an entry under the day it falls on in the chosen zone", () => {
+    const lateEvening = makeEntry({
+      startedAt: "2026-01-05T22:30:00.000Z",
+      endedAt: "2026-01-05T23:00:00.000Z",
+    });
+
+    const nairobi = groupTimeEntriesByDay([lateEvening], null, "Africa/Nairobi");
+    const newYork = groupTimeEntriesByDay([lateEvening], null, "America/New_York");
+
+    expect(nairobi[0].dateKey).toBe("2026-01-06");
+    expect(newYork[0].dateKey).toBe("2026-01-05");
+  });
+
+  it("splits one day's entries across two groups when the zone moves the boundary", () => {
+    const entries = [
+      makeEntry({ id: "before", startedAt: "2026-01-05T20:00:00.000Z" }),
+      makeEntry({ id: "after", startedAt: "2026-01-05T22:30:00.000Z" }),
+    ];
+
+    expect(groupTimeEntriesByDay(entries, null, "America/New_York")).toHaveLength(1);
+    expect(groupTimeEntriesByDay(entries, null, "Africa/Nairobi")).toHaveLength(2);
+  });
+
   it("returns an empty array for no entries", () => {
     expect(groupTimeEntriesByDay([])).toEqual([]);
   });

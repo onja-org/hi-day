@@ -1,10 +1,11 @@
 "use client";
 
 import { HALF_HOUR_MS, useNow } from "@/hooks/useNow";
-import { formatClockTime } from "@/lib/formatClockTime";
+import { formatTimeInZone } from "@/lib/timezone";
 
 type RunningEntryTimeRangeProps = {
   startedAt: string;
+  zone: string;
 };
 
 /**
@@ -17,9 +18,12 @@ type RunningEntryTimeRangeProps = {
  * running entry per Membership — instead of every row holding a timer it
  * would never use.
  */
-export function RunningEntryTimeRange({ startedAt }: RunningEntryTimeRangeProps) {
+export function RunningEntryTimeRange({
+  startedAt,
+  zone,
+}: RunningEntryTimeRangeProps) {
   const now = useNow(HALF_HOUR_MS);
-  const start = formatClockTime(startedAt);
+  const start = formatTimeInZone(startedAt, zone);
 
   // First paint (and the server's) has no clock reading — see `useNow`.
   // Showing the start alone beats a placeholder that shifts the row's width
@@ -28,5 +32,5 @@ export function RunningEntryTimeRange({ startedAt }: RunningEntryTimeRangeProps)
     return <>{start}</>;
   }
 
-  return <>{`${start} – ${formatClockTime(now)}`}</>;
+  return <>{`${start} – ${formatTimeInZone(now, zone)}`}</>;
 }

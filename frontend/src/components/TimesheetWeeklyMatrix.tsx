@@ -9,6 +9,7 @@ import { ProjectColourBadge } from "./ProjectColourBadge";
 type TimesheetWeeklyMatrixProps = {
   entries: TimeEntryListItem[];
   start: Date;
+  zone: string;
 };
 
 const DAY_LABEL_FORMAT: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric" };
@@ -16,8 +17,12 @@ const DAY_LABEL_FORMAT: Intl.DateTimeFormatOptions = { weekday: "short", day: "n
 /** Project × day-of-week totals for one week, matching the Weekly tab of
  * Hubstaff's own "View & edit timesheets" — reimagined with only the columns
  * this app can back with real data (no fabricated Idle/Manual columns). */
-export function TimesheetWeeklyMatrix({ entries, start }: TimesheetWeeklyMatrixProps) {
-  const matrix = buildProjectDayMatrix(entries, start);
+export function TimesheetWeeklyMatrix({
+  entries,
+  start,
+  zone,
+}: TimesheetWeeklyMatrixProps) {
+  const matrix = buildProjectDayMatrix(entries, start, zone);
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(start);
     date.setDate(date.getDate() + index);
@@ -32,7 +37,7 @@ export function TimesheetWeeklyMatrix({ entries, start }: TimesheetWeeklyMatrixP
             <th className="px-3 py-2 font-medium">Project</th>
             {days.map((day) => (
               <th key={day.toISOString()} className="px-3 py-2 text-right font-medium">
-                {day.toLocaleDateString([], DAY_LABEL_FORMAT)}
+                {day.toLocaleDateString([], { ...DAY_LABEL_FORMAT, timeZone: zone })}
               </th>
             ))}
             <th className="px-3 py-2 text-right font-medium">Total</th>

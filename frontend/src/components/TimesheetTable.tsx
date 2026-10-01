@@ -13,6 +13,7 @@ type TimesheetTableProps = {
   entries: TimeEntryListItem[];
   /** True when viewing the caller's own timesheet — only changes the empty-state copy. */
   isOwnTimesheet: boolean;
+  zone: string;
   /** The period named in the empty-state copy ("for <label>"). Defaults to "today". */
   emptyPeriodLabel?: string;
 };
@@ -21,6 +22,7 @@ export function TimesheetTable({
   organisationId,
   entries,
   isOwnTimesheet,
+  zone,
   emptyPeriodLabel = "today",
 }: TimesheetTableProps) {
   const [editingEntry, setEditingEntry] = useState<TimeEntryListItem | null>(null);
@@ -62,7 +64,7 @@ export function TimesheetTable({
     );
   }
 
-  const dayGroups = groupTimeEntriesByDay(entries, now);
+  const dayGroups = groupTimeEntriesByDay(entries, now, zone);
 
   // Ticked rows can vanish from under the selection (deleted from their own
   // menu, filtered out by a date change), so the batch action only ever sees
@@ -90,6 +92,7 @@ export function TimesheetTable({
               key={group.dateKey}
               organisationId={organisationId}
               group={group}
+            zone={zone}
               onEdit={setEditingEntry}
               selectedIds={selectedIds}
               onToggleSelected={toggleSelected}

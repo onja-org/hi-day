@@ -1,58 +1,63 @@
-import {
-  endOfDay,
-  endOfMonth,
-  endOfWeek,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-  subDays,
-  subMonths,
-  subWeeks,
-} from "date-fns";
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
+import {
+  addDaysToKey,
+  dateKeyInZone,
+  detectTimezone,
+  endOfDayInZone,
+  endOfMonthKey,
+  endOfWeekKey,
+  startOfDayInZone,
+  startOfMonthKey,
+  startOfWeekKey,
+  subMonthsFromKey,
+} from "./timezone";
 
-// Monday-start, matching the date picker's calendar grid and `getWeekRange`.
-const WEEK_OPTIONS = { weekStartsOn: 1 } as const;
+/** The calendar days a preset covers. Zone-free — a preset names days. */
+function keysFor(preset: DateRangePreset, todayKey: string): [string, string] {
+  switch (preset) {
+    case "today":
+      return [todayKey, todayKey];
+    case "yesterday": {
+      const yesterday = addDaysToKey(todayKey, -1);
+      return [yesterday, yesterday];
+    }
+    case "last_7_days":
+      return [addDaysToKey(todayKey, -6), todayKey];
+    case "last_week": {
+      const inLastWeek = addDaysToKey(todayKey, -7);
+      return [startOfWeekKey(inLastWeek), endOfWeekKey(inLastWeek)];
+    }
+    case "last_2_weeks":
+      return [
+        startOfWeekKey(addDaysToKey(todayKey, -14)),
+        endOfWeekKey(addDaysToKey(todayKey, -7)),
+      ];
+    case "this_month":
+      return [startOfMonthKey(todayKey), todayKey];
+    case "last_month": {
+      const inLastMonth = subMonthsFromKey(todayKey, 1);
+      return [startOfMonthKey(inLastMonth), endOfMonthKey(inLastMonth)];
+    }
+  }
+}
 
 /**
- * Resolves a preset into a `{from, to}` instant range in the *viewer's*
- * local timezone (not UTC) — "today" means the caller's own calendar day,
- * matching how a person entering/reviewing hours actually thinks about
- * dates. "Last week"/"last 2 weeks"/"last month" are whole calendar
- * periods before the current one; the others run up to the end of today.
+ * Resolves a preset into a `{from, to}` instant range, its calendar days
+ * read in `zone` (the viewer's by default).
+ *
+ * The arithmetic runs on date keys and becomes instants only at the end,
+ * which is what respects a day the clocks change being 23 or 25 hours.
  */
 export function getTimesheetDateRange(
   preset: DateRangePreset,
   now: Date = new Date(),
+  zone: string = detectTimezone(),
 ): DateRange {
-  const todayEnd = endOfDay(now);
-
-  switch (preset) {
-    case "today":
-      return { from: startOfDay(now), to: todayEnd };
-    case "yesterday": {
-      const yesterday = subDays(now, 1);
-      return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
-    }
-    case "last_7_days":
-      return { from: startOfDay(subDays(now, 6)), to: todayEnd };
-    case "last_week": {
-      const lastWeek = subWeeks(now, 1);
-      return {
-        from: startOfWeek(lastWeek, WEEK_OPTIONS),
-        to: endOfWeek(lastWeek, WEEK_OPTIONS),
-      };
-    }
-    case "last_2_weeks":
-      return {
-        from: startOfWeek(subWeeks(now, 2), WEEK_OPTIONS),
-        to: endOfWeek(subWeeks(now, 1), WEEK_OPTIONS),
-      };
-    case "this_month":
-      return { from: startOfMonth(now), to: todayEnd };
-    case "last_month": {
-      const lastMonth = subMonths(now, 1);
-      return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
-    }
-  }
+  const [fromKey, toKey] = keysFor(preset, dateKeyInZone(now, zone));
+  return {
+    from: startOfDayInZone(fromKey, zone),
+    // Inclusive: the backend filters with `Between`, so the next day's
+    // midnight would pull in that day's first entry.
+    to: new Date(endOfDayInZone(toKey, zone).getTime() - 1),
+  };
 }

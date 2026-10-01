@@ -35,7 +35,7 @@ describe("entriesToCsv", () => {
     const lines = csv.split("\n");
 
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("Date,Project,Task,Start,End,Duration,Paused (min),Source");
+    expect(lines[0]).toBe("Date,Project,Task,Start,End,Duration,Paused (min),Source,Time zone");
     expect(lines[1]).toContain("Website");
     expect(lines[1]).toContain("01:00:00");
   });
@@ -63,5 +63,17 @@ describe("entriesToCsv", () => {
 
   it("returns just the header row for no entries", () => {
     expect(entriesToCsv([]).split("\n")).toHaveLength(1);
+  });
+
+  it("writes the times in the given zone, and names it", () => {
+    const csv = entriesToCsv(
+      [makeEntry({ startedAt: "2026-01-05T22:30:00.000Z", endedAt: "2026-01-05T23:00:00.000Z" })],
+      "Africa/Nairobi",
+    );
+    const row = csv.split("\n")[1];
+
+    expect(row).toContain("Africa/Nairobi");
+    // 22:30Z is already the 6th in Nairobi.
+    expect(row).toContain("1/6/2026");
   });
 });

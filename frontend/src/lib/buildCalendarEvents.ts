@@ -1,4 +1,5 @@
 import { addDays, startOfDay } from "date-fns";
+import { asZonedWallClock, detectTimezone } from "./timezone";
 import { splitEntryIntoSegments, type EntrySegment } from "@/lib/splitEntryIntoSegments";
 import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -62,6 +63,7 @@ function splitSegmentByDay(segment: EntrySegment): EntrySegment[] {
 export function buildCalendarEvents(
   entries: TimeEntryListItem[],
   now: Date = new Date(),
+  zone: string = detectTimezone(),
 ): CalendarEvent[] {
   const events: CalendarEvent[] = [];
 
@@ -71,8 +73,11 @@ export function buildCalendarEvents(
       for (const piece of splitSegmentByDay(segment)) {
         events.push({
           entryId: entry.id,
-          start: piece.startedAt,
-          end: piece.endedAt,
+          // Shifted so react-big-calendar, which lays out by a Date's
+          // local clock, places these at the chosen zone's wall time.
+          // Display only — `entryId` identifies the entry.
+          start: asZonedWallClock(piece.startedAt, zone),
+          end: asZonedWallClock(piece.endedAt, zone),
           kind: piece.kind,
           projectColour: entry.projectColour,
           projectName: entry.projectName,

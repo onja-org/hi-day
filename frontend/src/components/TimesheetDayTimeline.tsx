@@ -7,19 +7,25 @@ import {
 } from "./ProjectColourBadge";
 
 type TimesheetDayTimelineProps = {
+  /** The instant this day begins in `zone` — the bar measures from it. */
   dayStart: Date;
   entries: TimeEntryListItem[];
+  zone: string;
 };
 
 const MINUTES_PER_DAY = 24 * 60;
 const BAR_HEIGHT = 16;
 
-function formatSegmentTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function formatSegmentTime(date: Date, zone: string): string {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: zone,
+  });
 }
 
-function segmentTooltip(segment: TimelineSegment): string {
-  const timeRange = `${formatSegmentTime(segment.startedAt)} – ${formatSegmentTime(segment.endedAt)}`;
+function segmentTooltip(segment: TimelineSegment, zone: string): string {
+  const timeRange = `${formatSegmentTime(segment.startedAt, zone)} – ${formatSegmentTime(segment.endedAt, zone)}`;
   return segment.kind === "paused"
     ? `${segment.projectName} (paused) • ${timeRange}`
     : `${segment.projectName} • ${timeRange}`;
@@ -32,7 +38,11 @@ function segmentTooltip(segment: TimelineSegment): string {
  * Each block carries a native SVG `<title>` so hovering it shows the
  * project and time entry it belongs to.
  */
-export function TimesheetDayTimeline({ dayStart, entries }: TimesheetDayTimelineProps) {
+export function TimesheetDayTimeline({
+  dayStart,
+  entries,
+  zone,
+}: TimesheetDayTimelineProps) {
   const segments = buildDayTimelineSegments(entries, dayStart);
 
   if (segments.length === 0) {
@@ -64,7 +74,7 @@ export function TimesheetDayTimeline({ dayStart, entries }: TimesheetDayTimeline
                 : PROJECT_COLOUR_TEXT_MUTED_CLASSES[segment.projectColour]
             }
           >
-            <title>{segmentTooltip(segment)}</title>
+            <title>{segmentTooltip(segment, zone)}</title>
           </rect>
         ))}
       </svg>

@@ -1,7 +1,7 @@
 "use client";
 
 import { formatElapsed } from "@/lib/formatElapsed";
-import { fromDateKey } from "@/lib/buildDailyTotals";
+import { startOfDayInZone } from "@/lib/timezone";
 import type { TimeEntryDayGroup } from "@/lib/groupTimeEntriesByDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { TimesheetDayTimeline } from "./TimesheetDayTimeline";
@@ -10,6 +10,7 @@ import { TimesheetEntryRow } from "./TimesheetEntryRow";
 type TimesheetDayGroupSectionProps = {
   organisationId: string;
   group: TimeEntryDayGroup;
+  zone: string;
   onEdit: (entry: TimeEntryListItem) => void;
   selectedIds: Set<string>;
   onToggleSelected: (entryId: string) => void;
@@ -22,6 +23,7 @@ type TimesheetDayGroupSectionProps = {
 export function TimesheetDayGroupSection({
   organisationId,
   group,
+  zone,
   onEdit,
   selectedIds,
   onToggleSelected,
@@ -48,8 +50,9 @@ export function TimesheetDayGroupSection({
       <tr className="border-b border-input-border">
         <td colSpan={8} className="px-3 py-2">
           <TimesheetDayTimeline
-            dayStart={fromDateKey(group.dateKey)}
+            dayStart={startOfDayInZone(group.dateKey, zone)}
             entries={group.entries}
+            zone={zone}
           />
         </td>
       </tr>
@@ -92,6 +95,7 @@ export function TimesheetDayGroupSection({
           key={entry.id}
           organisationId={organisationId}
           entry={entry}
+          zone={zone}
           onEdit={onEdit}
           isSelected={selectedIds.has(entry.id)}
           onToggleSelected={onToggleSelected}

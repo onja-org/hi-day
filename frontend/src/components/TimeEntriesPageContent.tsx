@@ -8,8 +8,13 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useReportTimezone } from "@/hooks/useReportTimezone";
+import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import { getCustomDateRange } from "@/lib/getCustomDateRange";
+import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
+import type { TimezoneSource } from "@/lib/timezone";
 import {
   EMPTY_TIMESHEET_FILTERS,
   countActiveFilters,
@@ -19,7 +24,7 @@ import {
 import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
-import type { DateRange, DateRangePreset } from "@/types/dateRange";
+import type { DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
 import { Spinner } from "@/components/Spinner";
@@ -31,6 +36,8 @@ import { TimesheetWeeklyMatrix } from "@/components/TimesheetWeeklyMatrix";
 import { WeekNavigator } from "@/components/WeekNavigator";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { memberOptions } from "@/components/TimesheetFilterPanel";
+import { TimezoneSelect } from "@/components/TimezoneSelect";
+import type { TimezoneOption } from "@/components/TimezoneSelect";
 
 type TimeEntriesPageContentProps = {
   organisationId: string;
@@ -51,6 +58,8 @@ export function TimeEntriesPageContent({
 }: TimeEntriesPageContentProps) {
   const [addingTime, setAddingTime] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // Which zone the timesheet is read in; never changes a stored entry.
+  const [timezoneSource, setTimezoneSource] = useState<TimezoneSource>("viewer");
   const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
   // "" means "my own timesheet" — the default for everyone, including
   // admins/managers.
@@ -59,9 +68,14 @@ export function TimeEntriesPageContent({
   const [datePreset, setDatePreset] = useState<DateRangePreset | null>(
     DEFAULT_DATE_PRESET,
   );
-  const [customRange, setCustomRange] = useState<DateRange>(() =>
-    getTimesheetDateRange(DEFAULT_DATE_PRESET),
-  );
+  // Days rather than instants: a custom range means "these dates", so it
+  // has to re-resolve when the viewing zone changes, exactly as a preset
+  // does. Only read once a custom range has been applied — the initial
+  // value just keeps it non-null.
+  const [customDays, setCustomDays] = useState(() => {
+    const today = dateKeyInZone(new Date(), detectTimezone());
+    return { from: today, to: today };
+  });
   const [weekOffset, setWeekOffset] = useState(0);
 
   const organisationQuery = useCurrentOrganisation();
@@ -70,6 +84,7 @@ export function TimeEntriesPageContent({
   const isAdmin = organisationQuery.data?.role === "admin";
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();
+  useReportTimezone(profileQuery.data?.timezone);
   const myProjectsQuery = useMyProjects(organisationId);
   const ownLabel = profileQuery.data?.name ?? profileQuery.data?.email ?? "Me";
   const otherMembers = (membersQuery.data ?? []).filter(
@@ -78,10 +93,43 @@ export function TimeEntriesPageContent({
 
   const isOwnTimesheet = viewingMembershipId === "";
   const membershipId = isOwnTimesheet ? undefined : viewingMembershipId;
+  // From the browser, not their stored value: where they are right now is
+  // what "my time zone" means. Null until hydration.
+  const viewerZone = useViewerTimezone();
+  const viewedMember = otherMembers.find(
+    (member) => member.id === viewingMembershipId,
+  );
+  const timezoneOptions: TimezoneOption[] = [
+    {
+      source: "member",
+      heading: "Member's time zone",
+      // Your own timesheet makes the member you.
+      zone: isOwnTimesheet
+        ? viewerZone
+        : (viewedMember?.timezone ?? null),
+    },
+    { source: "viewer", heading: "My time zone", zone: viewerZone },
+    {
+      source: "organisation",
+      heading: organisationQuery.data?.name ?? "Organisation",
+      zone: organisationQuery.data?.timezone ?? null,
+    },
+  ];
+  // A member who has never signed in has no zone; falling back keeps the
+  // selector's label and the times telling the same story.
+  const activeSource: TimezoneSource =
+    timezoneOptions.find((option) => option.source === timezoneSource)?.zone ==
+    null
+      ? "viewer"
+      : timezoneSource;
+  // UTC is only ever reached before hydration, when no entries are on screen.
+  const activeZone =
+    timezoneOptions.find((option) => option.source === activeSource)?.zone ??
+    "UTC";
 
   const dailyRange = datePreset
-    ? getTimesheetDateRange(datePreset)
-    : customRange;
+    ? getTimesheetDateRange(datePreset, new Date(), activeZone)
+    : getCustomDateRange(customDays.from, customDays.to, activeZone);
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
     { membershipId, from: dailyRange.from, to: dailyRange.to },
@@ -89,7 +137,11 @@ export function TimeEntriesPageContent({
   );
 
   const now = new Date();
-  const { start: weekStart, end: weekEnd } = getWeekRange(now, weekOffset);
+  const { start: weekStart, end: weekEnd } = getWeekRange(
+    now,
+    weekOffset,
+    activeZone,
+  );
   const weekEntriesQuery = useTimeEntries(
     organisationId,
     { membershipId, from: weekStart, to: weekEnd },
@@ -113,6 +165,15 @@ export function TimeEntriesPageContent({
     (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
   );
   const activeFilterCount = countActiveFilters(filters);
+  // One control for all three views: the chosen zone applies to every one
+  // of them, so it would be odd to only be able to change it from Daily.
+  const timezoneSelect = (
+    <TimezoneSelect
+      options={timezoneOptions}
+      value={activeSource}
+      onChange={setTimezoneSource}
+    />
+  );
 
   const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
   const activeFilenameBase =
@@ -169,7 +230,7 @@ export function TimeEntriesPageContent({
             )}
           </button>
           <ExportButtons
-            csv={entriesToCsv(activeEntries ?? [])}
+            csv={entriesToCsv(activeEntries ?? [], activeZone)}
             filenameBase={activeFilenameBase}
             disabled={(activeEntries ?? []).length === 0}
           />
@@ -203,12 +264,17 @@ export function TimeEntriesPageContent({
       {viewMode === "daily" && (
         <TimesheetDailyView
           organisationId={organisationId}
+          zone={activeZone}
+          timezoneSelect={timezoneSelect}
           isOwnTimesheet={isOwnTimesheet}
           datePreset={datePreset}
           defaultDatePreset={DEFAULT_DATE_PRESET}
           range={dailyRange}
           onDateRangeChange={(range, preset) => {
-            setCustomRange(range);
+            setCustomDays({
+              from: dateKeyInZone(range.from, activeZone),
+              to: dateKeyInZone(range.to, activeZone),
+            });
             setDatePreset(preset);
           }}
           entries={dailyEntries}
@@ -224,11 +290,15 @@ export function TimeEntriesPageContent({
 
       {(viewMode === "weekly" || viewMode === "calendar") && (
         <div className="flex flex-col gap-3">
-          <WeekNavigator
-            label="Week"
-            weekOffset={weekOffset}
-            onChange={setWeekOffset}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <WeekNavigator
+              label="Week"
+              weekOffset={weekOffset}
+              onChange={setWeekOffset}
+              zone={activeZone}
+            />
+            {timezoneSelect}
+          </div>
 
           {weekEntriesQuery.isLoading && (
             <p className="flex items-center gap-2 text-slate-900">
@@ -242,13 +312,18 @@ export function TimeEntriesPageContent({
           )}
 
           {weekEntries && viewMode === "weekly" && (
-            <TimesheetWeeklyMatrix entries={weekEntries} start={weekStart} />
+            <TimesheetWeeklyMatrix
+              entries={weekEntries}
+              start={weekStart}
+              zone={activeZone}
+            />
           )}
 
           {weekEntries && viewMode === "calendar" && (
             <TimesheetCalendarGrid
               organisationId={organisationId}
               entries={weekEntries}
+              zone={activeZone}
               start={weekStart}
               now={now}
             />

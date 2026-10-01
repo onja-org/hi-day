@@ -3,17 +3,16 @@
 import { useCallback, useRef, useState } from "react";
 import { CalendarBlankIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
-import {
-  addMonths,
-  endOfDay,
-  isBefore,
-  startOfDay,
-  startOfMonth,
-  subMonths,
-} from "date-fns";
+import { addMonths, isBefore, startOfMonth, subMonths } from "date-fns";
 import { useDismissOnOutsideClick } from "@/hooks/useDismissOnOutsideClick";
+import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { selectRangeDay } from "@/lib/selectRangeDay";
+import {
+  dateKeyInZone,
+  keyAsLocalDate,
+  localDateToKey,
+} from "@/lib/timezone";
 import type {
   DateRange,
   DateRangePreset,
@@ -30,8 +29,20 @@ type DateRangePickerProps = {
   /** null when `value` is a custom calendar selection rather than a preset. */
   preset: DateRangePreset | null;
   defaultPreset: DateRangePreset;
+  /** The zone the picked days belong to — "today" and the days `value`
+   * denotes are both read in it, not in the viewer's own. */
+  zone: string;
   onChange: (range: DateRange, preset: DateRangePreset | null) => void;
 };
+
+/** The calendar days a range denotes in `zone`, as the local Dates the
+ * calendar grid lays out in. */
+function asLocalDays(range: DateRange, zone: string): DateRange {
+  return {
+    from: keyAsLocalDate(dateKeyInZone(range.from, zone)),
+    to: keyAsLocalDate(dateKeyInZone(range.to, zone)),
+  };
+}
 
 function formatDay(date: Date): string {
   return date.toLocaleDateString([], {
@@ -52,29 +63,35 @@ export function DateRangePicker({
   value,
   preset,
   defaultPreset,
+  zone,
   onChange,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RangeSelection>({
-    ...value,
+    ...asLocalDays(value, zone),
     pickingEnd: false,
   });
   const [draftPreset, setDraftPreset] = useState<DateRangePreset | null>(
     preset,
   );
-  const [viewMonth, setViewMonth] = useState(() => startOfMonth(value.from));
+  const [viewMonth, setViewMonth] = useState(() =>
+    startOfMonth(asLocalDays(value, zone).from),
+  );
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const appliedDays = asLocalDays(value, zone);
 
   const close = useCallback(() => setOpen(false), []);
   useDismissOnOutsideClick(containerRef, open, close);
 
-  const today = startOfDay(new Date());
+  const today = keyAsLocalDate(dateKeyInZone(new Date(), zone));
   const currentMonth = startOfMonth(today);
 
   function showRange(range: DateRange) {
-    setDraft({ ...range, pickingEnd: false });
+    const days = asLocalDays(range, zone);
+    setDraft({ ...days, pickingEnd: false });
     // Never page past the current month — everything after it is disabled.
-    const fromMonth = startOfMonth(range.from);
+    const fromMonth = startOfMonth(days.from);
     setViewMonth(isBefore(fromMonth, currentMonth) ? fromMonth : currentMonth);
   }
 
@@ -85,7 +102,7 @@ export function DateRangePicker({
   }
 
   function selectPreset(next: DateRangePreset) {
-    showRange(getTimesheetDateRange(next));
+    showRange(getTimesheetDateRange(next, new Date(), zone));
     setDraftPreset(next);
   }
 
@@ -96,7 +113,11 @@ export function DateRangePicker({
 
   function apply() {
     onChange(
-      { from: startOfDay(draft.from), to: endOfDay(draft.to) },
+      getCustomDateRange(
+        localDateToKey(draft.from),
+        localDateToKey(draft.to),
+        zone,
+      ),
       draftPreset,
     );
     setOpen(false);
@@ -118,7 +139,7 @@ export function DateRangePicker({
             !open && "border-input-border hover:border-primary/50",
           )}
         >
-          {formatDay(value.from)} - {formatDay(value.to)}
+          {formatDay(appliedDays.from)} - {formatDay(appliedDays.to)}
           <CalendarBlankIcon
             size={18}
             aria-hidden="true"
@@ -130,7 +151,10 @@ export function DateRangePicker({
           <button
             type="button"
             onClick={() =>
-              onChange(getTimesheetDateRange(defaultPreset), defaultPreset)
+              onChange(
+                getTimesheetDateRange(defaultPreset, new Date(), zone),
+                defaultPreset,
+              )
             }
             className="cursor-pointer rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-cream"
           >

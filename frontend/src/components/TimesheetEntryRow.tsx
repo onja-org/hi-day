@@ -1,6 +1,6 @@
 "use client";
 
-import { formatClockTime } from "@/lib/formatClockTime";
+import { formatTimeInZone } from "@/lib/timezone";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -11,6 +11,7 @@ import { TimeEntryActionsMenu } from "./TimeEntryActionsMenu";
 type TimesheetEntryRowProps = {
   organisationId: string;
   entry: TimeEntryListItem;
+  zone: string;
   onEdit: (entry: TimeEntryListItem) => void;
   isSelected: boolean;
   onToggleSelected: (entryId: string) => void;
@@ -20,6 +21,7 @@ type TimesheetEntryRowProps = {
 export function TimesheetEntryRow({
   organisationId,
   entry,
+  zone,
   onEdit,
   isSelected,
   onToggleSelected,
@@ -31,7 +33,7 @@ export function TimesheetEntryRow({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelected(entry.id)}
-          aria-label={`Select ${entry.projectName} entry starting ${formatClockTime(entry.startedAt)}`}
+          aria-label={`Select ${entry.projectName} entry starting ${formatTimeInZone(entry.startedAt, zone)}`}
           className="h-4 w-4 cursor-pointer accent-primary"
         />
       </td>
@@ -77,8 +79,8 @@ export function TimesheetEntryRow({
       </td>
       <td className="px-3 py-3 whitespace-nowrap text-slate-900">
         {entry.endedAt
-          ? `${formatClockTime(entry.startedAt)} – ${formatClockTime(entry.endedAt)}`
-          : <RunningEntryTimeRange startedAt={entry.startedAt} />}
+          ? `${formatTimeInZone(entry.startedAt, zone)} – ${formatTimeInZone(entry.endedAt, zone)}`
+          : <RunningEntryTimeRange startedAt={entry.startedAt} zone={zone} />}
       </td>
       <td className="px-3 py-3 text-right">
         <TimeEntryActionsMenu

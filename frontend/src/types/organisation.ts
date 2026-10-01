@@ -17,6 +17,8 @@ export type OrganisationProfile = {
   screenshotRetentionDays: number;
   /** Admin-configurable, default 8 — informational only, never enforced. */
   workingHoursPerDay: number;
+  /** The organisation's own IANA zone; 'UTC' until an admin changes it. */
+  timezone: string;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
