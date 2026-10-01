@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { parseSavedReports, removeSavedReport, upsertSavedReport } from "@/lib/savedReports";
+import type { ReportSchedule } from "@/types/reportSchedule";
 import type { SavedReport, SavedReportSettings } from "@/types/savedReport";
 
 const CHANGE_EVENT = "saved-reports-change";
@@ -10,6 +11,7 @@ type SaveInput = {
   name: string;
   scheduled: boolean;
   settings: SavedReportSettings;
+  schedule?: ReportSchedule;
 };
 
 function subscribe(onStoreChange: () => void): () => void {
@@ -70,6 +72,7 @@ export function useSavedReports(organisationId: string) {
           reportType: "time-and-activity",
           settings: input.settings,
           scheduled: input.scheduled,
+          schedule: input.schedule,
           modifiedAt: new Date().toISOString(),
         }),
       );

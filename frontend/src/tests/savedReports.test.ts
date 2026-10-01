@@ -44,6 +44,27 @@ describe("parseSavedReports", () => {
     expect(parseSavedReports(JSON.stringify([broken]))).toEqual([]);
   });
 
+  it("keeps a valid schedule", () => {
+    const scheduled = {
+      ...report("s"),
+      schedule: {
+        emails: ["a@b.co"],
+        message: "hi",
+        fileType: "pdf",
+        dateRange: "last_week",
+        frequency: "weekly",
+        hour: 9,
+        days: [1],
+      },
+    };
+    expect(parseSavedReports(JSON.stringify([scheduled]))).toHaveLength(1);
+  });
+
+  it("drops a report whose schedule is malformed", () => {
+    const broken = { ...report("s"), schedule: { emails: "nope" } };
+    expect(parseSavedReports(JSON.stringify([broken]))).toEqual([]);
+  });
+
   it("sorts newest first", () => {
     const older = report("old", "2026-09-01T10:00:00Z");
     const newer = report("new", "2026-10-01T10:00:00Z");

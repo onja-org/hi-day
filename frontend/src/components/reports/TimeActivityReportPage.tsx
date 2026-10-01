@@ -3,26 +3,21 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CaretLeftIcon } from "@phosphor-icons/react";
-import { format } from "date-fns";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { ErrorMessage } from "@/components/ErrorMessage";
-import { ExportButtons } from "@/components/ExportButtons";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { Spinner } from "@/components/Spinner";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { useTimeActivityReportControls, DEFAULT_TIME_ACTIVITY_PRESET } from "@/hooks/useTimeActivityReportControls";
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
-import { countReportFilters } from "@/lib/reportFilters";
 import { dateKeyInZone } from "@/lib/timezone";
-import { entriesToCsv } from "@/lib/entriesToCsv";
 import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
+import type { ReportSchedule } from "@/types/reportSchedule";
 import type { SavedReport } from "@/types/savedReport";
 import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
-import { SaveReportButton } from "./SaveReportButton";
-import { TimeActivityFilter } from "./TimeActivityFilter";
 import { ReportScopeTabs } from "./ReportScopeTabs";
+import { TimeActivityReportActions } from "./TimeActivityReportActions";
 import { TimeActivityReportBody } from "./TimeActivityReportBody";
-import { TimeActivityReportSettings } from "./TimeActivityReportSettings";
 
 type TimeActivityReportPageProps = {
   organisationId: string;
@@ -50,6 +45,23 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
     isLoading,
     error,
   } = useTimeActivityReportData(organisationId, scope, range, filters);
+
+  // Saves (or, on an already-saved report, updates) this report's current
+  // settings; a brand-new one opens at its own address.
+  function persist(input: { name: string; scheduled: boolean; schedule?: ReportSchedule }) {
+    const id = saveReport({
+      id: savedReport?.id,
+      ...input,
+      settings: {
+        datePreset: preset,
+        days: { from: dateKeyInZone(range.from, zone), to: dateKeyInZone(range.to, zone) },
+        scope: showsEveryone ? "all" : "me",
+        grouping,
+        filters: activeFilters,
+      },
+    });
+    if (!savedReport) router.push(`/organisations/${organisationId}/reports/saved/${id}`);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,51 +95,23 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
             }}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <ExportButtons
-            csv={entriesToCsv(entries ?? [])}
-            filenameBase={`time-and-activity-${format(range.from, "yyyy-MM-dd")}-to-${format(range.to, "yyyy-MM-dd")}`}
-            disabled={(entries ?? []).length === 0}
-          />
-          <TimeActivityFilter
-            filters={activeFilters}
-            onChange={setFilters}
-            projectOptions={projectOptions}
-            memberOptions={
-              showsEveryone
-                ? (members ?? []).map((member) => ({ id: member.id, name: member.name ?? member.email }))
-                : undefined
-            }
-            teamOptions={teams}
-          />
-          <SaveReportButton
-            settings={
-              <TimeActivityReportSettings
-                range={range}
-                showsEveryone={showsEveryone}
-                grouping={grouping}
-                filterCount={countReportFilters(activeFilters)}
-              />
-            }
-            initialName={savedReport?.name}
-            initialScheduled={savedReport?.scheduled}
-            onSave={({ name, scheduled }) => {
-              const id = saveReport({
-                id: savedReport?.id,
-                name,
-                scheduled,
-                settings: {
-                  datePreset: preset,
-                  days: { from: dateKeyInZone(range.from, zone), to: dateKeyInZone(range.to, zone) },
-                  scope: showsEveryone ? "all" : "me",
-                  grouping,
-                  filters: activeFilters,
-                },
-              });
-              if (!savedReport) router.push(`/organisations/${organisationId}/reports/saved/${id}`);
-            }}
-          />
-        </div>
+        <TimeActivityReportActions
+          entries={entries}
+          range={range}
+          grouping={grouping}
+          showsEveryone={showsEveryone}
+          filters={activeFilters}
+          onFiltersChange={setFilters}
+          projectOptions={projectOptions}
+          memberOptions={
+            showsEveryone
+              ? (members ?? []).map((member) => ({ id: member.id, name: member.name ?? member.email }))
+              : undefined
+          }
+          teamOptions={teams}
+          savedReport={savedReport}
+          onPersist={persist}
+        />
       </div>
 
       <SelectField

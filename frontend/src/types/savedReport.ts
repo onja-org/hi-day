@@ -1,5 +1,6 @@
 import type { ReportFilters } from "@/lib/reportFilters";
 import type { DateRangePreset } from "./dateRange";
+import type { ReportSchedule } from "./reportSchedule";
 import type { ReportScope } from "./reportScope";
 import type { TimeActivityGrouping } from "./timeActivityGrouping";
 
@@ -21,6 +22,8 @@ export type SavedReport = {
   settings: SavedReportSettings;
   /** The "schedule report to be sent" choice from the save modal. Email delivery itself isn't built yet. */
   scheduled: boolean;
+  /** Set once the report has been scheduled; nothing delivers it yet. */
+  schedule?: ReportSchedule;
   /** ISO instant of the last save. */
   modifiedAt: string;
 };

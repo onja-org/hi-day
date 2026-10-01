@@ -11,6 +11,7 @@ import { TableCell } from "@/components/ui/table/TableCell";
 import { TableHead } from "@/components/ui/table/TableHead";
 import { TableHeader } from "@/components/ui/table/TableHeader";
 import { TableRow } from "@/components/ui/table/TableRow";
+import { describeSchedule } from "@/lib/describeSchedule";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import type { SavedReport } from "@/types/savedReport";
 
@@ -59,8 +60,9 @@ export function CustomisedReportsPageContent({ organisationId }: CustomisedRepor
                 </TableCell>
                 <TableCell>Time &amp; activity</TableCell>
                 <TableCell>{new Date(report.modifiedAt).toLocaleString()}</TableCell>
-                <TableCell>-</TableCell>
-                <TableCell>-</TableCell>
+                <TableCell>{report.schedule ? describeSchedule(report.schedule) : "-"}</TableCell>
+                {/* Nothing delivers scheduled reports yet, so say so rather than show them as live. */}
+                <TableCell>{report.schedule ? "Inactive (email delivery not set up)" : "-"}</TableCell>
                 <TableCell align="right">
                   <ActionsMenu
                     items={[

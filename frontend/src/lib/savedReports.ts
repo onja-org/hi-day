@@ -1,4 +1,5 @@
 import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
+import { SCHEDULE_FREQUENCIES } from "@/lib/scheduleOptions";
 import type { SavedReport } from "@/types/savedReport";
 
 const PRESETS = [
@@ -15,6 +16,22 @@ function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isReportSchedule(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const schedule = value as Record<string, unknown>;
+  return (
+    isStringList(schedule.emails) &&
+    typeof schedule.message === "string" &&
+    (schedule.fileType === "pdf" || schedule.fileType === "csv") &&
+    typeof schedule.dateRange === "string" &&
+    PRESETS.includes(schedule.dateRange) &&
+    SCHEDULE_FREQUENCIES.some((option) => option.value === schedule.frequency) &&
+    typeof schedule.hour === "number" &&
+    Array.isArray(schedule.days) &&
+    schedule.days.every((day) => typeof day === "number")
+  );
+}
+
 /** Whether `value` has the full shape of a saved report — storage can hold anything, and the report page trusts these fields. */
 function isSavedReport(value: unknown): value is SavedReport {
   if (typeof value !== "object" || value === null) return false;
@@ -28,6 +45,7 @@ function isSavedReport(value: unknown): value is SavedReport {
     report.reportType === "time-and-activity" &&
     typeof report.scheduled === "boolean" &&
     typeof report.modifiedAt === "string" &&
+    (report.schedule === undefined || isReportSchedule(report.schedule)) &&
     settings !== undefined &&
     (settings.datePreset === null ||
       (typeof settings.datePreset === "string" && PRESETS.includes(settings.datePreset))) &&
