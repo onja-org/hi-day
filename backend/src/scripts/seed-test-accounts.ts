@@ -23,8 +23,10 @@ import { User } from '../database/entities/user.entity';
  *   pnpm --filter backend seed:test-accounts
  *   pnpm --filter backend seed:test-accounts --clean   (removes them again)
  *
- * Refuses to touch a database that isn't on localhost — these are accounts
- * with a published password, and they have no business anywhere shared.
+ * Excluded from the production build (see tsconfig.build.json) and refuses
+ * to run against production or a non-local database — these accounts share
+ * one password written in this file, so they have no business anywhere
+ * shared.
  */
 
 const PASSWORD = 'TestPassw0rd!';
@@ -49,23 +51,43 @@ const SOURCES = [
   TimeEntrySource.MANUAL,
 ];
 
-/** Every kind, so the Time type filter has matches and non-matches alike. */
-const TYPES = [
+/**
+ * One slot each, so every kind gets a comparable number of rows — this is a
+ * fixture for exercising the Time type filter, not an attempt at a realistic
+ * mix. MANUAL is absent because it is set from `source`: an entry typed in
+ * by hand is manual by construction.
+ */
+const TYPE_ROTATION = [
   TimeEntryType.NORMAL,
   TimeEntryType.IDLE,
   TimeEntryType.RESUMED,
-  TimeEntryType.NORMAL,
 ];
 
 /** Spread across the panel's thresholds so "> 80%" and "> 20%" return
  * genuinely different sets rather than everything or nothing. */
 const ACTIVITY_LEVELS = [92, 15, 64, 78, 33, 97, 51];
 
-function assertLocalDatabase(): void {
+/**
+ * Two checks, because neither is sufficient alone.
+ *
+ * The host check catches the obvious mistake, but not a tunnel: through
+ * cloud-sql-proxy, `kubectl port-forward` or SSH, a production database *is*
+ * addressed as localhost. NODE_ENV catches that case. Neither matters in a
+ * deployed image — this file is excluded from the build — but the script is
+ * also runnable from a source checkout, which is where someone would reach
+ * for it with a tunnel already open.
+ */
+function assertNotProduction(): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Refusing to seed: NODE_ENV is production. These accounts share one password written in this file.',
+    );
+  }
+
   const url = process.env.DATABASE_URL ?? '';
   if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) {
     throw new Error(
-      'Refusing to seed: DATABASE_URL does not point at localhost. These accounts share one published password.',
+      'Refusing to seed: DATABASE_URL does not point at localhost. These accounts share one password written in this file.',
     );
   }
 }
@@ -102,7 +124,7 @@ async function clean(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  assertLocalDatabase();
+  assertNotProduction();
   await dataSource.initialize();
 
   try {
@@ -194,10 +216,13 @@ async function main(): Promise<void> {
             source,
             // Hand-entered time is manual by construction; the rest cycles
             // so every type is represented.
+            // Indexed off a running counter rather than the same numbers
+            // that pick `source`: sharing them lets the two cycles line up,
+            // starving whichever types keep landing on a manual slot.
             type:
               source === TimeEntrySource.MANUAL
                 ? TimeEntryType.MANUAL
-                : TYPES[(dayOffset + slot + accountIndex) % TYPES.length],
+                : TYPE_ROTATION[entries.length % TYPE_ROTATION.length],
             deviceId: null,
           });
 
