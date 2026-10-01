@@ -6,6 +6,8 @@ import {
   describeTimezone,
   endOfDayInZone,
   formatTimeInZone,
+  keyAsLocalDate,
+  localDateToKey,
   startOfDayInZone,
   timezoneLabel,
 } from "@/lib/timezone";
@@ -153,6 +155,21 @@ describe("describeTimezone", () => {
 
     expect(winter).toContain("EST");
     expect(summer).toContain("EDT");
+  });
+});
+
+describe("keyAsLocalDate and localDateToKey", () => {
+  it("round-trips a key through the local Date a calendar lays out in", () => {
+    expect(localDateToKey(keyAsLocalDate("2026-03-08"))).toBe("2026-03-08");
+    expect(localDateToKey(keyAsLocalDate("2026-12-31"))).toBe("2026-12-31");
+  });
+
+  it("keeps the day the key names, whatever the runtime's offset", () => {
+    const day = keyAsLocalDate("2026-01-05");
+
+    expect(day.getFullYear()).toBe(2026);
+    expect(day.getMonth()).toBe(0);
+    expect(day.getDate()).toBe(5);
   });
 });
 

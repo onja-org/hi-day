@@ -173,6 +173,24 @@ export function subMonthsFromKey(dateKey: string, months: number): string {
   );
 }
 
+/**
+ * A day key as a runtime-local Date, and back. Calendar UIs lay out in
+ * local days, so a key crossing that boundary has to put on and take off
+ * the runtime's own offset — these are the only two places that happens.
+ */
+export function keyAsLocalDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+export function localDateToKey(at: Date): string {
+  return [
+    at.getFullYear(),
+    String(at.getMonth() + 1).padStart(2, "0"),
+    String(at.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function toKey(at: Date): string {
   return [
     at.getUTCFullYear(),

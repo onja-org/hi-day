@@ -54,6 +54,7 @@ export function TimesheetDailyView({
           value={range}
           preset={datePreset}
           defaultPreset={defaultDatePreset}
+          zone={zone}
           onChange={onDateRangeChange}
         />
         {timezoneSelect}

@@ -9,26 +9,23 @@ type WeekNavigatorProps = {
   weekOffset: number;
   onChange: (weekOffset: number) => void;
   label: string;
+  /** The week shown is the week in this zone, matching the entries below
+   * it — a week boundary falls at a different instant in each. */
+  zone: string;
 };
 
-function formatRangeLabel(start: Date, end: Date): string {
-  const startLabel = start.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  });
-  const endLabel = end.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  });
-  return `${startLabel} – ${endLabel}`;
+function formatRangeLabel(start: Date, end: Date, zone: string): string {
+  const format = { month: "short", day: "numeric", timeZone: zone } as const;
+  return `${start.toLocaleDateString([], format)} – ${end.toLocaleDateString([], format)}`;
 }
 
 export function WeekNavigator({
   weekOffset,
   onChange,
   label,
+  zone,
 }: WeekNavigatorProps) {
-  const { start, end } = getWeekRange(new Date(), weekOffset);
+  const { start, end } = getWeekRange(new Date(), weekOffset, zone);
 
   return (
     <div className="flex flex-col gap-1">
@@ -47,7 +44,7 @@ export function WeekNavigator({
               className="text-primary"
             />
             <span className="font-semibold">
-              {formatRangeLabel(start, end)}
+              {formatRangeLabel(start, end, zone)}
             </span>
             {weekOffset === 0 && (
               <span className="text-xs text-slate-900/60">This week</span>

@@ -13,6 +13,7 @@ import {
   buildCalendarEvents,
   type CalendarEvent,
 } from "@/lib/buildCalendarEvents";
+import { asZonedWallClock } from "@/lib/timezone";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import {
@@ -89,8 +90,8 @@ export function TimesheetCalendarGrid({
         <Calendar
           localizer={localizer}
           events={events}
-          date={start}
-          getNow={() => now}
+          date={asZonedWallClock(start, zone)}
+          getNow={() => asZonedWallClock(now, zone)}
           min={GRID_START_TIME}
           view="week"
           views={["week"]}

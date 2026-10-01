@@ -12,6 +12,8 @@ import { useReportTimezone } from "@/hooks/useReportTimezone";
 import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import { getCustomDateRange } from "@/lib/getCustomDateRange";
+import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
 import type { TimezoneSource } from "@/lib/timezone";
 import {
   EMPTY_TIMESHEET_FILTERS,
@@ -22,7 +24,7 @@ import {
 import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
-import type { DateRange, DateRangePreset } from "@/types/dateRange";
+import type { DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
 import { Spinner } from "@/components/Spinner";
@@ -66,9 +68,14 @@ export function TimeEntriesPageContent({
   const [datePreset, setDatePreset] = useState<DateRangePreset | null>(
     DEFAULT_DATE_PRESET,
   );
-  const [customRange, setCustomRange] = useState<DateRange>(() =>
-    getTimesheetDateRange(DEFAULT_DATE_PRESET),
-  );
+  // Days rather than instants: a custom range means "these dates", so it
+  // has to re-resolve when the viewing zone changes, exactly as a preset
+  // does. Only read once a custom range has been applied — the initial
+  // value just keeps it non-null.
+  const [customDays, setCustomDays] = useState(() => {
+    const today = dateKeyInZone(new Date(), detectTimezone());
+    return { from: today, to: today };
+  });
   const [weekOffset, setWeekOffset] = useState(0);
 
   const organisationQuery = useCurrentOrganisation();
@@ -122,7 +129,7 @@ export function TimeEntriesPageContent({
 
   const dailyRange = datePreset
     ? getTimesheetDateRange(datePreset, new Date(), activeZone)
-    : customRange;
+    : getCustomDateRange(customDays.from, customDays.to, activeZone);
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
     { membershipId, from: dailyRange.from, to: dailyRange.to },
@@ -158,6 +165,15 @@ export function TimeEntriesPageContent({
     (viewMode === "daily" ? dailyEntriesQuery.data : weekEntriesQuery.data) ?? [],
   );
   const activeFilterCount = countActiveFilters(filters);
+  // One control for all three views: the chosen zone applies to every one
+  // of them, so it would be odd to only be able to change it from Daily.
+  const timezoneSelect = (
+    <TimezoneSelect
+      options={timezoneOptions}
+      value={activeSource}
+      onChange={setTimezoneSource}
+    />
+  );
 
   const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
   const activeFilenameBase =
@@ -249,19 +265,16 @@ export function TimeEntriesPageContent({
         <TimesheetDailyView
           organisationId={organisationId}
           zone={activeZone}
-          timezoneSelect={
-            <TimezoneSelect
-              options={timezoneOptions}
-              value={activeSource}
-              onChange={setTimezoneSource}
-            />
-          }
+          timezoneSelect={timezoneSelect}
           isOwnTimesheet={isOwnTimesheet}
           datePreset={datePreset}
           defaultDatePreset={DEFAULT_DATE_PRESET}
           range={dailyRange}
           onDateRangeChange={(range, preset) => {
-            setCustomRange(range);
+            setCustomDays({
+              from: dateKeyInZone(range.from, activeZone),
+              to: dateKeyInZone(range.to, activeZone),
+            });
             setDatePreset(preset);
           }}
           entries={dailyEntries}
@@ -277,11 +290,15 @@ export function TimeEntriesPageContent({
 
       {(viewMode === "weekly" || viewMode === "calendar") && (
         <div className="flex flex-col gap-3">
-          <WeekNavigator
-            label="Week"
-            weekOffset={weekOffset}
-            onChange={setWeekOffset}
-          />
+          <div className="flex flex-wrap items-end gap-3">
+            <WeekNavigator
+              label="Week"
+              weekOffset={weekOffset}
+              onChange={setWeekOffset}
+              zone={activeZone}
+            />
+            {timezoneSelect}
+          </div>
 
           {weekEntriesQuery.isLoading && (
             <p className="flex items-center gap-2 text-slate-900">
