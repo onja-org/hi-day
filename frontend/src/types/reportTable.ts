@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 export type ReportTableColumn = {
   key: string;
   header: string;
+  /** Heading this column sits under in the column chooser, e.g. "Time". */
+  group?: string;
 };
 
 export type ReportTableRow = {

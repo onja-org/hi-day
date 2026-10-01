@@ -19,7 +19,7 @@ type ReportsBarChartProps = {
   series: ReportChartSeries[];
 };
 
-const BAR_SIZE = 6;
+const BAR_SIZE = 24;
 const TICK = { fill: "var(--color-slate-900)", fontSize: 12 };
 
 /** Grouped bars (one per series) per x-axis slot, with a whole-hours Y axis. Values are in seconds. */
@@ -59,7 +59,7 @@ export function ReportsBarChart({ rows, series }: ReportsBarChartProps) {
               name={label}
               fill={color}
               barSize={BAR_SIZE}
-              radius={[3, 3, 0, 0]}
+              radius={[4, 4, 0, 0]}
               isAnimationActive={false}
             />
           ))}

@@ -1,4 +1,5 @@
 import { CaretUpDownIcon, ColumnsIcon } from "@phosphor-icons/react";
+import { groupColumns } from "@/lib/groupColumns";
 import type { ReportTableColumn } from "@/types/reportTable";
 
 type ReportsTableToolbarProps = {
@@ -15,6 +16,8 @@ export function ReportsTableToolbar({
   onToggleColumn,
   onToggleExpandAll,
 }: ReportsTableToolbarProps) {
+  const groups = groupColumns(toggleableColumns);
+
   return (
     <div className="flex justify-end gap-2 p-3">
       <button
@@ -32,20 +35,28 @@ export function ReportsTableToolbar({
         >
           <ColumnsIcon size={16} aria-hidden="true" />
         </summary>
-        <ul className="absolute right-0 z-10 mt-1 flex max-h-72 w-48 flex-col gap-1 overflow-y-auto rounded-md border border-input-border bg-white p-2 shadow-md">
-          {toggleableColumns.map((column) => (
-            <li key={column.key}>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-900">
-                <input
-                  type="checkbox"
-                  checked={!hiddenKeys.has(column.key)}
-                  onChange={() => onToggleColumn(column.key)}
-                />
-                {column.header}
-              </label>
-            </li>
+        <div className="absolute right-0 z-10 mt-1 flex max-h-72 w-52 flex-col gap-2 overflow-y-auto rounded-md border border-input-border bg-white p-2 shadow-md">
+          {groups.map(({ group, columns }) => (
+            <fieldset key={group ?? "ungrouped"} className="flex flex-col gap-1">
+              {group && (
+                <legend className="text-xs font-semibold text-primary-dark">{group}</legend>
+              )}
+              {columns.map((column) => (
+                <label
+                  key={column.key}
+                  className="flex cursor-pointer items-center gap-2 text-sm text-slate-900"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!hiddenKeys.has(column.key)}
+                    onChange={() => onToggleColumn(column.key)}
+                  />
+                  {column.header}
+                </label>
+              ))}
+            </fieldset>
           ))}
-        </ul>
+        </div>
       </details>
     </div>
   );
