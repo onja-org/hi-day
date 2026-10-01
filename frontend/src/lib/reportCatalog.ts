@@ -33,13 +33,6 @@ export const REPORTS: Report[] = [
     section: "popular",
   },
   {
-    id: "time-and-activity-legacy",
-    title: "Time & activity (Legacy)",
-    description:
-      "See team members' time worked, activity levels, and amounts earned per project/work order",
-    section: "general",
-  },
-  {
     id: "work-sessions",
     title: "Work sessions",
     description: "See the start and stop times for team members",
