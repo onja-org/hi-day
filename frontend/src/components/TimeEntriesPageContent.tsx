@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ClockIcon, FunnelIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
-import { format } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
@@ -12,6 +11,7 @@ import { useReportTimezone } from "@/hooks/useReportTimezone";
 import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import { entriesToPdf } from "@/lib/entriesToPdf";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
 import type { TimezoneSource } from "@/lib/timezone";
@@ -176,10 +176,23 @@ export function TimeEntriesPageContent({
   );
 
   const activeEntries = viewMode === "daily" ? dailyEntries : weekEntries;
+  // Named in the chosen zone, like the rows inside — otherwise a file can
+  // claim a day its own contents disagree with.
+  const exportDays =
+    viewMode === "daily"
+      ? {
+          from: dateKeyInZone(dailyRange.from, activeZone),
+          to: dateKeyInZone(dailyRange.to, activeZone),
+        }
+      : {
+          from: dateKeyInZone(weekStart, activeZone),
+          to: dateKeyInZone(weekEnd, activeZone),
+        };
   const activeFilenameBase =
     viewMode === "daily"
-      ? `timesheet-${format(dailyRange.from, "yyyy-MM-dd")}-to-${format(dailyRange.to, "yyyy-MM-dd")}`
-      : `timesheet-${viewMode}-${weekStart.toISOString().slice(0, 10)}`;
+      ? `timesheet-${exportDays.from}-to-${exportDays.to}`
+      : `timesheet-${viewMode}-${exportDays.from}`;
+  const exportTitle = `Timesheet, ${exportDays.from} to ${exportDays.to}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -231,6 +244,9 @@ export function TimeEntriesPageContent({
           </button>
           <ExportButtons
             csv={entriesToCsv(activeEntries ?? [], activeZone)}
+            buildPdf={() =>
+              entriesToPdf(exportTitle, activeEntries ?? [], activeZone)
+            }
             filenameBase={activeFilenameBase}
             disabled={(activeEntries ?? []).length === 0}
           />
