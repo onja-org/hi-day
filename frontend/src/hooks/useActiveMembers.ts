@@ -7,7 +7,10 @@ export const ACTIVE_MEMBERS_QUERY_KEY = (organisationId: string) => [
   organisationId,
 ];
 
-export function useActiveMembers(organisationId: string) {
+export function useActiveMembers(
+  organisationId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ACTIVE_MEMBERS_QUERY_KEY(organisationId),
     queryFn: async () => {
@@ -17,5 +20,6 @@ export function useActiveMembers(organisationId: string) {
       }
       return result.members;
     },
+    enabled: options.enabled ?? true,
   });
 }

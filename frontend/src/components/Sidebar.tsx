@@ -2,6 +2,8 @@
 
 import {
   Briefcase,
+  BookmarkSimple,
+  ChartBar,
   ChartLineUp,
   Clock,
   Desktop,
@@ -9,12 +11,16 @@ import {
   Gauge,
   Gear,
   ListChecks,
+  Star,
   User,
   Users,
   UsersThree,
 } from "@phosphor-icons/react";
 import { usePathname } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useFavouriteReports } from "@/hooks/useFavouriteReports";
+import { useSavedReports } from "@/hooks/useSavedReports";
+import { REPORTS } from "@/lib/reportCatalog";
 import type { NavEntry, NavLink } from "@/types/navigation";
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
 import { SidebarNavEntries } from "./SidebarNavEntries";
@@ -32,6 +38,11 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const organisationQuery = useCurrentOrganisation();
+  const { favouriteIds } = useFavouriteReports(organisationId);
+  const { reports: savedReports } = useSavedReports(String(organisationId));
+  // A saved report is listed only while it's open; the Customised reports
+  // page is where the full list lives.
+  const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
   const organisationName = organisationQuery.data?.name ?? "Workforce";
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
@@ -100,6 +111,43 @@ export function Sidebar({
         },
       ],
     },
+    {
+      kind: "group",
+      label: "Reports",
+      icon: ChartBar,
+      children: [
+        ...REPORTS.filter((report) => favouriteIds.includes(report.id)).map(
+          (report): NavLink => ({
+            kind: "link",
+            label: report.title,
+            href: `/organisations/${organisationId}/reports/${report.id}`,
+            icon: Star,
+          }),
+        ),
+        ...savedReports
+          .filter((saved) => saved.id === openSavedReportId)
+          .map(
+          (saved): NavLink => ({
+            kind: "link",
+            label: saved.name,
+            href: `/organisations/${organisationId}/reports/saved/${saved.id}`,
+            icon: BookmarkSimple,
+          }),
+        ),
+        {
+          kind: "link",
+          label: "All reports",
+          href: `/organisations/${organisationId}/reports/all`,
+          icon: ListChecks,
+        },
+        {
+          kind: "link",
+          label: "Customised reports",
+          href: `/organisations/${organisationId}/reports/customised`,
+          icon: ListChecks,
+        },
+      ],
+    },
     peopleEntry,
     ...(canSeeMembers
       ? [
@@ -147,7 +195,11 @@ export function Sidebar({
           </span>
         </div>
         <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
-          <SidebarNavEntries entries={entries} pathname={pathname} variant="rail" />
+          <SidebarNavEntries
+            entries={entries}
+            pathname={pathname}
+            variant="rail"
+          />
         </div>
       </nav>
     </>

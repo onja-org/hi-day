@@ -3,6 +3,24 @@ import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
 const APP_NAME = 'Workforce Monitoring';
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+export interface ReportEmail {
+  to: string[];
+  subject: string;
+  message: string;
+  senderName: string;
+  senderEmail: string;
+  organisationName: string;
+  attachment: { filename: string; content: Buffer };
+}
+
 const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
 
@@ -148,5 +166,38 @@ export class EmailService {
         `Failed to send deletion notice to ${to}: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Emails a report file on behalf of a member. Unlike the account emails
+   * above, the caller is waiting on this one, so it reports whether it went
+   * out instead of swallowing the failure. The sender's own text is escaped
+   * — it's user input — and replies go to the sender, not the no-reply
+   * address.
+   */
+  async sendReportEmail(report: ReportEmail): Promise<boolean> {
+    const message = report.message.trim()
+      ? `<p style="white-space:pre-wrap">${escapeHtml(report.message.trim())}</p>`
+      : '';
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to: report.to,
+      replyTo: report.senderEmail,
+      subject: report.subject,
+      html: `${message}<p>${escapeHtml(report.senderName)} sent you a report from <strong>${escapeHtml(report.organisationName)}</strong> on ${APP_NAME}. It is attached to this email.</p>`,
+      attachments: [
+        {
+          filename: report.attachment.filename,
+          content: report.attachment.content,
+        },
+      ],
+    });
+
+    if (error) {
+      this.logger.error(`Failed to send report email: ${error.message}`);
+      return false;
+    }
+    return true;
   }
 }

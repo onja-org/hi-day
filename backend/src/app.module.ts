@@ -8,6 +8,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
 import { DashboardModule } from './dashboard/modules/dashboard.module';
+import { ReportsModule } from './reports/modules/reports.module';
+import { SavedReportsModule } from './saved-reports/modules/saved-reports.module';
 import { DatabaseModule } from './database/database.module';
 import { DeviceTrackingModule } from './device-tracking/modules/device-tracking.module';
 import { DevicesModule } from './devices/modules/devices.module';
@@ -43,6 +45,8 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     TeamsModule,
     UrlSessionsModule,
     DashboardModule,
+    ReportsModule,
+    SavedReportsModule,
   ],
   controllers: [AppController],
   providers: [
