@@ -77,7 +77,15 @@ describe("timezone alongside the other filters", () => {
   // Totals are per day, so moving the boundary moves the totals with it.
   it("recomputes day totals for the chosen zone", () => {
     const entries = [
-      makeEntry({ id: "early", startedAt: "2026-01-05T20:00:00.000Z", durationSeconds: 600 }),
+      makeEntry({
+        id: "early",
+        startedAt: "2026-01-05T20:00:00.000Z",
+        // Spelled out because the default endedAt would leave this entry
+        // claiming a three-hour span for its ten minutes, overlapping the
+        // later one — totals are a union, so the timestamps have to be true.
+        endedAt: "2026-01-05T20:10:00.000Z",
+        durationSeconds: 600,
+      }),
       makeEntry({ id: "late", startedAt: "2026-01-05T22:30:00.000Z", durationSeconds: 1800 }),
     ];
 
