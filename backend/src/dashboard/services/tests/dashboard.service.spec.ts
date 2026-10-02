@@ -153,7 +153,7 @@ describe('DashboardService', () => {
     expect(summary.workedThisWeekDeltaSeconds).toBe(2 * 3600 - 0.5 * 3600);
   });
 
-  it("excludes today's still-running entry from projectsToday but includes it in workedTodaySeconds", async () => {
+  it("counts today's still-running entry in projectsToday, matching workedTodaySeconds", async () => {
     const thisWeekEntries = [
       entry({
         projectId: 'p-1',
@@ -175,9 +175,10 @@ describe('DashboardService', () => {
 
     const summary = await service.getSummary('org-1', 'user-1');
 
+    // The breakdown and the day's total describe the same time.
     expect(summary.workedTodaySeconds).toBe(1.5 * 3600 + 1 * 3600);
     expect(summary.projectsToday).toEqual([
-      expect.objectContaining({ projectId: 'p-1', seconds: 1.5 * 3600 }),
+      expect.objectContaining({ projectId: 'p-1', seconds: 2.5 * 3600 }),
     ]);
   });
 

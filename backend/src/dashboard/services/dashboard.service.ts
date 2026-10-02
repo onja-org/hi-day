@@ -156,13 +156,13 @@ export class DashboardService {
         ...(entriesByProject.get(entry.projectId) ?? []),
         entry,
       ]);
+      // Running entries count too, measured to `now` below: leaving them
+      // out reported a Project as untouched while a desktop filled it.
       if (key === todayKey) {
-        if (entry.endedAt) {
-          todayEntriesByProject.set(entry.projectId, [
-            ...(todayEntriesByProject.get(entry.projectId) ?? []),
-            entry,
-          ]);
-        }
+        todayEntriesByProject.set(entry.projectId, [
+          ...(todayEntriesByProject.get(entry.projectId) ?? []),
+          entry,
+        ]);
       }
 
       if (!projectSeconds.has(entry.projectId)) {
@@ -173,11 +173,7 @@ export class DashboardService {
           seconds: 0,
         });
       }
-      if (
-        !projectSecondsToday.has(entry.projectId) &&
-        key === todayKey &&
-        entry.endedAt
-      ) {
+      if (!projectSecondsToday.has(entry.projectId) && key === todayKey) {
         projectSecondsToday.set(entry.projectId, {
           projectId: entry.projectId,
           projectName: entry.project.name,

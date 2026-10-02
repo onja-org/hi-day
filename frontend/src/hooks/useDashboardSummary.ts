@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getDashboardSummary } from "@/lib/getDashboardSummary";
+import { CURRENT_TIME_ENTRY_POLL_INTERVAL_MS } from "./useCurrentTimeEntry";
 
 export const DASHBOARD_SUMMARY_QUERY_KEY = (organisationId: string) => [
   "dashboard",
@@ -21,5 +22,8 @@ export function useDashboardSummary(
       return result.summary;
     },
     enabled: options.enabled ?? true,
+    // Polled, not just invalidated on this tab's own actions: the time may
+    // be tracked on another device entirely.
+    refetchInterval: CURRENT_TIME_ENTRY_POLL_INTERVAL_MS,
   });
 }

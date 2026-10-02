@@ -4,7 +4,8 @@ import { getCurrentTimeEntry } from "@/lib/getCurrentTimeEntry";
 // Matches the desktop agent's own poll interval (see
 // desktop/src/renderer/renderer.ts) so a timer started on one surface
 // shows up on the other within the same window.
-const CURRENT_TIME_ENTRY_POLL_INTERVAL_MS = 15_000;
+/** Shared with `useDashboardSummary`, which has to refresh in step with it. */
+export const CURRENT_TIME_ENTRY_POLL_INTERVAL_MS = 15_000;
 
 export const CURRENT_TIME_ENTRY_QUERY_KEY = (organisationId: string) => [
   "time-entries",

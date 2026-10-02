@@ -58,7 +58,11 @@ export type GetTimeEntriesResult =
   | { ok: false; message: string };
 
 export type CurrentTimeEntry = {
+  /** The web's own running timer — never a desktop's. */
   entry: TimeEntry | null;
+  /** A timer running on one of the person's devices. Pins which Project the
+   * web may start; never controlled from here. */
+  elsewhere: TimeEntry | null;
   now: string;
 };
 

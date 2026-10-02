@@ -78,7 +78,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
         ) : (
           <>
             <PlayIcon size={14} weight="fill" aria-hidden="true" />
-            Start timer
+            <span className="tabular-nums">{formatElapsed(0)}</span>
           </>
         )}
         <CaretDownIcon size={12} aria-hidden="true" />
@@ -96,6 +96,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
               taskId={timer.taskId}
               projectSecondsToday={timer.projectSecondsToday}
               conflictMessage={timer.conflictMessage}
+          requiredProjectId={timer.requiredProjectId}
               isStarting={timer.isStarting}
               isSwitching={timer.isSwitching}
               onProjectChange={timer.onProjectChange}

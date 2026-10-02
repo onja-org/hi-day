@@ -15,6 +15,9 @@ type TimerPickerProps = {
   taskId: string;
   projectSecondsToday: Map<string, number>;
   conflictMessage: string | null;
+  /** The only startable Project; the rest are shown disabled, so a narrowed
+   * list never reads as projects having gone missing. */
+  requiredProjectId: string | null;
   isStarting: boolean;
   isSwitching: boolean;
   onProjectChange: (projectId: string) => void;
@@ -31,6 +34,7 @@ export function TimerPicker({
   taskId,
   projectSecondsToday,
   conflictMessage,
+  requiredProjectId,
   isStarting,
   isSwitching,
   onProjectChange,
@@ -88,7 +92,13 @@ export function TimerPicker({
           >
             <option value="">Select a project…</option>
             {projects.map((project) => (
-              <option key={project.id} value={project.id}>
+              <option
+                key={project.id}
+                value={project.id}
+                disabled={
+                  requiredProjectId !== null && project.id !== requiredProjectId
+                }
+              >
                 {project.name}
               </option>
             ))}

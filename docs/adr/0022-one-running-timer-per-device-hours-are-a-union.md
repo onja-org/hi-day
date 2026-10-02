@@ -49,11 +49,20 @@ two machines at once", which is the case this changes.
   other Project for the whole day, so one minute of overlap can cost an afternoon's pay.
   Attribution charges an overlap exactly what it overlapped.
 
-- **Give the web console its own independent timer.** Rejected. The web has no Device and
-  is an account-level surface: it reports a timer running on *any* device and its stop
-  ends tracking everywhere. Letting it also hold a parallel timer of its own would mean a
-  person could double their own hours from one browser tab. Its start is refused while
-  anything is already running.
+- **Give the web console its own timer, independent of every Device.** Chosen, with one
+  asymmetry. The web is a surface like any other and its controls act on its own entry
+  only: stopping on the web never reaches into a machine the person is not looking at, and
+  stopping on a machine never closes the web's entry. The asymmetry is that the web still
+  refuses to *start* while any Device is tracking — not to prevent double-counting, which
+  the union already handles, but because a browser tab is the one surface a person is
+  likely to open having forgotten what a machine elsewhere is doing. It reports that Device
+  as `elsewhere` so the refusal can say which machine to go and stop.
+
+  Rejected alongside it: letting the web's stop end tracking everywhere. It is the more
+  convenient button, and it silently ends hours on a machine out of sight — ADR-0006's own
+  objection to auto-stopping, which this ADR otherwise upholds. "Stop everything" still
+  exists where it is unambiguous: logging out everywhere, and a password reset, close every
+  Device's timer because every Device has just been revoked.
 
 ## Consequences
 

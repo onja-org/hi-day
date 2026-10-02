@@ -299,6 +299,73 @@ describe('TimeEntriesService', () => {
       ).resolves.toBeDefined();
     });
 
+    it('lets the web join the project a device is already tracking', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, projectId: 'project-1', deviceId: 'device-a' },
+            ]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses the web a different project from the one a device is tracking', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, projectId: 'project-1', deviceId: 'device-a' },
+            ]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'a-different-project',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses a second web timer, so browsers share one between them', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([{ ...runningEntry, deviceId: null }]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('still refuses a second timer on the device already tracking', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
         find: jest
@@ -457,6 +524,69 @@ describe('TimeEntriesService', () => {
       );
 
       expect(result.taskId).toBe('task-1');
+    });
+  });
+
+  describe('currentForAccount', () => {
+    it("reports the web's own timer as its entry, not a device's", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([
+          { ...runningEntry, id: 'on-laptop', deviceId: 'device-a' },
+          { ...runningEntry, id: 'on-web', deviceId: null },
+        ]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry?.id).toBe('on-web');
+      expect(current.elsewhere?.id).toBe('on-laptop');
+    });
+
+    it('reports neither when nothing is running, leaving the web free to start', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([]),
+        }),
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry).toBeNull();
+      expect(current.elsewhere).toBeNull();
+    });
+
+    it("does not report the web's own timer as elsewhere", async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, id: 'on-web', deviceId: null },
+            ]),
+        }),
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry?.id).toBe('on-web');
+      expect(current.elsewhere).toBeNull();
+    });
+
+    it('reports a device as elsewhere when the web has no timer of its own', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            { ...runningEntry, id: 'on-laptop', deviceId: 'device-a' },
+          ]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry).toBeNull();
+      expect(current.elsewhere?.id).toBe('on-laptop');
     });
   });
 

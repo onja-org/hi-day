@@ -123,7 +123,11 @@ export interface TimeEntryListItem extends TimeEntrySummary {
 }
 
 export interface CurrentTimeEntry {
+  /** The web's own entry, never a Device's — what its controls act on. */
   entry: TimeEntrySummary | null;
+  /** A Device's running entry. Reported so the web can pin its own timer to
+   * the same Project; never controlled from there. */
+  elsewhere: TimeEntrySummary | null;
   /**
    * The server's own clock at the moment of the read — both the web
    * console and the desktop agent tick elapsed time from this instead of
@@ -259,13 +263,12 @@ export class TimeEntriesService {
   }
 
   /**
-   * What the web shows: the account, not a machine.
+   * What the web shows: `entry` is the timer it started, so its controls
+   * never reach into a machine the person is not looking at. A tracking
+   * Device comes back as `elsewhere` instead.
    *
-   * `entry` is whichever Device's timer is running (any of them) so the web
-   * reports "running" whenever the person is tracking anywhere, and
-   * `workedSeconds` is the union across every open entry — the same number
-   * each Device displays, so a second machine starting at 10:00 shows the
-   * hour the first one has already accrued rather than starting from zero.
+   * `workedSeconds` stays the union across every open entry, so a second
+   * machine starting at 10:00 shows the hour the first already accrued.
    */
   async currentForAccount(
     organisationId: string,
@@ -276,9 +279,12 @@ export class TimeEntriesService {
       where: { membershipId: membership.id, endedAt: IsNull() },
       order: { startedAt: 'ASC' },
     });
+    const own = running.find((entry) => entry.deviceId === null) ?? null;
+    const onADevice = running.find((entry) => entry.deviceId !== null) ?? null;
 
     return {
-      entry: running.length > 0 ? await this.toSummary(running[0]) : null,
+      entry: own ? await this.toSummary(own) : null,
+      elsewhere: onADevice ? await this.toSummary(onADevice) : null,
       now: new Date(),
       workedSeconds: await this.unionWorkedSeconds(running),
     };
@@ -377,20 +383,41 @@ export class TimeEntriesService {
       relations: { device: true },
     });
 
-    // The web is an account-level surface, not a Device: it already shows a
-    // timer running anywhere, so starting a second one there would be the
-    // parallel web timer this design deliberately excludes.
-    const blocking =
+    // One timer per Device, and the web counts as one — matching the
+    // index's NULLS NOT DISTINCT, so two browsers share a single web timer.
+    const onThisSurface =
       deviceId === null
-        ? elsewhere[0]
+        ? elsewhere.find((entry) => entry.deviceId === null)
         : elsewhere.find((entry) => entry.deviceId === deviceId);
-    if (blocking) {
+    if (onThisSurface) {
       throw new ConflictException({
         message:
           deviceId === null
-            ? 'A timer is already running — the web shows and controls all your devices.'
+            ? 'A timer is already running on the web.'
             : 'A timer is already running on this device.',
-        runningEntry: await this.toSummary(blocking),
+        runningEntry: await this.toSummary(onThisSurface),
+      });
+    }
+
+    // The web may track alongside a Device, but only the same Project:
+    // "laptop says X, browser says Y" is a split the person cannot see,
+    // unlike two machines they picked up one at a time. Devices keep their
+    // freedom to differ from each other (ADR-0022).
+    const deviceProjectIds = new Set(
+      elsewhere
+        .filter((entry) => entry.deviceId !== null)
+        .map((entry) => entry.projectId),
+    );
+    if (
+      deviceId === null &&
+      deviceProjectIds.size > 0 &&
+      !deviceProjectIds.has(projectId)
+    ) {
+      const mismatch = elsewhere.find((entry) => entry.deviceId !== null)!;
+      throw new ConflictException({
+        message:
+          'Your device is tracking a different project. Start that same project here, or stop it there first.',
+        runningEntry: await this.toSummary(mismatch),
       });
     }
 
@@ -568,8 +595,13 @@ export class TimeEntriesService {
       }),
     ]);
 
+    const other = allRunning.find((entry) => entry.id !== running?.id) ?? null;
+
     return {
       entry: running ? await this.toSummary(running) : null,
+      // Where else the person is tracking. Reported, never controlled:
+      // this Device's stop ends this Device's timer only.
+      elsewhere: other ? await this.toSummary(other) : null,
       now: new Date(),
       // Account-wide on purpose: this Device displays the person's total, so
       // a machine joining at 10:00 shows the hour another already accrued.
