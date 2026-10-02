@@ -1,3 +1,4 @@
+import { attributeProjectSeconds } from "@/lib/attributeProjectSeconds";
 import type { ProjectColour } from "@/types/project";
 import { dateKeyInZone, detectTimezone } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -55,6 +56,13 @@ export function buildProjectDayMatrix(
 ): ProjectDayMatrix {
   const rowsByProject = new Map<string, ProjectDayMatrixRow>();
   const dailyTotals = new Array<number>(DAYS_PER_WEEK).fill(0);
+  const entriesByCell = new Map<string, TimeEntryListItem[]>();
+  const entriesByProject = new Map<string, TimeEntryListItem[]>();
+  const entriesByDay: TimeEntryListItem[][] = Array.from(
+    { length: DAYS_PER_WEEK },
+    () => [],
+  );
+  const allEntries: TimeEntryListItem[] = [];
 
   for (const entry of entries) {
     if (entry.durationSeconds === null) continue;
@@ -73,14 +81,42 @@ export function buildProjectDayMatrix(
       rowsByProject.set(entry.projectId, row);
     }
 
-    row.dailySeconds[dayIndex] += entry.durationSeconds;
-    row.totalSeconds += entry.durationSeconds;
-    dailyTotals[dayIndex] += entry.durationSeconds;
+    const cellKey = `${entry.projectId}|${dayIndex}`;
+    entriesByCell.set(cellKey, [...(entriesByCell.get(cellKey) ?? []), entry]);
+    entriesByProject.set(entry.projectId, [
+      ...(entriesByProject.get(entry.projectId) ?? []),
+      entry,
+    ]);
+    entriesByDay[dayIndex].push(entry);
+    allEntries.push(entry);
+  }
+
+  // Attributed per day, not unioned per cell. A person may track two
+  // Projects at once on two Devices, and unioning each Project's own entries
+  // would let both claim the shared stretch — the rows would then add up to
+  // more than the day they sit in (ADR-0022). Crediting each shared second
+  // to one Project instead makes every total here the sum of the cells
+  // beneath it: columns, rows and the grand total all reconcile.
+  for (let day = 0; day < DAYS_PER_WEEK; day += 1) {
+    const attributed = attributeProjectSeconds(entriesByDay[day]);
+    for (const row of rowsByProject.values()) {
+      row.dailySeconds[day] = attributed.get(row.projectId) ?? 0;
+    }
+    dailyTotals[day] = [...attributed.values()].reduce(
+      (total, seconds) => total + seconds,
+      0,
+    );
+  }
+  for (const row of rowsByProject.values()) {
+    row.totalSeconds = row.dailySeconds.reduce(
+      (total, seconds) => total + seconds,
+      0,
+    );
   }
 
   return {
     rows: [...rowsByProject.values()],
     dailyTotals,
-    grandTotal: dailyTotals.reduce((sum, seconds) => sum + seconds, 0),
+    grandTotal: dailyTotals.reduce((total, seconds) => total + seconds, 0),
   };
 }

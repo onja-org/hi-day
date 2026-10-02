@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
 import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
 import { startTimeEntry } from "@/lib/startTimeEntry";
+import { webTimerConstraint } from "@/lib/webTimerConstraint";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
@@ -26,12 +27,19 @@ export function useRunningTimer(organisationId: string) {
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
+  // The web's own timer only — a device's is never displayed here. It does
+  // constrain what can be started, though: see `webTimerConstraint`.
   const entry = currentQuery.data?.entry ?? null;
-  const serverNow = currentQuery.data?.now;
+  const { requiredProjectId } = webTimerConstraint(
+    currentQuery.data?.elsewhere ?? null,
+  );
+  const effectiveProjectId = requiredProjectId ?? projectId;
   const activeProject = entry
-    ? (projectsQuery.data?.find((project) => project.id === entry.projectId) ?? null)
+    ? (projectsQuery.data?.find(
+        (project) => project.id === entry.projectId,
+      ) ?? null)
     : null;
 
   // Today's *completed* seconds per project (see DashboardSummary.projectsToday)
@@ -67,7 +75,8 @@ export function useRunningTimer(organisationId: string) {
   };
 
   const startMutation = useMutation({
-    mutationFn: () => startTimeEntry(organisationId, projectId, taskId || null),
+    mutationFn: () =>
+      startTimeEntry(organisationId, effectiveProjectId, taskId || null),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -84,7 +93,8 @@ export function useRunningTimer(organisationId: string) {
   });
 
   const switchMutation = useMutation({
-    mutationFn: () => switchTimeEntry(organisationId, projectId, taskId || null),
+    mutationFn: () =>
+      switchTimeEntry(organisationId, effectiveProjectId, taskId || null),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -105,51 +115,64 @@ export function useRunningTimer(organisationId: string) {
 
   const isPaused = entry?.pausedAt != null;
 
-  // While paused, elapsed time is fully derived from the entry itself (no
-  // ticking) — computed directly during render rather than via state, since
-  // an effect must never call setState synchronously with a value that's
-  // already derivable from its own inputs.
-  const frozenElapsedMs =
-    entry && entry.pausedAt
-      ? new Date(entry.pausedAt).getTime() -
-        new Date(entry.startedAt).getTime() -
-        entry.pausedSeconds * 1000
-      : null;
-
-  // Ticks the elapsed-time display once a second while a timer is actually
-  // running (not paused). The offset between the server's clock (from the
-  // last poll) and this device's own clock is recomputed each time
-  // `serverNow` changes, so a skewed local clock never desyncs the
-  // displayed elapsed time.
+  // Ticks once a second so the clocks move between polls.
   useEffect(() => {
-    if (!entry || !serverNow || entry.pausedAt) return;
-    const startedAtMs = new Date(entry.startedAt).getTime();
-    const pausedMs = entry.pausedSeconds * 1000;
-    const serverOffsetMs = new Date(serverNow).getTime() - Date.now();
-    const interval = setInterval(
-      () => setElapsedMs(Date.now() + serverOffsetMs - startedAtMs - pausedMs),
-      1000,
-    );
-    return () => clearInterval(interval);
-  }, [entry, serverNow]);
+    if (!entry || isPaused) return;
 
-  // The baseline this project already has today (completed entries only,
-  // see projectSecondsToday above) plus however much of the *current*
-  // entry has ticked — never just the current entry alone, or restarting a
-  // project the same day would visibly reset to 0.
-  const todaySecondsBeforeThisEntry = entry
-    ? projectSecondsToday.get(entry.projectId) ?? 0
+    const interval = setInterval(() => setLocalNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [entry, isPaused]);
+
+  /**
+   * Two figures, deliberately separate. `elapsedMs` is *this session* — zero
+   * with nothing running — and `workedTodayMs` is the day's total beside it.
+   * One number serving both meant the timer could never read 00:00:00.
+   *
+   * Both tick from the local clock corrected against the server's reading,
+   * so a skewed machine cannot drift either.
+   */
+  const serverNow = currentQuery.data?.now;
+  const serverOffsetMs =
+    serverNow && currentQuery.dataUpdatedAt
+      ? new Date(serverNow).getTime() - currentQuery.dataUpdatedAt
+      : 0;
+  const correctedNowMs = localNowMs + serverOffsetMs;
+
+  const elapsedMs = entry
+    ? Math.max(
+        0,
+        (entry.pausedAt
+          ? new Date(entry.pausedAt).getTime()
+          : correctedNowMs) -
+          new Date(entry.startedAt).getTime() -
+          entry.pausedSeconds * 1000,
+      )
     : 0;
+
+  const workedTodayMs =
+    (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 +
+    (entry && !isPaused && dashboardQuery.dataUpdatedAt
+      ? Math.max(0, localNowMs - dashboardQuery.dataUpdatedAt)
+      : 0);
 
   return {
     isLoading: currentQuery.isLoading || projectsQuery.isLoading,
     isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
-    entry,
+    entry: entry,
     activeProject,
-    elapsedMs: todaySecondsBeforeThisEntry * 1000 + (frozenElapsedMs ?? elapsedMs),
+    /** The displayed timer belongs to a device, so it can be watched but not
+     * stopped, paused or resumed from here. */
+    /** This session only — 0 when nothing is running. */
+    elapsedMs,
+    /** Everything worked today, across every project and device. */
+    workedTodayMs,
     isPaused,
     projects: projectsQuery.data ?? [],
-    projectId,
+    /** Non-null while a device is tracking: the only Project the web may
+     * start. The picker greys out the rest rather than hiding them, so a
+     * shrunken list never reads as projects having gone missing. */
+    requiredProjectId,
+    projectId: effectiveProjectId,
     taskId,
     // For the picker: how much of *this* (not-yet-started) project is
     // already tracked today, so choosing a project previews its running

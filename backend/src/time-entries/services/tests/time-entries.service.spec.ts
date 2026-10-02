@@ -233,9 +233,13 @@ describe('TimeEntriesService', () => {
       );
     });
 
-    it('rejects with a 409 carrying the running entry when one is already running', async () => {
+    /**
+     * The web is account-level, so a timer running anywhere blocks a web
+     * start — otherwise it becomes a second parallel timer of its own.
+     */
+    it('rejects a web start with a 409 when a timer is running on any device', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue(runningEntry),
+        find: jest.fn().mockResolvedValue([runningEntry]),
       });
       const service = makeService({ timeEntriesRepo });
 
@@ -247,6 +251,137 @@ describe('TimeEntriesService', () => {
           undefined,
           TimeEntrySource.WEB,
           null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    /**
+     * A second Device joining the project already running is the case this
+     * whole change exists for — it must not be refused.
+     */
+    it('allows a second device to start the same project', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([{ ...runningEntry, deviceId: 'device-a' }]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          runningEntry.projectId,
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-b',
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('lets a second device start a different project', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([{ ...runningEntry, deviceId: 'device-a' }]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'a-different-project',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-b',
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('lets the web join the project a device is already tracking', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, projectId: 'project-1', deviceId: 'device-a' },
+            ]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses the web a different project from the one a device is tracking', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, projectId: 'project-1', deviceId: 'device-a' },
+            ]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'a-different-project',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses a second web timer, so browsers share one between them', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([{ ...runningEntry, deviceId: null }]),
+        }),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('still refuses a second timer on the device already tracking', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([{ ...runningEntry, deviceId: 'device-a' }]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'a-different-project',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-a',
         ),
       ).rejects.toBeInstanceOf(ConflictException);
     });
@@ -392,6 +527,69 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  describe('currentForAccount', () => {
+    it("reports the web's own timer as its entry, not a device's", async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest.fn().mockResolvedValue([
+          { ...runningEntry, id: 'on-laptop', deviceId: 'device-a' },
+          { ...runningEntry, id: 'on-web', deviceId: null },
+        ]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry?.id).toBe('on-web');
+      expect(current.elsewhere?.id).toBe('on-laptop');
+    });
+
+    it('reports neither when nothing is running, leaving the web free to start', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([]),
+        }),
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry).toBeNull();
+      expect(current.elsewhere).toBeNull();
+    });
+
+    it("does not report the web's own timer as elsewhere", async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, id: 'on-web', deviceId: null },
+            ]),
+        }),
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry?.id).toBe('on-web');
+      expect(current.elsewhere).toBeNull();
+    });
+
+    it('reports a device as elsewhere when the web has no timer of its own', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            { ...runningEntry, id: 'on-laptop', deviceId: 'device-a' },
+          ]),
+      });
+      const service = makeService({ timeEntriesRepo });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.entry).toBeNull();
+      expect(current.elsewhere?.id).toBe('on-laptop');
+    });
+  });
+
   describe('stop', () => {
     it('stops the running timer and records an audit log entry', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -400,7 +598,7 @@ describe('TimeEntriesService', () => {
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({ timeEntriesRepo, auditLogService });
 
-      const result = await service.stop('org-1', 'user-1');
+      const result = await service.stop('org-1', 'user-1', null);
 
       expect(result.endedAt).not.toBeNull();
       expect(record).toHaveBeenCalledWith(
@@ -412,9 +610,9 @@ describe('TimeEntriesService', () => {
     it('throws when no timer is running', async () => {
       const service = makeService();
 
-      await expect(service.stop('org-1', 'user-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.stop('org-1', 'user-1', null),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('backdates the stop when given an explicit endedAt, and notes it was idle-discarded', async () => {
@@ -425,7 +623,12 @@ describe('TimeEntriesService', () => {
       const service = makeService({ timeEntriesRepo, auditLogService });
       const backdatedEndedAt = new Date(Date.now() - 60_000);
 
-      const result = await service.stop('org-1', 'user-1', backdatedEndedAt);
+      const result = await service.stop(
+        'org-1',
+        'user-1',
+        null,
+        backdatedEndedAt,
+      );
 
       expect(result.endedAt).toEqual(backdatedEndedAt);
       expect(record).toHaveBeenCalledTimes(1);
@@ -443,7 +646,7 @@ describe('TimeEntriesService', () => {
       const service = makeService({ timeEntriesRepo });
 
       await expect(
-        service.stop('org-1', 'user-1', new Date('2025-12-31T00:00:00Z')),
+        service.stop('org-1', 'user-1', null, new Date('2025-12-31T00:00:00Z')),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -454,7 +657,7 @@ describe('TimeEntriesService', () => {
       const service = makeService({ timeEntriesRepo });
 
       await expect(
-        service.stop('org-1', 'user-1', new Date(Date.now() + 60_000)),
+        service.stop('org-1', 'user-1', null, new Date(Date.now() + 60_000)),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
@@ -1770,7 +1973,7 @@ describe('TimeEntriesService', () => {
         auditLogService,
       });
 
-      const result = await service.pause('org-1', 'user-1');
+      const result = await service.pause('org-1', 'user-1', null);
 
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1788,9 +1991,9 @@ describe('TimeEntriesService', () => {
     it('rejects with 404 when no timer is running', async () => {
       const service = makeService();
 
-      await expect(service.pause('org-1', 'user-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.pause('org-1', 'user-1', null),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('rejects with 409 when already paused', async () => {
@@ -1807,9 +2010,9 @@ describe('TimeEntriesService', () => {
       });
       const service = makeService({ timeEntriesRepo, timeEntryPausesRepo });
 
-      await expect(service.pause('org-1', 'user-1')).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(
+        service.pause('org-1', 'user-1', null),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -1838,7 +2041,7 @@ describe('TimeEntriesService', () => {
         auditLogService,
       });
 
-      await service.resume('org-1', 'user-1');
+      await service.resume('org-1', 'user-1', null);
 
       const savedPause = save.mock.calls[0][0] as TimeEntryPause;
       expect(savedPause.resumedAt).toBeInstanceOf(Date);
@@ -1851,9 +2054,9 @@ describe('TimeEntriesService', () => {
     it('rejects with 404 when no timer is running', async () => {
       const service = makeService();
 
-      await expect(service.resume('org-1', 'user-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.resume('org-1', 'user-1', null),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('rejects with 409 when not currently paused', async () => {
@@ -1862,9 +2065,9 @@ describe('TimeEntriesService', () => {
       });
       const service = makeService({ timeEntriesRepo });
 
-      await expect(service.resume('org-1', 'user-1')).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(
+        service.resume('org-1', 'user-1', null),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -1872,7 +2075,7 @@ describe('TimeEntriesService', () => {
     it('returns null and the server clock when nothing is running', async () => {
       const service = makeService();
 
-      const result = await service.current('org-1', 'user-1');
+      const result = await service.current('org-1', 'user-1', null);
 
       expect(result.entry).toBeNull();
       expect(result.now).toBeInstanceOf(Date);
@@ -1884,7 +2087,7 @@ describe('TimeEntriesService', () => {
       });
       const service = makeService({ timeEntriesRepo });
 
-      const result = await service.current('org-1', 'user-1');
+      const result = await service.current('org-1', 'user-1', null);
 
       expect(result.entry?.id).toBe('entry-running');
     });

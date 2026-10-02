@@ -25,6 +25,9 @@ export function HeaderTimerRunningPanel({ timer }: HeaderTimerRunningPanelProps)
       <p className="text-center text-3xl font-semibold tabular-nums text-primary-dark">
         {formatElapsed(timer.elapsedMs)}
       </p>
+      <p className="text-center text-xs text-slate-900/60">
+        Today: {formatElapsed(timer.workedTodayMs)}
+      </p>
       {timer.isPaused && (
         <p className="text-center text-xs text-secondary">Paused</p>
       )}

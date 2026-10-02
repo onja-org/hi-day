@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0022-one-running-timer-per-device-hours-are-a-union
 ---
 
 # A start/stop timer is server-authoritative and single-running-per-Membership; a collision rejects instead of auto-stopping

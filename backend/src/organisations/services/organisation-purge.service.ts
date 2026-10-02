@@ -22,6 +22,7 @@ export const PURGED_TABLES_BY_ORGANISATION_ID = [
   'screenshots',
   'url_sessions',
   'app_events',
+  'activity_samples',
   'time_entry_pauses',
   'time_entries',
   'notes',
@@ -42,6 +43,7 @@ const DEVICE_REFERENCING_TABLES = [
   'screenshots',
   'url_sessions',
   'app_events',
+  'activity_samples',
   'consent_records',
   'time_entries',
 ];
@@ -172,6 +174,7 @@ export class OrganisationPurgeService {
     await byOrg('screenshots');
     await byOrg('url_sessions');
     await byOrg('app_events');
+    await byOrg('activity_samples');
     await byOrg('time_entry_pauses');
     await byOrg('time_entries');
     await byOrg('notes');

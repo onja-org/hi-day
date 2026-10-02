@@ -10,6 +10,8 @@ import {
   Between,
   DataSource,
   EntityManager,
+  Equal,
+  type FindOptionsWhere,
   In,
   IsNull,
   LessThan,
@@ -23,6 +25,7 @@ import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
+import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -120,7 +123,11 @@ export interface TimeEntryListItem extends TimeEntrySummary {
 }
 
 export interface CurrentTimeEntry {
+  /** The web's own entry, never a Device's — what its controls act on. */
   entry: TimeEntrySummary | null;
+  /** A Device's running entry. Reported so the web can pin its own timer to
+   * the same Project; never controlled from there. */
+  elsewhere: TimeEntrySummary | null;
   /**
    * The server's own clock at the moment of the read — both the web
    * console and the desktop agent tick elapsed time from this instead of
@@ -128,6 +135,13 @@ export interface CurrentTimeEntry {
    * surfaces disagree about how long a timer has been running.
    */
   now: Date;
+  /**
+   * The person's worked seconds across every Device currently tracking,
+   * counting shared wall-clock time once. Clients display this rather than
+   * deriving elapsed time from `entry.startedAt`, so a second Device shows
+   * the total already accrued instead of starting from zero (ADR-0022).
+   */
+  workedSeconds: number;
 }
 
 interface ValidatedStart {
@@ -179,6 +193,169 @@ export class TimeEntriesService {
    * product. Use `switchTo` for the explicit "stop that one, start this
    * one" action.
    */
+
+  /**
+   * The open Time entry for one Device, not for the person.
+   *
+   * A Membership may have several timers running at once — one per Device —
+   * so "the running timer" is only meaningful once a Device is named. The
+   * web has no Device and passes null, which is its own scope: `deviceId IS
+   * NULL` matches only web-started entries, never a desktop's.
+   *
+   * Superseded ADR-0006's one-timer-per-Membership rule; see
+   * docs/adr/0022 for why parallel timers do not inflate reported hours.
+   */
+  private runningForDevice(
+    membershipId: string,
+    deviceId: string | null,
+  ): FindOptionsWhere<TimeEntry> {
+    return {
+      membershipId,
+      deviceId: deviceId === null ? IsNull() : deviceId,
+      endedAt: IsNull(),
+    };
+  }
+
+  /**
+   * Every timer the person has running, across all their Devices.
+   *
+   * The web controls the account rather than a machine: its stop means "end
+   * my tracking", which with parallel Devices is no longer a single entry.
+   * Each is closed individually so per-Device history stays intact.
+   */
+  async stopAll(
+    organisationId: string,
+    userId: string,
+    endedAt?: Date,
+  ): Promise<TimeEntrySummary[]> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const running = await this.timeEntries.find({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    if (running.length === 0) {
+      throw new NotFoundException('No timer is currently running.');
+    }
+
+    const resolvedEndedAt = endedAt ?? new Date();
+    const stopped: TimeEntrySummary[] = [];
+    for (const entry of running) {
+      this.assertValidRange(entry.startedAt, resolvedEndedAt);
+      entry.endedAt = resolvedEndedAt;
+      const saved = await this.timeEntries.save(entry);
+      await this.closeOpenPause(
+        this.timeEntryPauses,
+        saved.id,
+        resolvedEndedAt,
+      );
+      stopped.push(await this.toSummary(saved));
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.stopped_all',
+        organisationId,
+        actorUserId: userId,
+        metadata: { timeEntryIds: running.map((entry) => entry.id) },
+      });
+    });
+
+    return stopped;
+  }
+
+  /**
+   * What the web shows: `entry` is the timer it started, so its controls
+   * never reach into a machine the person is not looking at. A tracking
+   * Device comes back as `elsewhere` instead.
+   *
+   * `workedSeconds` stays the union across every open entry, so a second
+   * machine starting at 10:00 shows the hour the first already accrued.
+   */
+  async currentForAccount(
+    organisationId: string,
+    userId: string,
+  ): Promise<CurrentTimeEntry> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const running = await this.timeEntries.find({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+      order: { startedAt: 'ASC' },
+    });
+    const own = running.find((entry) => entry.deviceId === null) ?? null;
+    const onADevice = running.find((entry) => entry.deviceId !== null) ?? null;
+
+    return {
+      entry: own ? await this.toSummary(own) : null,
+      elsewhere: onADevice ? await this.toSummary(onADevice) : null,
+      now: new Date(),
+      workedSeconds: await this.unionWorkedSeconds(running),
+    };
+  }
+
+  /** Union of the active time across these entries; see time-entry-union.util. */
+  private async unionWorkedSeconds(entries: TimeEntry[]): Promise<number> {
+    if (entries.length === 0) return 0;
+    const pauses = await this.timeEntryPauses.find({
+      where: { timeEntryId: In(entries.map((entry) => entry.id)) },
+    });
+    const byEntry = new Map<string, TimeEntryPause[]>();
+    for (const pause of pauses) {
+      byEntry.set(pause.timeEntryId, [
+        ...(byEntry.get(pause.timeEntryId) ?? []),
+        pause,
+      ]);
+    }
+    return unionActiveSeconds(entries, byEntry, new Date());
+  }
+
+  /**
+   * Pauses or resumes every Device at once — the web's controls are
+   * account-level, matching its stop.
+   */
+  async setPausedForAccount(
+    organisationId: string,
+    userId: string,
+    paused: boolean,
+  ): Promise<TimeEntrySummary[]> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const running = await this.timeEntries.find({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    if (running.length === 0) {
+      throw new NotFoundException('No timer is currently running.');
+    }
+
+    const now = new Date();
+    const summaries: TimeEntrySummary[] = [];
+    for (const entry of running) {
+      const open = await this.timeEntryPauses.findOne({
+        where: { timeEntryId: entry.id, resumedAt: IsNull() },
+      });
+      if (paused && !open) {
+        await this.timeEntryPauses.save(
+          this.timeEntryPauses.create({
+            organisationId,
+            timeEntryId: entry.id,
+            pausedAt: now,
+            resumedAt: null,
+          }),
+        );
+      } else if (!paused && open) {
+        await this.closeOpenPause(this.timeEntryPauses, entry.id, now);
+      }
+      summaries.push(await this.toSummary(entry));
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.auditLogService.record(manager, {
+        action: paused ? 'time_entry.paused_all' : 'time_entry.resumed_all',
+        organisationId,
+        actorUserId: userId,
+        metadata: { timeEntryIds: running.map((entry) => entry.id) },
+      });
+    });
+
+    return summaries;
+  }
+
   async start(
     organisationId: string,
     userId: string,
@@ -194,14 +371,53 @@ export class TimeEntriesService {
       taskId,
     );
 
-    const running = await this.timeEntries.findOne({
+    // Another Device may be tracking anything, the same Project or a
+    // different one. Only the Project totals made a different one a problem,
+    // and attribution now settles those: a stretch tracked twice is credited
+    // to one Project, so two of them cannot both claim it (ADR-0022).
+    // Deliberately not auto-stopping the other device — ADR-0006's reasoning,
+    // that silently ending a timer on a machine the person is not looking at
+    // mutates hours feeding payroll, still holds.
+    const elsewhere = await this.timeEntries.find({
       where: { membershipId: membership.id, endedAt: IsNull() },
+      relations: { device: true },
     });
-    if (running) {
+
+    // One timer per Device, and the web counts as one — matching the
+    // index's NULLS NOT DISTINCT, so two browsers share a single web timer.
+    const onThisSurface =
+      deviceId === null
+        ? elsewhere.find((entry) => entry.deviceId === null)
+        : elsewhere.find((entry) => entry.deviceId === deviceId);
+    if (onThisSurface) {
       throw new ConflictException({
         message:
-          'A timer is already running — stop it first, or use switch to move to this one.',
-        runningEntry: await this.toSummary(running),
+          deviceId === null
+            ? 'A timer is already running on the web.'
+            : 'A timer is already running on this device.',
+        runningEntry: await this.toSummary(onThisSurface),
+      });
+    }
+
+    // The web may track alongside a Device, but only the same Project:
+    // "laptop says X, browser says Y" is a split the person cannot see,
+    // unlike two machines they picked up one at a time. Devices keep their
+    // freedom to differ from each other (ADR-0022).
+    const deviceProjectIds = new Set(
+      elsewhere
+        .filter((entry) => entry.deviceId !== null)
+        .map((entry) => entry.projectId),
+    );
+    if (
+      deviceId === null &&
+      deviceProjectIds.size > 0 &&
+      !deviceProjectIds.has(projectId)
+    ) {
+      const mismatch = elsewhere.find((entry) => entry.deviceId !== null)!;
+      throw new ConflictException({
+        message:
+          'Your device is tracking a different project. Start that same project here, or stop it there first.',
+        runningEntry: await this.toSummary(mismatch),
       });
     }
 
@@ -242,14 +458,17 @@ export class TimeEntriesService {
   async stop(
     organisationId: string,
     userId: string,
+    deviceId: string | null,
     endedAt?: Date,
   ): Promise<TimeEntrySummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const running = await this.timeEntries.findOne({
-      where: { membershipId: membership.id, endedAt: IsNull() },
+      where: this.runningForDevice(membership.id, deviceId),
     });
     if (!running) {
-      throw new NotFoundException('No timer is currently running.');
+      throw new NotFoundException(
+        'No timer is currently running on this device.',
+      );
     }
 
     const resolvedEndedAt = endedAt ?? new Date();
@@ -306,8 +525,12 @@ export class TimeEntriesService {
     );
 
     const saved = await this.dataSource.transaction(async (manager) => {
+      // Scoped to this Device: switching on one machine stops that machine's
+      // timer, never another's. Leaving two Devices on different Projects is
+      // a supported state — attribution credits any shared stretch to one of
+      // them (ADR-0022) — so nothing here needs to guard against it.
       const running = await manager.findOne(TimeEntry, {
-        where: { membershipId: membership.id, endedAt: IsNull() },
+        where: this.runningForDevice(membership.id, deviceId),
       });
 
       if (running) {
@@ -360,15 +583,29 @@ export class TimeEntriesService {
   async current(
     organisationId: string,
     userId: string,
+    deviceId: string | null,
   ): Promise<CurrentTimeEntry> {
     const membership = await this.getActiveMembership(organisationId, userId);
-    const running = await this.timeEntries.findOne({
-      where: { membershipId: membership.id, endedAt: IsNull() },
-    });
+    const [running, allRunning] = await Promise.all([
+      this.timeEntries.findOne({
+        where: this.runningForDevice(membership.id, deviceId),
+      }),
+      this.timeEntries.find({
+        where: { membershipId: membership.id, endedAt: IsNull() },
+      }),
+    ]);
+
+    const other = allRunning.find((entry) => entry.id !== running?.id) ?? null;
 
     return {
       entry: running ? await this.toSummary(running) : null,
+      // Where else the person is tracking. Reported, never controlled:
+      // this Device's stop ends this Device's timer only.
+      elsewhere: other ? await this.toSummary(other) : null,
       now: new Date(),
+      // Account-wide on purpose: this Device displays the person's total, so
+      // a machine joining at 10:00 shows the hour another already accrued.
+      workedSeconds: await this.unionWorkedSeconds(allRunning),
     };
   }
 
@@ -727,6 +964,7 @@ export class TimeEntriesService {
       this.assertValidRange(nextStartedAt, nextEndedAt);
       await this.assertNoOverlap(
         entry.membershipId,
+        entry.deviceId,
         entry.id,
         nextStartedAt,
         nextEndedAt,
@@ -1028,20 +1266,29 @@ export class TimeEntriesService {
    */
   private async assertNoOverlap(
     membershipId: string,
+    deviceId: string | null,
     timeEntryId: string,
     startedAt: Date,
     endedAt: Date,
   ): Promise<void> {
+    // Scoped to the Device, mirroring the running-timer index exactly: one
+    // machine cannot be in two places at once, but a laptop and a desktop
+    // genuinely can, and that overlap is the normal state this supports.
+    // `IsNull()` rather than `deviceId` matches the index's NULLS NOT
+    // DISTINCT — entries with no Device are all "the web", one timeline.
+    const sameDevice = deviceId === null ? IsNull() : Equal(deviceId);
     const clash = await this.timeEntries.findOne({
       where: [
         {
           membershipId,
+          deviceId: sameDevice,
           id: Not(timeEntryId),
           startedAt: LessThan(endedAt),
           endedAt: MoreThan(startedAt),
         },
         {
           membershipId,
+          deviceId: sameDevice,
           id: Not(timeEntryId),
           startedAt: LessThan(endedAt),
           endedAt: IsNull(),
@@ -1050,7 +1297,7 @@ export class TimeEntriesService {
     });
     if (clash) {
       throw new ConflictException(
-        'These times overlap another time entry for this person — one moment cannot belong to two entries. Adjust the times so they do not cover the same period.',
+        'These times overlap another time entry from the same device — one machine cannot track two entries at once. Adjust the times so they do not cover the same period.',
       );
     }
   }
@@ -1125,13 +1372,16 @@ export class TimeEntriesService {
   async pause(
     organisationId: string,
     userId: string,
+    deviceId: string | null,
   ): Promise<TimeEntrySummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const running = await this.timeEntries.findOne({
-      where: { membershipId: membership.id, endedAt: IsNull() },
+      where: this.runningForDevice(membership.id, deviceId),
     });
     if (!running) {
-      throw new NotFoundException('No timer is currently running.');
+      throw new NotFoundException(
+        'No timer is currently running on this device.',
+      );
     }
 
     const openPause = await this.timeEntryPauses.findOne({
@@ -1170,13 +1420,16 @@ export class TimeEntriesService {
   async resume(
     organisationId: string,
     userId: string,
+    deviceId: string | null,
   ): Promise<TimeEntrySummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const running = await this.timeEntries.findOne({
-      where: { membershipId: membership.id, endedAt: IsNull() },
+      where: this.runningForDevice(membership.id, deviceId),
     });
     if (!running) {
-      throw new NotFoundException('No timer is currently running.');
+      throw new NotFoundException(
+        'No timer is currently running on this device.',
+      );
     }
 
     const openPause = await this.timeEntryPauses.findOne({

@@ -2,11 +2,16 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 import { localDateKey } from '../../common/local-date-key.util';
+import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
   buildPauseStates,
   computeActiveSeconds,
   PauseState,
 } from '../../common/time-entry-active-seconds.util';
+import {
+  groupPausesByEntry,
+  unionActiveSeconds,
+} from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../database/entities/project-colour.enum';
@@ -126,50 +131,87 @@ export class DashboardService {
     const projectSeconds = new Map<string, DashboardProjectTime>();
     const projectSecondsToday = new Map<string, DashboardProjectTime>();
 
+    // Totals are the *union* of the person's entries, not their sum: a
+    // Membership may track on several Devices at once, and shared wall-clock
+    // time must count once or reported hours stop being bounded by the clock
+    // (ADR-0022). Per-entry seconds are still used for the per-project and
+    // per-day breakdowns' grouping, then unioned within each group.
+    const pausesByEntry = await this.getPausesFor([
+      ...thisWeekEntries,
+      ...yesterdaySameSpanEntries,
+    ]);
+    const unionOf = (entries: TimeEntry[]): number =>
+      unionActiveSeconds(entries, pausesByEntry, now);
+
+    const entriesByDay = new Map<string, TimeEntry[]>();
+    const entriesByProject = new Map<string, TimeEntry[]>();
+    const todayEntriesByProject = new Map<string, TimeEntry[]>();
+
     for (const entry of thisWeekEntries) {
       const seconds = computeActiveSeconds(entry, pauseStates, now);
-      workedThisWeekSeconds += seconds;
 
       const key = localDateKey(entry.startedAt);
-      const day = byDay.find((candidate) => candidate.date === key);
-      if (day) {
-        day.seconds += seconds;
-      }
+      entriesByDay.set(key, [...(entriesByDay.get(key) ?? []), entry]);
+      entriesByProject.set(entry.projectId, [
+        ...(entriesByProject.get(entry.projectId) ?? []),
+        entry,
+      ]);
+      // Running entries count too, measured to `now` below: leaving them
+      // out reported a Project as untouched while a desktop filled it.
       if (key === todayKey) {
-        workedTodaySeconds += seconds;
-
-        if (entry.endedAt) {
-          const existingToday = projectSecondsToday.get(entry.projectId);
-          if (existingToday) {
-            existingToday.seconds += seconds;
-          } else {
-            projectSecondsToday.set(entry.projectId, {
-              projectId: entry.projectId,
-              projectName: entry.project.name,
-              projectColour: entry.project.colour,
-              seconds,
-            });
-          }
-        }
+        todayEntriesByProject.set(entry.projectId, [
+          ...(todayEntriesByProject.get(entry.projectId) ?? []),
+          entry,
+        ]);
       }
 
-      const existingProject = projectSeconds.get(entry.projectId);
-      if (existingProject) {
-        existingProject.seconds += seconds;
-      } else {
+      if (!projectSeconds.has(entry.projectId)) {
         projectSeconds.set(entry.projectId, {
           projectId: entry.projectId,
           projectName: entry.project.name,
           projectColour: entry.project.colour,
-          seconds,
+          seconds: 0,
         });
       }
+      if (!projectSecondsToday.has(entry.projectId) && key === todayKey) {
+        projectSecondsToday.set(entry.projectId, {
+          projectId: entry.projectId,
+          projectName: entry.project.name,
+          projectColour: entry.project.colour,
+          seconds: 0,
+        });
+      }
+      void seconds;
     }
 
-    const workedYesterdaySameSpanSeconds = yesterdaySameSpanEntries.reduce(
-      (total, entry) => total + computeActiveSeconds(entry, pauseStates, now),
-      0,
+    workedThisWeekSeconds = unionOf(thisWeekEntries);
+    workedTodaySeconds = unionOf(entriesByDay.get(todayKey) ?? []);
+    for (const day of byDay) {
+      day.seconds = unionOf(entriesByDay.get(day.date) ?? []);
+    }
+    // Attributed rather than unioned per Project: two Devices may run
+    // different Projects at once, and unioning each Project's own entries
+    // would let both claim the shared stretch, so the breakdown would exceed
+    // the total it sits under (ADR-0022). Crediting each shared second to one
+    // Project keeps the parts summing to the whole.
+    const projectAttribution = attributeProjectSeconds(
+      thisWeekEntries,
+      pausesByEntry,
+      now,
     );
+    const todayAttribution = attributeProjectSeconds(
+      [...todayEntriesByProject.values()].flat(),
+      pausesByEntry,
+      now,
+    );
+    for (const [projectId, total] of projectSeconds) {
+      total.seconds = projectAttribution.get(projectId) ?? 0;
+    }
+    for (const [projectId, total] of projectSecondsToday) {
+      total.seconds = todayAttribution.get(projectId) ?? 0;
+    }
+
+    const workedYesterdaySameSpanSeconds = unionOf(yesterdaySameSpanEntries);
 
     let workedLastWeekSameSpanSeconds = 0;
     const lastWeekProjectIds = new Set<string>();
@@ -232,6 +274,23 @@ export class DashboardService {
       where: { timeEntryId: In(timeEntryIds) },
     });
     return buildPauseStates(pauses);
+  }
+
+  /**
+   * The same pause rows, ungrouped — the union needs each pause's shape, not
+   * the netted total `PauseState` carries.
+   */
+  private async getPausesFor(
+    entries: TimeEntry[],
+  ): Promise<Map<string, TimeEntryPause[]>> {
+    const timeEntryIds = entries.map((entry) => entry.id);
+    if (timeEntryIds.length === 0) return new Map();
+
+    return groupPausesByEntry(
+      await this.timeEntryPauses.find({
+        where: { timeEntryId: In(timeEntryIds) },
+      }),
+    );
   }
 
   private startOfDay(date: Date): Date {

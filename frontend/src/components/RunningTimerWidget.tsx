@@ -55,6 +55,9 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
               <span className="text-3xl font-semibold tabular-nums text-primary-dark">
                 {formatElapsed(timer.elapsedMs)}
               </span>
+              <span className="text-xs text-slate-900/60">
+                Today: {formatElapsed(timer.workedTodayMs)}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -98,6 +101,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
           taskId={timer.taskId}
           projectSecondsToday={timer.projectSecondsToday}
           conflictMessage={timer.conflictMessage}
+          requiredProjectId={timer.requiredProjectId}
           isStarting={timer.isStarting}
           isSwitching={timer.isSwitching}
           onProjectChange={timer.onProjectChange}

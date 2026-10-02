@@ -1,4 +1,4 @@
-import { entrySeconds } from "./entrySeconds";
+import { unionActiveSeconds } from "@/lib/unionActiveSeconds";
 import { dateKeyInZone, detectTimezone } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -65,7 +65,13 @@ export function groupTimeEntriesByDay(
       groups.push(group);
     }
     group.entries.push(entry);
-    group.totalSeconds += entrySeconds(entry, elapsedNow);
+  }
+
+  // Unioned, not summed: a person may have been tracking on two Devices at
+  // once, and time they share counts once (ADR-0022). `elapsedNow` is passed
+  // through so a still-running entry still contributes what it has accrued.
+  for (const group of groups) {
+    group.totalSeconds = unionActiveSeconds(group.entries, elapsedNow);
   }
 
   return groups;

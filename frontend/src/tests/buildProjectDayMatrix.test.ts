@@ -2,7 +2,33 @@ import { describe, expect, it } from "vitest";
 import { buildProjectDayMatrix } from "@/lib/buildProjectDayMatrix";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
+/**
+ * `endedAt` is derived from `startedAt` and `durationSeconds` unless given
+ * outright: totals now read an entry's timestamps, not only its duration, so
+ * an entry whose end contradicts its start is no longer harmless fixture
+ * noise.
+ */
 function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListItem {
+  const startedAt = overrides.startedAt ?? "2026-01-05T09:00:00.000Z";
+  const durationSeconds =
+    overrides.durationSeconds !== undefined ? overrides.durationSeconds : 3600;
+  const endedAt =
+    "endedAt" in overrides
+      ? (overrides.endedAt ?? null)
+      : durationSeconds === null
+        ? null
+        : new Date(Date.parse(startedAt) + durationSeconds * 1000).toISOString();
+
+  return {
+    ...baseEntry(),
+    ...overrides,
+    startedAt,
+    endedAt,
+    durationSeconds,
+  };
+}
+
+function baseEntry(): TimeEntryListItem {
   return {
     id: `entry-${Math.random()}`,
     membershipId: "m-1",
@@ -25,7 +51,6 @@ function makeEntry(overrides: Partial<TimeEntryListItem> = {}): TimeEntryListIte
     canEdit: true,
     canDelete: true,
     pauses: [],
-    ...overrides,
   };
 }
 
