@@ -10,7 +10,8 @@ import { Spinner } from "@/components/Spinner";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { useTimeActivityReportControls, DEFAULT_TIME_ACTIVITY_PRESET } from "@/hooks/useTimeActivityReportControls";
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
-import { dateKeyInZone } from "@/lib/timezone";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { dateKeyInZone, timezoneAbbreviation, timezoneTooltip } from "@/lib/timezone";
 import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
 import type { ReportSchedule } from "@/types/reportSchedule";
 import type { SavedReport } from "@/types/savedReport";
@@ -28,7 +29,8 @@ type TimeActivityReportPageProps = {
 export function TimeActivityReportPage({ organisationId, savedReport }: TimeActivityReportPageProps) {
   const router = useRouter();
   const { saveReport } = useSavedReports(organisationId);
-  const controls = useTimeActivityReportControls(savedReport?.settings);
+  const organisationQuery = useCurrentOrganisation();
+  const controls = useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const { scope, setScope, grouping, setGrouping, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
     controls;
 
@@ -44,7 +46,7 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
     projectOptions,
     isLoading,
     error,
-  } = useTimeActivityReportData(organisationId, scope, range, filters);
+  } = useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
 
   // Saves (or, on an already-saved report, updates) this report's current
   // settings; a brand-new one then opens at its own address. Resolves with
@@ -96,6 +98,9 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
               setPreset(nextPreset);
             }}
           />
+          <span className="pb-2.5 text-sm font-medium text-slate-900" title={timezoneTooltip(zone)}>
+            {timezoneAbbreviation(zone)}
+          </span>
         </div>
         <TimeActivityReportActions
           organisationId={organisationId}
@@ -103,6 +108,7 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
           idleMembers={idleMembers}
           entries={entries}
           range={range}
+          zone={zone}
           grouping={grouping}
           showsEveryone={showsEveryone}
           filters={activeFilters}
@@ -138,7 +144,7 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
         </p>
       )}
 
-      {isLoading && (
+      {(isLoading || organisationQuery.isLoading) && (
         <p className="flex items-center gap-2 text-slate-900">
           <Spinner className="text-primary-dark" />
           Loading report…

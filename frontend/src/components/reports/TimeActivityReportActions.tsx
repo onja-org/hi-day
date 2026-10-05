@@ -28,6 +28,8 @@ type TimeActivityReportActionsProps = {
   organisationId: string;
   entries: TimeEntryListItem[] | undefined;
   range: DateRange;
+  /** The zone the report is read in, so exported files match the screen. */
+  zone: string;
   grouping: TimeActivityGrouping;
   teamNames: MembershipTeamNames;
   idleMembers: { id: string; label: string }[];
@@ -48,6 +50,7 @@ export function TimeActivityReportActions({
   organisationId,
   entries,
   range,
+  zone,
   grouping,
   teamNames,
   idleMembers,
@@ -80,6 +83,7 @@ export function TimeActivityReportActions({
         grouping,
         teamNames,
         idleMembers,
+        zone,
         title: input.subject,
       });
       const result = await sendReport(organisationId, {
@@ -96,7 +100,7 @@ export function TimeActivityReportActions({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <ExportButtons
-        csv={entriesToCsv(entries ?? [])}
+        csv={entriesToCsv(entries ?? [], zone)}
         filenameBase={filenameBase}
         disabled={(entries ?? []).length === 0}
       />

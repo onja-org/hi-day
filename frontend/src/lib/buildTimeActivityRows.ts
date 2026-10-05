@@ -7,7 +7,7 @@ import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActi
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 type RowOptions = {
-  /** Skip the per-day level under project/member/team/to-do groups. */
+  /** Skip the per-day level under project/member/team groups. */
   sumDates: boolean;
   teamNames: MembershipTeamNames;
   /** Members to list under "Member" grouping even when they have no entries, as zero-hour rows. */
@@ -29,14 +29,15 @@ function teamsOf(entries: TimeEntryListItem[], teamNames: MembershipTeamNames): 
 
 function entryCells(entries: TimeEntryListItem[]): Record<string, string> {
   const { tracked, manual } = splitEntrySeconds(entries);
-  const paused = entries.reduce((sum, entry) => sum + entry.pausedSeconds, 0);
+  const idle = entries
+    .filter((entry) => entry.type === "idle")
+    .reduce((sum, entry) => sum + entrySeconds(entry, null), 0);
   return {
     project: distinct(entries.map((entry) => entry.projectName)),
-    todo: distinct(entries.map((entry) => entry.taskName)),
     regular: hours(tracked),
-    manual: hours(manual),
     total: hours(tracked + manual),
-    breakTime: hours(paused),
+    idlePerHour: hours(idle),
+    idlePercent: `${tracked + manual > 0 ? Math.round((idle / (tracked + manual)) * 100) : 0}%`,
   };
 }
 
@@ -117,7 +118,7 @@ function leafRows(
 
 /**
  * The report's table rows. "Date per day"/"week" go group → rows. Project,
- * member, team and to-do go group → day → rows, or group → rows when
+ * member and team go group → day → rows, or group → rows when
  * `sumDates` is on. "None" is a flat list of rows. A group's "(n)" counts
  * the merged rows beneath it, not raw timer sessions.
  */

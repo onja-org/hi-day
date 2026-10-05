@@ -15,8 +15,6 @@ type ReportsTableProps = {
   /** The first column identifies the row (e.g. Date): it's sortable, holds the expand chevron, and can't be hidden. */
   columns: ReportTableColumn[];
   rows: ReportTableRow[];
-  /** Keys of columns that start hidden — the user can still turn them on. */
-  defaultHiddenKeys?: string[];
   /** Extra controls shown in the toolbar, before the built-in buttons. */
   toolbarExtra?: ReactNode;
 };
@@ -27,12 +25,10 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function ReportsTable({ columns, rows, defaultHiddenKeys = [], toolbarExtra }: ReportsTableProps) {
+export function ReportsTable({ columns, rows, toolbarExtra }: ReportsTableProps) {
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(
-    () => new Set(defaultHiddenKeys),
-  );
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
 

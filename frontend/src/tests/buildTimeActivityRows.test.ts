@@ -130,11 +130,25 @@ describe("buildTimeActivityRows", () => {
     expect(String(rows[0].cells.when)).toContain("2026");
   });
 
-  it("splits manual time from tracked time but counts both in the total", () => {
+  it("keeps manual time out of regular hours but counts it in the total", () => {
     const [row] = build([entry({ id: "a", durationSeconds: 3600 }), entry({ id: "b", source: "manual", durationSeconds: 1800 })], "day");
     expect(row.cells.regular).toBe("01:00:00");
-    expect(row.cells.manual).toBe("00:30:00");
     expect(row.cells.total).toBe("01:30:00");
+  });
+
+  it("sums only idle-type entries into idle hours", () => {
+    const [row] = build(
+      [entry({ id: "a", durationSeconds: 3600 }), entry({ id: "b", type: "idle", durationSeconds: 900 })],
+      "day",
+    );
+    expect(row.cells.idlePerHour).toBe("00:15:00");
+    expect(row.cells.idlePercent).toBe("20%");
+    expect(row.cells.total).toBe("01:15:00");
+  });
+
+  it("shows 0% idle when there is no time", () => {
+    const [row] = build([entry({ id: "a", durationSeconds: 0 })], "day");
+    expect(row.cells.idlePercent).toBe("0%");
   });
 
   it("lists each distinct project once on a group row", () => {
@@ -150,10 +164,6 @@ describe("buildTimeActivityRows", () => {
     expect(row.teams).toEqual(["Dev"]);
   });
 
-  it("sums paused seconds into break time", () => {
-    const [row] = build([entry({ pausedSeconds: 90 })], "day");
-    expect(row.cells.breakTime).toBe("00:01:30");
-  });
 });
 
 describe("buildTimeActivityRows week grouping", () => {

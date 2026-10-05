@@ -3,6 +3,7 @@ import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { EMPTY_REPORT_FILTERS } from "@/lib/reportFilters";
+import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
 import type { ReportFilters } from "@/lib/reportFilters";
 import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
 import type { DateRangePreset } from "@/types/dateRange";
@@ -13,9 +14,17 @@ import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
 export const DEFAULT_TIME_ACTIVITY_PRESET: DateRangePreset = "last_7_days";
 
 /** The report's own controls — what the viewer has chosen, starting from a saved report's settings when one is opened. */
-export function useTimeActivityReportControls(initial?: SavedReportSettings) {
+export function useTimeActivityReportControls(
+  initial?: SavedReportSettings,
+  organisationZone?: string | null,
+) {
   const [scope, setScope] = useState<ReportScope>(initial?.scope ?? "me");
-  const [grouping, setGrouping] = useState<TimeActivityGrouping>(initial?.grouping ?? "day");
+  const [grouping, setGrouping] = useState<TimeActivityGrouping>(() =>
+    // A saved report may hold a grouping that no longer exists (e.g. "todo").
+    TIME_ACTIVITY_GROUPINGS.some((option) => option.value === initial?.grouping)
+      ? initial!.grouping
+      : "day",
+  );
   const [preset, setPreset] = useState<DateRangePreset | null>(
     initial ? initial.datePreset : DEFAULT_TIME_ACTIVITY_PRESET,
   );
@@ -26,8 +35,11 @@ export function useTimeActivityReportControls(initial?: SavedReportSettings) {
     const today = dateKeyInZone(new Date(), detectTimezone());
     return { from: today, to: today };
   });
-  // UTC only before hydration, when no entries are on screen yet.
-  const zone = useViewerTimezone() ?? "UTC";
+  const viewerZone = useViewerTimezone();
+  // The organisation's zone, as the report is the organisation's; the
+  // viewer's only when it has none. UTC only before hydration, when no
+  // entries are on screen yet.
+  const zone = organisationZone ?? viewerZone ?? "UTC";
   const range = preset
     ? getTimesheetDateRange(preset, new Date(), zone)
     : getCustomDateRange(customDays.from, customDays.to, zone);
