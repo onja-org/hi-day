@@ -137,6 +137,28 @@ reading where the omnibox has keyboard focus.
 **Linux** — GNOME Shell Introspect over D-Bus for focus, AT-SPI2 for the URL. Supported only
 on GNOME-under-Wayland or any-WM-under-Xorg; detect and disable elsewhere.
 
+A browser builds its accessibility tree **at launch**, so `browser-activation.ts` shadows each
+`.desktop` entry rather than changing any desktop setting. That leaves one gap: a browser already
+open when the agent first ran keeps an empty tree, and nothing it does is ever recorded. Those are
+*blind* browsers — never found by asking, since a blind Chromium exposes almost nothing on the
+accessibility bus and a blind Firefox is absent from it entirely. `blind-browsers.ts` reads the
+state off each process instead: the rewrite appends the activation flag to **every** entry
+whatever the engine, so a browser carrying it in its own command line was launched through the
+override and one without it was not. Arguments survive snap and flatpak wrappers where
+environment variables are stripped, which is why the flag is the marker and the env var is not.
+Two cheaper-looking signals were measured against a real desktop and discarded: start time can't
+be tied to a process (Chrome's entry runs a wrapper, `/usr/bin/google-chrome-stable`, while the
+process is `/opt/google/chrome/chrome`), and install-directory matching breaks for snaps, where
+`/snap/bin/firefox` resolves to `/usr/bin/snap`.
+
+The agent offers to restart them, and does it on a button rather than on its own: ending a browser
+also ends whatever is unsaved in it, which no flag restores, so the timing is the person's to pick.
+Only blind browsers are restarted — one launched after activation already has its tree. Chromium
+comes back with `--restore-last-session`, which reopens the previous session whatever the person's
+startup preference. **Firefox has no equivalent flag**: it restores only when
+`browser.startup.page` is `3`, so a Firefox without that preference is deliberately left running
+and reported for the person to restart themselves. Restarting it anyway would cost them their tabs.
+
 ## Testing expectations
 
 - The session engine is table-driven tested for every transition, including sleep mid-session,

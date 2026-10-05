@@ -336,6 +336,72 @@ const screenRecordingGrantButton = document.getElementById(
 const screenRecordingSettingsButton = document.getElementById(
   "screen-recording-settings-button",
 ) as HTMLButtonElement;
+const browserRestartBanner = document.getElementById("browser-restart-banner")!;
+const browserRestartMessage = document.getElementById("browser-restart-message")!;
+const browserRestartButton = document.getElementById(
+  "browser-restart-button",
+) as HTMLButtonElement;
+const browserRestartDismiss = document.getElementById("browser-restart-dismiss")!;
+
+/** Dismissed for this run only, so it returns next start if the browser is
+ * still untracked — it just stops repeating while someone is mid-task. */
+let browserRestartDismissed = false;
+
+/**
+ * A browser open before the agent wrote its launcher overrides has no
+ * accessibility tree, so its URLs go unrecorded until it is restarted, and
+ * nothing else says so.
+ *
+ * Never blocking: losing URL capture must not stop time tracking, and a
+ * modal over the timer would do exactly that.
+ */
+async function refreshBrowserRestartBanner(platform: string): Promise<void> {
+  // Linux-only: the launcher override this compensates for exists nowhere
+  // else. The main process answers empty off Linux too — this is the second
+  // of two gates.
+  if (platform !== "linux" || browserRestartDismissed) {
+    browserRestartBanner.hidden = true;
+    return;
+  }
+
+  const status = await window.api.browserRestart.status();
+  const names = [...new Set([...status.needsRestart, ...status.manual.map((m) => m.name)])];
+  if (names.length === 0) {
+    browserRestartBanner.hidden = true;
+    return;
+  }
+
+  // Reasons are deduplicated and the list is capped: one sentence per
+  // browser turned the banner into a wall of repeated text.
+  const reasons = [...new Set(status.manual.map((entry) => entry.reason))];
+  const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} and others` : names.join(", ");
+
+  // Only offer the button when pressing it would finish the job; the rest is
+  // a browser we will not restart for them, and the reason says why.
+  browserRestartButton.hidden = status.needsRestart.length === 0;
+  browserRestartMessage.textContent = [
+    `Website tracking needs a restart of ${list}.`,
+    ...reasons.slice(0, 1),
+  ].join(" ");
+  browserRestartBanner.hidden = false;
+}
+
+browserRestartDismiss.addEventListener("click", () => {
+  browserRestartDismissed = true;
+  browserRestartBanner.hidden = true;
+});
+
+browserRestartButton.addEventListener("click", () => {
+  browserRestartButton.disabled = true;
+  browserRestartMessage.textContent = "Restarting…";
+  void window.api.browserRestart
+    .restart()
+    .then(() => refreshBrowserRestartBanner("linux"))
+    .finally(() => {
+      browserRestartButton.disabled = false;
+    });
+});
+
 const accessibilityBanner = document.getElementById("accessibility-banner")!;
 const accessibilityBannerMessage = document.getElementById(
   "accessibility-banner-message",
@@ -805,6 +871,8 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
     status.platform === "macos" && !status.accessibilityGranted
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
+
+  void refreshBrowserRestartBanner(status.platform);
 
   return status;
 }

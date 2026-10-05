@@ -38,6 +38,8 @@ import {
   resolveWinResolverPath,
 } from "./resolvers/resolver-paths";
 import { applyBrowserActivation } from "./resolvers/linux/browser-activation";
+import { BrowserRestartService } from "./resolvers/linux/browser-restart-service";
+import type { BlindBrowserStatus } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
   SETTINGS_DEEP_LINKS,
@@ -897,6 +899,77 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle("update:restart", (): void => {
     restartToApplyUpdate();
   });
+
+  ipcMain.handle(
+    "browserRestart:status",
+    (): BlindBrowserStatus => blindBrowserStatus(),
+  );
+
+  ipcMain.handle(
+    "browserRestart:restart",
+    async (): Promise<BlindBrowserStatus> => {
+      if (process.platform !== "linux") return { needsRestart: [], manual: [] };
+      const service = new BrowserRestartService({
+        logger: (line) => console.log(line),
+      });
+      await service.restart(service.findBlind().restartable);
+      // Re-read rather than assume: a browser that refused to die is still
+      // blind, and the banner should keep saying so.
+      invalidateBlindBrowserCache();
+      return blindBrowserStatus();
+    },
+  );
+}
+
+/**
+ * Cached because the renderer asks on every capture-status refresh — as
+ * often as every 2.5 seconds during a permission grant — and each answer
+ * costs a full `/proc` scan. Cached permanently once empty: activation has
+ * run by then, so the set can only shrink.
+ */
+let blindBrowserCache: { status: BlindBrowserStatus; atMs: number } | null = null;
+const BLIND_BROWSER_CACHE_MS = 10_000;
+
+function invalidateBlindBrowserCache(): void {
+  blindBrowserCache = null;
+}
+
+/**
+ * Browsers still running without an accessibility tree. Reported, not acted
+ * on: restarting one ends whatever is unsaved, so the timing is the
+ * person's.
+ */
+function blindBrowserStatus(): BlindBrowserStatus {
+  if (process.platform !== "linux") return { needsRestart: [], manual: [] };
+
+  const cached = blindBrowserCache;
+  if (cached) {
+    const isEmpty =
+      cached.status.needsRestart.length === 0 && cached.status.manual.length === 0;
+    if (isEmpty || Date.now() - cached.atMs < BLIND_BROWSER_CACHE_MS) {
+      return cached.status;
+    }
+  }
+
+  try {
+    const report = new BrowserRestartService().findBlind();
+    const status: BlindBrowserStatus = {
+      needsRestart: [...new Set(report.restartable.map((b) => b.command))],
+      manual: [
+        ...new Map(
+          report.manual.map((entry) => [
+            entry.browser.command,
+            { name: entry.browser.command, reason: entry.reason },
+          ]),
+        ).values(),
+      ],
+    };
+    blindBrowserCache = { status, atMs: Date.now() };
+    return status;
+  } catch (error) {
+    console.log(`[browser-restart] status unavailable: ${String(error)}`);
+    return { needsRestart: [], manual: [] };
+  }
 }
 
 /**
