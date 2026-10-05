@@ -23,9 +23,9 @@ describe('autostartDirectory / autostartFilePath', () => {
 
   it('honors XDG_CONFIG_HOME when set', () => {
     const env = { XDG_CONFIG_HOME: '/custom/config' } as NodeJS.ProcessEnv;
-    expect(autostartDirectory(env)).toBe('/custom/config/autostart');
+    expect(autostartDirectory(env)).toBe(join('/custom/config', 'autostart'));
     expect(autostartFilePath(env)).toBe(
-      '/custom/config/autostart/org.onja.workforce-monitor.desktop',
+      join('/custom/config', 'autostart', 'org.onja.workforce-monitor.desktop'),
     );
   });
 });

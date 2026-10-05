@@ -8,7 +8,14 @@ function makeResolver(timeoutMs?: number): FirefoxAxResolver {
   return new FirefoxAxResolver({ binaryPath: fakeBinaryPath, timeoutMs });
 }
 
-describe('FirefoxAxResolver — resolve', () => {
+/**
+ * Skipped on Windows, which has no concept of a shebang: the stand-in helper
+ * is an .mjs script spawned directly, and Windows answers EFTYPE rather than
+ * running it through node. The resolver under test is darwin-only and never
+ * executes there, so nothing is lost — and it still runs on Linux, where the
+ * shebang works.
+ */
+describe.skipIf(process.platform === 'win32')('FirefoxAxResolver — resolve', () => {
   it('resolves a normal (non-private) window', async () => {
     const resolver = makeResolver();
     const result = await resolver.resolve(1);
