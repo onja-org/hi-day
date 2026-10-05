@@ -355,11 +355,18 @@ let browserRestartDismissed = false;
  * Never blocking: losing URL capture must not stop time tracking, and a
  * modal over the timer would do exactly that.
  */
-async function refreshBrowserRestartBanner(platform: string): Promise<void> {
+/**
+ * The platform the app is running on, as the main process reports it. Held
+ * here so every path that shows the banner reads the same value — passing it
+ * per call let one caller hand in a literal and defeat the Linux gate.
+ */
+let hostPlatform: string | null = null;
+
+async function refreshBrowserRestartBanner(): Promise<void> {
   // Linux-only: the launcher override this compensates for exists nowhere
   // else. The main process answers empty off Linux too — this is the second
   // of two gates.
-  if (platform !== "linux" || browserRestartDismissed) {
+  if (hostPlatform !== "linux" || browserRestartDismissed) {
     browserRestartBanner.hidden = true;
     return;
   }
@@ -398,7 +405,7 @@ browserRestartButton.addEventListener("click", () => {
   browserRestartMessage.textContent = "Restarting…";
   void window.api.browserRestart
     .restart()
-    .then(() => refreshBrowserRestartBanner("linux"))
+    .then(() => refreshBrowserRestartBanner())
     .finally(() => {
       browserRestartButton.disabled = false;
     });
@@ -874,7 +881,8 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
 
-  void refreshBrowserRestartBanner(status.platform);
+  hostPlatform = status.platform;
+  void refreshBrowserRestartBanner();
 
   return status;
 }
