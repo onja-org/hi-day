@@ -78,6 +78,7 @@ export class SavedReportsService {
           organisationId,
           membershipId: membership.id,
           name: dto.name.trim(),
+          ...(dto.reportType && { reportType: dto.reportType }),
           settings: dto.settings,
           schedule: dto.schedule ?? null,
         }),

@@ -17,6 +17,8 @@ type ReportsTableProps = {
   rows: ReportTableRow[];
   /** Extra controls shown in the toolbar, before the built-in buttons. */
   toolbarExtra?: ReactNode;
+  /** A pinned totals row shown after the (sorted, paginated) rows. */
+  footerRow?: ReportTableRow;
 };
 
 function toggled<T>(set: Set<T>, value: T): Set<T> {
@@ -25,7 +27,7 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function ReportsTable({ columns, rows, toolbarExtra }: ReportsTableProps) {
+export function ReportsTable({ columns, rows, toolbarExtra, footerRow }: ReportsTableProps) {
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
@@ -93,6 +95,17 @@ export function ReportsTable({ columns, rows, toolbarExtra }: ReportsTableProps)
               />
             ))}
           </tbody>
+          {footerRow && (
+            <tfoot>
+              <tr className="border-t border-input-border">
+                {visibleColumns.map((column) => (
+                  <td key={column.key} className="px-3 py-2.5 text-xs font-semibold whitespace-nowrap text-primary-dark">
+                    {footerRow.cells[column.key] ?? "-"}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       <ReportsTableFooter

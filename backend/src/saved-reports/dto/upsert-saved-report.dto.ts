@@ -20,6 +20,7 @@ import {
 } from 'class-validator';
 import { REPORT_DATE_PRESETS } from '../../common/report-date-range.util';
 
+export const SAVED_REPORT_TYPES = ['time-and-activity', 'daily-totals'];
 const GROUPINGS = ['none', 'day', 'week', 'project', 'member', 'team', 'todo'];
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_FILTER_VALUES = 200;
@@ -109,6 +110,11 @@ export class ReportScheduleDto {
 
 /** Used for both create and update: saving always replaces the report's name, settings and schedule. */
 export class UpsertSavedReportDto {
+  // Only read when a report is created; a saved report keeps its type.
+  @IsOptional()
+  @IsIn(SAVED_REPORT_TYPES)
+  reportType?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)

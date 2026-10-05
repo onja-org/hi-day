@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Spinner } from "@/components/Spinner";
 import { useSavedReports } from "@/hooks/useSavedReports";
+import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
 
 type SavedReportPageProps = {
@@ -38,6 +39,12 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
           Back to customised reports
         </Link>
       </div>
+    );
+  }
+
+  if (savedReport.reportType === "daily-totals") {
+    return (
+      <DailyTotalsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />
     );
   }
 
