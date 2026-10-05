@@ -247,6 +247,8 @@ export interface ActivationOutcome {
   targetPath: string;
   /** False when the override could not be written — `reason` says why. */
   activated: boolean;
+  /** True when the override was already correct and nothing was written. */
+  unchanged?: boolean;
   reason?: string;
 }
 
@@ -259,7 +261,11 @@ export interface ActivationReport {
 /**
  * Writes an activated copy of every browser entry found. Runs at agent
  * startup, so browsers opened later are already activated. One already
- * running keeps its empty tree until next launched.
+ * running keeps its empty tree until next launched — `blind-browsers.ts`
+ * finds those by comparing process start times against the override's
+ * mtime, which is why an unchanged entry is left untouched rather than
+ * rewritten: rewriting it every startup would move the mtime forward and
+ * make every browser look newly blind.
  */
 export function applyBrowserActivation(options: {
   scope: 'system' | 'user';
@@ -276,7 +282,17 @@ export function applyBrowserActivation(options: {
     const targetPath = join(targetDirectory, source.fileName);
     try {
       mkdirSync(targetDirectory, { recursive: true });
-      writeFileSync(targetPath, activateDesktopEntry(source.contents), 'utf-8');
+      const desired = activateDesktopEntry(source.contents);
+      if (existsSync(targetPath) && readFileSync(targetPath, 'utf-8') === desired) {
+        outcomes.push({
+          fileName: source.fileName,
+          targetPath,
+          activated: true,
+          unchanged: true,
+        });
+        continue;
+      }
+      writeFileSync(targetPath, desired, 'utf-8');
       outcomes.push({ fileName: source.fileName, targetPath, activated: true });
     } catch (error) {
       outcomes.push({
