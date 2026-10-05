@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   missingArchitectures,
@@ -14,14 +15,14 @@ describe('requirementFor', () => {
     // The Windows resolver lives at the repo root while the darwin helper lives
     // under desktop/. electron-builder's extraResources entry got this wrong and
     // would have bundled nothing, so the asymmetry is worth asserting.
-    expect(required?.path).toContain('/native/win/resolver/');
-    expect(required?.path).not.toContain('/desktop/native/win/');
+    expect(required?.path).toContain(join('native', 'win', 'resolver'));
+    expect(required?.path).not.toContain(join('desktop', 'native', 'win'));
     expect(required?.path.endsWith('win-resolver.exe')).toBe(true);
   });
 
   it('points darwin under desktop/, where the helper is built', () => {
     const required = requirementFor('darwin');
-    expect(required?.path).toContain('/desktop/native/darwin/');
+    expect(required?.path).toContain(join('desktop', 'native', 'darwin'));
     expect(required?.path.endsWith('firefox-ax-helper')).toBe(true);
   });
 

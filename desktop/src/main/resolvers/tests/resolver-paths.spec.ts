@@ -50,6 +50,14 @@ describe('resolver entry-point paths', () => {
       resourcesPath: '/Applications/App.app/Contents/Resources',
     });
 
-    expect(path).toBe('/Applications/App.app/Contents/Resources/native/win/resolver/win-resolver.exe');
+    expect(path).toBe(
+      join(
+        '/Applications/App.app/Contents/Resources',
+        'native',
+        'win',
+        'resolver',
+        'win-resolver.exe',
+      ),
+    );
   });
 });
