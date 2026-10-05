@@ -102,8 +102,12 @@ export function canRestartSafely(
   };
 }
 
-/** Field codes a launcher passes files and URIs through — meaningless with no document to open. */
-const DESKTOP_FIELD_CODES = /^%[fFuUdDnNickvm]$/;
+/**
+ * Placeholders a launcher fills with files to open — meaningless with no
+ * document to pass. `@@`/`@@u` are flatpak's file-forwarding markers, which
+ * reach the browser as literal arguments if left in.
+ */
+const LAUNCHER_PLACEHOLDERS = /^(%[fFuUdDnNickvm]|@@u?)$/;
 
 /**
  * The command line that relaunches a browser from its *activated* entry.
@@ -119,7 +123,7 @@ export function relaunchCommand(
 ): { command: string; args: string[] } | null {
   const tokens = (activatedExec.match(/"[^"]*"|\S+/g) ?? [])
     .map((token) => token.replace(/^"|"$/g, ''))
-    .filter((token) => !DESKTOP_FIELD_CODES.test(token));
+    .filter((token) => !LAUNCHER_PLACEHOLDERS.test(token));
   if (tokens.length === 0) return null;
 
   const args = tokens.slice(1);

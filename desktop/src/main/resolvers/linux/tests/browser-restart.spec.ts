@@ -98,6 +98,34 @@ describe('relaunchCommand', () => {
     expect(relaunch.command).toBe('/usr/bin/firefox');
   });
 
+  /**
+   * Flatpak refuses to start on an option it does not know, so anything for
+   * the browser has to sit *after* the app id — the reason
+   * `activateFlatpakExec` exists. The restore flag has to land there too.
+   */
+  it('puts the restore flag after a flatpak app id, not before it', () => {
+    const activated =
+      '/usr/bin/flatpak run --env=GNOME_ACCESSIBILITY=1 --branch=stable com.opera.Opera --force-renderer-accessibility=basic %U';
+    const { args } = relaunchCommand(activated, 'opera')!;
+    const appId = args.indexOf('com.opera.Opera');
+
+    expect(appId).toBeGreaterThan(-1);
+    expect(args.indexOf(CHROMIUM_RESTORE_FLAG)).toBeGreaterThan(appId);
+    expect(args.findIndex((arg) => arg.startsWith('--env='))).toBeLessThan(appId);
+  });
+
+  // Flatpak's file-forwarding markers would otherwise reach the browser as
+  // literal arguments.
+  it("drops flatpak's @@ placeholders", () => {
+    const { args } = relaunchCommand(
+      '/usr/bin/flatpak run org.mozilla.firefox @@u %u @@',
+      'firefox',
+    )!;
+
+    expect(args).not.toContain('@@');
+    expect(args).not.toContain('@@u');
+  });
+
   it('returns null when there is nothing to run', () => {
     expect(relaunchCommand('', 'chrome')).toBeNull();
   });

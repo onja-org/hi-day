@@ -261,11 +261,9 @@ export interface ActivationReport {
 /**
  * Writes an activated copy of every browser entry found. Runs at agent
  * startup, so browsers opened later are already activated. One already
- * running keeps its empty tree until next launched — `blind-browsers.ts`
- * finds those by comparing process start times against the override's
- * mtime, which is why an unchanged entry is left untouched rather than
- * rewritten: rewriting it every startup would move the mtime forward and
- * make every browser look newly blind.
+ * running keeps its empty tree until next launched; `blind-browsers.ts`
+ * finds those. An entry whose content already matches is left alone rather
+ * than rewritten, so this stops touching the user's files on every launch.
  */
 export function applyBrowserActivation(options: {
   scope: 'system' | 'user';
