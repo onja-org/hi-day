@@ -42,7 +42,7 @@ export function TimezoneSelect({ options, value, onChange }: TimezoneSelectProps
         onClick={() => setIsOpen((open) => !open)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label="Time zone to read this timesheet in"
+        aria-label="Time zone to read this in"
         className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border bg-white px-3 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
       >
         {selected?.zone ? timezoneAbbreviation(selected.zone) : "Time zone"}

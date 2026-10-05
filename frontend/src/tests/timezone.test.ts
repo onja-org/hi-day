@@ -10,6 +10,7 @@ import {
   localDateToKey,
   startOfDayInZone,
   timezoneLabel,
+  timezoneTooltip,
 } from "@/lib/timezone";
 
 const NAIROBI = "Africa/Nairobi"; // UTC+3, no DST
@@ -190,5 +191,23 @@ describe("asZonedWallClock", () => {
     const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     expect(asZonedWallClock(instant, local).getTime()).toBe(instant.getTime());
+  });
+});
+
+describe("timezoneTooltip", () => {
+  const winter = new Date("2026-01-15T12:00:00Z");
+  const summer = new Date("2026-07-15T12:00:00Z");
+
+  it("spells the zone with its UTC offset", () => {
+    expect(timezoneTooltip(NAIROBI, winter)).toBe("Africa - Nairobi (+03:00)");
+  });
+
+  it("follows daylight saving", () => {
+    expect(timezoneTooltip(NEW_YORK, winter)).toBe("America - New York (-05:00)");
+    expect(timezoneTooltip(NEW_YORK, summer)).toBe("America - New York (-04:00)");
+  });
+
+  it("writes UTC as +00:00", () => {
+    expect(timezoneTooltip("UTC", winter)).toBe("UTC (+00:00)");
   });
 });

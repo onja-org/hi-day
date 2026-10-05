@@ -65,14 +65,6 @@ describe("groupEntriesBy", () => {
     expect(groups.map((g) => g.label)).toEqual(["Ada", "Bob"]);
   });
 
-  it("groups entries without a task under 'No to-do'", () => {
-    const groups = groupEntriesBy(
-      [entry({ id: "a" }), entry({ id: "b", taskId: "t1", taskName: "Build" })],
-      "todo",
-    );
-    expect(groups.map((g) => g.label).sort()).toEqual(["Build", "No to-do"]);
-  });
-
   it("puts an entry in every team its member belongs to", () => {
     const groups = groupEntriesBy([entry({ id: "a" })], "team", new Map([["m1", ["Dev", "Design"]]]));
     expect(groups.map((g) => g.label)).toEqual(["Design", "Dev"]);

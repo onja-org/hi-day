@@ -59,8 +59,6 @@ function describeGroups(
       return [byLabel(entry.projectId, entry.projectName)];
     case "member":
       return [byLabel(entry.membershipId, memberLabelOf(entry))];
-    case "todo":
-      return [byLabel(entry.taskId ?? "no-task", entry.taskName ?? "No to-do")];
     case "team": {
       const names = teamNames.get(entry.membershipId) ?? [];
       return (names.length > 0 ? names : ["No team"]).map((name) => byLabel(name, name));

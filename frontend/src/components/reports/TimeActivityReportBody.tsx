@@ -7,7 +7,6 @@ import { buildTimeActivityRows, totalEntrySeconds } from "@/lib/buildTimeActivit
 import { formatElapsed } from "@/lib/formatElapsed";
 import {
   TIME_ACTIVITY_CHART_SERIES,
-  TIME_ACTIVITY_DEFAULT_HIDDEN_COLUMNS,
   canSumDates,
   timeActivityColumns,
 } from "@/lib/timeActivityReportConfig";
@@ -81,7 +80,6 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
           column.key === "team" ? { ...column, renderCell: renderTeamCell } : column,
         )}
         rows={buildTimeActivityRows(entries, grouping, { sumDates, teamNames, idleMembers })}
-        defaultHiddenKeys={TIME_ACTIVITY_DEFAULT_HIDDEN_COLUMNS}
         toolbarExtra={
           canSumDates(grouping) && (
             <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-slate-900">

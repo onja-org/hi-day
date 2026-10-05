@@ -28,6 +28,8 @@ export function useTimeActivityReportData(
   scope: ReportScope,
   range: DateRange,
   filters: ReportFilters,
+  /** False while the zone the range is cut in is still settling, so entries aren't fetched twice. */
+  enabled = true,
 ) {
   const canViewOthers = useCanViewOthers();
   const membersQuery = useActiveMembers(organisationId, { enabled: canViewOthers });
@@ -35,12 +37,12 @@ export function useTimeActivityReportData(
   const teamsQuery = useOrganisationTeams(organisationId);
   const isAll = canViewOthers && scope === "all";
 
-  const ownQuery = useTimeEntries(organisationId, { from: range.from, to: range.to }, { enabled: !isAll });
+  const ownQuery = useTimeEntries(organisationId, { from: range.from, to: range.to }, { enabled: enabled && !isAll });
   const allQuery = useAllMembersTimeEntries(
     organisationId,
     (membersQuery.data ?? []).map((member) => member.id),
     range,
-    isAll && !membersQuery.isLoading,
+    enabled && isAll && !membersQuery.isLoading,
   );
 
   const teamIdsByMember = useMemo(() => buildMembershipTeamIds(teamsQuery.data ?? []), [teamsQuery.data]);

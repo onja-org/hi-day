@@ -10,7 +10,7 @@ export function detectTimezone(): string {
 function zoneName(
   zone: string,
   at: Date,
-  width: "short" | "long",
+  width: "short" | "long" | "longOffset",
 ): string | undefined {
   return new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: width })
     .formatToParts(at)
@@ -48,6 +48,12 @@ export function timezoneAbbreviation(zone: string, at: Date = new Date()): strin
 /** "Indian/Antananarivo" spelled for reading: "Indian - Antananarivo". */
 export function timezoneLabel(zone: string): string {
   return zone.split("/").join(" - ").replace(/_/g, " ");
+}
+
+/** "Africa - Nairobi (+03:00)": the zone spelled out with its UTC offset on the given date. */
+export function timezoneTooltip(zone: string, at: Date = new Date()): string {
+  const offset = (zoneName(zone, at, "longOffset") ?? "GMT").replace("GMT", "") || "+00:00";
+  return `${timezoneLabel(zone)} (${offset})`;
 }
 
 /** "EAT: Indian - Antananarivo", the form the selector lists. */
