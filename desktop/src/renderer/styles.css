@@ -330,6 +330,18 @@ select {
   color: #93700c;
 }
 
+/* Ends in a row of buttons and sits directly above the header card, so the
+   12px the other banners use reads as the two touching. Scoped rather than
+   widening .idle-banner, which macOS's permission banners also use. */
+#browser-restart-banner {
+  margin-bottom: 24px;
+}
+
+#browser-restart-banner p {
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
 .idle-banner button {
   margin-top: 0;
   display: inline-block;

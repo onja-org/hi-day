@@ -1,0 +1,195 @@
+import { spawn } from 'node:child_process';
+import {
+  browserTokens,
+  displayName,
+  readBrowserProcesses,
+  selectBlindBrowsers,
+  type BlindBrowser,
+} from './blind-browsers';
+import type { DiscoveredBrowser } from './browser-activation';
+import {
+  activationTargetDirectory,
+  discoverBrowserEntries,
+  applicationDirectories,
+} from './browser-activation';
+import {
+  firefoxRestoresSession,
+  readActivatedExec,
+  readFirefoxPrefs,
+  relaunchCommand,
+  restartWarning,
+  type RestartOutcome,
+} from './browser-restart';
+
+/** A blind browser we can also relaunch, because we found its entry. */
+export interface RestartableBrowser extends BlindBrowser {
+  desktopFileName: string;
+}
+
+export interface BlindBrowserReport {
+  /** Blind browsers we can relaunch ourselves. */
+  restartable: RestartableBrowser[];
+  /** Blind browsers with no launcher to relaunch them from, and why. */
+  manual: { browser: BlindBrowser; reason: string }[];
+  /** What to tell someone before they press the button. */
+  warnings: string[];
+}
+
+/**
+ * The `.desktop` entry a running browser came from, matched on the longest
+ * shared word — `chrome` picks `google-chrome.desktop` over `firefox`, and
+ * the longest match keeps `vivaldi-stable` from being claimed by a shorter
+ * token that also appears in it.
+ */
+function entryFor(
+  command: string,
+  entries: DiscoveredBrowser[],
+): string | undefined {
+  const name = command.toLowerCase();
+  return entries
+    .map((entry) => {
+      const stem = entry.fileName.replace(/\.desktop$/, '').toLowerCase();
+      const shared = stem
+        .split(/[._\-\s]+/)
+        .filter((part) => part.length > 3 && name.includes(part))
+        .sort((a, b) => b.length - a.length)[0];
+      return shared ? { fileName: entry.fileName, length: shared.length } : null;
+    })
+    .filter((match): match is { fileName: string; length: number } => match !== null)
+    .sort((a, b) => b.length - a.length)[0]?.fileName;
+}
+
+/** How long a browser gets to shut down cleanly before it is relaunched. */
+const SHUTDOWN_GRACE_MS = 4_000;
+
+/**
+ * Finds browsers running without an accessibility tree, and restarts them on
+ * request. Linux only, and only against genuinely blind ones — restarting an
+ * already-tracked browser would cost someone their tabs for nothing.
+ */
+export class BrowserRestartService {
+  constructor(
+    private readonly deps: {
+      logger?: (line: string) => void;
+      env?: NodeJS.ProcessEnv;
+    } = {},
+  ) {}
+
+  private log(line: string): void {
+    this.deps.logger?.(line);
+  }
+
+  /** Blind browsers right now, split by whether we can safely restart them. */
+  findBlind(): BlindBrowserReport {
+    const env = this.deps.env ?? process.env;
+    const targetDirectory = activationTargetDirectory('user', env);
+    const entries = discoverBrowserEntries(
+      applicationDirectories(env).filter((dir) => dir !== targetDirectory),
+    );
+    const tokens = browserTokens(entries.map((entry) => entry.fileName));
+    if (tokens.length === 0) return { restartable: [], manual: [], warnings: [] };
+
+    const blind = selectBlindBrowsers(readBrowserProcesses(), tokens);
+    const firefoxRestores = firefoxRestoresSession(readFirefoxPrefs());
+
+    const report: BlindBrowserReport = {
+      restartable: [],
+      manual: [],
+      warnings: [],
+    };
+    for (const browser of blind) {
+      const desktopFileName = entryFor(browser.command, entries);
+      if (!desktopFileName) {
+        // Nothing to relaunch it from; saying so beats a button that does
+        // nothing when pressed.
+        report.manual.push({
+          browser,
+          reason: `Restart ${displayName(browser.command)} yourself.`,
+        });
+        continue;
+      }
+      report.restartable.push({ ...browser, desktopFileName });
+      const warning = restartWarning(browser.command, firefoxRestores);
+      if (warning && !report.warnings.includes(warning)) {
+        report.warnings.push(warning);
+      }
+    }
+    return report;
+  }
+
+  /**
+   * Ends each browser and launches it again through its activated entry.
+   *
+   * `SIGTERM`, never `SIGKILL`: the clean shutdown is what writes the session
+   * out, and the grace period lets it finish — relaunching into a profile the
+   * old process still holds trips the "already running" lock.
+   */
+  async restart(browsers: RestartableBrowser[]): Promise<RestartOutcome[]> {
+    const env = this.deps.env ?? process.env;
+    const targetDirectory = activationTargetDirectory('user', env);
+    const outcomes: RestartOutcome[] = [];
+
+    for (const browser of browsers) {
+      const exec = readActivatedExec(browser.desktopFileName, targetDirectory);
+      const relaunch = exec ? relaunchCommand(exec, browser.command) : null;
+      if (!relaunch) {
+        outcomes.push({
+          pid: browser.pid,
+          command: browser.command,
+          restarted: false,
+          reason: 'No activated launcher to start it from.',
+        });
+        continue;
+      }
+
+      try {
+        process.kill(browser.pid, 'SIGTERM');
+      } catch (error) {
+        outcomes.push({
+          pid: browser.pid,
+          command: browser.command,
+          restarted: false,
+          reason: String(error),
+        });
+        continue;
+      }
+
+      await waitForExit(browser.pid, SHUTDOWN_GRACE_MS);
+
+      try {
+        // Detached, so the browser outlives this agent rather than dying
+        // with it — it is the person's browser, not our child process.
+        spawn(relaunch.command, relaunch.args, {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+        outcomes.push({ pid: browser.pid, command: browser.command, restarted: true });
+      } catch (error) {
+        outcomes.push({
+          pid: browser.pid,
+          command: browser.command,
+          restarted: false,
+          reason: String(error),
+        });
+      }
+    }
+
+    this.log(
+      `[browser-restart] ${outcomes.filter((o) => o.restarted).length}/${outcomes.length} restarted`,
+    );
+    return outcomes;
+  }
+}
+
+/** Resolves once the process is gone, or when the grace period runs out. */
+async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}

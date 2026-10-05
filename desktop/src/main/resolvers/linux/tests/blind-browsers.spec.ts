@@ -1,0 +1,156 @@
+import { describe, expect, it } from 'vitest';
+import {
+  browserTokens,
+  isBrowserProcess,
+  selectBlindBrowsers,
+  type BrowserProcess,
+} from '../blind-browsers';
+
+const ACTIVATED = '--force-renderer-accessibility=basic';
+
+/** Shapes taken from a real GNOME session — see blind-browsers.ts. */
+function chrome(overrides: Partial<BrowserProcess> = {}): BrowserProcess {
+  return {
+    pid: 5614,
+    command: 'chrome',
+    executablePath: '/opt/google/chrome/chrome',
+    cmdline: ['/opt/google/chrome/chrome'],
+    ...overrides,
+  };
+}
+
+const tokens = browserTokens([
+  'google-chrome.desktop',
+  'firefox_firefox.desktop',
+  'com.microsoft.Edge.desktop',
+]);
+
+describe('browserTokens', () => {
+  it('keeps the words that name a browser', () => {
+    expect(tokens).toContain('chrome');
+    expect(tokens).toContain('firefox');
+    expect(tokens).toContain('edge');
+  });
+
+  // "google" would claim Google Drive; "stable" would claim anything.
+  it('drops vendor and packaging words', () => {
+    expect(tokens).not.toContain('google');
+    expect(tokens).not.toContain('microsoft');
+    expect(browserTokens(['vivaldi_vivaldi-stable.desktop'])).not.toContain('stable');
+  });
+});
+
+describe('isBrowserProcess', () => {
+  // The entry runs /usr/bin/google-chrome-stable, a wrapper; the process is
+  // /opt/google/chrome/chrome. Matching the entry's name would find nothing.
+  it('recognises Chrome despite the launcher being a wrapper', () => {
+    expect(isBrowserProcess(chrome(), tokens)).toBe(true);
+  });
+
+  it('recognises a snap Firefox, whose path shares nothing with its entry', () => {
+    const firefox = chrome({
+      command: 'firefox',
+      executablePath: '/snap/firefox/6836/usr/lib/firefox/firefox',
+    });
+
+    expect(isBrowserProcess(firefox, tokens)).toBe(true);
+  });
+
+  // Every Electron app bundles one of these. Claiming them would end an
+  // unrelated app's crash handler and open a browser in its place.
+  it('does not claim a bundled crash handler, browser or otherwise', () => {
+    const chromeHelper = chrome({
+      command: 'chrome_crashpad',
+      executablePath: '/opt/google/chrome/chrome_crashpad_handler',
+    });
+    const slackHelper = chrome({
+      command: 'chrome_crashpad',
+      executablePath: '/usr/lib/slack/chrome_crashpad_handler',
+    });
+
+    expect(isBrowserProcess(chromeHelper, tokens)).toBe(false);
+    expect(isBrowserProcess(slackHelper, tokens)).toBe(false);
+  });
+
+  it('does not claim an unrelated process', () => {
+    const editor = chrome({ command: 'code', executablePath: '/usr/share/code/code' });
+
+    expect(isBrowserProcess(editor, tokens)).toBe(false);
+  });
+});
+
+describe('selectBlindBrowsers', () => {
+  it('finds a browser started without the activation flag', () => {
+    expect(selectBlindBrowsers([chrome()], tokens)).toEqual([
+      { pid: 5614, command: 'chrome' },
+    ]);
+  });
+
+  it('ignores one launched through the override', () => {
+    const activated = chrome({
+      cmdline: ['/opt/google/chrome/chrome', ACTIVATED],
+    });
+
+    expect(selectBlindBrowsers([activated], tokens)).toEqual([]);
+  });
+
+  // Chromium spawns a renderer per tab. Restarting one would kill a tab,
+  // not a browser.
+  it('ignores child processes, which carry a type', () => {
+    const renderer = chrome({
+      pid: 5700,
+      cmdline: ['/opt/google/chrome/chrome', '--type=renderer'],
+    });
+
+    expect(selectBlindBrowsers([renderer], tokens)).toEqual([]);
+  });
+
+  // Gecko forks the same binary for its children and labels them
+  // `-contentproc`, not `--type=`. Missing that listed nine Firefox
+  // internals as separate browsers needing a restart.
+  it("ignores Firefox's own child processes", () => {
+    const main = chrome({
+      pid: 44670,
+      command: 'firefox',
+      executablePath: '/snap/firefox/8995/usr/lib/firefox/firefox',
+      cmdline: ['/snap/firefox/8995/usr/lib/firefox/firefox', ACTIVATED],
+    });
+    const children = ['forkserver', 'Isolated Web Co', 'Privileged Cont'].map(
+      (command, index) =>
+        chrome({
+          pid: 44900 + index,
+          command,
+          executablePath: '/snap/firefox/8995/usr/lib/firefox/firefox',
+          cmdline: [
+            '/snap/firefox/8995/usr/lib/firefox/firefox',
+            '-contentproc',
+            '-childID',
+            String(index),
+          ],
+        }),
+    );
+
+    expect(selectBlindBrowsers([main, ...children], tokens)).toEqual([]);
+  });
+
+  // Chrome rewrites its own argv, so /proc hands back one space-separated
+  // blob rather than separate arguments. Read naively, every Chrome process
+  // looked blind.
+  it('reads flags out of a single space-separated command line', () => {
+    const activatedBlob = chrome({
+      cmdline: ['/opt/google/chrome/chrome', ACTIVATED],
+    });
+    const rendererBlob = chrome({
+      pid: 5811,
+      cmdline: ['/opt/google/chrome/chrome', '--type=renderer', '--enable-crash-reporter=x'],
+    });
+
+    expect(selectBlindBrowsers([activatedBlob, rendererBlob], tokens)).toEqual([]);
+  });
+
+  it('ignores everything that is not a browser', () => {
+    const editor = chrome({ command: 'code', executablePath: '/usr/share/code/code' });
+
+    expect(selectBlindBrowsers([editor], tokens)).toEqual([]);
+  });
+});

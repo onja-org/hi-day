@@ -98,6 +98,20 @@ export type TrackingResult<T> =
       unauthorized?: boolean;
     };
 
+/**
+ * Browsers running without an accessibility tree, so their URLs go
+ * untracked until they are restarted. Linux only — `needsRestart` is empty
+ * everywhere else.
+ */
+export interface BlindBrowserStatus {
+  /** Names we can restart for them. */
+  needsRestart: string[];
+  /** Names with no launcher to relaunch them from, and why. */
+  manual: { name: string; reason: string }[];
+  /** What to tell them before they press the button. */
+  warnings: string[];
+}
+
 export interface UpdateCheckResult {
   updateAvailable: boolean;
   latestVersion?: string;
@@ -215,6 +229,12 @@ const api = {
     timerStateChanged: (running: boolean): void => {
       ipcRenderer.send("urlCapture:timerStateChanged", running);
     },
+  },
+  browserRestart: {
+    status: (): Promise<BlindBrowserStatus> =>
+      ipcRenderer.invoke("browserRestart:status") as Promise<BlindBrowserStatus>,
+    restart: (): Promise<BlindBrowserStatus> =>
+      ipcRenderer.invoke("browserRestart:restart") as Promise<BlindBrowserStatus>,
   },
   update: {
     status: (): Promise<UpdateCheckResult> =>
