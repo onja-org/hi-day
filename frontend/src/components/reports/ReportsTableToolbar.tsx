@@ -43,16 +43,16 @@ export function ReportsTableToolbar({
         >
           <ColumnsIcon size={16} aria-hidden="true" />
         </summary>
-        <div className="absolute right-0 z-10 mt-1 flex max-h-72 w-52 flex-col gap-2 overflow-y-auto rounded-md border border-input-border bg-white p-2 shadow-md">
+        <div className="absolute right-0 z-10 mt-1 flex max-h-72 w-60 flex-col gap-3 overflow-y-auto rounded-md border border-input-border bg-white p-4 shadow-md">
           {groups.map(({ group, columns }) => (
-            <fieldset key={group ?? "ungrouped"} className="flex flex-col gap-1">
+            <fieldset key={group ?? "ungrouped"} className="flex flex-col gap-3">
               {group && (
                 <legend className="text-xs font-semibold text-primary-dark">{group}</legend>
               )}
               {columns.map((column) => (
                 <label
                   key={column.key}
-                  className="flex cursor-pointer items-center gap-2 text-sm text-slate-900"
+                  className="flex cursor-pointer items-center gap-3 text-sm text-slate-900"
                 >
                   <input
                     type="checkbox"

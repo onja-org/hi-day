@@ -3,6 +3,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import {
+  buildDailyTotalsCsv,
+  buildDailyTotalsPdf,
+  buildDailyTotalsTable,
+} from '../../common/daily-totals-file.util';
 import { buildReportCsv, buildReportPdf } from '../../common/report-file.util';
 import { resolveReportDateRange } from '../../common/report-date-range.util';
 import type { ReportDatePreset } from '../../common/report-date-range.util';
@@ -129,10 +134,15 @@ export class ScheduledReportsService {
       );
       const entries = await this.collectEntries(report, range);
       const title = `${report.name} — ${dayKey(range.from, zone)} to ${dayKey(range.to, zone)}`;
-      const content =
-        schedule.fileType === 'csv'
-          ? Buffer.from(buildReportCsv(entries, zone), 'utf-8')
-          : buildReportPdf(title, entries, zone);
+      const content = this.buildContent(
+        report.reportType,
+        schedule.fileType,
+        title,
+        entries,
+        dayKey(range.from, zone),
+        dayKey(range.to, zone),
+        zone,
+      );
 
       const sent = await this.emailService.sendReportEmail({
         to: schedule.emails,
@@ -172,6 +182,26 @@ export class ScheduledReportsService {
       await this.savedReports.update({ id: report.id }, { lastError: message });
       return 'failed';
     }
+  }
+
+  private buildContent(
+    reportType: string,
+    fileType: 'pdf' | 'csv',
+    title: string,
+    entries: TimeEntryListItem[],
+    fromKey: string,
+    toKey: string,
+    zone: string,
+  ): Buffer {
+    if (reportType === 'daily-totals') {
+      const table = buildDailyTotalsTable(entries, fromKey, toKey, zone);
+      return fileType === 'csv'
+        ? Buffer.from(buildDailyTotalsCsv(table), 'utf-8')
+        : buildDailyTotalsPdf(title, table);
+    }
+    return fileType === 'csv'
+      ? Buffer.from(buildReportCsv(entries, zone), 'utf-8')
+      : buildReportPdf(title, entries, zone);
   }
 
   /**

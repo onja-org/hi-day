@@ -87,6 +87,11 @@ export function DateRangePicker({
   const today = keyAsLocalDate(dateKeyInZone(new Date(), zone));
   const currentMonth = startOfMonth(today);
 
+  // Both panels page the pair of months together.
+  const previousMonth = () => setViewMonth((month) => subMonths(month, 1));
+  const nextMonth = () => setViewMonth((month) => addMonths(month, 1));
+  const nextDisabled = !isBefore(viewMonth, currentMonth);
+
   function showRange(range: DateRange) {
     const days = asLocalDays(range, zone);
     setDraft({ ...days, pickingEnd: false });
@@ -195,7 +200,9 @@ export function DateRangePicker({
               today={today}
               footerDate={draft.from}
               onSelectDay={selectDay}
-              onPrevious={() => setViewMonth((month) => subMonths(month, 1))}
+              onPrevious={previousMonth}
+              onNext={nextMonth}
+              nextDisabled={nextDisabled}
             />
             <div className="border-t border-input-border md:border-t-0 md:border-l">
               <MonthCalendar
@@ -204,8 +211,9 @@ export function DateRangePicker({
                 today={today}
                 footerDate={draft.to}
                 onSelectDay={selectDay}
-                onNext={() => setViewMonth((month) => addMonths(month, 1))}
-                nextDisabled={!isBefore(viewMonth, currentMonth)}
+                onPrevious={previousMonth}
+                onNext={nextMonth}
+                nextDisabled={nextDisabled}
               />
             </div>
           </div>

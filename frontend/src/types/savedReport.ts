@@ -16,10 +16,12 @@ export type SavedReportSettings = {
 };
 
 /** A report saved to the user's account — see the backend's SavedReportView. */
+export type SavedReportType = "time-and-activity" | "daily-totals";
+
 export type SavedReport = {
   id: string;
   name: string;
-  reportType: "time-and-activity";
+  reportType: SavedReportType;
   settings: SavedReportSettings;
   /** When and to whom it is emailed; null when it isn't scheduled. */
   schedule: ReportSchedule | null;
@@ -34,6 +36,8 @@ export type SavedReport = {
 export type SaveReportInput = {
   /** Pass to update an existing saved report instead of adding a new one. */
   id?: string;
+  /** Only read when adding; a saved report keeps its type. */
+  reportType?: SavedReportType;
   name: string;
   settings: SavedReportSettings;
   schedule: ReportSchedule | null;
