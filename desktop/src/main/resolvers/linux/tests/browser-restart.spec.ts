@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHROMIUM_RESTORE_FLAG,
-  canRestartSafely,
+  restartWarning,
   firefoxRestoresSession,
   isGeckoBrowser,
   relaunchCommand,
@@ -37,21 +37,26 @@ describe('firefoxRestoresSession', () => {
   });
 });
 
-describe('canRestartSafely', () => {
-  it('always allows a Chromium browser, which takes the restore flag', () => {
-    expect(canRestartSafely('chrome', false).safe).toBe(true);
-    expect(canRestartSafely('brave', false).safe).toBe(true);
+describe('restartWarning', () => {
+  // Chromium reopens its session from the flag whatever the person's
+  // settings, so there is nothing to warn about.
+  it('says nothing for a Chromium browser', () => {
+    expect(restartWarning('chrome', false)).toBeNull();
+    expect(restartWarning('brave', false)).toBeNull();
   });
 
-  it('allows Firefox only when it would reopen its tabs', () => {
-    expect(canRestartSafely('firefox', true).safe).toBe(true);
+  it('says nothing for a Firefox already set to restore', () => {
+    expect(restartWarning('firefox', true)).toBeNull();
   });
 
-  it('refuses Firefox otherwise, and says which setting to turn on', () => {
-    const { safe, reason } = canRestartSafely('firefox', false);
+  // Restarted anyway, but the tabs need a manual step, so point at it rather
+  // than let them look lost.
+  it('points at manual restore for a Firefox that would not reopen tabs', () => {
+    const warning = restartWarning('firefox', false);
 
-    expect(safe).toBe(false);
-    expect(reason).toContain('browser.startup.page');
+    expect(warning).toContain('Restore Previous Session');
+    // Capitalised at the source, so every sentence naming a browser agrees.
+    expect(warning).toContain('Firefox');
   });
 });
 

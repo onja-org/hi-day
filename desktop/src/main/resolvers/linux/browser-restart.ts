@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { displayName } from './blind-browsers';
 
 /**
  * Restarting a blind browser so it comes back with an accessibility tree.
@@ -9,16 +10,14 @@ import { join } from 'node:path';
  * flag restores that — so it never runs on its own, only on the button, and
  * only against browsers that are actually blind.
  *
- * Tabs are recoverable, conditionally. Chromium takes
- * `--restore-last-session`, which reopens the session whatever the person's
- * startup preference. Firefox has no such flag: it restores only when
- * `browser.startup.page` is 3, so one without that preference is left
- * running and reported for the person to restart themselves.
+ * Chromium reopens its tabs from `--restore-last-session` whatever the
+ * person's startup preference. Firefox has no such flag and reopens them
+ * only when `browser.startup.page` is 3; otherwise it is still restarted,
+ * with the banner pointing at History > Restore Previous Session.
  */
 export const CHROMIUM_RESTORE_FLAG = '--restore-last-session';
 
-/** The Gecko preference that makes Firefox reopen last time's windows. */
-const FIREFOX_RESTORE_PREF = 'browser.startup.page';
+/** `browser.startup.page = 3` is "Show my windows and tabs from last time". */
 const FIREFOX_RESTORE_SESSION = 3;
 
 export interface RestartCandidate {
@@ -88,18 +87,21 @@ export function readFirefoxPrefs(home = homedir()): string[] {
   return contents;
 }
 
-/** Whether this browser can be restarted without costing someone their
- * tabs. The reason names the preference, so the banner can say which one. */
-export function canRestartSafely(
+/**
+ * What to warn someone about before this browser is restarted, if anything.
+ *
+ * Every browser is restarted now, Firefox included. Chromium reopens its
+ * session from `--restore-last-session` whatever the person's settings;
+ * Firefox only does so when `browser.startup.page` is 3, and otherwise needs
+ * History > Restore Previous Session by hand — so say so rather than let the
+ * tabs appear lost.
+ */
+export function restartWarning(
   command: string,
   firefoxRestores: boolean,
-): { safe: boolean; reason?: string } {
-  if (!isGeckoBrowser(command)) return { safe: true };
-  if (firefoxRestores) return { safe: true };
-  return {
-    safe: false,
-    reason: `Firefox would not reopen its tabs — turn on "Show my windows and tabs from last time" (${FIREFOX_RESTORE_PREF}), or restart it yourself.`,
-  };
+): string | null {
+  if (!isGeckoBrowser(command) || firefoxRestores) return null;
+  return `${displayName(command)} won't reopen its tabs on its own — use History > Restore Previous Session.`;
 }
 
 /**

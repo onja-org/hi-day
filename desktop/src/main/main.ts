@@ -39,6 +39,7 @@ import {
 } from "./resolvers/resolver-paths";
 import { applyBrowserActivation } from "./resolvers/linux/browser-activation";
 import { BrowserRestartService } from "./resolvers/linux/browser-restart-service";
+import { displayName } from "./resolvers/linux/blind-browsers";
 import type { BlindBrowserStatus } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -908,7 +909,8 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle(
     "browserRestart:restart",
     async (): Promise<BlindBrowserStatus> => {
-      if (process.platform !== "linux") return { needsRestart: [], manual: [] };
+      if (process.platform !== "linux")
+    return { needsRestart: [], manual: [], warnings: [] };
       const service = new BrowserRestartService({
         logger: (line) => console.log(line),
       });
@@ -940,7 +942,8 @@ function invalidateBlindBrowserCache(): void {
  * person's.
  */
 function blindBrowserStatus(): BlindBrowserStatus {
-  if (process.platform !== "linux") return { needsRestart: [], manual: [] };
+  if (process.platform !== "linux")
+    return { needsRestart: [], manual: [], warnings: [] };
 
   const cached = blindBrowserCache;
   if (cached) {
@@ -954,21 +957,22 @@ function blindBrowserStatus(): BlindBrowserStatus {
   try {
     const report = new BrowserRestartService().findBlind();
     const status: BlindBrowserStatus = {
-      needsRestart: [...new Set(report.restartable.map((b) => b.command))],
+      needsRestart: [...new Set(report.restartable.map((b) => displayName(b.command)))],
       manual: [
         ...new Map(
           report.manual.map((entry) => [
             entry.browser.command,
-            { name: entry.browser.command, reason: entry.reason },
+            { name: displayName(entry.browser.command), reason: entry.reason },
           ]),
         ).values(),
       ],
+      warnings: report.warnings,
     };
     blindBrowserCache = { status, atMs: Date.now() };
     return status;
   } catch (error) {
     console.log(`[browser-restart] status unavailable: ${String(error)}`);
-    return { needsRestart: [], manual: [] };
+    return { needsRestart: [], manual: [], warnings: [] };
   }
 }
 

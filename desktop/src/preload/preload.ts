@@ -104,10 +104,12 @@ export type TrackingResult<T> =
  * everywhere else.
  */
 export interface BlindBrowserStatus {
-  /** Names we can restart for them, tabs intact. */
+  /** Names we can restart for them. */
   needsRestart: string[];
-  /** Names they have to restart themselves, with the reason why. */
+  /** Names with no launcher to relaunch them from, and why. */
   manual: { name: string; reason: string }[];
+  /** What to tell them before they press the button. */
+  warnings: string[];
 }
 
 export interface UpdateCheckResult {

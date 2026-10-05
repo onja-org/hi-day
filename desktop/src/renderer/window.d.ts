@@ -100,6 +100,7 @@ declare global {
   interface BlindBrowserStatus {
     needsRestart: string[];
     manual: { name: string; reason: string }[];
+    warnings: string[];
   }
 
   interface UpdateCheckResult {

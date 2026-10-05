@@ -373,14 +373,16 @@ async function refreshBrowserRestartBanner(platform: string): Promise<void> {
 
   // Reasons are deduplicated and the list is capped: one sentence per
   // browser turned the banner into a wall of repeated text.
-  const reasons = [...new Set(status.manual.map((entry) => entry.reason))];
+  const reasons = [
+    ...new Set([...status.warnings, ...status.manual.map((e) => e.reason)]),
+  ];
   const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} and others` : names.join(", ");
 
   // Only offer the button when pressing it would finish the job; the rest is
   // a browser we will not restart for them, and the reason says why.
   browserRestartButton.hidden = status.needsRestart.length === 0;
   browserRestartMessage.textContent = [
-    `Website tracking needs a restart of ${list}.`,
+    `Website tracking needs ${list} restarted.`,
     ...reasons.slice(0, 1),
   ].join(" ");
   browserRestartBanner.hidden = false;

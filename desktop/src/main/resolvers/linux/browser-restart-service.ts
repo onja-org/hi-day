@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import {
   browserTokens,
+  displayName,
   readBrowserProcesses,
   selectBlindBrowsers,
   type BlindBrowser,
@@ -12,11 +13,11 @@ import {
   applicationDirectories,
 } from './browser-activation';
 import {
-  canRestartSafely,
   firefoxRestoresSession,
   readActivatedExec,
   readFirefoxPrefs,
   relaunchCommand,
+  restartWarning,
   type RestartOutcome,
 } from './browser-restart';
 
@@ -26,10 +27,12 @@ export interface RestartableBrowser extends BlindBrowser {
 }
 
 export interface BlindBrowserReport {
-  /** Blind browsers we can restart without costing anyone their tabs. */
+  /** Blind browsers we can relaunch ourselves. */
   restartable: RestartableBrowser[];
-  /** Blind browsers the person has to restart themselves, and why. */
+  /** Blind browsers with no launcher to relaunch them from, and why. */
   manual: { browser: BlindBrowser; reason: string }[];
+  /** What to tell someone before they press the button. */
+  warnings: string[];
 }
 
 /**
@@ -84,12 +87,16 @@ export class BrowserRestartService {
       applicationDirectories(env).filter((dir) => dir !== targetDirectory),
     );
     const tokens = browserTokens(entries.map((entry) => entry.fileName));
-    if (tokens.length === 0) return { restartable: [], manual: [] };
+    if (tokens.length === 0) return { restartable: [], manual: [], warnings: [] };
 
     const blind = selectBlindBrowsers(readBrowserProcesses(), tokens);
     const firefoxRestores = firefoxRestoresSession(readFirefoxPrefs());
 
-    const report: BlindBrowserReport = { restartable: [], manual: [] };
+    const report: BlindBrowserReport = {
+      restartable: [],
+      manual: [],
+      warnings: [],
+    };
     for (const browser of blind) {
       const desktopFileName = entryFor(browser.command, entries);
       if (!desktopFileName) {
@@ -97,14 +104,15 @@ export class BrowserRestartService {
         // nothing when pressed.
         report.manual.push({
           browser,
-          reason: `Restart ${browser.command} to start tracking its websites.`,
+          reason: `Restart ${displayName(browser.command)} yourself.`,
         });
         continue;
       }
-      const withEntry = { ...browser, desktopFileName };
-      const { safe, reason } = canRestartSafely(browser.command, firefoxRestores);
-      if (safe) report.restartable.push(withEntry);
-      else report.manual.push({ browser: withEntry, reason: reason ?? '' });
+      report.restartable.push({ ...browser, desktopFileName });
+      const warning = restartWarning(browser.command, firefoxRestores);
+      if (warning && !report.warnings.includes(warning)) {
+        report.warnings.push(warning);
+      }
     }
     return report;
   }

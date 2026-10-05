@@ -103,6 +103,15 @@ export function isBrowserProcess(
   return tokens.some((token) => binary.includes(token));
 }
 
+/**
+ * A browser's name as people read it. `comm` arrives lowercase from /proc,
+ * and capitalising at the source keeps every sentence that mentions a
+ * browser agreeing with every other.
+ */
+export function displayName(command: string): string {
+  return command.charAt(0).toUpperCase() + command.slice(1);
+}
+
 /** Every process this user owns, with what it is and how it was started. */
 export function readBrowserProcesses(procRoot = '/proc'): BrowserProcess[] {
   const processes: BrowserProcess[] = [];
