@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { filterReports } from "@/lib/filterReports";
 import { REPORT_SECTIONS, REPORTS } from "@/lib/reportCatalog";
 import { ReportsCard } from "./ReportsCard";
 import { ReportsSection } from "./ReportsSection";
+import { SavedReportCard } from "./SavedReportCard";
+import type { SavedReport } from "@/types/savedReport";
 
 type AllReportsPageContentProps = {
   organisationId: number;
@@ -16,7 +19,9 @@ type AllReportsPageContentProps = {
 export function AllReportsPageContent({ organisationId }: AllReportsPageContentProps) {
   const [query, setQuery] = useState("");
   const { favouriteIds, toggleFavourite } = useFavouriteReports(organisationId);
-  const { reports: savedReports } = useSavedReports(String(organisationId));
+  const { reports: savedReports, deleteReport } = useSavedReports(String(organisationId));
+  const [deleting, setDeleting] = useState<SavedReport | null>(null);
+  const [deleteError, setDeleteError] = useState<string | undefined>();
   const visibleReports = filterReports(REPORTS, query);
 
   return (
@@ -42,16 +47,18 @@ export function AllReportsPageContent({ organisationId }: AllReportsPageContentP
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {savedReports.map((saved) => (
               <li key={saved.id}>
-                <Link
+                <SavedReportCard
+                  report={saved}
                   href={`/organisations/${organisationId}/reports/saved/${saved.id}`}
-                  className="block rounded-lg border border-input-border bg-white p-4 text-sm font-semibold text-primary-dark transition-colors hover:border-primary"
-                >
-                  {saved.name}
-                </Link>
+                  isFavourite={favouriteIds.includes(saved.id)}
+                  onToggleFavourite={() => toggleFavourite(saved.id)}
+                  onDelete={() => setDeleting(saved)}
+                />
               </li>
             ))}
           </ul>
         )}
+        {deleteError && <ErrorMessage message={deleteError} />}
       </ReportsSection>
 
       {visibleReports.length === 0 && (
@@ -81,6 +88,23 @@ export function AllReportsPageContent({ organisationId }: AllReportsPageContentP
           </ReportsSection>
         );
       })}
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete saved report"
+          message={`Delete “${deleting.name}”? This can't be undone.`}
+          confirmLabel="Delete"
+          isDangerous
+          onConfirm={async () => {
+            const result = await deleteReport(deleting.id);
+            if (result.ok) {
+              setDeleting(null);
+              setDeleteError(undefined);
+            } else setDeleteError(result.message);
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </div>
   );
 }

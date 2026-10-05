@@ -40,8 +40,8 @@ export function Sidebar({
   const organisationQuery = useCurrentOrganisation();
   const { favouriteIds } = useFavouriteReports(organisationId);
   const { reports: savedReports } = useSavedReports(String(organisationId));
-  // A saved report is listed only while it's open; the Customised reports
-  // page is where the full list lives.
+  // A saved report is listed while it's open or starred; the Customised
+  // reports page is where the full list lives.
   const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
   const organisationName = organisationQuery.data?.name ?? "Workforce";
   const isAdmin = organisationQuery.data?.role === "admin";
@@ -125,7 +125,7 @@ export function Sidebar({
           }),
         ),
         ...savedReports
-          .filter((saved) => saved.id === openSavedReportId)
+          .filter((saved) => saved.id === openSavedReportId || favouriteIds.includes(saved.id))
           .map(
           (saved): NavLink => ({
             kind: "link",
