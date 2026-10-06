@@ -97,8 +97,9 @@ declare global {
     | { status: 'expired' }
     | { status: 'error'; message: string };
 
-  interface BlindBrowserStatus {
-    needsRestart: string[];
+  interface BrowserRestartPrompt {
+    show: boolean;
+    names: string[];
     manual: { name: string; reason: string }[];
     warnings: string[];
   }
@@ -152,9 +153,9 @@ declare global {
       urlCapture: {
         timerStateChanged: (running: boolean) => void;
       };
-      browserRestart: {
-        status: () => Promise<BlindBrowserStatus>;
-        restart: () => Promise<BlindBrowserStatus>;
+      setup: {
+        browserRestartPrompt: () => Promise<BrowserRestartPrompt>;
+        continueFromBrowserRestart: () => Promise<void>;
       };
       update: {
         status: () => Promise<UpdateCheckResult>;

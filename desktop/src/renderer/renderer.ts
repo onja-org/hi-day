@@ -31,7 +31,7 @@ const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
-    "#loading-view, #login-view, #status-view",
+    "#setup-view, #loading-view, #login-view, #status-view",
   )) {
     el.hidden = el.id !== viewId;
   }
@@ -212,16 +212,100 @@ document.getElementById("update-dismiss")!.addEventListener("click", () => {
   updateDismissedForKey = currentUpdateKey;
 });
 
-async function init(): Promise<void> {
+const setupMessage = document.getElementById("setup-message")!;
+const setupManual = document.getElementById("setup-manual")!;
+const setupWarning = document.getElementById("setup-warning")!;
+const setupContinueButton = document.getElementById(
+  "setup-continue-button",
+) as HTMLButtonElement;
+
+/** "Chrome", "Chrome and Firefox", "Chrome, Edge and Firefox". */
+function listOf(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/**
+ * A browser open before the agent wrote its launcher overrides has no
+ * accessibility tree, so its URLs go unrecorded until it is restarted.
+ *
+ * Asked once, before the login view, and never again on this install — the
+ * main process decides that, since it owns the record. Returns false when
+ * there was nothing to ask, so the caller carries on to the normal views.
+ */
+async function showBrowserRestartSetup(): Promise<boolean> {
+  // Guarded because this runs before anything else is drawn: a rejected
+  // call here would leave an empty window rather than a timer. Losing the
+  // prompt costs URL capture on one browser; losing the app costs
+  // everything.
+  let prompt: BrowserRestartPrompt;
+  try {
+    prompt = await window.api.setup.browserRestartPrompt();
+  } catch {
+    return false;
+  }
+  if (!prompt.show) return false;
+
+  const manualNames = prompt.manual.map((entry) => entry.name);
+  const named = [...prompt.names, ...manualNames];
+  setupMessage.textContent =
+    `Website tracking needs ${listOf(named)} restarted once before it can ` +
+    `see which pages are open.` +
+    // Only promised for the ones Continue can actually relaunch.
+    (prompt.names.length > 0
+      ? ` Continue restarts ${listOf(prompt.names)} for you — save anything ` +
+        `unsaved first.`
+      : "");
+
+  // Said plainly rather than left to the person to notice: the button above
+  // will not touch these, so the screen has to say who does.
+  setupManual.textContent =
+    manualNames.length > 0
+      ? `${listOf(manualNames)} ${manualNames.length > 1 ? "need" : "needs"} ` +
+        `restarting by hand — Continue cannot do ${manualNames.length > 1 ? "those" : "that"} one.`
+      : "";
+  setupManual.hidden = manualNames.length === 0;
+
+  // One line only: a sentence per browser turned this into a wall of text.
+  setupWarning.textContent = prompt.warnings[0] ?? "";
+  setupWarning.hidden = prompt.warnings.length === 0;
+
+  show("setup-view");
+  return true;
+}
+
+function startApp(): void {
   void refreshUpdateBanner();
   setInterval(() => void refreshUpdateBanner(), AUTO_UPDATE_POLL_INTERVAL_MS);
 
-  const status = await window.api.getStatus();
-  if (status.loggedIn && status.organisationName) {
-    showLoggedIn(status.organisationName, status.email, status.name);
-  } else {
-    showLoginView();
-  }
+  void window.api
+    .getStatus()
+    .then((status) => {
+      if (status.loggedIn && status.organisationName) {
+        showLoggedIn(status.organisationName, status.email, status.name);
+      } else {
+        showLoginView();
+      }
+    })
+    // Without this the view never moves on. Reading the session can fail —
+    // it is decrypted through the OS keyring — and this is the only thing
+    // that leaves the setup screen, so a rejection here strands someone on
+    // it with no way forward. The login view is always a safe landing: it
+    // can re-pair the device whatever went wrong.
+    .catch(() => showLoginView("Could not read this device's session."));
+}
+
+setupContinueButton.addEventListener("click", () => {
+  // Deliberately not awaited: ending and relaunching a browser takes
+  // seconds, and nothing here depends on the outcome. The person moves on
+  // to logging in while it happens behind them.
+  void window.api.setup.continueFromBrowserRestart();
+  startApp();
+});
+
+async function init(): Promise<void> {
+  if (await showBrowserRestartSetup()) return;
+  startApp();
 }
 
 async function pollPairing(): Promise<void> {
@@ -336,81 +420,6 @@ const screenRecordingGrantButton = document.getElementById(
 const screenRecordingSettingsButton = document.getElementById(
   "screen-recording-settings-button",
 ) as HTMLButtonElement;
-const browserRestartBanner = document.getElementById("browser-restart-banner")!;
-const browserRestartMessage = document.getElementById("browser-restart-message")!;
-const browserRestartButton = document.getElementById(
-  "browser-restart-button",
-) as HTMLButtonElement;
-const browserRestartDismiss = document.getElementById("browser-restart-dismiss")!;
-
-/** Dismissed for this run only, so it returns next start if the browser is
- * still untracked — it just stops repeating while someone is mid-task. */
-let browserRestartDismissed = false;
-
-/**
- * A browser open before the agent wrote its launcher overrides has no
- * accessibility tree, so its URLs go unrecorded until it is restarted, and
- * nothing else says so.
- *
- * Never blocking: losing URL capture must not stop time tracking, and a
- * modal over the timer would do exactly that.
- */
-/**
- * The platform the app is running on, as the main process reports it. Held
- * here so every path that shows the banner reads the same value — passing it
- * per call let one caller hand in a literal and defeat the Linux gate.
- */
-let hostPlatform: string | null = null;
-
-async function refreshBrowserRestartBanner(): Promise<void> {
-  // Linux-only: the launcher override this compensates for exists nowhere
-  // else. The main process answers empty off Linux too — this is the second
-  // of two gates.
-  if (hostPlatform !== "linux" || browserRestartDismissed) {
-    browserRestartBanner.hidden = true;
-    return;
-  }
-
-  const status = await window.api.browserRestart.status();
-  const names = [...new Set([...status.needsRestart, ...status.manual.map((m) => m.name)])];
-  if (names.length === 0) {
-    browserRestartBanner.hidden = true;
-    return;
-  }
-
-  // Reasons are deduplicated and the list is capped: one sentence per
-  // browser turned the banner into a wall of repeated text.
-  const reasons = [
-    ...new Set([...status.warnings, ...status.manual.map((e) => e.reason)]),
-  ];
-  const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} and others` : names.join(", ");
-
-  // Only offer the button when pressing it would finish the job; the rest is
-  // a browser we will not restart for them, and the reason says why.
-  browserRestartButton.hidden = status.needsRestart.length === 0;
-  browserRestartMessage.textContent = [
-    `Website tracking needs ${list} restarted.`,
-    ...reasons.slice(0, 1),
-  ].join(" ");
-  browserRestartBanner.hidden = false;
-}
-
-browserRestartDismiss.addEventListener("click", () => {
-  browserRestartDismissed = true;
-  browserRestartBanner.hidden = true;
-});
-
-browserRestartButton.addEventListener("click", () => {
-  browserRestartButton.disabled = true;
-  browserRestartMessage.textContent = "Restarting…";
-  void window.api.browserRestart
-    .restart()
-    .then(() => refreshBrowserRestartBanner())
-    .finally(() => {
-      browserRestartButton.disabled = false;
-    });
-});
-
 const accessibilityBanner = document.getElementById("accessibility-banner")!;
 const accessibilityBannerMessage = document.getElementById(
   "accessibility-banner-message",
@@ -883,9 +892,6 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
     status.platform === "macos" && !status.accessibilityGranted
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
-
-  hostPlatform = status.platform;
-  void refreshBrowserRestartBanner();
 
   return status;
 }

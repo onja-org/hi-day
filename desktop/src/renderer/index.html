@@ -23,13 +23,6 @@
           Open System Settings
         </button>
       </div>
-      <div id="browser-restart-banner" class="idle-banner" role="alert" hidden>
-        <p id="browser-restart-message"></p>
-        <button id="browser-restart-button" type="button">Restart browsers</button>
-        <button id="browser-restart-dismiss" type="button" aria-label="Dismiss">
-          &times;
-        </button>
-      </div>
       <div id="screen-recording-banner" class="idle-banner" role="alert" hidden>
         <p id="screen-recording-banner-message">
           Window title tracking is off — needs Screen Recording access.
@@ -41,6 +34,24 @@
       </div>
 
       <p id="loading-view">Loading…</p>
+
+      <section id="setup-view" class="setup-view" hidden>
+        <span class="setup-icon" aria-hidden="true">
+          <svg viewBox="0 0 256 256" width="28" height="28">
+            <path
+              d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"
+              fill="currentColor"
+            />
+          </svg>
+        </span>
+        <h1 class="setup-title">One quick step</h1>
+        <p id="setup-message" class="setup-message"></p>
+        <p id="setup-manual" class="setup-manual" hidden></p>
+        <p id="setup-warning" class="setup-warning" hidden></p>
+        <button id="setup-continue-button" type="button" class="setup-button">
+          Continue
+        </button>
+      </section>
 
       <section id="login-view" hidden>
         <p id="pairing-status">Sign in from your browser to link this device.</p>

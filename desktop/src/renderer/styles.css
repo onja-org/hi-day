@@ -330,18 +330,6 @@ select {
   color: #93700c;
 }
 
-/* Ends in a row of buttons and sits directly above the header card, so the
-   12px the other banners use reads as the two touching. Scoped rather than
-   widening .idle-banner, which macOS's permission banners also use. */
-#browser-restart-banner {
-  margin-bottom: 24px;
-}
-
-#browser-restart-banner p {
-  margin-bottom: 12px;
-  line-height: 1.45;
-}
-
 .idle-banner button {
   margin-top: 0;
   display: inline-block;
@@ -779,4 +767,69 @@ button:hover {
   text-align: center;
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+/* --- First-run setup screen -------------------------------------------- */
+
+/* Stands alone in the window rather than above the timer, so it is centred
+   on the whole panel instead of stacked like the banners it replaced. */
+.setup-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 8px;
+  text-align: center;
+}
+
+/* `display: flex` above overrides `hidden` — same fix as .update-banner[hidden]
+   and .task-panel[hidden]. Without it the screen stays painted over the timer
+   after Continue, since `hidden` alone is only the UA stylesheet's
+   `display: none` and any explicit display beats it. */
+.setup-view[hidden] {
+  display: none;
+}
+
+.setup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  background: var(--color-cream);
+  color: var(--color-amber-text);
+}
+
+.setup-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.setup-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.setup-manual {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.setup-warning {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-cream);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-amber-text);
+}
+
+.setup-button {
+  margin-top: 24px;
 }
