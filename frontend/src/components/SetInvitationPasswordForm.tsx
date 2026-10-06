@@ -45,6 +45,7 @@ export function SetInvitationPasswordForm({
         label="First name"
         name="firstName"
         type="text"
+        placeholder="Jane"
         required
         disabled={result?.ok}
       />
@@ -53,6 +54,7 @@ export function SetInvitationPasswordForm({
         label="Last name"
         name="lastName"
         type="text"
+        placeholder="Doe"
         required
         disabled={result?.ok}
       />
