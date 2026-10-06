@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { ScreenshotsPageContent } from "@/components/ScreenshotsPageContent";
 import { ActivityTabs } from "@/components/ActivityTabs";
+
+export const metadata: Metadata = {
+  title: "Screenshots",
+};
 
 type ScreenshotsActivityPageProps = {
   params: Promise<{ organisationId: string }>;

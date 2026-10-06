@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { ProjectsPageContent } from "@/components/ProjectsPageContent";
+
+export const metadata: Metadata = {
+  title: "Projects",
+};
 
 type ProjectsPageProps = {
   params: Promise<{ organisationId: string }>;

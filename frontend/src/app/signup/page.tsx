@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthAside } from "@/components/AuthAside";
 import { SignUpForm } from "@/components/SignUpForm";
 import { isAuthenticated } from "@/lib/isAuthenticated";
+
+export const metadata: Metadata = {
+  title: "Sign up",
+};
 
 export default async function SignUpPage() {
   if (await isAuthenticated()) {

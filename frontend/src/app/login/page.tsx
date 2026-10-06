@@ -1,8 +1,13 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthAside } from "@/components/AuthAside";
 import { LoginForm } from "@/components/LoginForm";
 import { isAuthenticated } from "@/lib/isAuthenticated";
 import { safeRedirectPath } from "@/lib/safeRedirectPath";
+
+export const metadata: Metadata = {
+  title: "Log in",
+};
 
 type LoginPageProps = {
   searchParams: Promise<{ next?: string; reason?: string }>;

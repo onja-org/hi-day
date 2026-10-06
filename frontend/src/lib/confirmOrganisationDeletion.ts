@@ -1,12 +1,15 @@
 import { API_URL } from "./apiUrl";
 import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
-import type { OrganisationDeletionResult } from "@/types/organisation";
+import type { OrganisationDeletionConfirmResult } from "@/types/organisation";
 
-/** Applies the pending request using the token from the owner's emailed link. */
+/**
+ * Applies the pending request using the token from the owner's emailed link.
+ * `signedOut` means the backend has already ended this browser's session.
+ */
 export async function confirmOrganisationDeletion(
   organisationId: number,
   token: string,
-): Promise<OrganisationDeletionResult> {
+): Promise<OrganisationDeletionConfirmResult> {
   let response: Response;
   try {
     response = await fetch(
@@ -24,7 +27,7 @@ export async function confirmOrganisationDeletion(
 
   if (response.ok) {
     const body = await response.json();
-    return { ok: true, ...body };
+    return { ok: true, message: body.message, signedOut: body.signedOut === true };
   }
   return { ok: false, message: await parseApiErrorMessage(response) };
 }

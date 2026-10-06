@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Activity",
+};
 
 type ActivitiesPageProps = {
   params: Promise<{ organisationId: string }>;

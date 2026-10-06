@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { OrganisationSettingsPageContent } from "@/components/OrganisationSettingsPageContent";
+
+export const metadata: Metadata = {
+  title: "Settings",
+};
 
 type SettingsPageProps = {
   searchParams: Promise<{ confirmDeletion?: string }>;

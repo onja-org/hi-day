@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { JoinViaLinkForm } from "@/components/JoinViaLinkForm";
+
+export const metadata: Metadata = {
+  title: "Join your team",
+};
 
 type JoinPageProps = {
   searchParams: Promise<{ token?: string }>;

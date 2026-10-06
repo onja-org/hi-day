@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { TimeEntriesPageContent } from "@/components/TimeEntriesPageContent";
+
+export const metadata: Metadata = {
+  title: "Timesheets",
+};
 
 type TimeEntriesPageProps = {
   params: Promise<{ organisationId: string }>;

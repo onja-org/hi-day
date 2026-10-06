@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { MembersPageContent } from "@/components/MembersPageContent";
+
+export const metadata: Metadata = {
+  title: "Members",
+};
 
 type MembersPageProps = {
   params: Promise<{ organisationId: string }>;

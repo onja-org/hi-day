@@ -203,6 +203,26 @@ describe('OrganisationsService', () => {
         NotFoundException,
       );
     });
+
+    it('prefers an organisation that is not suspended', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await service.findCurrentForUser('user-1').catch(() => undefined);
+
+      expect(findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: {
+            organisation: { suspendedAt: { direction: 'ASC', nulls: 'FIRST' } },
+          },
+        }),
+      );
+    });
   });
 
   describe('listTeams', () => {

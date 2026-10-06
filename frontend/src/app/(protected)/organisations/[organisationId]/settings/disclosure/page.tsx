@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Disclosure settings",
+};
 
 // Hidden from the platform: not linked from nav, and direct navigation 404s.
 // The underlying disclosure/consent data model, API, and audit trail are
