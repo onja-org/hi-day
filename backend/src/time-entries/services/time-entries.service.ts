@@ -1452,7 +1452,10 @@ export class TimeEntriesService {
         metadata: {
           timeEntryId: running.id,
           pausedSeconds: Math.round(
-            (resumedAt.getTime() - openPause.pausedAt.getTime()) / 1000,
+            Math.max(
+              0,
+              (resumedAt.getTime() - openPause.pausedAt.getTime()) / 1000,
+            ),
           ),
         },
       });
@@ -1707,7 +1710,12 @@ export class TimeEntriesService {
     if (!openPause) {
       return;
     }
-    openPause.resumedAt = at;
+    // Never before the pause began. A backdated stop — an idle discard ends
+    // the entry at the instant idle started — can carry an `at` earlier than
+    // a pause opened afterwards, and a span that resumes before it starts
+    // counts as negative paused time, inflating the duration.
+    openPause.resumedAt =
+      at.getTime() < openPause.pausedAt.getTime() ? openPause.pausedAt : at;
     await repo.save(openPause);
   }
 
@@ -1738,12 +1746,18 @@ export class TimeEntriesService {
     const states = new Map<string, PauseState>();
     for (const [timeEntryId, spans] of byEntry) {
       const open = spans.find((span) => span.resumedAt === null);
+      // Clamped: a span that resumes before it was paused would otherwise
+      // subtract from paused time and inflate the entry's duration. See
+      // `time-entry-active-seconds.util.ts` for how such rows came about.
       const closedSeconds = spans
         .filter((span) => span.resumedAt !== null)
         .reduce(
           (total, span) =>
             total +
-            (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
+            Math.max(
+              0,
+              (span.resumedAt!.getTime() - span.pausedAt.getTime()) / 1000,
+            ),
           0,
         );
       states.set(timeEntryId, {
