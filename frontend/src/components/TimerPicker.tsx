@@ -2,6 +2,8 @@
 
 import { ArrowsClockwiseIcon, PlayIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import Link from "next/link";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { ProjectListItem } from "@/types/project";
@@ -43,6 +45,7 @@ export function TimerPicker({
   onSwitch,
   layout = "row",
 }: TimerPickerProps) {
+  const organisationQuery = useCurrentOrganisation();
   const tasksQuery = useProjectTasks(organisationId, projectId, {
     enabled: projectId !== "",
   });
@@ -53,6 +56,22 @@ export function TimerPicker({
     : 0;
 
   if (projects.length === 0) {
+    // An admin's list is every active Project in the organisation, so an
+    // empty one means there's nothing to join — they need to create one.
+    if (organisationQuery.data?.role === "admin") {
+      return (
+        <p className="text-slate-900">
+          There are no Projects yet —{" "}
+          <Link
+            href={`/organisations/${organisationId}/projects`}
+            className="text-primary underline hover:text-primary/80"
+          >
+            create a project
+          </Link>{" "}
+          to start tracking time.
+        </p>
+      );
+    }
     return (
       <p className="text-slate-900">
         You&apos;re not on any Project yet — ask an admin to add you to one.
