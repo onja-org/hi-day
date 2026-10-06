@@ -41,10 +41,10 @@ export function ConfirmOrganisationDeletionPrompt({
     onSuccess: (result) => {
       if (!result.ok) return;
       // A permanent deletion that erases the owner's account has already
-      // ended this session server-side; nothing under /organisations works.
+      // ended this session server-side. A full navigation (not the router)
+      // drops the client cache, so "back" can't reopen a dead dashboard.
       if (result.signedOut) {
-        queryClient.clear();
-        router.replace("/organisation-deleted");
+        window.location.replace("/organisation-deleted");
         return;
       }
       // Otherwise the current organisation may now be a different one, which
