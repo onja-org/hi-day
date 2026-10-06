@@ -1,6 +1,7 @@
 "use client";
 
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
+import type { TimeEntryFieldErrors } from "@/lib/timeEntryFieldErrors";
 import { TextField } from "@/components/ui/form/TextField";
 
 type TimeEntryTimeFieldsProps = {
@@ -10,6 +11,9 @@ type TimeEntryTimeFieldsProps = {
   /** The timer is still ticking, so there is no end to set yet. A *paused*
    * entry isn't this: it can be given an end, which closes it. */
   isTicking: boolean;
+  /** Shown under whichever field is at fault — see `timeEntryFieldErrors`. */
+  errors?: TimeEntryFieldErrors;
+  onChange?: () => void;
 };
 
 /** The Start and End inputs of the time-entry form.
@@ -21,7 +25,11 @@ export function TimeEntryTimeFields({
   startedAt,
   endedAt,
   isTicking,
+  errors,
+  onChange,
 }: TimeEntryTimeFieldsProps) {
+  const range = errors?.range;
+
   return (
     <div className="flex flex-col gap-5">
       <TextField
@@ -31,6 +39,9 @@ export function TimeEntryTimeFields({
         name="startedAt"
         type="datetime-local"
         required
+        error={errors?.startedAt}
+        invalid={range !== undefined}
+        onChange={onChange}
         defaultValue={startedAt ? toDatetimeLocalValue(startedAt) : undefined}
       />
 
@@ -47,6 +58,8 @@ export function TimeEntryTimeFields({
           name="endedAt"
           type="datetime-local"
           required
+          error={errors?.endedAt ?? range}
+          onChange={onChange}
           defaultValue={endedAt ? toDatetimeLocalValue(endedAt) : undefined}
         />
       )}

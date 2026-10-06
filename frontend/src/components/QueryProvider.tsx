@@ -13,6 +13,20 @@ import { Toaster, toast } from "sonner";
 const GENERIC_MUTATION_ERROR_MESSAGE =
   "Something went wrong. Please try again.";
 
+/**
+ * A mutation that shows its own failures next to the field at fault opts out
+ * of the toast, so one problem is not reported twice in two places. Success
+ * still toasts — that confirmation has nowhere else to go once the form has
+ * closed.
+ */
+function showsErrorsInline(meta: unknown): boolean {
+  return (
+    typeof meta === "object" &&
+    meta !== null &&
+    (meta as { inlineErrors?: unknown }).inlineErrors === true
+  );
+}
+
 function isApiResult(data: unknown): data is { ok: boolean; message: string } {
   return (
     typeof data === "object" &&
@@ -44,7 +58,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
             }
             if (data.ok) {
               toast.success(data.message);
-            } else {
+            } else if (!showsErrorsInline(mutation.options.meta)) {
               toast.error(data.message);
             }
           },

@@ -1067,10 +1067,13 @@ if (!gotSingleInstanceLock) {
     console.error(`[child-process] gone: ${details.type} ${details.reason}`);
   });
 
-  // Quitting must PAUSE the running timer, never stop or discard it — the
-  // elapsed value has to survive to the next launch. The pause is a network
-  // call, so the first quit is deferred until it settles and then re-issued.
-  // `quitPauseComplete` makes that re-issue a plain quit instead of looping.
+  // Quitting ends the running timer rather than leaving it open. Pausing is
+  // what does that now — an entry is one unbroken span, so pause closes it —
+  // and the elapsed time survives in the finished entry rather than in an
+  // entry still open at midnight for the day-boundary split to carve up.
+  // The call is over the network, so the first quit is deferred until it
+  // settles and then re-issued; `quitPauseComplete` makes that re-issue a
+  // plain quit instead of looping.
   app.on("before-quit", (event) => {
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();
