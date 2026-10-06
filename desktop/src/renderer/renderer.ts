@@ -821,7 +821,10 @@ async function selectProject(projectId: string): Promise<void> {
   // pause icon, so doing nothing would make that icon a lie.
   if (runningEntry?.projectId === projectId && !runningEntry.pausedAt) {
     const paused = await window.api.tracking.pause();
-    if (paused.ok) setRunning(paused.data);
+    // Pausing ends the entry, so what comes back is a finished one. Holding
+    // on to it would leave the UI showing a timer that has already stopped
+    // until the next poll corrected it.
+    if (paused.ok) setRunning(null);
     else handleTrackingFailure(paused);
     return;
   }
@@ -1193,11 +1196,14 @@ timerToggle.addEventListener("click", () => {
       }
 
       clearTrackingError();
+      // `pausedAt` is never set any more — pausing ends the entry — so this
+      // always pauses, and starting again goes through the `!runningEntry`
+      // branch above. `resume` stays reachable for an older agent.
       const result = runningEntry.pausedAt
         ? await window.api.tracking.resume()
         : await window.api.tracking.pause();
       if (result.ok) {
-        setRunning(result.data);
+        setRunning(result.data.endedAt ? null : result.data);
       } else {
         handleTrackingFailure(result);
       }

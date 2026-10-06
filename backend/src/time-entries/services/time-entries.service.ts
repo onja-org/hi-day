@@ -27,6 +27,7 @@ import type { PrunedCaptures } from '../../captures/services/capture-cleanup.ser
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
+import { Organisation } from '../../database/entities/organisation.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Project } from '../../database/entities/project.entity';
@@ -170,6 +171,8 @@ export class TimeEntriesService {
     private readonly timeEntryPauses: Repository<TimeEntryPause>,
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
+    @InjectRepository(Organisation)
+    private readonly organisations: Repository<Organisation>,
     @InjectRepository(ProjectMembership)
     private readonly projectMemberships: Repository<ProjectMembership>,
     @InjectRepository(ProjectTeam)
@@ -460,6 +463,8 @@ export class TimeEntriesService {
     userId: string,
     deviceId: string | null,
     endedAt?: Date,
+    /** `pause` ends an entry too, and records itself as such. */
+    options: { action?: 'time_entry.stopped' | 'time_entry.paused' } = {},
   ): Promise<TimeEntrySummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const running = await this.timeEntries.findOne({
@@ -483,7 +488,7 @@ export class TimeEntriesService {
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
-        action: 'time_entry.stopped',
+        action: options.action ?? 'time_entry.stopped',
         organisationId,
         actorUserId: userId,
         metadata: {
@@ -709,22 +714,52 @@ export class TimeEntriesService {
    * without this, a timer left running overnight attributes its entire
    * elapsed time to whichever day it started, corrupting every per-day
    * aggregate (dashboard, timesheet). Runs hourly, same cadence as
-   * `ScreenshotsService.deleteExpired`. Splits at *this server's* local
-   * midnight — `Organisation.settings.timezone` isn't read by anything else
-   * in the app yet, so there's no per-org boundary to honour here either.
+   * `ScreenshotsService.deleteExpired`.
+   *
+   * Splits at the *Organisation's* midnight, not the server's. It used to
+   * use the server's, and production runs UTC, so a team in EAT had its
+   * days cut at 3am — every overnight timer produced an entry starting
+   * 3:00 AM that nobody worked.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async splitRunningEntriesAcrossDayBoundary(): Promise<void> {
-    const todayStart = this.startOfDay(new Date());
+    const now = new Date();
+    // The widest possible boundary, so the query cannot miss an entry whose
+    // own Organisation sits in a later timezone; each is then split against
+    // its own.
+    const earliestTodayStart = this.startOfDayInZone(now, 'UTC');
 
     const running = await this.timeEntries.find({
-      where: { endedAt: IsNull(), startedAt: LessThan(todayStart) },
+      where: { endedAt: IsNull(), startedAt: LessThan(earliestTodayStart) },
       take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
     });
 
     for (const entry of running) {
-      await this.splitAcrossDayBoundaries(entry.id, todayStart);
+      const zone = await this.organisationTimezone(entry.organisationId);
+      await this.splitAcrossDayBoundaries(
+        entry.id,
+        this.startOfDayInZone(now, zone),
+        zone,
+      );
     }
+  }
+
+  /** Cached per run: a batch is usually one or two Organisations. */
+  private readonly timezoneByOrganisation = new Map<string, string>();
+
+  private async organisationTimezone(organisationId: string): Promise<string> {
+    const cached = this.timezoneByOrganisation.get(organisationId);
+    if (cached) return cached;
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = organisation?.settings as
+      { timezone?: string } | undefined;
+    // UTC is the value every Organisation was created with, and the right
+    // answer when the row has gone.
+    const zone = settings?.timezone ?? 'UTC';
+    this.timezoneByOrganisation.set(organisationId, zone);
+    return zone;
   }
 
   /**
@@ -738,6 +773,7 @@ export class TimeEntriesService {
   private async splitAcrossDayBoundaries(
     entryId: string,
     todayStart: Date,
+    zone: string,
   ): Promise<void> {
     for (;;) {
       const nextEntryId = await this.dataSource.transaction(async (manager) => {
@@ -748,12 +784,13 @@ export class TimeEntriesService {
           return null; // stopped manually, or already caught up
         }
         if (
-          this.startOfDay(entry.startedAt).getTime() >= todayStart.getTime()
+          this.startOfDayInZone(entry.startedAt, zone).getTime() >=
+          todayStart.getTime()
         ) {
           return null; // already within today
         }
 
-        const boundary = this.startOfNextDay(entry.startedAt);
+        const boundary = this.startOfNextDayInZone(entry.startedAt, zone);
         if (boundary.getTime() <= entry.startedAt.getTime()) {
           // Should be unreachable — startOfNextDay always lands on the
           // day *after* startedAt's day — but guard anyway rather than
@@ -763,15 +800,6 @@ export class TimeEntriesService {
 
         entry.endedAt = boundary;
         await manager.save(entry);
-
-        const pausesRepo = manager.getRepository(TimeEntryPause);
-        const openPause = await pausesRepo.findOne({
-          where: { timeEntryId: entry.id, resumedAt: IsNull() },
-        });
-        if (openPause) {
-          openPause.resumedAt = boundary;
-          await pausesRepo.save(openPause);
-        }
 
         const next = await manager.save(
           manager.create(TimeEntry, {
@@ -785,19 +813,6 @@ export class TimeEntriesService {
             deviceId: entry.deviceId,
           }),
         );
-
-        if (openPause) {
-          // The person was paused going into midnight — stay paused
-          // after it too, rather than silently resuming them.
-          await pausesRepo.save(
-            pausesRepo.create({
-              organisationId: entry.organisationId,
-              timeEntryId: next.id,
-              pausedAt: boundary,
-              resumedAt: null,
-            }),
-          );
-        }
 
         await this.auditLogService.record(manager, {
           action: 'time_entry.day_boundary_split',
@@ -817,16 +832,65 @@ export class TimeEntriesService {
     }
   }
 
-  private startOfDay(date: Date): Date {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    return start;
+  /**
+   * The instant a calendar day begins in `zone`.
+   *
+   * By correction, not arithmetic: the offset is the thing being solved
+   * for, so it cannot simply be added. Re-reading the clock at a guess and
+   * shifting by the difference converges in two passes, DST included.
+   */
+  private startOfDayInZone(at: Date, zone: string): Date {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(at);
+    const get = (type: string): number =>
+      Number(parts.find((part) => part.type === type)?.value ?? 0);
+    const wanted = Date.UTC(get('year'), get('month') - 1, get('day'));
+
+    let guess = wanted;
+    for (let pass = 0; pass < 2; pass += 1) {
+      guess += wanted - this.readClockAsUtc(new Date(guess), zone);
+    }
+    return new Date(guess);
   }
 
-  private startOfNextDay(date: Date): Date {
-    const next = this.startOfDay(date);
-    next.setDate(next.getDate() + 1);
-    return next;
+  /** The zone's wall clock read back as if it were UTC, so two can subtract. */
+  private readClockAsUtc(at: Date, zone: string): number {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(at);
+    const get = (type: string): number =>
+      Number(parts.find((part) => part.type === type)?.value ?? 0);
+    // Midnight can come back as hour 24 under hourCycle h24.
+    return Date.UTC(
+      get('year'),
+      get('month') - 1,
+      get('day'),
+      get('hour') % 24,
+      get('minute'),
+      get('second'),
+    );
+  }
+
+  /** The instant the day after `at`'s own day begins, in `zone`. */
+  private startOfNextDayInZone(at: Date, zone: string): Date {
+    const dayStart = this.startOfDayInZone(at, zone);
+    // A day is 23, 24 or 25 hours long, so step well past it and take that
+    // day's own start rather than adding a fixed 24.
+    return this.startOfDayInZone(
+      new Date(dayStart.getTime() + 36 * 60 * 60 * 1000),
+      zone,
+    );
   }
 
   /**
@@ -1363,59 +1427,36 @@ export class TimeEntriesService {
   }
 
   /**
-   * Pauses the caller's running timer — the same entry keeps its `id` and
-   * `endedAt` stays null (it is still "running" in every existing sense:
-   * `current`, the single-running-timer index, `switchTo`'s lookups), it
-   * just temporarily stops accumulating tracked time. Rejects with 409 if
-   * there's no running entry, or if it's already paused.
+   * Ends the caller's running timer, the same as `stop`.
+   *
+   * A Time entry is one unbroken worked span: play to stop. Pausing used to
+   * punch a hole in an entry instead, which made its Duration disagree with
+   * the Start-End it displayed — an entry paused overnight read as ten
+   * hours of work for thirteen minutes of it — and left entries open across
+   * midnight for the day-boundary splitter to tear into phantom rows.
+   *
+   * Kept as its own method rather than folded into `stop` so the agent and
+   * the web keep their Pause control and their own audit action; what
+   * changed is what it does. Pressing play afterwards starts a new entry.
    */
   async pause(
     organisationId: string,
     userId: string,
     deviceId: string | null,
   ): Promise<TimeEntrySummary> {
-    const membership = await this.getActiveMembership(organisationId, userId);
-    const running = await this.timeEntries.findOne({
-      where: this.runningForDevice(membership.id, deviceId),
+    return await this.stop(organisationId, userId, deviceId, undefined, {
+      action: 'time_entry.paused',
     });
-    if (!running) {
-      throw new NotFoundException(
-        'No timer is currently running on this device.',
-      );
-    }
-
-    const openPause = await this.timeEntryPauses.findOne({
-      where: { timeEntryId: running.id, resumedAt: IsNull() },
-    });
-    if (openPause) {
-      throw new ConflictException('This timer is already paused.');
-    }
-
-    const pause = this.timeEntryPauses.create({
-      organisationId,
-      timeEntryId: running.id,
-      pausedAt: new Date(),
-      resumedAt: null,
-    });
-    await this.timeEntryPauses.save(pause);
-
-    await this.dataSource.transaction(async (manager) => {
-      await this.auditLogService.record(manager, {
-        action: 'time_entry.paused',
-        organisationId,
-        actorUserId: userId,
-        metadata: { timeEntryId: running.id },
-      });
-    });
-
-    return await this.toSummary(running);
   }
 
   /**
-   * Resumes a paused timer by closing its open pause span — reuses
-   * `assertValidRange` (a resume can never land before its own pause, or in
-   * the future) for the same reason `stop`'s backdating does. Rejects with
-   * 409 if there's no running entry, or if it isn't currently paused.
+   * Starts a fresh entry on whatever this Device was last tracking.
+   *
+   * There is nothing to resume any more — `pause` ends the entry — so this
+   * does what pressing play does, picking the Project up from the last
+   * entry stopped on this Device. Kept so an agent that has not updated
+   * yet, which still calls pause then resume, keeps working rather than
+   * stranding someone on a 404.
    */
   async resume(
     organisationId: string,
@@ -1423,45 +1464,35 @@ export class TimeEntriesService {
     deviceId: string | null,
   ): Promise<TimeEntrySummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
+
     const running = await this.timeEntries.findOne({
       where: this.runningForDevice(membership.id, deviceId),
     });
-    if (!running) {
-      throw new NotFoundException(
-        'No timer is currently running on this device.',
-      );
+    if (running) {
+      // Already tracking: nothing to start, and the caller's own view is
+      // simply behind. Answering with the running entry re-syncs it.
+      return await this.toSummary(running);
     }
 
-    const openPause = await this.timeEntryPauses.findOne({
-      where: { timeEntryId: running.id, resumedAt: IsNull() },
+    const last = await this.timeEntries.findOne({
+      where: {
+        membershipId: membership.id,
+        deviceId: deviceId === null ? IsNull() : Equal(deviceId),
+      },
+      order: { endedAt: 'DESC' },
     });
-    if (!openPause) {
-      throw new ConflictException('This timer is not paused.');
+    if (!last) {
+      throw new NotFoundException('Nothing to resume on this device.');
     }
 
-    const resumedAt = new Date();
-    this.assertValidRange(openPause.pausedAt, resumedAt);
-    openPause.resumedAt = resumedAt;
-    await this.timeEntryPauses.save(openPause);
-
-    await this.dataSource.transaction(async (manager) => {
-      await this.auditLogService.record(manager, {
-        action: 'time_entry.resumed',
-        organisationId,
-        actorUserId: userId,
-        metadata: {
-          timeEntryId: running.id,
-          pausedSeconds: Math.round(
-            Math.max(
-              0,
-              (resumedAt.getTime() - openPause.pausedAt.getTime()) / 1000,
-            ),
-          ),
-        },
-      });
-    });
-
-    return await this.toSummary(running);
+    return await this.start(
+      organisationId,
+      userId,
+      last.projectId,
+      last.taskId ?? undefined,
+      last.source,
+      deviceId,
+    );
   }
 
   /**
