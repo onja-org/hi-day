@@ -153,6 +153,11 @@ process is `/opt/google/chrome/chrome`), and install-directory matching breaks f
 
 The agent offers to restart them, and does it on a button rather than on its own: ending a browser
 also ends whatever is unsaved in it, which no flag restores, so the timing is the person's to pick.
+That offer is a **setup screen shown before the login view**, not a banner over the timer, and it
+appears at most once per install — recorded in `setup-state.json` under the app's data directory,
+which survives logout and re-pairing. It is withheld entirely when no blind browser is running, so
+the single showing is spent on a launch that has something to say. Pressing Continue starts the
+restart and moves straight on rather than waiting for it.
 Only blind browsers are restarted — one launched after activation already has its tree. Chromium
 comes back with `--restore-last-session`, which reopens the previous session whatever the person's
 startup preference. **Firefox has no equivalent flag**: it restores only when

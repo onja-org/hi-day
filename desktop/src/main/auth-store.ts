@@ -46,14 +46,18 @@ export class AuthStore {
       return null;
     }
 
-    const raw = readFileSync(this.filePath);
-    const json = safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(raw)
-      : raw.toString('utf-8');
-
     try {
+      const raw = readFileSync(this.filePath);
+      const json = safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(raw)
+        : raw.toString('utf-8');
       return JSON.parse(json) as StoredSession;
     } catch {
+      // Reading at all can fail, not just parsing: the file may be
+      // unreadable, or written under a keyring this machine can no longer
+      // decrypt with. "No session" sends the person to the login view,
+      // which can pair the device again — throwing would reject
+      // `auth:status` and strand whatever view is on screen.
       return null;
     }
   }
