@@ -2,16 +2,14 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Modal } from "@/components/Modal";
-import { Spinner } from "@/components/Spinner";
-import { SelectField } from "@/components/ui/form/SelectField";
 import { TextareaField } from "@/components/ui/form/TextareaField";
 import { TextField } from "@/components/ui/form/TextField";
-import { findInvalidEmails } from "@/lib/findInvalidEmails";
-import { parseInviteEmails } from "@/lib/parseInviteEmails";
+import { validateReportEmails } from "@/lib/validateReportEmails";
 import type { SendReportFileType, SendReportInput } from "@/types/sendReport";
+import { FileTypeSelect } from "./FileTypeSelect";
+import { ReportModalFooter } from "./ReportModalFooter";
 
 type SendReportModalProps = {
   onSend: (input: SendReportInput) => void;
@@ -40,11 +38,10 @@ export function SendReportModal({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const emails = parseInviteEmails(addresses);
-    const invalid = findInvalidEmails(emails);
+    const { emails, error } = validateReportEmails(addresses);
     if (emails.length === 0 || subject.trim() === "") return;
-    if (invalid.length > 0) {
-      setValidationError(`Not a valid email address: ${invalid.join(", ")}`);
+    if (error) {
+      setValidationError(error);
       return;
     }
     setValidationError(null);
@@ -78,48 +75,13 @@ export function SendReportModal({
           rows={3}
           placeholder="Enter message"
         />
-        <SelectField
-          label="File type"
-          value={fileType}
-          onChange={(event) => setFileType(event.target.value as SendReportFileType)}
-        >
-          <option value="pdf">PDF</option>
-          <option value="csv">CSV</option>
-        </SelectField>
+        <FileTypeSelect label="File type" value={fileType} onChange={setFileType} />
 
         {(validationError ?? errorMessage) && <ErrorMessage message={validationError ?? errorMessage ?? ""} />}
 
-        <div className="flex items-center justify-between gap-3">
-          {onSendPreview ? (
-            <button
-              type="button"
-              onClick={onSendPreview}
-              className="flex cursor-pointer items-center gap-2 text-sm text-primary hover:underline"
-            >
-              <PaperPlaneRightIcon size={16} aria-hidden="true" />
-              Send preview
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-11 cursor-pointer rounded-md border border-primary px-4 text-primary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPending && <Spinner />}
-              Send
-            </button>
-          </div>
-        </div>
+        <ReportModalFooter onClose={onClose} onSendPreview={onSendPreview} isPending={isPending}>
+          Send
+        </ReportModalFooter>
       </form>
     </Modal>
   );

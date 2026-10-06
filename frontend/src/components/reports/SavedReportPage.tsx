@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ErrorMessage } from "@/components/ErrorMessage";
-import { Spinner } from "@/components/Spinner";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
+import { ReportStatus } from "./ReportStatus";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
 
 type SavedReportPageProps = {
@@ -17,16 +16,7 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
   const { reports, isReady, error } = useSavedReports(organisationId);
   const savedReport = reports.find((report) => report.id === savedReportId);
 
-  if (!isReady) {
-    return (
-      <p className="flex items-center gap-2 text-slate-900">
-        <Spinner className="text-primary-dark" />
-        Loading report…
-      </p>
-    );
-  }
-
-  if (error) return <ErrorMessage message={error.message} />;
+  if (!isReady || error) return <ReportStatus isLoading={!isReady} error={error} />;
 
   if (!savedReport) {
     return (

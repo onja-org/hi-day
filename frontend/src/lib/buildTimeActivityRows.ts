@@ -2,6 +2,7 @@ import { entrySeconds } from "@/lib/entrySeconds";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { entryDayLabel, groupEntriesBy, memberLabelOf } from "@/lib/groupEntriesBy";
 import { splitEntrySeconds } from "@/lib/splitEntrySeconds";
+import type { IdleMember } from "@/types/idleMember";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -11,7 +12,7 @@ type RowOptions = {
   sumDates: boolean;
   teamNames: MembershipTeamNames;
   /** Members to list under "Member" grouping even when they have no entries, as zero-hour rows. */
-  idleMembers?: { id: string; label: string }[];
+  idleMembers?: IdleMember[];
 };
 
 function hours(seconds: number): string {

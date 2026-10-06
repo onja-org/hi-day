@@ -2,17 +2,14 @@
 
 import type { ReactNode } from "react";
 import { ClockIcon, FolderSimpleIcon } from "@phosphor-icons/react";
-import {
-  DAILY_TOTALS_CHART_SERIES,
-  DAILY_TOTALS_FIRST_COLUMN,
-  DAILY_TOTALS_TRAILING_COLUMNS,
-} from "@/lib/dailyTotalsReportConfig";
+import { DAILY_TOTALS_CHART_SERIES } from "@/lib/dailyTotalsReportConfig";
+import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatReportDay } from "@/lib/formatReportDay";
-import { timezoneLabel } from "@/lib/timezone";
 import type { DailyTotalsReport } from "@/lib/buildDailyTotalsReport";
 import { ReportsBarChart } from "./ReportsBarChart";
 import { ReportsStatCard } from "./ReportsStatCard";
+import { ReportTableHeading } from "./ReportTableHeading";
 import { ReportsTable } from "./ReportsTable";
 
 type DailyTotalsReportBodyProps = {
@@ -46,16 +43,10 @@ export function DailyTotalsReportBody({ report, organisationName, zone, actions 
         />
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-baseline gap-3">
-          <span className="text-xl text-primary-dark">{organisationName}</span>
-          <span className="text-xs text-slate-900/70">{timezoneLabel(zone)}</span>
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">{actions}</div>
-      </div>
+      <ReportTableHeading organisationName={organisationName} zone={zone} actions={actions} />
 
       <ReportsTable
-        columns={[DAILY_TOTALS_FIRST_COLUMN, ...report.columns, ...DAILY_TOTALS_TRAILING_COLUMNS]}
+        columns={dailyTotalsTable(report).columns}
         rows={report.rows}
         footerRow={report.totalRow}
       />

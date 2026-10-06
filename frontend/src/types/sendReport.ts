@@ -8,11 +8,7 @@ export type SendReportInput = {
 };
 
 /** What the backend's send endpoint takes: the file is built in the browser and sent as base64. */
-export type SendReportRequest = {
-  emails: string[];
-  subject: string;
-  message: string;
-  fileType: SendReportFileType;
+export type SendReportRequest = SendReportInput & {
   filename: string;
   contentBase64: string;
 };
