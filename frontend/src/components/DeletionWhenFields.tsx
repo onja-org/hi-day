@@ -1,6 +1,7 @@
 import { formatShortDate } from "@/lib/formatShortDate";
 import type { OrganisationDeletionMode } from "@/types/organisation";
 import { DeletionModeOption } from "./DeletionModeOption";
+import { OwnerAccountWarning } from "./OwnerAccountWarning";
 
 type DeletionWhenFieldsProps = {
   mode: OrganisationDeletionMode;
@@ -11,9 +12,10 @@ type DeletionWhenFieldsProps = {
   minDate: string;
   /** Null while the status is still loading. */
   graceDays: number | null;
+  ownerKeepsAccount: boolean | null;
 };
 
-/** The "When" choice: delete now, or pick a later date. */
+/** The "When" choice: delete now, pick a later date, or skip recovery entirely. */
 export function DeletionWhenFields({
   mode,
   onModeChange,
@@ -21,6 +23,7 @@ export function DeletionWhenFields({
   onScheduledDateChange,
   minDate,
   graceDays,
+  ownerKeepsAccount,
 }: DeletionWhenFieldsProps) {
   return (
     <fieldset className="flex flex-col gap-2">
@@ -60,6 +63,16 @@ export function DeletionWhenFields({
               permanently deleted {graceDays ?? "…"} days later.
             </p>
           )}
+        </div>
+      </DeletionModeOption>
+      <DeletionModeOption
+        title="Delete permanently now"
+        description="Erased within minutes, with no recovery window. This cannot be undone."
+        checked={mode === "permanent"}
+        onSelect={() => onModeChange("permanent")}
+      >
+        <div className="pl-7">
+          <OwnerAccountWarning ownerKeepsAccount={ownerKeepsAccount} />
         </div>
       </DeletionModeOption>
     </fieldset>

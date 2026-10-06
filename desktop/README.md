@@ -326,6 +326,22 @@ under `desktop/` — so it never resolved even when someone did run the
 shipped without the Firefox helper, matching the "unverified on real
 macOS hardware" limitation below.
 
+### App icon
+
+The icon is the same "W" mark as the web app's favicon
+(`frontend/src/app/icon.svg`). `build/icon.svg` is the source; the files
+actually used are generated from it and committed:
+
+- `build/icon.png` — 1024px, padded macOS-style. electron-builder turns it
+  into the macOS `.icns` and uses it for the Linux AppImage/.deb.
+- `build/icon.ico` — Windows, 16–256px, from the full-bleed web SVG so it
+  stays legible at small taskbar sizes.
+- `src/main/assets/icon.png` — 512px, the `BrowserWindow` icon (Linux's
+  window/taskbar icon, and `pnpm dev` on every OS).
+
+If the mark or brand colour changes, re-render those three from the SVGs
+(any SVG rasteriser works) rather than editing the PNG/ICO files directly.
+
 ### Window tracking (`@paymoapp/active-window`) — packaging notes
 
 `@paymoapp/active-window` ships prebuilt native N-API addons for all three

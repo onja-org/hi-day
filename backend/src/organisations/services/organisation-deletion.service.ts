@@ -15,6 +15,7 @@ import {
   EntityManager,
   IsNull,
   LessThanOrEqual,
+  Not,
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
@@ -39,7 +40,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_GRACE_DAYS = 30;
 const DEFAULT_CONFIRMATION_TTL_HOURS = 24;
 
-export type OrganisationDeletionState = 'active' | 'scheduled' | 'suspended';
+export type OrganisationDeletionState =
+  'active' | 'scheduled' | 'suspended' | 'purging';
 
 export interface OrganisationDeletionStatus {
   state: OrganisationDeletionState;
@@ -57,19 +59,39 @@ export interface OrganisationDeletionStatus {
   };
   /** Where the confirmation link will be sent. */
   ownerEmail: string | null;
+  /**
+   * Whether the owner's own User survives the purge (they belong to another
+   * Organisation). Null for anyone but the owner.
+   */
+  ownerKeepsAccount: boolean | null;
+  /**
+   * The mode of the request awaiting its emailed confirmation, so the
+   * confirm step can say whether it's irreversible. Null for anyone but the
+   * owner, or when nothing is pending.
+   */
+  pendingRequestMode: OrganisationDeletionMode | null;
+}
+
+export interface OrganisationDeletionConfirmation {
+  message: string;
+  /** True when the caller's own account is about to be erased by the purge. */
+  signedOut: boolean;
 }
 
 /**
  * Lifecycle of an owner-initiated account deletion — see
- * docs/adr/0021-organisation-deletion-soft-then-hard.md. `active` →
- * (`scheduled` →) `suspended` → purged; the owner can return to `active` from
- * `scheduled` or `suspended` until the purge runs.
+ * docs/adr/0021-organisation-deletion-soft-then-hard.md and
+ * docs/adr/0023-owner-can-opt-into-immediate-purge.md. `active` →
+ * (`scheduled` →) `suspended` → `purging` → purged; the owner can return to
+ * `active` from `scheduled` or `suspended`, but not once `purgeAt` is reached.
  */
 @Injectable()
 export class OrganisationDeletionService {
   private readonly logger = new Logger(OrganisationDeletionService.name);
   private readonly graceDays: number;
   private readonly confirmationTtlHours: number;
+  /** Purges started by this process, so the cron and a confirm never overlap. */
+  private readonly purgesInFlight = new Set<string>();
 
   constructor(
     @InjectRepository(Organisation)
@@ -108,12 +130,22 @@ export class OrganisationDeletionService {
     const owner = organisation.ownerUserId
       ? await this.users.findOne({ where: { id: organisation.ownerUserId } })
       : null;
+    const isOwner = organisation.ownerUserId === userId;
     return {
       ...this.toStatus(organisation, userId),
       impact: await this.getImpact(organisationId),
       // Only the owner is told where the link goes; other admins don't need it.
-      ownerEmail:
-        organisation.ownerUserId === userId ? (owner?.email ?? null) : null,
+      ownerEmail: isOwner ? (owner?.email ?? null) : null,
+      ownerKeepsAccount: isOwner
+        ? await this.belongsElsewhere(userId, organisationId)
+        : null,
+      pendingRequestMode: isOwner
+        ? ((
+            await this.requests.findOne({
+              where: { organisationId, requestedByUserId: userId },
+            })
+          )?.mode ?? null)
+        : null,
     };
   }
 
@@ -150,7 +182,7 @@ export class OrganisationDeletionService {
       organisationId,
       userId,
     );
-    this.assertNoDeletionInProgress(organisation);
+    this.assertCanRequest(organisation, dto.mode);
 
     if (dto.confirmName !== organisation.name) {
       throw new BadRequestException(
@@ -205,9 +237,11 @@ export class OrganisationDeletionService {
       token,
       organisation.publicId,
       organisation.name,
-      scheduledFor
-        ? `scheduled for ${scheduledFor.toUTCString()}`
-        : `immediately, with a ${this.graceDays}-day recovery window`,
+      dto.mode === OrganisationDeletionMode.PERMANENT
+        ? 'permanently and immediately, with no recovery window. This cannot be undone'
+        : scheduledFor
+          ? `scheduled for ${scheduledFor.toUTCString()}`
+          : `immediately, with a ${this.graceDays}-day recovery window`,
     );
 
     return {
@@ -220,12 +254,11 @@ export class OrganisationDeletionService {
     organisationId: string,
     userId: string,
     token: string,
-  ): Promise<{ message: string }> {
+  ): Promise<OrganisationDeletionConfirmation> {
     const organisation = await this.getOwnedOrganisation(
       organisationId,
       userId,
     );
-    this.assertNoDeletionInProgress(organisation);
 
     const request = await this.requests.findOne({
       where: { organisationId, tokenHash: hashToken(token) },
@@ -238,6 +271,11 @@ export class OrganisationDeletionService {
       throw new BadRequestException(
         'This confirmation link is invalid or has expired. Request deletion again.',
       );
+    }
+    this.assertCanRequest(organisation, request.mode);
+
+    if (request.mode === OrganisationDeletionMode.PERMANENT) {
+      return this.confirmPermanentDeletion(organisation, userId);
     }
 
     const now = new Date();
@@ -277,6 +315,52 @@ export class OrganisationDeletionService {
         request.mode === OrganisationDeletionMode.NOW
           ? 'Organisation suspended. You can restore it during the recovery window.'
           : 'Deletion scheduled.',
+      signedOut: false,
+    };
+  }
+
+  /**
+   * Suspends (unless already suspended) with `purgeAt` = now, then starts the
+   * purge without waiting for it: Wasabi deletion can outlast a request, and
+   * if it fails the hourly job retries it because `purgeAt` has passed. No
+   * "restorable" notice goes out — the purge's completion email is the only
+   * one. See ADR-0023.
+   */
+  private async confirmPermanentDeletion(
+    organisation: Organisation,
+    userId: string,
+  ): Promise<OrganisationDeletionConfirmation> {
+    const now = new Date();
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(OrganisationDeletionRequest, {
+        organisationId: organisation.id,
+      });
+      if (organisation.suspendedAt) {
+        await manager.update(Organisation, organisation.id, { purgeAt: now });
+        await this.auditLogService.record(manager, {
+          action: 'organisation.purge_expedited',
+          organisationId: organisation.id,
+          actorUserId: userId,
+          metadata: {
+            purgeAt: now.toISOString(),
+            previousPurgeAt: organisation.purgeAt?.toISOString() ?? null,
+          },
+        });
+      } else {
+        await this.suspend(manager, organisation, now, userId, now);
+      }
+    });
+
+    // Only an active Membership elsewhere leaves them anywhere to go; a
+    // deactivated one keeps their User alive but gives no working session.
+    const signedOut = !(await this.belongsElsewhere(userId, organisation.id, {
+      activeOnly: true,
+    }));
+    this.startPurge(organisation);
+
+    return {
+      message: 'Permanent deletion has started.',
+      signedOut,
     };
   }
 
@@ -289,6 +373,11 @@ export class OrganisationDeletionService {
       organisationId,
       userId,
     );
+    if (this.isPurging(organisation)) {
+      throw new ConflictException(
+        'Permanent deletion is already in progress and cannot be stopped.',
+      );
+    }
     const wasSuspended = organisation.suspendedAt !== null;
 
     if (!wasSuspended && organisation.deletionScheduledFor === null) {
@@ -355,12 +444,31 @@ export class OrganisationDeletionService {
     });
     for (const organisation of duePurge) {
       try {
-        await this.purgeService.purge(organisation);
+        await this.runPurge(organisation);
       } catch (error) {
         this.logger.error(
           `Failed to purge organisation ${organisation.publicId}: ${String(error)}`,
         );
       }
+    }
+  }
+
+  /** Fire-and-forget: a failure is logged and left for the hourly retry. */
+  private startPurge(organisation: Organisation): void {
+    this.runPurge(organisation).catch((error) => {
+      this.logger.error(
+        `Failed to purge organisation ${organisation.publicId}, will retry hourly: ${String(error)}`,
+      );
+    });
+  }
+
+  private async runPurge(organisation: Organisation): Promise<void> {
+    if (this.purgesInFlight.has(organisation.id)) return;
+    this.purgesInFlight.add(organisation.id);
+    try {
+      await this.purgeService.purge(organisation);
+    } finally {
+      this.purgesInFlight.delete(organisation.id);
     }
   }
 
@@ -376,8 +484,8 @@ export class OrganisationDeletionService {
     organisation: Organisation,
     now: Date,
     actorUserId: string | null,
+    purgeAt: Date = new Date(now.getTime() + this.graceDays * DAY_MS),
   ): Promise<void> {
-    const purgeAt = new Date(now.getTime() + this.graceDays * DAY_MS);
     await manager.update(Organisation, organisation.id, {
       suspendedAt: now,
       purgeAt,
@@ -457,7 +565,19 @@ export class OrganisationDeletionService {
     return organisation;
   }
 
-  private assertNoDeletionInProgress(organisation: Organisation): void {
+  /**
+   * A permanent deletion may replace a schedule or end a suspension's
+   * recovery window early; the other modes need nothing in progress. Nothing
+   * is accepted once the organisation is purging.
+   */
+  private assertCanRequest(
+    organisation: Organisation,
+    mode: OrganisationDeletionMode,
+  ): void {
+    if (this.isPurging(organisation)) {
+      throw new ConflictException('Permanent deletion is already in progress.');
+    }
+    if (mode === OrganisationDeletionMode.PERMANENT) return;
     if (organisation.suspendedAt || organisation.deletionScheduledFor) {
       throw new ConflictException(
         'Deletion is already scheduled or in progress. Cancel it first.',
@@ -465,16 +585,48 @@ export class OrganisationDeletionService {
     }
   }
 
+  /** The point of no return: from `purgeAt` on, nothing can stop the purge. */
+  private isPurging(organisation: Organisation, now = new Date()): boolean {
+    return (
+      organisation.purgeAt !== null &&
+      organisation.purgeAt.getTime() <= now.getTime()
+    );
+  }
+
+  /**
+   * Without `activeOnly` this mirrors the purge's own rule for which Users
+   * survive it: any Membership elsewhere, even a deactivated one.
+   */
+  private async belongsElsewhere(
+    userId: string,
+    organisationId: string,
+    { activeOnly = false }: { activeOnly?: boolean } = {},
+  ): Promise<boolean> {
+    const count = await this.memberships.count({
+      where: {
+        userId,
+        organisationId: Not(organisationId),
+        ...(activeOnly && { status: MembershipStatus.ACTIVE }),
+      },
+    });
+    return count > 0;
+  }
+
   private toStatus(
     organisation: Organisation,
     userId: string,
-  ): Omit<OrganisationDeletionStatus, 'impact' | 'ownerEmail'> {
+  ): Omit<
+    OrganisationDeletionStatus,
+    'impact' | 'ownerEmail' | 'ownerKeepsAccount' | 'pendingRequestMode'
+  > {
     return {
-      state: organisation.suspendedAt
-        ? 'suspended'
-        : organisation.deletionScheduledFor
-          ? 'scheduled'
-          : 'active',
+      state: this.isPurging(organisation)
+        ? 'purging'
+        : organisation.suspendedAt
+          ? 'suspended'
+          : organisation.deletionScheduledFor
+            ? 'scheduled'
+            : 'active',
       deletionScheduledFor:
         organisation.deletionScheduledFor?.toISOString() ?? null,
       suspendedAt: organisation.suspendedAt?.toISOString() ?? null,

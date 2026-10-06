@@ -55,6 +55,7 @@ const RETAINED_AUDIT_ACTIONS = [
   'organisation.deletion_scheduled',
   'organisation.deletion_cancelled',
   'organisation.suspended',
+  'organisation.purge_expedited',
   'organisation.purged',
 ];
 

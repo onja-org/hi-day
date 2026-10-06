@@ -15,11 +15,37 @@ describe("confirmOrganisationDeletion", () => {
 
     const result = await confirmOrganisationDeletion(100000, "tok");
 
-    expect(result).toEqual({ ok: true, message: "Organisation suspended" });
+    expect(result).toEqual({
+      ok: true,
+      message: "Organisation suspended",
+      signedOut: false,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/organisations/100000/deletion/confirm",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ token: "tok" }) }),
     );
+  });
+
+  it("passes on that the caller was signed out by a permanent deletion", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: "Permanent deletion has started.",
+            signedOut: true,
+          }),
+      }),
+    );
+
+    const result = await confirmOrganisationDeletion(100000, "tok");
+
+    expect(result).toEqual({
+      ok: true,
+      message: "Permanent deletion has started.",
+      signedOut: true,
+    });
   });
 
   it("surfaces the backend's error message on failure", async () => {

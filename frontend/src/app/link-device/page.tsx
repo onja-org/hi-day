@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { DevicePairingApproval } from "@/components/DevicePairingApproval";
 import { isAuthenticated } from "@/lib/isAuthenticated";
+
+export const metadata: Metadata = {
+  title: "Link the desktop app",
+};
 
 type LinkDevicePageProps = {
   searchParams: Promise<{ code?: string }>;

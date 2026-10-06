@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { SignOutEverywhereButton } from "@/components/SignOutEverywhereButton";
+
+export const metadata: Metadata = {
+  title: "Account",
+};
 
 export default function AccountEditPage() {
   return (

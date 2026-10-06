@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { AcceptInvitationForm } from "@/components/AcceptInvitationForm";
+
+export const metadata: Metadata = {
+  title: "Accept invitation",
+};
 
 type AcceptInvitationPageProps = {
   searchParams: Promise<{ token?: string }>;

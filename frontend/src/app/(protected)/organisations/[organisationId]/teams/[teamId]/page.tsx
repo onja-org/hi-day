@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { TeamDetailPageContent } from "@/components/TeamDetailPageContent";
+
+export const metadata: Metadata = {
+  title: "Team",
+};
 
 type TeamDetailPageProps = {
   params: Promise<{ organisationId: string; teamId: string }>;

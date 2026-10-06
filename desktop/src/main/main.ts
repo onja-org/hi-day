@@ -376,6 +376,10 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 420,
     height: 560,
+    // Window/taskbar icon. Only Linux reads it — Windows and macOS take the
+    // packaged app's icon (electron-builder.yml) — but setting it always
+    // also gives `pnpm dev` the right icon instead of Electron's default.
+    icon: join(__dirname, "assets/icon.png"),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
