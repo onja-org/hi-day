@@ -29,7 +29,10 @@ export function QueryProvider({ children }: { children: ReactNode }) {
     () =>
       new QueryClient({
         mutationCache: new MutationCache({
-          onSuccess: (data) => {
+          onSuccess: (data, _variables, _context, mutation) => {
+            // Background mutations the user didn't trigger (e.g. timezone
+            // reporting) opt out with `meta: { silent: true }`.
+            if (mutation.meta?.silent) return;
             if (!isApiResult(data)) {
               if (process.env.NODE_ENV !== "production") {
                 console.warn(
@@ -45,7 +48,8 @@ export function QueryProvider({ children }: { children: ReactNode }) {
               toast.error(data.message);
             }
           },
-          onError: () => {
+          onError: (_error, _variables, _context, mutation) => {
+            if (mutation.meta?.silent) return;
             toast.error(GENERIC_MUTATION_ERROR_MESSAGE);
           },
         }),

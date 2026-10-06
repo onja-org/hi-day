@@ -11,6 +11,8 @@ import { updateMyProfile } from "@/lib/updateMyProfile";
 export function useReportTimezone(storedTimezone: string | null | undefined): void {
   const { mutate } = useMutation({
     mutationFn: (timezone: string) => updateMyProfile({ timezone }),
+    // The user didn't ask for this update, so it mustn't toast "Profile updated".
+    meta: { silent: true },
   });
 
   useEffect(() => {
