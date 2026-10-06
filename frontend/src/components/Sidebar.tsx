@@ -182,7 +182,7 @@ export function Sidebar({
         />
       )}
 
-      <nav className="hidden shrink-0 flex-col bg-sidebar sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-56">
+      <nav className="hidden shrink-0 flex-col bg-sidebar sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-64">
         <div className="flex items-center justify-center gap-2 border-b border-primary-dark/10 px-2 py-4 lg:justify-start lg:px-5">
           <span
             aria-hidden="true"

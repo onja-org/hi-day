@@ -26,7 +26,7 @@ export function MobileSidebarDrawer({
         className="absolute inset-0 cursor-pointer bg-primary-dark/50"
       />
 
-      <div className="absolute inset-y-0 left-0 flex w-52 flex-col bg-sidebar shadow-lg">
+      <div className="absolute inset-y-0 left-0 flex w-64 flex-col bg-sidebar shadow-lg">
         <div className="flex items-center justify-between border-b border-primary-dark/10 px-4 py-4">
           <span className="text-lg font-semibold text-primary-dark">
             {organisationName}

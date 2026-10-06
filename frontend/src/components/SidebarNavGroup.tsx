@@ -41,7 +41,9 @@ export function SidebarNavGroup({ group, pathname, variant, onNavigate }: Sideba
         )}
       >
         <group.icon size={20} aria-hidden="true" className="shrink-0" />
-        <span className="flex-1 whitespace-nowrap">{group.label}</span>
+        {/* min-w-0 lets a long label shrink instead of pushing the caret
+            out of line with the other groups' carets. */}
+        <span className="min-w-0 flex-1 truncate">{group.label}</span>
         <CaretDown
           size={14}
           aria-hidden="true"
