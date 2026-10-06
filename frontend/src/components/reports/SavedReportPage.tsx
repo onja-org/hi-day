@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSavedReports } from "@/hooks/useSavedReports";
+import { AppsUrlsReportPage } from "./AppsUrlsReportPage";
 import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
 import { ReportStatus } from "./ReportStatus";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
@@ -30,6 +31,10 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
         </Link>
       </div>
     );
+  }
+
+  if (savedReport.reportType === "apps-and-urls") {
+    return <AppsUrlsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />;
   }
 
   if (savedReport.reportType === "daily-totals") {

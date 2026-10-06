@@ -1,13 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { APPS_URLS_GROUPINGS, appsUrlsColumns } from "@/lib/appsUrlsReportConfig";
 import type { AppsUrlsGrouping } from "@/types/appsUrlsReport";
 import type { ReportTableRow } from "@/types/reportTable";
 import { PercentUsedCell } from "./PercentUsedCell";
-import { ReportTableHeading } from "./ReportTableHeading";
 import { ReportsTable } from "./ReportsTable";
 
 type AppsUrlsReportBodyProps = {
@@ -16,10 +14,6 @@ type AppsUrlsReportBodyProps = {
   onGroupingChange: (grouping: AppsUrlsGrouping) => void;
   search: string;
   onSearchChange: (search: string) => void;
-  organisationName: string | undefined;
-  zone: string;
-  /** Export, send and schedule controls, shown on the heading line. */
-  actions: ReactNode;
 };
 
 export function AppsUrlsReportBody({
@@ -28,9 +22,6 @@ export function AppsUrlsReportBody({
   onGroupingChange,
   search,
   onSearchChange,
-  organisationName,
-  zone,
-  actions,
 }: AppsUrlsReportBodyProps) {
   const columns = appsUrlsColumns(grouping).map((column) =>
     column.key === "percent"
@@ -40,8 +31,6 @@ export function AppsUrlsReportBody({
 
   return (
     <>
-      <ReportTableHeading organisationName={organisationName} zone={zone} actions={actions} />
-
       <div className="flex flex-wrap items-end justify-between gap-4">
         <SelectField
           label="Group by"

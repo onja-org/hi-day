@@ -6,7 +6,7 @@ type ReportTableHeadingProps = {
   /** The zone the report's days are read in. */
   zone: string;
   /** Export, send and schedule controls, shown beside the heading. */
-  actions: ReactNode;
+  actions?: ReactNode;
 };
 
 /** The organisation's name and the report's timezone, with the report's actions beside them. */
@@ -17,7 +17,7 @@ export function ReportTableHeading({ organisationName, zone, actions }: ReportTa
         <span className="text-xl text-primary-dark">{organisationName}</span>
         <span className="text-xs text-slate-900/70">{timezoneLabel(zone)}</span>
       </h2>
-      <div className="flex flex-wrap items-center gap-3">{actions}</div>
+      {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
     </div>
   );
 }

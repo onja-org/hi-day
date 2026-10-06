@@ -1,10 +1,16 @@
 import { PROJECT_WORK_ORDER_LABEL } from "@/lib/reportColumnLabels";
 import type { ReportTableColumn } from "@/types/reportTable";
-import type { AppsUrlsGrouping } from "@/types/appsUrlsReport";
+import type { AppsUrlsDimension, AppsUrlsGrouping } from "@/types/appsUrlsReport";
 
 export const APPS_URLS_GROUPINGS: { value: AppsUrlsGrouping; label: string }[] = [
   { value: "date", label: "Date" },
   { value: "project", label: PROJECT_WORK_ORDER_LABEL },
+  { value: "member", label: "Member" },
+];
+
+/** Column order for the details under a group; the app or site is never a grouping. */
+export const APPS_URLS_DIMENSIONS: { value: AppsUrlsDimension; label: string }[] = [
+  ...APPS_URLS_GROUPINGS,
   { value: "app", label: "App or site" },
 ];
 
@@ -13,10 +19,10 @@ export const APPS_URLS_MAX_DAYS = 31;
 
 /** The grouping names the first column, so its own detail column is left out of the rest. */
 export function appsUrlsColumns(grouping: AppsUrlsGrouping): ReportTableColumn[] {
-  const label = (value: AppsUrlsGrouping) => APPS_URLS_GROUPINGS.find((option) => option.value === value)!.label;
+  const label = APPS_URLS_DIMENSIONS.find((option) => option.value === grouping)!.label;
   return [
-    { key: "group", header: label(grouping) },
-    ...APPS_URLS_GROUPINGS.filter((option) => option.value !== grouping).map((option) => ({
+    { key: "group", header: label },
+    ...APPS_URLS_DIMENSIONS.filter((option) => option.value !== grouping).map((option) => ({
       key: option.value,
       header: option.label,
     })),

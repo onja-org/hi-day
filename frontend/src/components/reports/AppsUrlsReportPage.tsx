@@ -5,9 +5,11 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
 import { useAppsUrlsReportData } from "@/hooks/useAppsUrlsReportData";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import { useProjects } from "@/hooks/useProjects";
+import { useSavedReportPersist } from "@/hooks/useSavedReportPersist";
 import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportControls";
-import { APPS_URLS_MAX_DAYS, appsUrlsColumns } from "@/lib/appsUrlsReportConfig";
+import { APPS_URLS_GROUPINGS, APPS_URLS_MAX_DAYS, appsUrlsColumns } from "@/lib/appsUrlsReportConfig";
 import { buildAppsUrlsRows } from "@/lib/buildAppsUrlsRows";
 import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
 import { collectAppsUrlsItems } from "@/lib/collectAppsUrlsItems";
@@ -18,26 +20,46 @@ import { reportTableToCsv } from "@/lib/reportTableToCsv";
 import { sendReportFile } from "@/lib/sendReportFile";
 import { dateKeyInZone } from "@/lib/timezone";
 import type { AppsUrlsGrouping } from "@/types/appsUrlsReport";
+import type { SavedReport } from "@/types/savedReport";
 import type { SendReportInput } from "@/types/sendReport";
 import { AppsUrlsReportBody } from "./AppsUrlsReportBody";
 import { ReportDateRangePicker } from "./ReportDateRangePicker";
 import { ReportPageHeader } from "./ReportPageHeader";
 import { ReportStatus } from "./ReportStatus";
+import { ReportTableHeading } from "./ReportTableHeading";
+import { ScheduleReportButton } from "./ScheduleReportButton";
+import { ScheduleReportDialog } from "./ScheduleReportDialog";
 import { SendReportButton } from "./SendReportButton";
 import { TimeActivityFilter } from "./TimeActivityFilter";
 
 type AppsUrlsReportPageProps = {
   organisationId: string;
+  /** Set when a saved report is opened: restores its settings and updates it on Schedule. */
+  savedReport?: SavedReport;
+};
+
+/** Saved reports store the date grouping as "day", like the other reports. */
+const SAVED_GROUPINGS: Record<AppsUrlsGrouping, "day" | "project" | "member"> = {
+  date: "day",
+  project: "project",
+  member: "member",
 };
 
 /** Reuses the Time and activity report's date and filter controls over the Activity tabs' app and website data. */
-export function AppsUrlsReportPage({ organisationId }: AppsUrlsReportPageProps) {
-  const { preset, setPreset, filters, setFilters, setCustomDays, zone, range } = useTimeActivityReportControls();
-  const [grouping, setGrouping] = useState<AppsUrlsGrouping>("date");
+export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsReportPageProps) {
+  const { preset, setPreset, filters, setFilters, setCustomDays, zone, range } = useTimeActivityReportControls(
+    savedReport?.settings,
+  );
+  const [grouping, setGrouping] = useState<AppsUrlsGrouping>(
+    () => APPS_URLS_GROUPINGS.find((option) => SAVED_GROUPINGS[option.value] === savedReport?.settings.grouping)?.value ?? "date",
+  );
+  const [scheduling, setScheduling] = useState(false);
   const [search, setSearch] = useState("");
   const organisationQuery = useCurrentOrganisation();
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const projects = projectsQuery.data ?? [];
+  const profile = useMyProfile().data;
+  const memberName = profile?.name ?? profile?.email ?? "-";
 
   const dateKeys = listDayKeys(dateKeyInZone(range.from, zone), dateKeyInZone(range.to, zone));
   const tooLong = dateKeys.length > APPS_URLS_MAX_DAYS;
@@ -47,7 +69,7 @@ export function AppsUrlsReportPage({ organisationId }: AppsUrlsReportPageProps) 
     appDays && urlDays
       ? filterAppsUrlsItems(collectAppsUrlsItems(appDays, urlDays, projects), filters.projectIds, search)
       : undefined;
-  const rows = items ? buildAppsUrlsRows(items, grouping) : undefined;
+  const rows = items ? buildAppsUrlsRows(items, grouping, memberName) : undefined;
   const columns = appsUrlsColumns(grouping);
   const filenameBase = reportFilenameBase("apps-and-urls", range);
 
@@ -61,11 +83,23 @@ export function AppsUrlsReportPage({ organisationId }: AppsUrlsReportPageProps) 
     });
   }
 
+  const persist = useSavedReportPersist(
+    organisationId,
+    savedReport,
+    { preset, range, zone, scope: "me", grouping: SAVED_GROUPINGS[grouping], filters },
+    "apps-and-urls",
+  );
+
   return (
     <div className="flex flex-col gap-6">
-      <ReportPageHeader organisationId={organisationId} title="Apps & URLs report" />
+      <ReportPageHeader
+        organisationId={organisationId}
+        title={`Apps & URLs report${savedReport ? ` - ${savedReport.name}` : ""}`}
+      />
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <ReportTableHeading organisationName={organisationQuery.data?.name} zone={zone} />
+
+      <div className="flex flex-wrap items-end justify-end gap-3">
         <ReportDateRangePicker
           id="apps-urls-date-range"
           range={range}
@@ -74,12 +108,33 @@ export function AppsUrlsReportPage({ organisationId }: AppsUrlsReportPageProps) 
           setCustomDays={setCustomDays}
           setPreset={setPreset}
         />
-        <TimeActivityFilter
-          filters={filters}
-          onChange={setFilters}
-          projectOptions={projects.map((project) => ({ id: project.id, name: project.name }))}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportButtons
+            csv={rows ? reportTableToCsv(columns, rows) : ""}
+            filenameBase={filenameBase}
+            disabled={!rows || rows.length === 0}
+          />
+          <SendReportButton
+            defaultSubject={`Apps & URLs report${savedReport ? ` - ${savedReport.name}` : ""}`}
+            onSend={handleSend}
+          />
+          <ScheduleReportButton onClick={() => setScheduling(true)} />
+          <TimeActivityFilter
+            filters={filters}
+            onChange={setFilters}
+            projectOptions={projects.map((project) => ({ id: project.id, name: project.name }))}
+          />
+        </div>
       </div>
+
+      {scheduling && (
+        <ScheduleReportDialog
+          initialName={savedReport?.name ?? ""}
+          initialSchedule={savedReport?.schedule ?? undefined}
+          onPersist={persist}
+          onClose={() => setScheduling(false)}
+        />
+      )}
 
       {tooLong && <ErrorMessage message={`Choose a date range of ${APPS_URLS_MAX_DAYS} days or fewer.`} />}
       <ReportStatus isLoading={isLoading} error={error} />
@@ -90,18 +145,6 @@ export function AppsUrlsReportPage({ organisationId }: AppsUrlsReportPageProps) 
           onGroupingChange={setGrouping}
           search={search}
           onSearchChange={setSearch}
-          organisationName={organisationQuery.data?.name}
-          zone={zone}
-          actions={
-            <>
-              <ExportButtons
-                csv={reportTableToCsv(columns, rows)}
-                filenameBase={filenameBase}
-                disabled={rows.length === 0}
-              />
-              <SendReportButton defaultSubject="Apps & URLs report" onSend={handleSend} />
-            </>
-          }
         />
       )}
     </div>

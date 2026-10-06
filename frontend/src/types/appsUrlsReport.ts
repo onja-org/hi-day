@@ -10,4 +10,7 @@ export type AppsUrlsItem = {
   seconds: number;
 };
 
-export type AppsUrlsGrouping = "date" | "project" | "app";
+export type AppsUrlsGrouping = "date" | "project" | "member";
+
+/** Every column the report can show besides time: the groupings, plus the app or site, which is always a detail. */
+export type AppsUrlsDimension = AppsUrlsGrouping | "app";
