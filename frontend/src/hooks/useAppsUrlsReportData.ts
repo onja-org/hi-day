@@ -4,27 +4,33 @@ import { URL_ACTIVITY_DAY_QUERY_KEY } from "@/hooks/useUrlActivityDay";
 import { getAppActivityDay } from "@/lib/getAppActivityDay";
 import { getUrlActivityDay } from "@/lib/getUrlActivityDay";
 
+import type { AppsUrlsMember, AppsUrlsMemberDay } from "@/types/appsUrlsReport";
+
 type DayResult<T> = { ok: true; day: T } | { ok: false; message: string };
 
-/** One request per day, sharing the Activity tabs' cache keys. `data` stays undefined until every day has loaded. */
+type MemberDate = { member: AppsUrlsMember; date: string };
+
+/** One request per member per day, sharing the Activity tabs' cache keys. `data` stays undefined until every one has loaded. */
 function useDayQueries<T>(
-  dateKeys: string[],
+  pairs: MemberDate[],
   enabled: boolean,
-  queryKey: (date: string) => unknown[],
-  fetchDay: (date: string) => Promise<DayResult<T>>,
+  queryKey: (pair: MemberDate) => unknown[],
+  fetchDay: (pair: MemberDate) => Promise<DayResult<T>>,
 ) {
   return useQueries({
-    queries: dateKeys.map((date) => ({
-      queryKey: queryKey(date),
+    queries: pairs.map((pair) => ({
+      queryKey: queryKey(pair),
       queryFn: async (): Promise<T> => {
-        const result = await fetchDay(date);
+        const result = await fetchDay(pair);
         if (!result.ok) throw new Error(result.message);
         return result.day;
       },
       enabled,
     })),
     combine: (results) => ({
-      data: results.every((result) => result.data) ? results.map((result) => result.data as T) : undefined,
+      data: results.every((result) => result.data)
+        ? results.map((result, index): AppsUrlsMemberDay<T> => ({ member: pairs[index].member, day: result.data as T }))
+        : undefined,
       isLoading: results.some((result) => result.isLoading),
       error: results.find((result) => result.error)?.error ?? null,
     }),
@@ -32,22 +38,28 @@ function useDayQueries<T>(
 }
 
 /**
- * The viewer's own app and website activity for each given day. The
- * activity API answers one day at a time, so this fans out a request per
- * day for each of apps and URLs.
+ * The given members' app and website activity for each given day. The
+ * activity API answers one member and day at a time, so this fans out a
+ * request per member per day for each of apps and URLs.
  */
-export function useAppsUrlsReportData(organisationId: string, dateKeys: string[], enabled: boolean) {
+export function useAppsUrlsReportData(
+  organisationId: string,
+  dateKeys: string[],
+  members: AppsUrlsMember[],
+  enabled: boolean,
+) {
+  const pairs = members.flatMap((member) => dateKeys.map((date) => ({ member, date })));
   const apps = useDayQueries(
-    dateKeys,
+    pairs,
     enabled,
-    (date) => APP_ACTIVITY_DAY_QUERY_KEY(organisationId, { date }),
-    (date) => getAppActivityDay(organisationId, { date }),
+    ({ member, date }) => APP_ACTIVITY_DAY_QUERY_KEY(organisationId, { date, membershipId: member.membershipId }),
+    ({ member, date }) => getAppActivityDay(organisationId, { date, membershipId: member.membershipId }),
   );
   const urls = useDayQueries(
-    dateKeys,
+    pairs,
     enabled,
-    (date) => URL_ACTIVITY_DAY_QUERY_KEY(organisationId, { date }),
-    (date) => getUrlActivityDay(organisationId, { date }),
+    ({ member, date }) => URL_ACTIVITY_DAY_QUERY_KEY(organisationId, { date, membershipId: member.membershipId }),
+    ({ member, date }) => getUrlActivityDay(organisationId, { date, membershipId: member.membershipId }),
   );
 
   return {

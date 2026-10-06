@@ -6,14 +6,14 @@ import type { ReportTableRow } from "@/types/reportTable";
 
 type Part = { id: string; label: string };
 
-function partOf(item: AppsUrlsItem, dimension: AppsUrlsDimension, memberName: string): Part {
+function partOf(item: AppsUrlsItem, dimension: AppsUrlsDimension): Part {
   switch (dimension) {
     case "date":
       return { id: item.dateKey, label: formatReportDay(item.dateKey) };
     case "project":
       return { id: item.projectId ?? "untracked", label: item.projectName };
     case "member":
-      return { id: "member", label: memberName };
+      return { id: item.memberId, label: item.memberName };
     case "app":
       return { id: `${item.kind}|${item.label}`, label: item.label };
   }
@@ -38,16 +38,14 @@ function blankedContext(cells: Record<string, string>): Record<string, string> {
  * share of the group's time; the group row itself shows no percent.
  * Sub rows are ordered by their date / project / member, with each shown
  * only on the first row of its run, then by time spent.
- * The activity data is the viewer's own, so every row's member is `memberName`.
  */
 export function buildAppsUrlsRows(
   items: AppsUrlsItem[],
   grouping: AppsUrlsGrouping,
-  memberName: string,
 ): ReportTableRow[] {
   const groups = new Map<string, { label: string; items: AppsUrlsItem[] }>();
   for (const item of items) {
-    const { id, label } = partOf(item, grouping, memberName);
+    const { id, label } = partOf(item, grouping);
     const group = groups.get(id) ?? { label, items: [] };
     group.items.push(item);
     groups.set(id, group);
@@ -59,7 +57,7 @@ export function buildAppsUrlsRows(
     const groupTotal = totalOf(group.items);
     const merged = new Map<string, { cells: Record<string, string>; context: string; seconds: number }>();
     for (const item of group.items) {
-      const parts = detail.map((dimension) => ({ dimension, ...partOf(item, dimension, memberName) }));
+      const parts = detail.map((dimension) => ({ dimension, ...partOf(item, dimension) }));
       const key = parts.map((part) => part.id).join("|");
       const existing = merged.get(key);
       if (existing) existing.seconds += item.seconds;

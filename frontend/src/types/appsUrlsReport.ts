@@ -8,7 +8,21 @@ export type AppsUrlsItem = {
   label: string;
   kind: "app" | "site";
   seconds: number;
+  /** Whose activity it is: "me" for the viewer's own, else the membership id. */
+  memberId: string;
+  memberName: string;
 };
+
+/** Whose activity to fetch. `membershipId` is undefined for the viewer's own. */
+export type AppsUrlsMember = {
+  /** "me" for the viewer's own, else the membership id. */
+  key: string;
+  membershipId: string | undefined;
+  name: string;
+};
+
+/** One member's activity summary for one day. */
+export type AppsUrlsMemberDay<T> = { member: AppsUrlsMember; day: T };
 
 export type AppsUrlsGrouping = "date" | "project" | "member";
 

@@ -10,6 +10,8 @@ function item(overrides: Partial<AppsUrlsItem>): AppsUrlsItem {
     label: "Figma",
     kind: "app",
     seconds: 60,
+    memberId: "me",
+    memberName: "Ana",
     ...overrides,
   };
 }
