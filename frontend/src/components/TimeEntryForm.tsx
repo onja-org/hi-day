@@ -10,12 +10,19 @@ import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
 import type { TimeEntryChange } from "@/lib/describeTimeEntryChanges";
+import {
+  hasNoErrors,
+  serverMessageToField,
+  validateTimeRange,
+  type TimeEntryFieldErrors,
+} from "@/lib/timeEntryFieldErrors";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem, UpdateTimeEntryInput } from "@/types/timeEntry";
 import { LogTimeForSelect } from "@/components/LogTimeForSelect";
 import { Spinner } from "@/components/Spinner";
 import { TimeEntryEditConfirmDialog } from "@/components/TimeEntryEditConfirmDialog";
 import { TimeEntryTimeFields } from "@/components/TimeEntryTimeFields";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { SelectField } from "@/components/ui/form/SelectField";
 
 type TimeEntryFormProps =
@@ -45,6 +52,7 @@ export function TimeEntryForm({
 }: TimeEntryFormProps) {
   const projectsQuery = useMyProjects(organisationId);
   const [projectId, setProjectId] = useState(entry?.projectId ?? "");
+  const [errors, setErrors] = useState<TimeEntryFieldErrors>({});
   // An edit is held here between submitting the form and confirming it, so
   // the confirmation shows the real diff and applies exactly what was
   // shown. Null means nothing is awaiting confirmation.
@@ -77,11 +85,15 @@ export function TimeEntryForm({
       endedAt: string;
       membershipId?: string;
     }) => createManualTimeEntry(organisationId, input),
+    // Shown under the field at fault rather than as a toast in the corner
+    meta: { inlineErrors: true },
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
         onSaved();
+        return;
       }
+      setErrors(serverMessageToField(result.message));
     },
   });
 
@@ -92,11 +104,15 @@ export function TimeEntryForm({
       startedAt?: string;
       endedAt?: string;
     }) => updateTimeEntry(organisationId, entry!.id, input),
+    meta: { inlineErrors: true },
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
         onSaved();
+        return;
       }
+      setPendingEdit(null);
+      setErrors(serverMessageToField(result.message));
     },
   });
 
@@ -107,6 +123,15 @@ export function TimeEntryForm({
     const startedAt = String(formData.get("startedAt") ?? "");
     const endedAt = String(formData.get("endedAt") ?? "");
     const membershipId = String(formData.get("membershipId") ?? "");
+
+    if (!isTicking) {
+      const rangeErrors = validateTimeRange(startedAt, endedAt);
+      if (!hasNoErrors(rangeErrors)) {
+        setErrors(rangeErrors);
+        return;
+      }
+    }
+    setErrors({});
 
     if (mode === "create") {
       createMutation.mutate({
@@ -223,7 +248,11 @@ export function TimeEntryForm({
           startedAt={startedAtDefault}
           endedAt={endedAtDefault}
           isTicking={isTicking}
+          errors={errors}
+          onChange={() => setErrors({})}
         />
+
+        {errors.form && <ErrorMessage message={errors.form} />}
 
         <button
           type="submit"

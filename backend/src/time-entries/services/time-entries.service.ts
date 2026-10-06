@@ -123,6 +123,12 @@ export interface TimeEntryListItem extends TimeEntrySummary {
   pauses: PauseSpan[];
 }
 
+/**
+ * Which entries a new span must not overlap. `tracked` means "nothing else
+ * from this Device"; `manual` means "nothing else at all for this person".
+ */
+type OverlapScope = 'tracked' | 'manual';
+
 export interface CurrentTimeEntry {
   /** The web's own entry, never a Device's — what its controls act on. */
   entry: TimeEntrySummary | null;
@@ -917,6 +923,16 @@ export class TimeEntriesService {
     const startedAt = new Date(dto.startedAt);
     const endedAt = new Date(dto.endedAt);
     this.assertValidRange(startedAt, endedAt);
+    // Editing has always refused an overlap; creating never did, so a span
+    // could be typed that editing then would not let you keep.
+    await this.assertNoOverlap(
+      membership.id,
+      null,
+      null,
+      startedAt,
+      endedAt,
+      'manual',
+    );
 
     const entry = this.timeEntries.create({
       organisationId,
@@ -1032,6 +1048,10 @@ export class TimeEntriesService {
         entry.id,
         nextStartedAt,
         nextEndedAt,
+        // A manual entry is held to the stricter rule however it is reached,
+        // so one cannot be edited into an overlap it could not be created
+        // with.
+        entry.source === TimeEntrySource.MANUAL ? 'manual' : 'tracked',
       );
     } else if (nextStartedAt.getTime() > Date.now()) {
       // No end to bracket the start against — but a future start would still
@@ -1331,29 +1351,45 @@ export class TimeEntriesService {
   private async assertNoOverlap(
     membershipId: string,
     deviceId: string | null,
-    timeEntryId: string,
+    /** The entry being edited, excluded from the search. Null when creating
+     * one, where there is nothing yet to exclude — an empty string here
+     * reaches Postgres as a uuid and is rejected outright. */
+    timeEntryId: string | null,
     startedAt: Date,
     endedAt: Date,
+    scope: OverlapScope,
   ): Promise<void> {
-    // Scoped to the Device, mirroring the running-timer index exactly: one
-    // machine cannot be in two places at once, but a laptop and a desktop
-    // genuinely can, and that overlap is the normal state this supports.
-    // `IsNull()` rather than `deviceId` matches the index's NULLS NOT
-    // DISTINCT — entries with no Device are all "the web", one timeline.
-    const sameDevice = deviceId === null ? IsNull() : Equal(deviceId);
+    // Two scopes, because two different things are being prevented.
+    //
+    // A *tracked* entry is scoped to its Device, mirroring the running-timer
+    // index: one machine cannot be in two places at once, but a laptop and a
+    // desktop genuinely can, and that overlap is the normal state ADR-0022
+    // supports. `IsNull()` rather than `deviceId` matches the index's NULLS
+    // NOT DISTINCT — entries with no Device are all "the web", one timeline.
+    //
+    // A *manual* entry is scoped to the person, every Device included.
+    // Nobody is in two places while typing a timesheet, so hours typed over
+    // hours already tracked are a double-count rather than parallel work —
+    // and the Device rule would miss it entirely, since a manual entry has
+    // no Device and a tracked one does.
+    const deviceScope =
+      scope === 'manual'
+        ? {}
+        : { deviceId: deviceId === null ? IsNull() : Equal(deviceId) };
+    const sameTimeline = {
+      membershipId,
+      ...deviceScope,
+      ...(timeEntryId === null ? {} : { id: Not(timeEntryId) }),
+    };
     const clash = await this.timeEntries.findOne({
       where: [
         {
-          membershipId,
-          deviceId: sameDevice,
-          id: Not(timeEntryId),
+          ...sameTimeline,
           startedAt: LessThan(endedAt),
           endedAt: MoreThan(startedAt),
         },
         {
-          membershipId,
-          deviceId: sameDevice,
-          id: Not(timeEntryId),
+          ...sameTimeline,
           startedAt: LessThan(endedAt),
           endedAt: IsNull(),
         },
@@ -1361,7 +1397,9 @@ export class TimeEntriesService {
     });
     if (clash) {
       throw new ConflictException(
-        'These times overlap another time entry from the same device — one machine cannot track two entries at once. Adjust the times so they do not cover the same period.',
+        scope === 'manual'
+          ? 'These times overlap time already tracked for this person. Adjust the times so they do not cover the same period.'
+          : 'These times overlap another time entry from the same device — one machine cannot track two entries at once. Adjust the times so they do not cover the same period.',
       );
     }
   }

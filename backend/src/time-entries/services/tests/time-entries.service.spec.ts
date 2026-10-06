@@ -688,6 +688,69 @@ describe('TimeEntriesService', () => {
       });
     }
 
+    it('refuses a span that overlaps time already tracked on a device', async () => {
+      // The reason manual gets its own scope: a manual entry has no Device,
+      // a tracked one does, so a device-scoped check would never see this.
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...runningEntry,
+            deviceId: 'device-a',
+            endedAt: new Date('2026-01-01T10:30:00.000Z'),
+          }),
+        }),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    /**
+     * Creating excludes no entry, because none exists yet. Passing an empty
+     * string instead of omitting the clause reached Postgres as a uuid and
+     * failed the whole request with a 500 — invisible to a mocked repository,
+     * so this asserts the shape of the query rather than its result.
+     */
+    it('searches without excluding any entry id', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+      });
+
+      await service.createManual('org-1', 'user-1', 'project-1', {
+        startedAt: '2026-01-01T09:00:00.000Z',
+        endedAt: '2026-01-01T10:00:00.000Z',
+      });
+
+      const [[query]] = findOne.mock.calls as [[{ where: object[] }]];
+      const where = query.where;
+      for (const clause of where) {
+        expect(clause).not.toHaveProperty('id');
+      }
+    });
+
+    it('allows a span with nothing else in the way', async () => {
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).resolves.toBeDefined();
+    });
+
     it('creates a completed entry with source=manual and records an audit log entry', async () => {
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({
