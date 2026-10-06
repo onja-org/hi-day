@@ -22,6 +22,13 @@ copyInto(
   ['index.html', 'styles.css'],
 );
 
+// The window icon BrowserWindow loads from main.ts's own __dirname.
+copyInto(
+  join(rootDir, 'src', 'main', 'assets'),
+  join(rootDir, 'dist', 'main', 'assets'),
+  ['icon.png'],
+);
+
 // The browser registry (docs/url-tracking-plan.md Step 2) is data, not code —
 // tsc only compiles .ts files, so it has to be copied into dist by hand,
 // same as the renderer assets above.

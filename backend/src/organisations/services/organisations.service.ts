@@ -138,9 +138,14 @@ export class OrganisationsService {
   }
 
   async findCurrentForUser(userId: string): Promise<OrganisationProfile> {
+    // Someone in two Organisations lands in one that still works, rather
+    // than one being deleted under them (ADR-0023).
     const membership = await this.memberships.findOne({
       where: { userId, status: MembershipStatus.ACTIVE },
       relations: { organisation: true },
+      order: {
+        organisation: { suspendedAt: { direction: 'ASC', nulls: 'FIRST' } },
+      },
     });
 
     if (!membership) {

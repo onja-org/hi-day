@@ -26,6 +26,6 @@ An owner can close their Organisation "now" or on a scheduled date. Both end in 
 
 ## Considered options
 
-- **Hard delete immediately** — rejected; the spec requires a recovery window and one mistyped confirmation would be catastrophic.
+- **Hard delete immediately** — rejected; the spec requires a recovery window and one mistyped confirmation would be catastrophic. (Later added as an explicit opt-in mode alongside the default, never replacing it — see ADR-0023.)
 - **`ON DELETE CASCADE` on every org FK and delete only the org row** — rejected. The FKs are deliberately `RESTRICT` (accidental deletes should fail loudly), and cascades wouldn't cover Wasabi, Users, or shared Devices anyway.
 - **Generic purge by walking TypeORM metadata at runtime** — rejected in favour of an explicit ordered list plus the coverage spec; FK ordering with `RESTRICT` is easier to read and review than a topological sort.

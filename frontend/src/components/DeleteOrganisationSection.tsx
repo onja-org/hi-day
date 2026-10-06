@@ -19,7 +19,9 @@ export function DeleteOrganisationSection({
   organisation,
 }: DeleteOrganisationSectionProps) {
   const queryClient = useQueryClient();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [openModal, setOpenModal] = useState<"any" | "permanent" | null>(
+    null,
+  );
   const state = getDeletionState(organisation);
 
   const cancelMutation = useMutation({
@@ -51,21 +53,30 @@ export function DeleteOrganisationSection({
                 </strong>
                 . You can keep using the account until then.
               </p>
-              <button
-                type="button"
-                onClick={() => cancelMutation.mutate()}
-                disabled={cancelMutation.isPending}
-                className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 h-11 text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {cancelMutation.isPending && <Spinner />}
-                Cancel scheduled deletion
-              </button>
+              <div className="flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => cancelMutation.mutate()}
+                  disabled={cancelMutation.isPending}
+                  className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 h-11 text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {cancelMutation.isPending && <Spinner />}
+                  Cancel scheduled deletion
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenModal("permanent")}
+                  className="w-fit cursor-pointer rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90"
+                >
+                  Delete permanently now
+                </button>
+              </div>
             </>
           )}
           {state === "active" && (
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => setOpenModal("any")}
               className="w-fit cursor-pointer rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90"
             >
               Delete organisation
@@ -74,10 +85,11 @@ export function DeleteOrganisationSection({
         </div>
       </SettingsSectionRow>
 
-      {isModalOpen && (
+      {openModal && (
         <DeleteOrganisationModal
           organisation={organisation}
-          onClose={() => setIsModalOpen(false)}
+          permanentOnly={openModal === "permanent"}
+          onClose={() => setOpenModal(null)}
         />
       )}
     </div>

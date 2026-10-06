@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { SetPasswordForm } from "@/components/SetPasswordForm";
+
+export const metadata: Metadata = {
+  title: "Set your password",
+};
 
 type SetPasswordPageProps = {
   searchParams: Promise<{ token?: string }>;

@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthAside } from "@/components/AuthAside";
 import { ForgotPasswordForm } from "@/components/ForgotPasswordForm";
 import { isAuthenticated } from "@/lib/isAuthenticated";
+
+export const metadata: Metadata = {
+  title: "Forgot password",
+};
 
 export default async function ForgotPasswordPage() {
   if (await isAuthenticated()) {

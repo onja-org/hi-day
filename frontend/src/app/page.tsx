@@ -11,7 +11,8 @@ import { LandingRoles } from "@/components/landing/LandingRoles";
 import { isAuthenticated } from "@/lib/isAuthenticated";
 
 export const metadata: Metadata = {
-  title: "Workforce Monitoring — Time & activity tracking for your team",
+  // Absolute: the landing page's title already leads with the product name.
+  title: { absolute: "Workforce Monitoring — Time & activity tracking for your team" },
   description:
     "Timesheets, activity, teams, and role-based permissions in one dashboard. Set up your organisation and invite your team in minutes.",
 };

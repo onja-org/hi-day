@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { DashboardTabs } from "@/components/DashboardTabs";
 import { RequireRole } from "@/components/RequireRole";
 import { TeamDashboardSections } from "@/components/TeamDashboardSections";
+
+export const metadata: Metadata = {
+  title: "Team dashboard",
+};
 
 type AllDashboardPageProps = {
   params: Promise<{ organisationId: string }>;

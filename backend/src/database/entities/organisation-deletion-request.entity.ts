@@ -13,6 +13,8 @@ import { User } from './user.entity';
 export enum OrganisationDeletionMode {
   NOW = 'now',
   SCHEDULED = 'scheduled',
+  /** Skips the recovery window: confirming starts the purge — ADR-0023. */
+  PERMANENT = 'permanent',
 }
 
 /**

@@ -13,6 +13,12 @@ artifactName: workforce-monitor-${os}-${arch}.${ext}
 compression: maximum
 directories:
   output: release
+# App icon (source: build/icon.svg — see README "App icon" for how the PNG
+# and ICO are regenerated). The PNG is 1024px with macOS-style padding;
+# electron-builder converts it to .icns for macOS and uses it as-is for
+# Linux. Windows gets its own multi-size .ico (full-bleed, so it stays
+# legible at 16px in the taskbar).
+icon: build/icon.png
 # electron-builder 26 still defaults `toolsets.appimage` to "0.0.0", the legacy
 # AppImageKit runtime, which dlopen()s libfuse.so.2 at startup. Ubuntu dropped
 # libfuse2 from the default install in 23.10 (and 22.04/24.04 users overwhelmingly
@@ -50,6 +56,7 @@ asarUnpack:
 npmRebuild: false
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]

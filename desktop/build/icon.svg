@@ -1,0 +1,8 @@
+<!-- Desktop app icon source (same mark as frontend/src/app/icon.svg).
+     Padded so macOS/Linux launchers show it at the same visual size as
+     other app icons. Regenerate the PNG/ICO files from this — see
+     desktop/README.md "App icon". -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#4F46E5"/>
+  <path d="M280.25 370.38 396.13 679.38 512 434.75 627.88 679.38 743.75 370.38" fill="none" stroke="#FFFFFF" stroke-width="82.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

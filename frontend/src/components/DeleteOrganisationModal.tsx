@@ -2,11 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import {
-  CheckIcon,
-  EnvelopeSimpleIcon,
-  WarningIcon,
-} from "@phosphor-icons/react";
+import { EnvelopeSimpleIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { useOrganisationDeletionStatus } from "@/hooks/useOrganisationDeletionStatus";
 import { requestOrganisationDeletion } from "@/lib/requestOrganisationDeletion";
@@ -14,17 +10,24 @@ import type {
   OrganisationDeletionMode,
   OrganisationProfile,
 } from "@/types/organisation";
+import { ConfirmNameField } from "./ConfirmNameField";
 import { DeletionExportNotice } from "./DeletionExportNotice";
 import { DeletionImpactStats } from "./DeletionImpactStats";
 import { DeletionEmailSentModal } from "./DeletionEmailSentModal";
 import { DeletionWhenFields } from "./DeletionWhenFields";
 import { ErrorMessage } from "./ErrorMessage";
 import { Modal } from "./Modal";
+import { OwnerAccountWarning } from "./OwnerAccountWarning";
 import { Spinner } from "./Spinner";
 
 type DeleteOrganisationModalProps = {
   organisation: OrganisationProfile;
   onClose: () => void;
+  /**
+   * Offers only a permanent deletion — for ending a suspension's recovery
+   * window early, or replacing a schedule. No "When" choice, no export.
+   */
+  permanentOnly?: boolean;
 };
 
 function tomorrowAsInputValue(): string {
@@ -37,8 +40,11 @@ function tomorrowAsInputValue(): string {
 export function DeleteOrganisationModal({
   organisation,
   onClose,
+  permanentOnly = false,
 }: DeleteOrganisationModalProps) {
-  const [mode, setMode] = useState<OrganisationDeletionMode>("now");
+  const [mode, setMode] = useState<OrganisationDeletionMode>(
+    permanentOnly ? "permanent" : "now",
+  );
   const [scheduledDate, setScheduledDate] = useState(tomorrowAsInputValue);
   const [confirmName, setConfirmName] = useState("");
   const statusQuery = useOrganisationDeletionStatus(organisation.id, true);
@@ -78,7 +84,14 @@ export function DeleteOrganisationModal({
   }
 
   return (
-    <Modal title={`Delete ${organisation.name}?`} onClose={onClose}>
+    <Modal
+      title={
+        permanentOnly
+          ? `Permanently delete ${organisation.name}?`
+          : `Delete ${organisation.name}?`
+      }
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-error/10 text-error">
@@ -91,42 +104,40 @@ export function DeleteOrganisationModal({
         </div>
 
         {status && <DeletionImpactStats impact={status.impact} />}
-        <DeletionExportNotice organisationId={organisation.id} />
+        {/* A suspended organisation's data can't be read, so there's nothing to export. */}
+        {!organisation.suspendedAt && (
+          <DeletionExportNotice organisationId={organisation.id} />
+        )}
 
-        <DeletionWhenFields
-          mode={mode}
-          onModeChange={setMode}
-          scheduledDate={scheduledDate}
-          onScheduledDateChange={setScheduledDate}
-          minDate={tomorrowAsInputValue()}
-          graceDays={graceDays}
-        />
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-slate-900">
-            Type{" "}
-            <code className="rounded-md bg-cream px-1.5 py-0.5">
-              {organisation.name}
-            </code>{" "}
-            to confirm
-          </span>
-          <span className="relative">
-            <input
-              type="text"
-              value={confirmName}
-              onChange={(event) => setConfirmName(event.target.value)}
-              autoComplete="off"
-              className="w-full rounded-md border border-input-border bg-white px-3 pr-9 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+        {permanentOnly ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-slate-900">
+              Everything is erased within minutes, with no recovery window.
+              This cannot be undone.
+            </p>
+            <OwnerAccountWarning
+              ownerKeepsAccount={status?.ownerKeepsAccount ?? null}
             />
-            {nameMatches && (
-              <CheckIcon
-                size={18}
-                aria-hidden="true"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-success"
-              />
-            )}
-          </span>
-        </label>
+          </div>
+        ) : (
+          <>
+            <DeletionWhenFields
+              mode={mode}
+              onModeChange={setMode}
+              scheduledDate={scheduledDate}
+              onScheduledDateChange={setScheduledDate}
+              minDate={tomorrowAsInputValue()}
+              graceDays={graceDays}
+              ownerKeepsAccount={status?.ownerKeepsAccount ?? null}
+            />
+          </>
+        )}
+
+        <ConfirmNameField
+          expectedName={organisation.name}
+          value={confirmName}
+          onChange={setConfirmName}
+        />
 
         {failure && <ErrorMessage message={failure} />}
 

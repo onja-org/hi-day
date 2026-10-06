@@ -43,3 +43,9 @@ export function setSessionCookies(
     buildSessionCookieOptions(refreshTokenTtlDays * MS_PER_DAY, configService),
   );
 }
+
+/** Ends the browser session without touching any stored refresh token. */
+export function clearSessionCookies(response: Response): void {
+  response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
+  response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
+}

@@ -28,9 +28,15 @@ export type OrganisationProfile = {
   purgeAt: string | null;
 };
 
-export type OrganisationDeletionState = "active" | "scheduled" | "suspended";
+/** `purging` begins at `purgeAt`: from then on nothing can stop the purge. */
+export type OrganisationDeletionState =
+  | "active"
+  | "scheduled"
+  | "suspended"
+  | "purging";
 
-export type OrganisationDeletionMode = "now" | "scheduled";
+/** `permanent` skips the recovery window entirely — see ADR-0023. */
+export type OrganisationDeletionMode = "now" | "scheduled" | "permanent";
 
 export type RequestOrganisationDeletionInput = {
   mode: OrganisationDeletionMode;
@@ -40,6 +46,9 @@ export type RequestOrganisationDeletionInput = {
 };
 
 export type OrganisationDeletionResult = ApiResult;
+
+/** `signedOut` is true when the purge is about to erase the caller's own account. */
+export type OrganisationDeletionConfirmResult = ApiResult<{ signedOut: boolean }>;
 
 export type GetOrganisationResult =
   | { ok: true; organisation: OrganisationProfile }
@@ -75,4 +84,8 @@ export type OrganisationDeletionStatus = {
   };
   /** Where the confirmation link is sent; null unless the caller is the owner. */
   ownerEmail: string | null;
+  /** Whether the owner's account survives the purge; null unless the caller is the owner. */
+  ownerKeepsAccount: boolean | null;
+  /** The request awaiting its emailed confirmation; null unless the caller is the owner. */
+  pendingRequestMode: OrganisationDeletionMode | null;
 };

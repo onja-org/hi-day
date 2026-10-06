@@ -1,35 +1,49 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CURRENT_ORGANISATION_QUERY_KEY } from "@/hooks/useCurrentOrganisation";
-import { cancelOrganisationDeletion } from "@/lib/cancelOrganisationDeletion";
+import { useSearchParams } from "next/navigation";
 import { formatShortDate } from "@/lib/formatShortDate";
+import { getDeletionState } from "@/lib/getDeletionState";
 import type { OrganisationProfile } from "@/types/organisation";
-import { Spinner } from "./Spinner";
+import { ConfirmOrganisationDeletionPrompt } from "./ConfirmOrganisationDeletionPrompt";
+import { SuspendedOwnerActions } from "./SuspendedOwnerActions";
 
 type OrganisationSuspendedNoticeProps = {
   organisation: OrganisationProfile;
 };
 
-/** Replaces every page of a suspended organisation; the backend refuses its data anyway. */
+/**
+ * Replaces every page of a suspended organisation; the backend refuses its
+ * data anyway. It also hosts the emailed confirmation link for a permanent
+ * deletion requested while suspended, since the settings page that normally
+ * shows it is hidden behind this notice.
+ */
 export function OrganisationSuspendedNotice({
   organisation,
 }: OrganisationSuspendedNoticeProps) {
-  const queryClient = useQueryClient();
+  const confirmDeletionToken = useSearchParams().get("confirmDeletion");
 
-  const restoreMutation = useMutation({
-    mutationFn: () => cancelOrganisationDeletion(organisation.id),
-    onSuccess: (result) => {
-      if (result.ok) {
-        queryClient.invalidateQueries({
-          queryKey: CURRENT_ORGANISATION_QUERY_KEY,
-        });
-      }
-    },
-  });
+  if (getDeletionState(organisation) === "purging") {
+    return (
+      <section className="flex max-w-xl flex-col gap-3">
+        <h1 className="text-2xl font-semibold text-primary-dark">
+          {organisation.name} is being permanently deleted
+        </h1>
+        <p className="text-slate-900">
+          This can no longer be stopped or restored. Nobody can access it, and
+          desktop agents have stopped tracking.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="flex max-w-xl flex-col gap-3">
+      {confirmDeletionToken && (
+        <ConfirmOrganisationDeletionPrompt
+          organisation={organisation}
+          token={confirmDeletionToken}
+        />
+      )}
       <h1 className="text-2xl font-semibold text-primary-dark">
         {organisation.name} is suspended
       </h1>
@@ -41,20 +55,7 @@ export function OrganisationSuspendedNotice({
         . Nobody can access it, and desktop agents have stopped tracking.
       </p>
       {organisation.isOwner ? (
-        <>
-          <p className="text-slate-900">
-            As the owner you can restore everything until then.
-          </p>
-          <button
-            type="button"
-            onClick={() => restoreMutation.mutate()}
-            disabled={restoreMutation.isPending}
-            className="flex w-fit cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {restoreMutation.isPending && <Spinner />}
-            Restore organisation
-          </button>
-        </>
+        <SuspendedOwnerActions organisation={organisation} />
       ) : (
         <p className="text-slate-900">
           Contact the organisation owner if this is a mistake.

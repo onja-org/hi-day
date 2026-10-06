@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { TeamsPageContent } from "@/components/TeamsPageContent";
+
+export const metadata: Metadata = {
+  title: "Teams",
+};
 
 type TeamsPageProps = {
   params: Promise<{ organisationId: string }>;

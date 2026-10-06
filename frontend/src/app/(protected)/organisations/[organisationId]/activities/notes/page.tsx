@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { ActivityTabs } from "@/components/ActivityTabs";
 import { NotesPageContent } from "@/components/NotesPageContent";
+
+export const metadata: Metadata = {
+  title: "Notes",
+};
 
 type NotesActivityPageProps = {
   params: Promise<{ organisationId: string }>;

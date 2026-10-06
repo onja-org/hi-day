@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { DashboardSections } from "@/components/DashboardSections";
 import { DashboardTabs } from "@/components/DashboardTabs";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+};
 
 type MeDashboardPageProps = {
   params: Promise<{ organisationId: string }>;
