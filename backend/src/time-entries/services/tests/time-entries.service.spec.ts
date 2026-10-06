@@ -159,15 +159,15 @@ describe('TimeEntriesService', () => {
     };
   }
 
-  /** Only the day-boundary splitter reads it, for the Organisation's timezone. */
-  function makeOrganisationsRepo(
-    overrides: Partial<Repository<Organisation>> = {},
-  ) {
+  /**
+   * Only the day-boundary splitter reads it, for the Organisation's
+   * timezone. Defaults to UTC so the split lands on a fixed instant whatever
+   * timezone the test runner sits in — CI is UTC, this machine is not, and a
+   * server-local expectation passes in one and fails in the other.
+   */
+  function makeOrganisationsRepo(timezone = 'UTC') {
     return {
-      findOne: jest
-        .fn()
-        .mockResolvedValue({ settings: { timezone: 'Africa/Nairobi' } }),
-      ...overrides,
+      findOne: jest.fn().mockResolvedValue({ settings: { timezone } }),
     } as unknown as Repository<Organisation>;
   }
 
@@ -2686,10 +2686,10 @@ describe('TimeEntriesService', () => {
     });
 
     it('closes an overnight entry at local midnight and opens a new one for today', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2703,14 +2703,14 @@ describe('TimeEntriesService', () => {
       await service.splitRunningEntriesAcrossDayBoundary();
 
       const oldEntry = fake.entries.get('entry-orig')!;
-      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 6, 0, 0, 0));
+      expect(oldEntry.endedAt).toEqual(new Date('2026-01-06T00:00:00.000Z'));
 
       const newEntries = [...fake.entries.values()].filter(
         (e) => e.id !== 'entry-orig',
       );
       expect(newEntries).toHaveLength(1);
       expect(newEntries[0]).toMatchObject({
-        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+        startedAt: new Date('2026-01-06T00:00:00.000Z'),
         endedAt: null,
         projectId: 'project-1',
         taskId: 'task-1',
@@ -2719,10 +2719,10 @@ describe('TimeEntriesService', () => {
     });
 
     it('catches a multi-day-old entry fully up in one call', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 8, 12, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-08T12:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2740,7 +2740,9 @@ describe('TimeEntriesService', () => {
       const stillOpen = [...fake.entries.values()].find(
         (e) => e.endedAt === null,
       );
-      expect(stillOpen?.startedAt).toEqual(new Date(2026, 0, 8, 0, 0, 0));
+      expect(stillOpen?.startedAt).toEqual(
+        new Date('2026-01-08T00:00:00.000Z'),
+      );
     });
 
     /**
@@ -2762,7 +2764,7 @@ describe('TimeEntriesService', () => {
         }),
         // Africa/Nairobi is UTC+3, so its midnight is 21:00 UTC the day
         // before — three hours earlier than the server's.
-        organisationsRepo: makeOrganisationsRepo(),
+        organisationsRepo: makeOrganisationsRepo('Africa/Nairobi'),
         dataSource: fake.dataSource,
       });
 
@@ -2778,10 +2780,10 @@ describe('TimeEntriesService', () => {
     // splitter used to close one at the boundary and open another on the
     // new entry, which manufactured rows holding nothing but a pause.
     it('leaves pause spans alone entirely', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original], []);
       const service = makeService({
@@ -2800,10 +2802,10 @@ describe('TimeEntriesService', () => {
     it('still splits into a positive-duration entry when startedAt is already exactly a previous midnight', async () => {
       // The steady-state shape this job's own output takes the night after
       // it first runs.
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 7, 8, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-07T08:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+        startedAt: new Date('2026-01-06T00:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2817,17 +2819,17 @@ describe('TimeEntriesService', () => {
       await service.splitRunningEntriesAcrossDayBoundary();
 
       const oldEntry = fake.entries.get('entry-orig')!;
-      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 7, 0, 0, 0));
+      expect(oldEntry.endedAt).toEqual(new Date('2026-01-07T00:00:00.000Z'));
       expect(oldEntry.endedAt!.getTime()).toBeGreaterThan(
         oldEntry.startedAt.getTime(),
       );
     });
 
     it('leaves an entry that started today untouched', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 15, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T15:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-today',
-        startedAt: new Date(2026, 0, 6, 9, 0, 0),
+        startedAt: new Date('2026-01-06T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
