@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { CaretDownIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import { ErrorMessage } from "../ErrorMessage";
 import { Modal } from "../Modal";
-import { Spinner } from "../Spinner";
 import { Toggle } from "../Toggle";
+import { ReportModalFooter } from "./ReportModalFooter";
 import { ScheduleReportCallout } from "./ScheduleReportCallout";
 
 type SaveReportModalProps = {
@@ -95,37 +95,14 @@ export function SaveReportModal({
 
         {errorMessage && <ErrorMessage message={errorMessage} />}
 
-        <div className="flex items-center justify-between gap-3">
-          {onSendPreview ? (
-            <button
-              type="button"
-              onClick={onSendPreview}
-              className="flex cursor-pointer items-center gap-2 text-sm text-primary hover:underline"
-            >
-              <PaperPlaneRightIcon size={16} aria-hidden="true" />
-              Send preview
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-11 cursor-pointer rounded-md border border-primary px-4 text-primary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={trimmed === "" || isPending}
-              className="flex h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPending && <Spinner />}
-              Save
-            </button>
-          </div>
-        </div>
+        <ReportModalFooter
+          onClose={onClose}
+          onSendPreview={onSendPreview}
+          isPending={isPending}
+          submitDisabled={trimmed === ""}
+        >
+          Save
+        </ReportModalFooter>
       </form>
     </Modal>
   );

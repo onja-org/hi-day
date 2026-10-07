@@ -16,7 +16,7 @@ export type SavedReportSettings = {
 };
 
 /** A report saved to the user's account — see the backend's SavedReportView. */
-export type SavedReportType = "time-and-activity" | "daily-totals";
+export type SavedReportType = "time-and-activity" | "daily-totals" | "apps-and-urls" | "work-sessions";
 
 export type SavedReport = {
   id: string;

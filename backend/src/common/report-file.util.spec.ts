@@ -1,6 +1,10 @@
 import {
+  buildCsv,
   buildReportCsv,
   buildReportPdf,
+  buildTablePdf,
+  csvCell,
+  formatDuration,
   reportRows,
   type ReportEntry,
 } from './report-file.util';
@@ -67,5 +71,27 @@ describe('report-file.util', () => {
     const pdf = buildReportPdf('Weekly', [entry()], 'UTC');
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(500);
+  });
+});
+
+describe('shared file helpers', () => {
+  it('formatDuration pads hours, minutes and seconds, and is empty for null', () => {
+    expect(formatDuration(3725)).toBe('01:02:05');
+    expect(formatDuration(null)).toBe('');
+  });
+
+  it('csvCell prefixes formula triggers and quotes commas and quotes', () => {
+    expect(csvCell('=SUM(A1)')).toBe("'=SUM(A1)");
+    expect(csvCell('a,"b"')).toBe('"a,""b"""');
+    expect(csvCell('plain')).toBe('plain');
+  });
+
+  it('buildCsv joins the header and rows with CRLF', () => {
+    expect(buildCsv(['A', 'B'], [['1', '2,3']])).toBe('A,B\r\n1,"2,3"');
+  });
+
+  it('buildTablePdf returns a PDF', () => {
+    const pdf = buildTablePdf('T', ['A'], [['1']], 7);
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 });

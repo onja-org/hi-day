@@ -10,6 +10,7 @@ import {
   canSumDates,
   timeActivityColumns,
 } from "@/lib/timeActivityReportConfig";
+import type { IdleMember } from "@/types/idleMember";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -23,7 +24,7 @@ type TimeActivityReportBodyProps = {
   entries: TimeEntryListItem[];
   grouping: TimeActivityGrouping;
   teamNames: MembershipTeamNames;
-  idleMembers: { id: string; label: string }[];
+  idleMembers: IdleMember[];
 };
 
 /** Avatars on a top-level row; nested rows carry their team names as plain text. */

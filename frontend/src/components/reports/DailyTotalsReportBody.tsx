@@ -2,14 +2,10 @@
 
 import type { ReactNode } from "react";
 import { ClockIcon, FolderSimpleIcon } from "@phosphor-icons/react";
-import {
-  DAILY_TOTALS_CHART_SERIES,
-  DAILY_TOTALS_FIRST_COLUMN,
-  DAILY_TOTALS_TRAILING_COLUMNS,
-} from "@/lib/dailyTotalsReportConfig";
+import { DAILY_TOTALS_CHART_SERIES } from "@/lib/dailyTotalsReportConfig";
+import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatReportDay } from "@/lib/formatReportDay";
-import { timezoneLabel } from "@/lib/timezone";
 import type { DailyTotalsReport } from "@/lib/buildDailyTotalsReport";
 import { ReportsBarChart } from "./ReportsBarChart";
 import { ReportsStatCard } from "./ReportsStatCard";
@@ -17,14 +13,11 @@ import { ReportsTable } from "./ReportsTable";
 
 type DailyTotalsReportBodyProps = {
   report: DailyTotalsReport;
-  organisationName: string | undefined;
-  /** The zone the days are read in. */
-  zone: string;
-  /** Export, send and schedule controls, shown on the table's heading line. */
+  /** Export, send and schedule controls, shown above the table. */
   actions: ReactNode;
 };
 
-export function DailyTotalsReportBody({ report, organisationName, zone, actions }: DailyTotalsReportBodyProps) {
+export function DailyTotalsReportBody({ report, actions }: DailyTotalsReportBodyProps) {
   const totalSeconds = report.days.reduce((sum, day) => sum + day.seconds, 0);
   const averageSeconds = report.days.length > 0 ? totalSeconds / report.days.length : 0;
 
@@ -46,16 +39,10 @@ export function DailyTotalsReportBody({ report, organisationName, zone, actions 
         />
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-baseline gap-3">
-          <span className="text-xl text-primary-dark">{organisationName}</span>
-          <span className="text-xs text-slate-900/70">{timezoneLabel(zone)}</span>
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">{actions}</div>
-      </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">{actions}</div>
 
       <ReportsTable
-        columns={[DAILY_TOTALS_FIRST_COLUMN, ...report.columns, ...DAILY_TOTALS_TRAILING_COLUMNS]}
+        columns={dailyTotalsTable(report).columns}
         rows={report.rows}
         footerRow={report.totalRow}
       />

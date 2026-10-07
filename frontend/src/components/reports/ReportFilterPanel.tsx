@@ -8,17 +8,16 @@ import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
 import { EMPTY_REPORT_FILTERS, countReportFilters } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
-
-type Option = { id: string; name: string };
+import type { ReportFilterOption } from "@/types/reportFilterOption";
 
 type ReportFilterPanelProps = {
   filters: ReportFilters;
   onChange: (filters: ReportFilters) => void;
-  projectOptions: Option[];
+  projectOptions: ReportFilterOption[];
   /** Omit to leave the Members filter out — e.g. when only your own data is shown. */
-  memberOptions?: Option[];
+  memberOptions?: ReportFilterOption[];
   /** Omit to leave the Teams filter out. */
-  teamOptions?: Option[];
+  teamOptions?: ReportFilterOption[];
   onClose: () => void;
 };
 

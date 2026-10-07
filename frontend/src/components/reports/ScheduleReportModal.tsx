@@ -2,22 +2,21 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { DATE_RANGE_PRESET_LABELS } from "@/components/DateRangePresetList";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Modal } from "@/components/Modal";
-import { Spinner } from "@/components/Spinner";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { TextareaField } from "@/components/ui/form/TextareaField";
 import { TextField } from "@/components/ui/form/TextField";
-import { findInvalidEmails } from "@/lib/findInvalidEmails";
 import { formatScheduleHour } from "@/lib/formatScheduleHour";
-import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import { SCHEDULE_FREQUENCIES } from "@/lib/scheduleOptions";
+import { validateReportEmails } from "@/lib/validateReportEmails";
 import type { DateRangePreset } from "@/types/dateRange";
 import type { ReportSchedule, ScheduleFrequency, ScheduleReportInput } from "@/types/reportSchedule";
 import type { SendReportFileType } from "@/types/sendReport";
+import { FileTypeSelect } from "./FileTypeSelect";
 import { ReportCallout } from "./ReportCallout";
+import { ReportModalFooter } from "./ReportModalFooter";
 import { ScheduleDayPicker } from "./ScheduleDayPicker";
 
 type ScheduleReportModalProps = {
@@ -56,10 +55,9 @@ export function ScheduleReportModal({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const emails = parseInviteEmails(addresses);
-    const invalid = findInvalidEmails(emails);
+    const { emails, error: emailsError } = validateReportEmails(addresses);
     if (emails.length === 0 || frequency === "" || hour === "") return;
-    if (invalid.length > 0) return setError(`Not a valid email address: ${invalid.join(", ")}`);
+    if (emailsError) return setError(emailsError);
     if (days.length === 0) return setError("Choose at least one delivery day.");
     setError(null);
     onSchedule({
@@ -89,10 +87,7 @@ export function ScheduleReportModal({
         <TextareaField label="Message *" value={message} onChange={(e) => setMessage(e.target.value)} required rows={3} placeholder="Enter a message" />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <SelectField label="File type *" value={fileType} onChange={(e) => setFileType(e.target.value as SendReportFileType)}>
-            <option value="pdf">PDF</option>
-            <option value="csv">CSV</option>
-          </SelectField>
+          <FileTypeSelect label="File type *" value={fileType} onChange={setFileType} />
           <SelectField label="Date range" value={dateRange} onChange={(e) => setDateRange(e.target.value as DateRangePreset)}>
             {Object.entries(DATE_RANGE_PRESET_LABELS).map(([preset, label]) => (
               <option key={preset} value={preset}>
@@ -131,29 +126,9 @@ export function ScheduleReportModal({
 
         {(error ?? errorMessage) && <ErrorMessage message={error ?? errorMessage ?? ""} />}
 
-        <div className="flex items-center justify-between gap-3">
-          {onSendPreview ? (
-            <button type="button" onClick={onSendPreview} className="flex cursor-pointer items-center gap-2 text-sm text-primary hover:underline">
-              <PaperPlaneRightIcon size={16} aria-hidden="true" />
-              Send preview
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="h-11 cursor-pointer rounded-md border border-primary px-4 text-primary">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="flex h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPending && <Spinner />}
-              Schedule &amp; Save
-            </button>
-          </div>
-        </div>
+        <ReportModalFooter onClose={onClose} onSendPreview={onSendPreview} isPending={isPending}>
+          Schedule &amp; Save
+        </ReportModalFooter>
       </form>
     </Modal>
   );

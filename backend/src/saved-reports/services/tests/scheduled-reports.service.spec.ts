@@ -6,6 +6,9 @@ import {
   SavedReport,
   SavedReportSettings,
 } from '../../../database/entities/saved-report.entity';
+import { AppEventsService } from '../../../app-events/services/app-events.service';
+import { Project } from '../../../database/entities/project.entity';
+import { UrlSessionsService } from '../../../url-sessions/services/url-sessions.service';
 import { EmailService } from '../../../email/services/email.service';
 import { MembershipsService } from '../../../members/services/memberships.service';
 import {
@@ -104,14 +107,40 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     >()
     .mockResolvedValue([entry()]);
   const listActiveForOrganisation = jest.fn().mockResolvedValue([
-    { id: 'm1', teamIds: ['t1'] },
-    { id: 'm2', teamIds: ['t2'] },
+    { id: 'm1', name: 'Ada', email: 'ada@example.com', teamIds: ['t1'] },
+    { id: 'm2', name: null, email: 'ben@example.com', teamIds: ['t2'] },
   ]);
   const sendReportEmail = jest.fn().mockResolvedValue(options.sent ?? true);
   const record = jest.fn().mockResolvedValue(undefined);
   const transaction = jest.fn((fn: (manager: object) => Promise<unknown>) =>
     fn({}),
   );
+
+  const projectFind = jest
+    .fn()
+    .mockResolvedValue([{ id: 'p1', name: 'Alpha' }]);
+  const getMyDay = jest.fn().mockResolvedValue({
+    date: '2026-09-22',
+    totalSecondsSpent: 600,
+    buckets: [
+      {
+        hourStart: '2026-09-22T09:00:00Z',
+        items: [
+          {
+            projectId: 'p1',
+            appName: 'Code',
+            secondsSpent: 600,
+            sessionCount: 1,
+          },
+        ],
+      },
+    ],
+  });
+  const getDayGroupedByUrl = jest.fn().mockResolvedValue({
+    date: '2026-09-22',
+    totalActiveMs: 0,
+    buckets: [],
+  });
 
   const service = new ScheduledReportsService(
     savedReports,
@@ -120,6 +149,9 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     { listActiveForOrganisation } as unknown as MembershipsService,
     { sendReportEmail } as unknown as EmailService,
     { record },
+    { find: projectFind } as unknown as Repository<Project>,
+    { getMyDay, getDayForMembership: getMyDay } as unknown as AppEventsService,
+    { getDayGroupedByUrl } as unknown as UrlSessionsService,
   );
   return {
     service,
@@ -130,6 +162,7 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     listActiveForOrganisation,
     sendReportEmail,
     record,
+    getMyDay,
   };
 }
 
@@ -159,6 +192,70 @@ describe('ScheduledReportsService', () => {
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ action: 'report.sent' }),
+      );
+    });
+
+    it('builds an apps and URLs report from each day of the range', async () => {
+      const { service, sendReportEmail, getMyDay, list } = setup();
+
+      const apps = report({
+        reportType: 'apps-and-urls',
+        settings: { ...settings, grouping: 'day' },
+      });
+      expect(await service.runOne(apps, NOW)).toBe('sent');
+
+      expect(getMyDay).toHaveBeenCalledTimes(7);
+      expect(list).not.toHaveBeenCalled();
+      expect(sendReportEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachment: expect.objectContaining({
+            filename: 'weekly-report-2026-09-21-to-2026-09-27.csv',
+          }) as object,
+        }),
+      );
+    });
+
+    it('builds an all-members apps and URLs report for an admin owner', async () => {
+      const { service, getMyDay, listActiveForOrganisation } = setup();
+
+      const admin = report({
+        reportType: 'apps-and-urls',
+        settings: { ...settings, grouping: 'member', scope: 'all' },
+      });
+      admin.membership.role = MembershipRole.ADMIN;
+      expect(await service.runOne(admin, NOW)).toBe('sent');
+
+      expect(listActiveForOrganisation).toHaveBeenCalled();
+      // Two listed members, seven days each.
+      expect(getMyDay).toHaveBeenCalledTimes(14);
+    });
+
+    it("keeps a non-admin owner's all-scope apps and URLs report to their own activity", async () => {
+      const { service, getMyDay, listActiveForOrganisation } = setup();
+
+      const member = report({
+        reportType: 'apps-and-urls',
+        settings: { ...settings, grouping: 'member', scope: 'all' },
+      });
+      expect(await service.runOne(member, NOW)).toBe('sent');
+
+      expect(listActiveForOrganisation).not.toHaveBeenCalled();
+      expect(getMyDay).toHaveBeenCalledTimes(7);
+    });
+
+    it('lists each session for a work sessions report, from time entries', async () => {
+      const { service, sendReportEmail, list } = setup();
+
+      const sessions = report({ reportType: 'work-sessions' });
+      expect(await service.runOne(sessions, NOW)).toBe('sent');
+
+      expect(list).toHaveBeenCalled();
+      expect(sendReportEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachment: expect.objectContaining({
+            filename: 'weekly-report-2026-09-21-to-2026-09-27.csv',
+          }) as object,
+        }),
       );
     });
 

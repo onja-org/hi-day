@@ -4,17 +4,16 @@ import { useState } from "react";
 import { FunnelIcon } from "@phosphor-icons/react";
 import { countReportFilters } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
+import type { ReportFilterOption } from "@/types/reportFilterOption";
 import { ReportFilterPanel } from "./ReportFilterPanel";
-
-type Option = { id: string; name: string };
 
 type TimeActivityFilterProps = {
   filters: ReportFilters;
   onChange: (filters: ReportFilters) => void;
-  projectOptions: Option[];
+  projectOptions: ReportFilterOption[];
   /** Pass only when other people's data is on screen. */
-  memberOptions?: Option[];
-  teamOptions?: Option[];
+  memberOptions?: ReportFilterOption[];
+  teamOptions?: ReportFilterOption[];
 };
 
 /** The Filter button (with a badge counting active choices) and its drawer. */
