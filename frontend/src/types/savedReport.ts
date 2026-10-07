@@ -16,7 +16,7 @@ export type SavedReportSettings = {
 };
 
 /** A report saved to the user's account — see the backend's SavedReportView. */
-export type SavedReportType = "time-and-activity" | "daily-totals";
+export type SavedReportType = "time-and-activity" | "daily-totals" | "apps-and-urls" | "work-sessions";
 
 export type SavedReport = {
   id: string;
@@ -25,6 +25,8 @@ export type SavedReport = {
   settings: SavedReportSettings;
   /** When and to whom it is emailed; null when it isn't scheduled. */
   schedule: ReportSchedule | null;
+  /** True while scheduled emails are on hold; the schedule itself is kept. */
+  schedulePaused: boolean;
   /** ISO instant of the last save. */
   modifiedAt: string;
   /** ISO instant of the last scheduled email that went out. */
@@ -48,6 +50,10 @@ export type GetSavedReportsResult =
   | { ok: false; message: string };
 
 export type SaveReportResult =
+  | { ok: true; report: SavedReport }
+  | { ok: false; message: string };
+
+export type SetSchedulePausedResult =
   | { ok: true; report: SavedReport }
   | { ok: false; message: string };
 

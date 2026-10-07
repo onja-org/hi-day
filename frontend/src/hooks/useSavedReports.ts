@@ -3,7 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteSavedReport } from "@/lib/deleteSavedReport";
 import { getSavedReports } from "@/lib/getSavedReports";
 import { saveSavedReport } from "@/lib/saveSavedReport";
-import type { DeleteSavedReportResult, SaveReportInput, SaveReportResult } from "@/types/savedReport";
+import { setSavedReportSchedulePaused } from "@/lib/setSavedReportSchedulePaused";
+import type {
+  DeleteSavedReportResult,
+  SaveReportInput,
+  SaveReportResult,
+  SetSchedulePausedResult,
+} from "@/types/savedReport";
 
 export const SAVED_REPORTS_QUERY_KEY = (organisationId: string) => ["saved-reports", organisationId];
 
@@ -35,6 +41,15 @@ export function useSavedReports(organisationId: string) {
     [organisationId, queryClient],
   );
 
+  const setSchedulePaused = useCallback(
+    async (id: string, paused: boolean): Promise<SetSchedulePausedResult> => {
+      const result = await setSavedReportSchedulePaused(organisationId, id, paused);
+      if (result.ok) await queryClient.invalidateQueries({ queryKey: SAVED_REPORTS_QUERY_KEY(organisationId) });
+      return result;
+    },
+    [organisationId, queryClient],
+  );
+
   const deleteReport = useCallback(
     async (id: string): Promise<DeleteSavedReportResult> => {
       const result = await deleteSavedReport(organisationId, id);
@@ -49,6 +64,7 @@ export function useSavedReports(organisationId: string) {
     isReady: query.isSuccess || query.isError,
     error: query.error,
     saveReport,
+    setSchedulePaused,
     deleteReport,
   };
 }

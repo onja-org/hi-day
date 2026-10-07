@@ -1,3 +1,4 @@
+import { PROJECT_WORK_ORDER_LABEL } from "@/lib/reportColumnLabels";
 import type { ReportChartSeries } from "@/types/reportChart";
 import type { ReportTableColumn } from "@/types/reportTable";
 import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
@@ -13,7 +14,7 @@ export const TIME_ACTIVITY_CHART_SERIES: ReportChartSeries[] = [
 
 export const TIME_ACTIVITY_COLUMNS: ReportTableColumn[] = [
   { key: "date", header: "Date" },
-  { key: "project", header: "Project / Work order", group: "Info" },
+  { key: "project", header: PROJECT_WORK_ORDER_LABEL, group: "Info" },
   { key: "team", header: "Team", group: "Info" },
   { key: "regular", header: "Regular hours", group: "Time" },
   { key: "total", header: "Total hours", group: "Time" },
@@ -28,7 +29,7 @@ export const TIME_ACTIVITY_GROUPINGS: {
   { value: "none", label: "None" },
   { value: "day", label: "Date per day" },
   { value: "week", label: "Date per week" },
-  { value: "project", label: "Project / Work order" },
+  { value: "project", label: PROJECT_WORK_ORDER_LABEL },
   { value: "member", label: "Member" },
   { value: "team", label: "Team" },
 ];
@@ -37,7 +38,7 @@ const FIRST_COLUMN_HEADERS: Record<TimeActivityGrouping, string> = {
   none: "Member",
   day: "Date",
   week: "Date",
-  project: "Project / Work order",
+  project: PROJECT_WORK_ORDER_LABEL,
   member: "Member",
   team: "Team",
 };

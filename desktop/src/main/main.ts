@@ -4,9 +4,12 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
+  nativeImage,
   powerMonitor,
   shell,
   systemPreferences,
+  Tray,
 } from "electron";
 import type { PairingPollResult, TrackingResult } from "./api-client";
 import { ApiClient } from "./api-client";
@@ -181,9 +184,20 @@ interface CapturePermissionStatus {
 // before any installs exist, since changing it later orphans the stored
 // fingerprint/session and makes every existing install re-register as a
 // "new" device.
-app.setName("Workforce Monitor");
+app.setName("Hi Day");
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+/**
+ * Set once a real quit is under way. Until then the window's close button
+ * hides it to the tray instead, so tracking keeps running — closing the
+ * window used to quit the app (and pause the timer) on Windows and Linux.
+ */
+let isQuitting = false;
+
+/** The tracker's two fixed sizes: the full window and the compact bar. */
+const FULL_WINDOW_SIZE = { width: 360, height: 600 };
+const COMPACT_WINDOW_SIZE = { width: 360, height: 72 };
 let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -367,7 +381,7 @@ function startUrlCapture(deviceId: string, upload: UploadFn): void {
 // developer/support diagnostic, not an end-user-facing preference.
 // Writes raw+normalized readings to userData, never to the regular log.
 function buildDebugSink(): DebugSink {
-  if (process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE !== "1") {
+  if (process.env.HIDAY_DEBUG_URL_CAPTURE !== "1") {
     return new NullDebugHarness();
   }
   return new DebugHarness(
@@ -384,8 +398,14 @@ function stopUrlCapture(): void {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 420,
-    height: 560,
+    ...FULL_WINDOW_SIZE,
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    // The renderer draws its own title bar (drag region, minimise, close).
+    frame: false,
+    backgroundColor: "#f8f6f1",
     // Window/taskbar icon. Only Linux reads it — Windows and macOS take the
     // packaged app's icon (electron-builder.yml) — but setting it always
     // also gives `pnpm dev` the right icon instead of Electron's default.
@@ -398,9 +418,63 @@ function createWindow(): void {
     },
   });
   void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+  // Windows logoff/shutdown closes windows without a before-quit first;
+  // hiding there would hold the session open.
+  mainWindow.on("session-end", () => {
+    isQuitting = true;
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+}
+
+function showMainWindow(): void {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/** Swaps between the full window and the always-on-top compact bar. */
+function setCompactWindow(compact: boolean): void {
+  if (!mainWindow) return;
+  const size = compact ? COMPACT_WINDOW_SIZE : FULL_WINDOW_SIZE;
+  // Some window managers ignore a programmatic resize on a non-resizable
+  // window, so it is unlocked just for the resize.
+  mainWindow.setResizable(true);
+  mainWindow.setContentSize(size.width, size.height);
+  mainWindow.setResizable(false);
+  mainWindow.setAlwaysOnTop(compact, "floating");
+}
+
+/**
+ * The way back to a window hidden by its close button. Not every Linux
+ * desktop shows tray icons (stock GNOME needs the AppIndicator extension);
+ * there, launching Hi Day again brings the window back via second-instance.
+ */
+function createTray(): void {
+  const iconSize = process.platform === "win32" ? 16 : 22;
+  const image = nativeImage
+    .createFromPath(join(__dirname, "assets/icon.png"))
+    .resize({ width: iconSize, height: iconSize });
+  tray = new Tray(image);
+  tray.setToolTip("Hi Day");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Hi Day", click: showMainWindow },
+      { type: "separator" },
+      { label: "Quit Hi Day", click: () => app.quit() },
+    ]),
+  );
+  tray.on("click", showMainWindow);
 }
 
 async function registerIpcHandlers(): Promise<void> {
@@ -912,7 +986,25 @@ async function registerIpcHandlers(): Promise<void> {
   );
 
   ipcMain.handle("update:restart", (): void => {
+    isQuitting = true;
     restartToApplyUpdate();
+  });
+
+  ipcMain.handle("window:minimise", (): void => {
+    mainWindow?.minimize();
+  });
+
+  // The idle prompt needs an answer even if the window was closed to the tray.
+  ipcMain.handle("window:show", (): void => {
+    showMainWindow();
+  });
+
+  ipcMain.handle("window:close", (): void => {
+    mainWindow?.hide();
+  });
+
+  ipcMain.handle("window:setCompact", (_event, compact: boolean): void => {
+    setCompactWindow(compact);
   });
 
   ipcMain.handle(
@@ -1027,27 +1119,17 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-    }
-  });
+  app.on("second-instance", showMainWindow);
 
   void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
     syncAutoLaunch();
     await registerIpcHandlers();
     createWindow();
+    createTray();
     startAutoUpdater((line) => console.log(line));
 
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-      }
-    });
+    app.on("activate", showMainWindow);
   });
 
   app.on("window-all-closed", () => {
@@ -1088,6 +1170,7 @@ if (!gotSingleInstanceLock) {
   // settles and then re-issued; `quitPauseComplete` makes that re-issue a
   // plain quit instead of looping.
   app.on("before-quit", (event) => {
+    isQuitting = true;
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();
       void pauseRunningTimer()
@@ -1119,7 +1202,10 @@ if (!gotSingleInstanceLock) {
     );
   };
   powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
-  powerMonitor.on("shutdown", () => pauseForPowerEvent("shutdown"));
+  powerMonitor.on("shutdown", () => {
+    isQuitting = true;
+    pauseForPowerEvent("shutdown");
+  });
 
   // Logging out, and most graceful shutdowns, send SIGTERM rather than
   // anything Electron reports as a quit — without this the process dies with

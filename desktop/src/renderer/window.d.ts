@@ -153,6 +153,12 @@ declare global {
       urlCapture: {
         timerStateChanged: (running: boolean) => void;
       };
+      windowControls: {
+        minimise: () => Promise<void>;
+        show: () => Promise<void>;
+        close: () => Promise<void>;
+        setCompact: (compact: boolean) => Promise<void>;
+      };
       setup: {
         browserRestartPrompt: () => Promise<BrowserRestartPrompt>;
         continueFromBrowserRestart: () => Promise<void>;

@@ -20,7 +20,7 @@ export interface PermissionCopy {
 }
 
 export const AUTOMATION_COPY: PermissionCopy = {
-  title: 'Let Workforce Monitor see which app you\'re using',
+  title: 'Let Hi Day see which app you\'re using',
   unlocks:
     'Lets the app notice which browser window you have open, and read its address bar, only while your timer is running.',
   deniedGuidance:
@@ -28,7 +28,7 @@ export const AUTOMATION_COPY: PermissionCopy = {
 };
 
 export const ACCESSIBILITY_COPY: PermissionCopy = {
-  title: 'Let Workforce Monitor read Firefox\'s address bar',
+  title: 'Let Hi Day read Firefox\'s address bar',
   unlocks:
     'Firefox doesn\'t support the faster method the other browsers use, so this is the only way to see which Firefox page you\'re on.',
   deniedGuidance:

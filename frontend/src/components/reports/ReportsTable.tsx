@@ -19,6 +19,8 @@ type ReportsTableProps = {
   toolbarExtra?: ReactNode;
   /** A pinned totals row shown after the (sorted, paginated) rows. */
   footerRow?: ReportTableRow;
+  /** Start with every expandable row open. */
+  defaultExpanded?: boolean;
 };
 
 function toggled<T>(set: Set<T>, value: T): Set<T> {
@@ -27,9 +29,11 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function ReportsTable({ columns, rows, toolbarExtra, footerRow }: ReportsTableProps) {
+export function ReportsTable({ columns, rows, toolbarExtra, footerRow, defaultExpanded = false }: ReportsTableProps) {
   const [direction, setDirection] = useState<SortDirection>("asc");
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(
+    () => new Set(defaultExpanded ? collectExpandableIds(rows) : []),
+  );
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);

@@ -1,578 +1,578 @@
-/* `--color-primary` matches frontend/src/app/globals.css. */
+/* Hi Day brand fonts, bundled locally (the renderer's CSP only allows
+   'self') — the same files as frontend/src/app/fonts. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/BricolageGrotesque-Variable.woff2") format("woff2");
+  font-weight: 400 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("fonts/Figtree-Variable.woff2") format("woff2");
+  font-weight: 400 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Variable.woff2") format("woff2");
+  font-weight: 500 700;
+  font-display: swap;
+}
+
+/* The brand guide's palette (same values as frontend/src/app/globals.css).
+   Pairing rule: ink text on every bright; chalk text only on ink and volt. */
 :root {
-  --color-primary: #4f46e5;
-  --color-primary-dark: #003673;
-  --color-secondary: #5d5490;
-  --color-cream: #fff6d6;
-  --color-amber-text: #93700c;
-  --color-error: #b42318;
-  --color-border: #eaecf0;
-  --color-surface: #f6f7f9;
-  --color-text-muted: #667085;
-  --color-tint-blue: #eaf6fd;
+  --ink: #121117;
+  --ink-raised: #1e1c25;
+  --ink-soft: #c9c6d1;
+  --ink-muted: #4a4852;
+  --chalk: #f8f6f1;
+  --sun: #ffc72c;
+  --sun-tint: #fff0c4;
+  --volt: #3d5afe;
+  --volt-light: #8a9bff;
+  --mint: #2bd99f;
+  --punch: #ff4f33;
+  --error: #b42318;
+  --font-display: "Bricolage Grotesque", "Figtree", sans-serif;
+  --font-body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Any explicit `display` below would otherwise beat the UA stylesheet's
+   `[hidden] { display: none }` and leave hidden elements painted. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #ffffff;
-  color: var(--color-primary-dark);
-}
-
-.app {
-  padding: 32px;
-}
-
-h1 {
-  font-size: 18px;
-  margin: 0 0 24px;
-}
-
-/* --- Header: app icon/name, org name, avatar --------------------------- */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: -16px 0 20px;
-}
-
-.app-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.app-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--color-primary-dark);
-  color: #ffffff;
-}
-
-.app-brand-text {
-  min-width: 0;
-}
-
-.app-name {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.organisation-name {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-text-muted);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: var(--font-body);
+  background: var(--chalk);
+  color: var(--ink);
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
-/* Small square icon button: task-panel trigger and close. */
-.icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
+p {
   margin: 0;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #ffffff;
-  color: var(--color-primary-dark);
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  background: var(--color-surface);
-}
-
-.profile {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.user-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--color-cream);
-  color: var(--color-primary-dark);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.user-avatar:hover {
-  opacity: 0.85;
-}
-
-/* Right-aligned so it never overhangs the window's edge. */
-.profile-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 1;
-  width: 180px;
-  padding: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 54, 115, 0.12);
-}
-
-.profile-signed-in-as {
-  margin: 4px 8px 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-primary-dark);
-}
-
-.profile-email {
-  margin: 0 8px 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.profile-menu-button {
-  margin-top: 8px;
-  padding: 8px;
-  border-top: 1px solid var(--color-border);
-  border-radius: 0;
-  background: none;
-  color: var(--color-primary-dark);
-  font-weight: 600;
-  text-align: left;
-}
-
-.profile-menu-button:hover {
-  background: var(--color-surface);
-  opacity: 1;
-}
-
-.update-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 20px;
-  padding: 10px 12px;
-  border: 1px solid #b2ddf7;
-  border-radius: 6px;
-  background: #eaf6fd;
-}
-
-/* Author `display: flex` above beats the UA stylesheet's `[hidden] { display: none }`
-   at equal specificity, so `hidden` alone can't hide this element — unlike the other
-   banners here, which don't set `display` and so never fight the attribute. */
-.update-banner[hidden] {
-  display: none;
-}
-
-.update-banner p {
-  flex: 1;
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-primary-dark);
-}
-
-.update-banner button {
-  margin-top: 0;
-  width: auto;
-  padding: 6px 12px;
-  font-size: 13px;
-}
-
-#update-dismiss {
-  padding: 6px 10px;
-  background: transparent;
-  color: var(--color-primary-dark);
-}
-
-label {
-  display: block;
-  font-size: 13px;
-  margin: 12px 0 4px;
-}
-
-input,
-select {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid #d0d5dd;
-  border-radius: 6px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-#tracking-view {
-  margin-top: 4px;
-}
-
-#tracking-error {
-  margin: 0 0 12px;
-  color: var(--color-error);
-  font-size: 13px;
-}
-
-/* --- Tracking card: status/today, big timer + pause, task ------------- */
-
-.tracking-card {
-  margin: 0 0 20px;
-  padding: 16px;
-  border-radius: 10px;
-  background: var(--color-tint-blue);
-}
-
-.tracking-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.tracking-today {
-  flex: 0 0 auto;
-  font-weight: 400;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.tracking-card-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.tracking-main {
-  min-width: 0;
-}
-
-.tracking-project-name {
-  flex: 1 1 auto;
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--color-primary);
-}
-
-.timer-display {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary-dark);
-}
-
-.current-task-label {
-  margin: 2px 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.idle-banner {
-  margin: 0 0 12px;
-  padding: 12px;
-  border: 1px solid #fec84b;
-  border-radius: 6px;
-  background: #fffaeb;
-}
-
-.idle-banner p {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #93700c;
-}
-
-.idle-banner button {
-  margin-top: 0;
-  display: inline-block;
-  width: auto;
-  padding: 6px 12px;
-  font-size: 13px;
-}
-
-#accessibility-banner button,
-#screen-recording-banner button {
-  margin-right: 8px;
-}
-
-#screen-recording-settings-button {
-  background: var(--color-surface);
-  color: var(--color-primary-dark);
-}
-
-.idle-notice {
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-primary-dark);
-  font-size: 13px;
-}
-
-/* --- Idle screen: replaces the tracking card while idle is detected ---- */
-
-.idle-screen {
-  margin: 0 0 20px;
-  padding: 20px 16px;
-  border-radius: 10px;
-  background: var(--color-surface);
-  text-align: center;
-}
-
-.idle-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 12px;
-  border-radius: 50%;
-  background: var(--color-cream);
-  color: var(--color-amber-text);
-}
-
-.idle-title {
-  margin: 0 0 6px;
-  font-size: 17px;
-  color: var(--color-primary-dark);
-}
-
-.idle-description {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.idle-description strong {
-  color: var(--color-primary-dark);
-}
-
-.idle-stats {
-  display: flex;
-  gap: 10px;
-  margin: 0 0 16px;
-}
-
-.idle-stat-box {
-  flex: 1 1 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.idle-stat-label {
-  display: block;
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.idle-stat-value {
-  display: block;
-  margin-top: 2px;
-  font-size: 16px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary-dark);
-}
-
-.idle-primary-button {
-  margin-top: 0;
-  background: var(--color-primary-dark);
-}
-
-.idle-secondary-button {
-  margin-top: 8px;
-  background: var(--color-surface);
-  color: var(--color-primary-dark);
-}
-
-.idle-assign-link {
-  margin-top: 12px;
-  width: auto;
-  padding: 0;
-  background: none;
-  color: var(--color-secondary);
-  font-size: 13px;
-  text-decoration: underline;
-}
-
-.idle-assign-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  text-align: left;
-}
-
-.idle-assign-list li + li {
-  border-top: 1px solid var(--color-border);
-}
-
-.idle-assign-list button {
-  margin-top: 0;
-  width: 100%;
-  padding: 8px;
-  border-radius: 0;
-  background: none;
-  color: var(--color-primary-dark);
-  text-align: left;
-}
-
-.idle-assign-list button:hover {
-  background: #ffffff;
-}
-
-/* Passive, non-blocking disclosure notice (see docs/adr/0015-...) — reuses
-   .idle-banner's attention-getting look, just with a scrollable text area
-   since disclosure text can run long. */
-#disclosure-text {
-  max-height: 160px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-#disclosure-error {
-  color: var(--color-error);
-}
-
-#stop-button {
-  background: var(--color-error);
-}
-
-#switch-button {
-  background: var(--color-secondary);
 }
 
 button {
-  margin-top: 20px;
-  width: 100%;
-  padding: 10px;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 14px;
+  font-family: inherit;
   cursor: pointer;
 }
 
-button:hover {
-  opacity: 0.9;
-}
-
-#login-error {
-  margin-top: 12px;
-  color: var(--color-error);
-  font-size: 13px;
-}
-
-.hint {
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.timer-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  /* Explicitly square. A block-level flex button with no width fills the
-     row, and border-radius:50% then draws an ellipse rather than a disc. */
-  width: 48px;
-  height: 48px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  color: #ffffff;
-  background: var(--color-primary);
-}
-
-.timer-toggle:hover {
-  opacity: 0.9;
-}
-
-.timer-toggle:disabled {
+button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-/* --- Projects list: colour-tagged icon, name + status, today's total --- */
-
-.projects-section {
-  margin: 0 0 20px;
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--volt);
+  outline-offset: 2px;
 }
 
-.projects-section-header {
+input::placeholder {
+  color: var(--ink-muted);
+}
+
+/* --- Full window: title bar, content, status bar ----------------------- */
+
+.window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 3px solid var(--ink);
+  background: var(--chalk);
+}
+
+/* Frameless window: this bar is what the person drags. Everything
+   clickable inside it opts back out of the drag region. */
+.titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border-bottom: 3px solid var(--ink);
+  background: var(--sun);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.titlebar button,
+.titlebar .profile-menu {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.titlebar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.titlebar-button:hover {
+  background: rgb(18 17 23 / 0.1);
+}
+
+.app {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.loading-view {
+  padding: 24px 14px;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+
+/* --- Buttons ------------------------------------------------------------ */
+
+.button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 11px 14px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.button-sun {
+  background: var(--sun);
+}
+
+.button-primary {
+  background: var(--volt);
+  color: var(--chalk);
+}
+
+.button-secondary {
+  background: #ffffff;
+}
+
+.button-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.button-small {
+  width: auto;
+  padding: 5px 10px;
+  border-width: 2px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.link-button {
+  margin: 12px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.square-button {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+/* --- Banners and messages ---------------------------------------------- */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--sun-tint);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.error-text {
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tracking-view > .error-text,
+.tracking-view > #switch-button {
+  margin: 10px 14px 0;
+}
+
+.empty-text {
+  padding: 16px 0;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* --- Centred screens: login, setup, idle -------------------------------- */
+
+.centred-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 20px;
+  overflow-y: auto;
+  text-align: center;
+}
+
+.centred-view .button {
+  margin-top: 12px;
+}
+
+.centred-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: var(--sun);
+  color: var(--ink);
+}
+
+.centred-icon-mark {
+  width: auto;
+  height: auto;
+  border: none;
+  background: none;
+}
+
+.centred-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.centred-message {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.centred-message strong {
+  color: var(--ink);
+}
+
+.setup-warning {
+  padding: 10px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: var(--sun-tint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* --- Signed-in view ----------------------------------------------------- */
+
+.status-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tracking-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The idle prompt takes the whole panel until it's answered. */
+.tracking-view:has(.idle-screen:not([hidden])) .timer-section,
+.tracking-view:has(.idle-screen:not([hidden])) .search-section,
+.tracking-view:has(.idle-screen:not([hidden])) .projects-section {
+  display: none;
+}
+
+/* --- Timer card --------------------------------------------------------- */
+
+.timer-section {
+  flex: 0 0 auto;
+  padding: 14px 14px 10px;
+}
+
+.timer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 20px;
+  background: var(--ink);
+  color: var(--chalk);
+  box-shadow: 5px 5px 0 var(--sun);
+}
+
+.timer-card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
+  gap: 12px;
 }
 
-/* Project picker: borderless rows separated by hairlines, with the play
-   affordance revealed on hover so the resting list stays quiet. */
-.project-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.greeting {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 2px solid var(--chalk);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.state-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--chalk);
+}
+
+.timer-main {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.project-list li + li {
-  border-top: 1px solid var(--color-border);
+.tracking-project-name {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timer-display {
+  font-family: var(--font-data);
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink-soft);
+}
+
+.timer-card.is-running .timer-display {
+  color: var(--sun);
+}
+
+.timer-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  margin: 0;
+  padding: 0;
+  border: 3px solid var(--chalk);
+  border-radius: 16px;
+  background: var(--sun);
+}
+
+.timer-toggle.is-running {
+  background: var(--volt);
+}
+
+.timer-toggle:focus-visible,
+.timer-stat-button:focus-visible {
+  outline-color: var(--volt-light);
+}
+
+.timer-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.timer-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--ink-raised);
+  color: var(--chalk);
+}
+
+.timer-stat-button {
+  margin: 0;
+  border: none;
+  text-align: left;
+}
+
+.timer-stat-button:hover {
+  background: #2a2733;
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.stat-value {
+  font-family: var(--font-data);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-value-text {
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Search ------------------------------------------------------------- */
+
+.search-section {
+  flex: 0 0 auto;
+  padding: 4px 14px 10px;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.search-field:focus-within {
+  outline: 3px solid var(--volt);
+  outline-offset: 2px;
+}
+
+.search-field input {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: 500 14px var(--font-body);
+  color: var(--ink);
+}
+
+/* --- Projects list ------------------------------------------------------ */
+
+.projects-section {
+  flex: 1 0 auto;
+  padding: 0 14px 12px;
+}
+
+.projects-heading {
+  padding: 2px 2px 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .project-list button {
@@ -580,105 +580,275 @@ button:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 8px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 12px 0 8px;
+  border: 3px solid transparent;
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 14px;
   text-align: left;
 }
 
 .project-list button:hover {
-  background: var(--color-surface);
+  border-color: rgb(18 17 23 / 0.25);
 }
 
-.project-list button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-/* The project currently accruing time gets a tinted row so it is findable
-   at a glance in a long list, without needing to read the timers. Kept
-   distinct from :hover, which uses a neutral grey — otherwise hovering
-   another row would look like it had become the active one. */
-.project-list button.is-running {
-  background: var(--color-cream);
-}
-
-.project-list button.is-running:hover {
-  background: #ffefb8;
+/* The Project the timer is on — running or just stopped on it. */
+.project-list button[aria-current="true"] {
+  border-color: var(--ink);
+  background: var(--sun-tint);
 }
 
 .project-icon {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  gap: 3px;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  color: var(--color-primary-dark);
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: var(--chalk);
+  color: var(--ink);
+}
+
+.project-list button[aria-current="true"] .project-icon {
+  background: var(--sun);
 }
 
 .project-list button.is-running .project-icon {
-  border-color: transparent;
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--mint);
 }
 
-.project-icon svg {
-  /* Hidden until hover (or keyboard focus, so it is not mouse-only), but it
-     always occupies its slot — revealing it must not shift the row. */
-  visibility: hidden;
+.project-icon-bar {
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--ink);
 }
 
-.project-list button:hover .project-icon svg,
-.project-list button:focus-visible .project-icon svg,
-.project-list button[aria-current='true'] .project-icon svg {
-  visibility: visible;
+.project-icon-bar:nth-child(2) {
+  height: 14px;
+}
+
+.project-icon-bar:last-child {
+  height: 8px;
 }
 
 .project-text {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
 }
 
 .project-name {
   display: block;
   overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-list button[aria-current='true'] .project-name {
-  font-weight: 600;
-  color: var(--color-primary-dark);
+.project-list button[aria-current="true"] .project-name {
+  font-weight: 800;
 }
 
 .project-total {
   flex: 0 0 auto;
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--color-primary-dark);
+  color: var(--ink-muted);
 }
 
-/* --- Task panel: full-window overlay, opened from the header's task icon - */
+.project-list button[aria-current="true"] .project-total {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* --- Status bar --------------------------------------------------------- */
+
+.statusbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 4px 0 12px;
+  border-top: 3px solid var(--ink);
+  background: #ffffff;
+}
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.sync-status svg {
+  stroke: var(--mint);
+}
+
+.sync-status.is-offline {
+  color: var(--error);
+}
+
+.sync-status.is-offline svg {
+  display: none;
+}
+
+/* --- Account menu ------------------------------------------------------- */
+
+.profile {
+  position: relative;
+  margin-right: 4px;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 200px;
+  padding: 8px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.profile-signed-in-as {
+  overflow: hidden;
+  margin: 4px 6px 2px;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-email {
+  overflow: hidden;
+  margin: 0 6px 8px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu-button {
+  width: 100%;
+  margin: 0;
+  padding: 8px 6px;
+  border: none;
+  border-top: 2px solid var(--chalk);
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.profile-menu-button:hover {
+  background: var(--chalk);
+}
+
+/* --- Idle prompt -------------------------------------------------------- */
+
+.idle-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 14px;
+  padding: 20px 16px;
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 5px 5px 0 var(--sun);
+  text-align: center;
+}
+
+.idle-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.idle-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--chalk);
+  text-align: left;
+}
+
+.idle-assign-list {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.idle-assign-list li + li {
+  border-top: 2px solid var(--chalk);
+}
+
+.idle-assign-list button {
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.idle-assign-list button:hover {
+  background: var(--sun-tint);
+}
+
+/* --- Task panel: covers the signed-in view below the title bar --------- */
 
 .task-panel {
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  inset: 40px 0 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  background: #ffffff;
+  gap: 12px;
+  padding: 14px;
   overflow-y: auto;
-}
-
-/* `display: flex` above overrides `hidden` — same fix as .update-banner[hidden]. */
-.task-panel[hidden] {
-  display: none;
+  background: var(--chalk);
 }
 
 .task-panel-header {
@@ -686,150 +856,184 @@ button:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .task-panel-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-primary-dark);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .task-panel-project {
-  margin: 2px 0 0;
+  margin-top: 2px;
   font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.task-search {
-  margin-bottom: 12px;
+  color: var(--ink-muted);
 }
 
 .task-panel-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-}
-
-.task-panel-list li + li {
-  border-top: 1px solid var(--color-border);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .task-panel-list button {
   display: block;
-  margin-top: 0;
   width: 100%;
-  padding: 10px 4px;
-  border: none;
-  border-radius: 0;
-  background: none;
-  color: inherit;
+  margin: 0;
+  padding: 10px 12px;
+  border: 3px solid transparent;
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--ink);
   text-align: left;
-  cursor: pointer;
 }
 
 .task-panel-list button:hover {
-  background: var(--color-surface);
+  border-color: rgb(18 17 23 / 0.25);
 }
 
 .task-panel-list button.is-selected {
-  background: var(--color-tint-blue);
+  border-color: var(--ink);
+  background: var(--sun-tint);
 }
 
 .task-panel-task-name {
   display: block;
-  font-weight: 600;
-  color: var(--color-primary-dark);
+  font-weight: 700;
 }
 
 .task-panel-description {
   display: block;
-  margin-top: 2px;
   overflow: hidden;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  color: var(--color-text-muted);
 }
 
 .task-panel-dates {
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: var(--ink-muted);
 }
 
-.task-panel-empty {
-  margin-top: 20px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
+/* --- Compact bar: the whole window while compact ----------------------- */
 
-/* --- First-run setup screen -------------------------------------------- */
-
-/* Stands alone in the window rather than above the timer, so it is centred
-   on the whole panel instead of stacked like the banners it replaced. */
-.setup-view {
+.compact {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  padding: 24px 8px;
-  text-align: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 8px 0 12px;
+  border: 3px solid var(--ink);
+  background: var(--ink);
+  color: var(--chalk);
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
-/* `display: flex` above overrides `hidden` — same fix as .update-banner[hidden]
-   and .task-panel[hidden]. Without it the screen stays painted over the timer
-   after Continue, since `hidden` alone is only the UA stylesheet's
-   `display: none` and any explicit display beats it. */
-.setup-view[hidden] {
-  display: none;
+.compact button {
+  -webkit-app-region: no-drag;
 }
 
-.setup-icon {
-  display: inline-flex;
+.compact-mark {
+  flex: 0 0 auto;
+}
+
+.compact-text {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.compact-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.compact-project > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--ink-soft);
+  border-radius: 50%;
+}
+
+.compact.is-running .compact-dot {
+  border: none;
+  background: var(--mint);
+}
+
+.compact-timer {
+  font-family: var(--font-data);
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink-soft);
+}
+
+.compact.is-running .compact-timer {
+  color: var(--sun);
+}
+
+.compact-toggle {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 16px;
-  border-radius: 50%;
-  background: var(--color-cream);
-  color: var(--color-amber-text);
-}
-
-.setup-title {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-
-.setup-message {
+  width: 44px;
+  height: 44px;
   margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-muted);
+  padding: 0;
+  border: 3px solid var(--chalk);
+  border-radius: 12px;
+  background: var(--sun);
 }
 
-.setup-manual {
-  margin: 10px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--color-text-muted);
+.compact-toggle.is-running {
+  background: var(--volt);
 }
 
-.setup-warning {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--color-cream);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--color-amber-text);
+.compact-expand {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
 }
 
-.setup-button {
-  margin-top: 24px;
+.compact-expand:hover {
+  background: var(--ink-raised);
+}
+
+.compact button:focus-visible {
+  outline-color: var(--volt-light);
 }

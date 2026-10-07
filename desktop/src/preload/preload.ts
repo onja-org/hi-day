@@ -235,6 +235,17 @@ const api = {
       ipcRenderer.send("urlCapture:timerStateChanged", running);
     },
   },
+  windowControls: {
+    minimise: (): Promise<void> =>
+      ipcRenderer.invoke("window:minimise") as Promise<void>,
+    show: (): Promise<void> =>
+      ipcRenderer.invoke("window:show") as Promise<void>,
+    // Hides to the tray; tracking keeps running.
+    close: (): Promise<void> =>
+      ipcRenderer.invoke("window:close") as Promise<void>,
+    setCompact: (compact: boolean): Promise<void> =>
+      ipcRenderer.invoke("window:setCompact", compact) as Promise<void>,
+  },
   setup: {
     browserRestartPrompt: (): Promise<BrowserRestartPrompt> =>
       ipcRenderer.invoke(

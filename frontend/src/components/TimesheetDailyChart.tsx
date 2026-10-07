@@ -3,10 +3,11 @@
 import clsx from "clsx";
 import { HALF_HOUR_MS, useNow } from "@/hooks/useNow";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
-import { bucketWeekly, buildDailyTotals, fromDateKey } from "@/lib/buildDailyTotals";
+import { bucketWeekly, buildDailyTotals } from "@/lib/buildDailyTotals";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { fractionClass } from "@/lib/fractionClass";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
+import { keyAsLocalDate } from "@/lib/timezone";
 import type { DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -64,7 +65,7 @@ export function TimesheetDailyChart({
   const bars: ChartBar[] =
     daily.length <= MAX_DAILY_BARS
       ? daily.map((day) => {
-          const date = fromDateKey(day.dateKey);
+          const date = keyAsLocalDate(day.dateKey);
           return {
             shortLabel: date.toLocaleDateString([], { weekday: "short" }),
             tooltipLabel: date.toLocaleDateString([], {

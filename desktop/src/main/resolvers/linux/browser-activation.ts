@@ -38,7 +38,20 @@ export const ACTIVATION_FLAG = '--force-renderer-accessibility=basic';
  * its own output from a vendor entry — and so uninstall removes only files
  * this agent created.
  */
-export const ACTIVATION_MARKER = '# Written by Workforce Monitor to enable website tracking.';
+export const ACTIVATION_MARKER = '# Written by Hi Day to enable website tracking.';
+
+/**
+ * The marker this agent wrote before it was renamed from Workforce Monitor.
+ * Still counted as ours, so an upgraded install neither re-wraps the
+ * overrides the old name left behind nor strands them on uninstall (see
+ * build/afterRemove.sh, which checks both too).
+ */
+export const LEGACY_ACTIVATION_MARKERS = ['# Written by Workforce Monitor to enable website tracking.'];
+
+/** Whether a `.desktop` file is one of this agent's overrides, under any of its names. */
+export function isOwnOverride(contents: string): boolean {
+  return [ACTIVATION_MARKER, ...LEGACY_ACTIVATION_MARKERS].some((marker) => contents.includes(marker));
+}
 
 /**
  * A `.desktop` entry declaring itself a handler for `http` is the
@@ -166,7 +179,7 @@ export function activateDesktopEntry(contents: string): string {
     .map((line) => (line.startsWith('Exec=') ? `Exec=${activateExecValue(line.slice(5))}` : line))
     .join('\n');
 
-  return contents.includes(ACTIVATION_MARKER) ? body : `${ACTIVATION_MARKER}\n${body}`;
+  return isOwnOverride(contents) ? body : `${ACTIVATION_MARKER}\n${body}`;
 }
 
 export interface DiscoveredBrowser {
@@ -231,7 +244,7 @@ export function discoverBrowserEntries(directories: string[]): DiscoveredBrowser
         continue; // Unreadable entry: skip it rather than fail the sweep.
       }
 
-      if (contents.includes(ACTIVATION_MARKER)) continue;
+      if (isOwnOverride(contents)) continue;
       if (!isBrowserDesktopEntry(contents)) continue;
 
       found.set(fileName, { fileName, sourcePath, contents });
@@ -365,7 +378,7 @@ export function removeBrowserActivation(options: {
     if (!fileName.endsWith('.desktop')) continue;
     const path = join(targetDirectory, fileName);
     try {
-      if (!readFileSync(path, 'utf-8').includes(ACTIVATION_MARKER)) continue;
+      if (!isOwnOverride(readFileSync(path, 'utf-8'))) continue;
       rmSync(path);
       removed.push(path);
     } catch {

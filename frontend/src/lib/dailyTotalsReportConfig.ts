@@ -1,3 +1,4 @@
+import { PROJECT_WORK_ORDER_LABEL } from "@/lib/reportColumnLabels";
 import type { ReportChartSeries } from "@/types/reportChart";
 import type { ReportTableColumn } from "@/types/reportTable";
 
@@ -7,7 +8,7 @@ export const DAILY_TOTALS_CHART_SERIES: ReportChartSeries[] = [
 
 export const DAILY_TOTALS_FIRST_COLUMN: ReportTableColumn = {
   key: "project",
-  header: "Project / Work order",
+  header: PROJECT_WORK_ORDER_LABEL,
 };
 
 // Time off and earned have no data source yet (no leave or pay-rate model),

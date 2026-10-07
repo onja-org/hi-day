@@ -14,9 +14,10 @@ import { join } from 'node:path';
  */
 
 /** Marks a file as ours, same convention as ACTIVATION_MARKER in browser-activation.ts — lets a later run (or an uninstall) tell its own output from something else. */
-export const AUTOSTART_MARKER = '# Written by Workforce Monitor to start at login.';
+export const AUTOSTART_MARKER = '# Written by Hi Day to start at login.';
 
-const AUTOSTART_FILE_NAME = 'org.onja.workforce-monitor.desktop';
+// Named after the app ID (electron-builder.yml's appId).
+const AUTOSTART_FILE_NAME = 'io.hiday.app.desktop';
 
 export function autostartDirectory(env: NodeJS.ProcessEnv = process.env): string {
   const configHome = env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
@@ -54,8 +55,8 @@ export function buildAutostartDesktopEntry(executablePath: string): string {
     AUTOSTART_MARKER,
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Workforce Monitor',
-    'Comment=Starts the Workforce Monitor time-tracking agent at login.',
+    'Name=Hi Day',
+    'Comment=Starts the Hi Day time-tracking agent at login.',
     `Exec=${quoteExecPath(executablePath)}`,
     'X-GNOME-Autostart-enabled=true',
     'NoDisplay=false',

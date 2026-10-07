@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ResetPasswordForm } from "@/components/ResetPasswordForm";
+import { AuthLogo } from "@/components/AuthLogo";
 
 export const metadata: Metadata = {
   title: "Reset password",
@@ -18,6 +19,7 @@ export default async function ResetPasswordPage({
   if (!token) {
     return (
       <main className="container flex flex-col gap-4 py-8 animate-fade-in-up">
+        <AuthLogo />
         <h1 className="text-2xl font-semibold text-primary-dark">
           Reset link expired
         </h1>
@@ -37,6 +39,7 @@ export default async function ResetPasswordPage({
 
   return (
     <main className="container flex flex-col gap-8 py-8">
+      <AuthLogo />
       <h1 className="text-2xl font-semibold text-primary-dark animate-fade-in-up">
         Reset your password
       </h1>

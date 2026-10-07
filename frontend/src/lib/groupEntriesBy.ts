@@ -1,5 +1,5 @@
 import { endOfWeek, format, startOfWeek } from "date-fns";
-import { fromDateKey } from "@/lib/buildDailyTotals";
+import { keyAsLocalDate } from "@/lib/timezone";
 import { formatReportDay } from "@/lib/formatReportDay";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -42,7 +42,7 @@ function describeGroups(
   switch (grouping) {
     case "day": {
       const key = dateKeyOf(entry);
-      return [{ id: key, label: formatReportDay(key), sortKey: fromDateKey(key).getTime() }];
+      return [{ id: key, label: formatReportDay(key), sortKey: keyAsLocalDate(key).getTime() }];
     }
     case "week": {
       const start = startOfWeek(new Date(entry.startedAt), WEEK_OPTIONS);

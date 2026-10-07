@@ -89,6 +89,10 @@ export class SavedReport {
   @Column({ type: 'jsonb', nullable: true })
   schedule: ReportScheduleSettings | null;
 
+  /** While true the scheduler skips this report; the schedule itself is kept. */
+  @Column({ type: 'boolean', default: false })
+  schedulePaused: boolean;
+
   /**
    * Local (organisation-timezone) calendar day of the last scheduled send,
    * YYYY-MM-DD. The scheduler claims a day by writing this first, so two

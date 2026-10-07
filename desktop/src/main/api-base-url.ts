@@ -1,4 +1,4 @@
-const PRODUCTION_API_URL = 'https://workfoce-monitoring-api.up.railway.app';
+const PRODUCTION_API_URL = 'https://api.hiday.io';
 const DEV_API_URL = 'http://localhost:3001';
 
 /**

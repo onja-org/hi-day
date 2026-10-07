@@ -1,7 +1,10 @@
-import { jsPDF } from 'jspdf';
-import { autoTable } from 'jspdf-autotable';
 import { addDaysToKey, zonedParts } from './zoned-time.util';
-import type { ReportEntry } from './report-file.util';
+import {
+  buildCsv,
+  buildTablePdf,
+  formatDuration,
+  type ReportEntry,
+} from './report-file.util';
 
 type DailyTotalsEntry = Pick<
   ReportEntry,
@@ -26,13 +29,7 @@ function formatDay(dateKey: string): string {
 }
 
 function formatHours(seconds: number): string {
-  if (seconds <= 0) return '-';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return [hours, minutes, rest]
-    .map((value) => String(value).padStart(2, '0'))
-    .join(':');
+  return seconds <= 0 ? '-' : formatDuration(seconds);
 }
 
 /**
@@ -88,29 +85,13 @@ export function buildDailyTotalsTable(
   };
 }
 
-function csvCell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
-
 export function buildDailyTotalsCsv(table: DailyTotalsTable): string {
-  return [table.header, ...table.body]
-    .map((row) => row.map(csvCell).join(','))
-    .join('\r\n');
+  return buildCsv(table.header, table.body);
 }
 
 export function buildDailyTotalsPdf(
   title: string,
   table: DailyTotalsTable,
 ): Buffer {
-  const doc = new jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14);
-  doc.text(title, 14, 15);
-  autoTable(doc, {
-    head: [table.header],
-    body: table.body,
-    startY: 20,
-    styles: { fontSize: 7 },
-  });
-  return Buffer.from(doc.output('arraybuffer'));
+  return buildTablePdf(title, table.header, table.body, 7);
 }

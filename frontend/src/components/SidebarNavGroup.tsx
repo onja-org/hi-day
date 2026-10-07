@@ -33,10 +33,10 @@ export function SidebarNavGroup({ group, pathname, variant, onNavigate }: Sideba
         onClick={() => setToggled(!expanded)}
         aria-expanded={expanded}
         className={clsx(
-          "cursor-pointer items-center gap-3 rounded-r-md border-l-2 border-transparent px-3 py-2.5 text-left text-sm font-medium transition-colors duration-150 hover:bg-white",
+          "cursor-pointer items-center gap-3 rounded-r-md border-l-2 border-transparent px-3 py-2.5 text-left text-sm font-medium transition-colors duration-150 hover:bg-cream/50",
           isRail && "hidden lg:flex lg:pl-4",
           !isRail && "flex",
-          hasActiveChild && "text-primary",
+          hasActiveChild && "font-semibold text-primary-dark",
           !hasActiveChild && "text-slate-900 hover:text-primary-dark",
         )}
       >

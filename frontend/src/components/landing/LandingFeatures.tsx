@@ -1,97 +1,118 @@
-import type { Icon } from "@phosphor-icons/react";
-import {
-  Buildings,
-  ChartLineUp,
-  Clock,
-  EnvelopeSimple,
-  ShieldCheck,
-  UsersThree,
-} from "@phosphor-icons/react/dist/ssr";
-import { ScrollReveal } from "../ScrollReveal";
+import type { LandingFeature } from "@/types/landing";
+import { LandingFeatureTabs } from "./LandingFeatureTabs";
 
-type Feature = {
-  icon: Icon;
-  title: string;
-  description: string;
-};
-
-const REVEAL_DELAY_CLASSES = [
-  "",
-  "delay-75",
-  "delay-150",
-  "delay-200",
-  "delay-300",
-  "delay-300",
-];
-
-const FEATURES: Feature[] = [
+// Every claim here is something the product does today — the numbers in
+// each card are illustrative examples.
+const FEATURES: LandingFeature[] = [
   {
-    icon: Clock,
-    title: "Timesheets",
-    description:
-      "Every member logs hours against the work they're doing, so timesheets stay accurate without end-of-week guesswork.",
+    key: "time",
+    tab: "Time tracking",
+    title: "Like signing in at the front desk.",
+    body: "One click starts the day in the desktop app or on the web. Hours land on the right project and task, ready for timesheets.",
+    points: [
+      "Desktop app for Windows, macOS and Linux",
+      "Pause and pick up where you left off",
+      "Idle time flagged for review, never silently removed",
+    ],
+    statsTitle: "Today by project",
+    statsTotal: "6:42",
+    stats: [
+      { label: "Website redesign", value: "4:30", share: "large", tone: "sun" },
+      { label: "Admin & meetings", value: "1:32", share: "medium", tone: "mint" },
+      { label: "Training", value: "0:40", share: "small", tone: "volt" },
+    ],
   },
   {
-    icon: ChartLineUp,
-    title: "Activity insight",
-    description:
-      "See how work is flowing across your organisation over time, without micromanaging any one person's day.",
+    key: "activity",
+    tab: "Activity",
+    title: "Where the day went, at a glance.",
+    body: "See which apps and websites were in use while the timer ran, and how busy each hour was. Screenshots stay off unless your team switches them on.",
+    points: [
+      "Apps and websites, hour by hour",
+      "Activity level for every stretch of tracked time",
+      "Optional screenshots the person can see too",
+    ],
+    statsTitle: "Today's top apps",
+    statsTotal: "5:45",
+    stats: [
+      { label: "Code editor", value: "2:40", share: "large", tone: "sun" },
+      { label: "Design tool", value: "1:55", share: "medium", tone: "mint" },
+      { label: "Browser", value: "1:10", share: "small", tone: "volt" },
+    ],
   },
   {
-    icon: UsersThree,
-    title: "Teams",
-    description:
-      "Group members into teams so time and reporting roll up the way your organisation is actually structured.",
+    key: "projects",
+    tab: "Projects & tasks",
+    title: "Every hour has a home.",
+    body: "Organise work into projects and tasks, add people or whole teams, and move tasks across a Kanban board.",
+    points: [
+      "Projects with their own members and teams",
+      "List and Kanban views for tasks",
+      "Time tracked straight against a task",
+    ],
+    statsTitle: "This week by project",
+    statsTotal: "31:20",
+    stats: [
+      { label: "Website redesign", value: "18:05", share: "large", tone: "sun" },
+      { label: "Mobile launch", value: "9:15", share: "medium", tone: "mint" },
+      { label: "Support", value: "4:00", share: "small", tone: "volt" },
+    ],
   },
   {
-    icon: ShieldCheck,
-    title: "Roles & permissions",
-    description:
-      "Admin, manager, member, and finance roles keep access scoped to what each person actually needs to see.",
+    key: "teams",
+    tab: "Teams & roles",
+    title: "Everyone sees what they should.",
+    body: "Group people into teams with their own managers. Admins see the whole organisation, managers see their teams, and members see themselves.",
+    points: [
+      "Admin, manager and member roles",
+      "Invite by email, shareable link or CSV file",
+      "Remove someone's access in one click; their history stays",
+    ],
+    statsTitle: "Team hours this week",
+    statsTotal: "78:00",
+    stats: [
+      { label: "Design", value: "31:00", share: "large", tone: "sun" },
+      { label: "Engineering", value: "28:00", share: "medium", tone: "mint" },
+      { label: "Support", value: "19:00", share: "small", tone: "volt" },
+    ],
   },
   {
-    icon: EnvelopeSimple,
-    title: "Simple invitations",
-    description:
-      "Invite teammates by email with a role and team already assigned — they set a password and they're in.",
-  },
-  {
-    icon: Buildings,
-    title: "Multi-organisation",
-    description:
-      "One account can belong to more than one organisation, each with its own teams, members, and settings.",
+    key: "reports",
+    tab: "Reports",
+    title: "Numbers you can hand over.",
+    body: "Turn tracked time into timesheets and reports by person, project or team, then export them as CSV.",
+    points: [
+      "Daily totals and time & activity reports",
+      "Timesheets by day, week or calendar",
+      "One-click CSV export",
+    ],
+    statsTitle: "This week",
+    statsTotal: "38:40",
+    stats: [
+      { label: "Monday", value: "8:05", share: "large", tone: "sun" },
+      { label: "Tuesday", value: "7:40", share: "large", tone: "mint" },
+      { label: "Wednesday", value: "4:10", share: "medium", tone: "volt" },
+    ],
   },
 ];
 
 export function LandingFeatures() {
   return (
-    <section id="features" className="bg-white py-20 lg:py-28">
-      <div className="container">
-        <ScrollReveal className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-semibold text-primary-dark sm:text-4xl">
-            Everything your organisation needs to track work
+    <section id="features" className="border-b-3 border-ink">
+      <div className="mx-auto flex max-w-300 flex-col gap-10 px-6 py-24">
+        <div className="flex max-w-180 flex-col gap-3">
+          <span className="text-xs font-extrabold tracking-widest text-ink-muted uppercase">
+            Light-touch by design
+          </span>
+          <h2 className="font-display text-heading font-extrabold tracking-heading">
+            About what you&apos;d see in a normal office.
           </h2>
-          <p className="mt-4 text-lg text-slate-900">
-            One platform for the people managing time and the people logging
-            it.
+          <p className="text-lg text-ink-muted">
+            Who&apos;s in, what they&apos;re working on and for how long. Hi Day sticks to the basics a
+            team would notice in a typical office.
           </p>
-        </ScrollReveal>
-
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature, index) => (
-            <ScrollReveal key={feature.title} className={REVEAL_DELAY_CLASSES[index]}>
-              <div className="group flex h-full flex-col gap-4 rounded-xl border border-primary-dark/10 bg-white p-6 transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg">
-                <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-cream text-primary-dark transition-colors duration-200 group-hover:bg-primary group-hover:text-white">
-                  <feature.icon size={24} aria-hidden="true" />
-                </span>
-                <h3 className="text-lg font-semibold text-primary-dark">
-                  {feature.title}
-                </h3>
-                <p className="text-slate-900">{feature.description}</p>
-              </div>
-            </ScrollReveal>
-          ))}
         </div>
+        <LandingFeatureTabs features={FEATURES} />
       </div>
     </section>
   );

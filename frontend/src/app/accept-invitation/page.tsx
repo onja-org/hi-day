@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AcceptInvitationForm } from "@/components/AcceptInvitationForm";
+import { AuthLogo } from "@/components/AuthLogo";
 
 export const metadata: Metadata = {
   title: "Accept invitation",
@@ -17,6 +18,7 @@ export default async function AcceptInvitationPage({
   if (!token) {
     return (
       <main className="container flex flex-col gap-4 py-8">
+        <AuthLogo />
         <h1 className="text-2xl font-semibold text-primary-dark">
           Missing link
         </h1>
@@ -29,6 +31,7 @@ export default async function AcceptInvitationPage({
 
   return (
     <main className="container flex flex-col gap-8 py-8">
+      <AuthLogo />
       <h1 className="text-2xl font-semibold text-primary-dark">
         Join your team
       </h1>

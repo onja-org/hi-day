@@ -16,6 +16,7 @@ import {
   Users,
   UsersThree,
 } from "@phosphor-icons/react";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
@@ -43,7 +44,7 @@ export function Sidebar({
   // A saved report is listed while it's open or starred; the Customised
   // reports page is where the full list lives.
   const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
-  const organisationName = organisationQuery.data?.name ?? "Workforce";
+  const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
@@ -182,17 +183,18 @@ export function Sidebar({
         />
       )}
 
-      <nav className="hidden shrink-0 flex-col bg-sidebar sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-64">
+      <nav className="hidden shrink-0 flex-col border-r border-primary-dark/10 bg-white sm:sticky sm:top-0 sm:flex sm:h-screen sm:w-16 lg:w-64">
         <div className="flex items-center justify-center gap-2 border-b border-primary-dark/10 px-2 py-4 lg:justify-start lg:px-5">
-          <span
-            aria-hidden="true"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary-dark text-sm font-bold text-white"
-          >
-            W
-          </span>
-          <span className="hidden text-base font-semibold text-primary-dark lg:inline">
-            Workforce
-          </span>
+          {/* The mark carries the name on the icon-only rail; the wordmark
+              beside it at lg repeats it, so it's decorative. */}
+          <Image src="/brand/hiday-mark-sun.svg" alt="Hi Day" width={32} height={32} className="shrink-0" />
+          <Image
+            src="/brand/hiday-wordmark-ink.svg"
+            alt=""
+            width={58}
+            height={24}
+            className="hidden lg:block"
+          />
         </div>
         <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">
           <SidebarNavEntries

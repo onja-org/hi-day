@@ -57,8 +57,13 @@ describe('browser restart is asked once, before login', () => {
       ...css.matchAll(/^\.([a-z-]+)\s*\{[^}]*?\bdisplay:\s*(flex|grid|inline-flex|block)/gms),
     ].map((match) => match[1]);
 
+    // One global `[hidden] { display: none !important }` guards every view.
+    const globallyGuarded = /^\[hidden\]\s*\{[^}]*display:\s*none\s*!important/m.test(css);
     const unguarded = withDisplay.filter(
-      (name) => !css.includes(`.${name}[hidden]`) && !css.includes(`#${name}[hidden]`),
+      (name) =>
+        !globallyGuarded &&
+        !css.includes(`.${name}[hidden]`) &&
+        !css.includes(`#${name}[hidden]`),
     );
 
     // Only the views the renderer toggles need this; the rest are never hidden.

@@ -73,12 +73,12 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
                 !timer.isPaused && "animate-pulse",
               )}
             />
-            <span className="tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
+            <span className="font-data tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
           </>
         ) : (
           <>
             <PlayIcon size={14} weight="fill" aria-hidden="true" />
-            <span className="tabular-nums">{formatElapsed(0)}</span>
+            <span className="font-data tabular-nums">{formatElapsed(0)}</span>
           </>
         )}
         <CaretDownIcon size={12} aria-hidden="true" />

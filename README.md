@@ -1,4 +1,4 @@
-# Workforce Monitoring Platform
+# Hi Day
 
 A transparent, consent-first time-tracking and productivity-monitoring platform for distributed teams — company registration, team and project management, time tracking via a web console and desktop agent, reporting, payroll and invoicing, backed by a single multi-tenant API.
 

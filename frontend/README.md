@@ -1,6 +1,6 @@
-# Workforce Monitoring — Web Console
+# Hi Day — Web Console
 
-The admin, reporting, and timesheet console for the Workforce Monitoring Platform.
+The admin, reporting, and timesheet console for Hi Day.
 
 Built with **Next.js** (App Router), **TypeScript**, and **Tailwind CSS**. Tests run on **Vitest** + React Testing Library.
 
