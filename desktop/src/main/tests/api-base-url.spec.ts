@@ -8,7 +8,7 @@ describe('resolveApiBaseUrl', () => {
 
   it('defaults a packaged (installed) app to the production API', () => {
     expect(resolveApiBaseUrl(true, {})).toBe(
-      'https://workfoce-monitoring-api.up.railway.app',
+      'https://api.hiday.io',
     );
   });
 

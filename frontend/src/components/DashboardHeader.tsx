@@ -24,7 +24,7 @@ export function DashboardHeader({ onOpenMenu }: DashboardHeaderProps) {
           <List size={28} aria-hidden="true" />
         </button>
         <span className="text-lg font-semibold text-primary-dark">
-          {organisationQuery.data?.name ?? "Workforce"}
+          {organisationQuery.data?.name ?? "Hi Day"}
         </span>
       </div>
 

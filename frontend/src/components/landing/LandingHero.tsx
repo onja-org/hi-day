@@ -27,7 +27,7 @@ export function LandingHero() {
           </h1>
 
           <p className="max-w-xl text-lg text-slate-900">
-            Workforce Monitoring brings timesheets, activity, teams, and
+            Hi Day brings timesheets, activity, teams, and
             permissions into one dashboard — so admins and managers always
             know how their organisation is spending its time.
           </p>

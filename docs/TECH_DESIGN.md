@@ -1,4 +1,4 @@
-# Workforce Monitoring Platform
+# Hi Day
 
 *Technical Design Document — v1, desktop-first*
 

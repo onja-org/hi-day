@@ -2,7 +2,7 @@ import { renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Must match electron-builder.yml's linux.executableName.
-const EXECUTABLE_NAME = 'workforce-monitor';
+const EXECUTABLE_NAME = 'hiday';
 
 /**
  * Linux only. Electron's sandbox needs either a setuid chrome-sandbox

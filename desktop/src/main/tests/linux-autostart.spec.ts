@@ -25,39 +25,39 @@ describe('autostartDirectory / autostartFilePath', () => {
     const env = { XDG_CONFIG_HOME: '/custom/config' } as NodeJS.ProcessEnv;
     expect(autostartDirectory(env)).toBe(join('/custom/config', 'autostart'));
     expect(autostartFilePath(env)).toBe(
-      join('/custom/config', 'autostart', 'org.onja.workforce-monitor.desktop'),
+      join('/custom/config', 'autostart', 'io.hiday.app.desktop'),
     );
   });
 });
 
 describe('resolveLinuxExecutablePath', () => {
   it('prefers $APPIMAGE, the one stable path across an AppImage remount', () => {
-    const env = { APPIMAGE: '/home/alice/Downloads/workforce-monitor.AppImage' } as NodeJS.ProcessEnv;
-    expect(resolveLinuxExecutablePath(env, '/tmp/.mount_xyz/workforce-monitor')).toBe(
-      '/home/alice/Downloads/workforce-monitor.AppImage',
+    const env = { APPIMAGE: '/home/alice/Downloads/hiday.AppImage' } as NodeJS.ProcessEnv;
+    expect(resolveLinuxExecutablePath(env, '/tmp/.mount_xyz/hiday')).toBe(
+      '/home/alice/Downloads/hiday.AppImage',
     );
   });
 
   it('falls back to the real execPath for a .deb install or dev run', () => {
     const env = {} as NodeJS.ProcessEnv;
-    expect(resolveLinuxExecutablePath(env, '/opt/workforce-monitor/workforce-monitor')).toBe(
-      '/opt/workforce-monitor/workforce-monitor',
+    expect(resolveLinuxExecutablePath(env, '/opt/hiday/hiday')).toBe(
+      '/opt/hiday/hiday',
     );
   });
 });
 
 describe('buildAutostartDesktopEntry', () => {
   it('marks the file as ours and points Exec at the given path', () => {
-    const entry = buildAutostartDesktopEntry('/opt/workforce-monitor/workforce-monitor');
+    const entry = buildAutostartDesktopEntry('/opt/hiday/hiday');
     expect(entry).toContain(AUTOSTART_MARKER);
     expect(entry).toContain('[Desktop Entry]');
-    expect(entry).toContain('Exec=/opt/workforce-monitor/workforce-monitor');
+    expect(entry).toContain('Exec=/opt/hiday/hiday');
     expect(entry).toContain('X-GNOME-Autostart-enabled=true');
   });
 
   it('quotes an Exec path containing whitespace', () => {
-    const entry = buildAutostartDesktopEntry('/opt/Workforce Monitor/workforce-monitor');
-    expect(entry).toContain('Exec="/opt/Workforce Monitor/workforce-monitor"');
+    const entry = buildAutostartDesktopEntry('/opt/Hi Day/hiday');
+    expect(entry).toContain('Exec="/opt/Hi Day/hiday"');
   });
 });
 
@@ -75,24 +75,24 @@ describe('enableLinuxAutostart / disableLinuxAutostart', () => {
   });
 
   it('writes a marked .desktop entry into the autostart directory', () => {
-    enableLinuxAutostart(env, '/opt/workforce-monitor/workforce-monitor');
+    enableLinuxAutostart(env, '/opt/hiday/hiday');
 
     const written = readFileSync(autostartFilePath(env), 'utf-8');
     expect(written).toContain(AUTOSTART_MARKER);
-    expect(written).toContain('Exec=/opt/workforce-monitor/workforce-monitor');
+    expect(written).toContain('Exec=/opt/hiday/hiday');
   });
 
   it('is idempotent — a second call with a new execPath overwrites the first', () => {
-    enableLinuxAutostart(env, '/tmp/.mount_old/workforce-monitor');
-    enableLinuxAutostart(env, '/tmp/.mount_new/workforce-monitor');
+    enableLinuxAutostart(env, '/tmp/.mount_old/hiday');
+    enableLinuxAutostart(env, '/tmp/.mount_new/hiday');
 
     const written = readFileSync(autostartFilePath(env), 'utf-8');
-    expect(written).toContain('Exec=/tmp/.mount_new/workforce-monitor');
+    expect(written).toContain('Exec=/tmp/.mount_new/hiday');
     expect(written).not.toContain('.mount_old');
   });
 
   it('removes the entry it wrote', () => {
-    enableLinuxAutostart(env, '/opt/workforce-monitor/workforce-monitor');
+    enableLinuxAutostart(env, '/opt/hiday/hiday');
     disableLinuxAutostart(env);
 
     expect(() => readFileSync(autostartFilePath(env), 'utf-8')).toThrow();

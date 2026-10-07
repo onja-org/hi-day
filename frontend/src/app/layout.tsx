@@ -19,12 +19,13 @@ const roboto = localFont({
 });
 
 export const metadata: Metadata = {
-  applicationName: "Workforce Monitoring",
+  metadataBase: new URL("https://hiday.io"),
+  applicationName: "Hi Day",
   // Pages set just their own name (e.g. "Projects"); the template adds the
-  // product name, so every tab reads "Projects — Workforce Monitoring".
+  // product name, so every tab reads "Projects — Hi Day".
   title: {
-    default: "Workforce Monitoring",
-    template: "%s — Workforce Monitoring",
+    default: "Hi Day",
+    template: "%s — Hi Day",
   },
   description:
     "Time tracking, activity, projects and team management for your organisation — on the web and the desktop app.",

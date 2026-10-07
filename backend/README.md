@@ -1,6 +1,6 @@
-# Workforce Monitoring — Backend API
+# Hi Day — Backend API
 
-The multi-tenant API behind the Workforce Monitoring Platform: auth, event ingestion, and business logic for time tracking, reporting, payroll, and invoicing.
+The multi-tenant API behind Hi Day: auth, event ingestion, and business logic for time tracking, reporting, payroll, and invoicing.
 
 Built with **NestJS** and **TypeScript**. Tests run on the built-in **Jest** setup.
 

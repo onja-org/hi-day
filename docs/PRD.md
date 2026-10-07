@@ -1,4 +1,4 @@
-# Workforce Monitoring Platform
+# Hi Day
 
 *Product Requirements Document (PRD) — v1, desktop-first*
 

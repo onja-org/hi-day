@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ACTIVATION_FLAG,
   ACTIVATION_MARKER,
+  LEGACY_ACTIVATION_MARKERS,
   activateDesktopEntry,
   activateExecValue,
   applicationDirectories,
@@ -126,6 +127,13 @@ describe('activateDesktopEntry', () => {
   it('marks the file as ours so uninstall can tell it from a vendor entry', () => {
     expect(activateDesktopEntry(BRAVE_ENTRY)).toContain(ACTIVATION_MARKER);
   });
+
+  it("doesn't add a second marker to an override written under the app's old name", () => {
+    const legacy = `${LEGACY_ACTIVATION_MARKERS[0]}\n${BRAVE_ENTRY}`;
+    const activated = activateDesktopEntry(legacy);
+    expect(activated).not.toContain(ACTIVATION_MARKER);
+    expect(activated).toContain(LEGACY_ACTIVATION_MARKERS[0]);
+  });
 });
 
 describe('discoverBrowserEntries', () => {
@@ -237,6 +245,16 @@ describe.skipIf(process.platform !== 'linux')(
 
     expect(removed).toEqual([join(target, 'brave_brave.desktop')]);
     expect(readFileSync(join(target, 'someone-elses.desktop'), 'utf-8')).toBe(TEXT_EDITOR_ENTRY);
+  });
+
+  it("also removes overrides written under the app's old name on uninstall", () => {
+    const { target, env } = scenario();
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'old.desktop'), `${LEGACY_ACTIVATION_MARKERS[0]}\n${BRAVE_ENTRY}`);
+
+    const removed = removeBrowserActivation({ scope: 'user', env });
+
+    expect(removed).toEqual([join(target, 'old.desktop')]);
   });
 
   it('reports a browser it could not activate instead of failing silently', () => {

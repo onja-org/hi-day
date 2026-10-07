@@ -21,7 +21,7 @@ export default async function SignUpPage() {
             Track time. Trust the numbers.
           </h2>
           <p className="text-slate-900">
-            Workforce Monitoring gives your team accurate time tracking and your
+            Hi Day gives your team accurate time tracking and your
             organisation the visibility it needs to grow with confidence.
           </p>
         </div>
@@ -32,7 +32,7 @@ export default async function SignUpPage() {
 
       <AuthAside
         title="Track time. Trust the numbers."
-        description="Workforce Monitoring gives your team accurate time tracking and your organisation the visibility it needs to grow with confidence."
+        description="Hi Day gives your team accurate time tracking and your organisation the visibility it needs to grow with confidence."
       />
     </main>
   );

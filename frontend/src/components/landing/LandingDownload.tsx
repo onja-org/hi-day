@@ -33,15 +33,15 @@ const PLATFORMS: Platform[] = [
     icon: WindowsLogo,
     name: "Windows",
     detail: "Windows 10 and later",
-    downloads: [{ label: "Download for Windows", fileName: "workforce-monitor-win-x64.exe" }],
+    downloads: [{ label: "Download for Windows", fileName: "hiday-win-x64.exe" }],
   },
   {
     icon: AppleLogo,
     name: "macOS",
     detail: "Apple silicon and Intel",
     downloads: [
-      { label: "Apple Silicon (M1/M2/M3)", fileName: "workforce-monitor-mac-arm64.dmg" },
-      { label: "Intel", fileName: "workforce-monitor-mac-x64.dmg" },
+      { label: "Apple Silicon (M1/M2/M3)", fileName: "hiday-mac-arm64.dmg" },
+      { label: "Intel", fileName: "hiday-mac-x64.dmg" },
     ],
   },
   {
@@ -56,10 +56,10 @@ const PLATFORMS: Platform[] = [
     // that does nothing at all. .deb stays first because `apt install` also
     // resolves the runtime deps and wires up the launcher.
     downloads: [
-      { label: "Download .deb package", fileName: "workforce-monitor-linux-amd64.deb" },
-      { label: "AppImage (portable)", fileName: "workforce-monitor-linux-x86_64.AppImage" },
+      { label: "Download .deb package", fileName: "hiday-linux-amd64.deb" },
+      { label: "AppImage (portable)", fileName: "hiday-linux-x86_64.AppImage" },
     ],
-    note: "Install the .deb with: sudo apt install ./workforce-monitor-linux-amd64.deb — double-clicking it opens the archive manager, not an installer. For the AppImage, mark it executable first: chmod +x workforce-monitor-linux-x86_64.AppImage",
+    note: "Install the .deb with: sudo apt install ./hiday-linux-amd64.deb — double-clicking it opens the archive manager, not an installer. For the AppImage, mark it executable first: chmod +x hiday-linux-x86_64.AppImage",
   },
 ];
 

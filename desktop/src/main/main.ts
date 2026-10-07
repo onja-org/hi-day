@@ -171,7 +171,7 @@ interface CapturePermissionStatus {
 // before any installs exist, since changing it later orphans the stored
 // fingerprint/session and makes every existing install re-register as a
 // "new" device.
-app.setName("Workforce Monitor");
+app.setName("Hi Day");
 
 let mainWindow: BrowserWindow | null = null;
 let urlCaptureService: UrlCaptureService | null = null;
@@ -357,7 +357,7 @@ function startUrlCapture(deviceId: string, upload: UploadFn): void {
 // developer/support diagnostic, not an end-user-facing preference.
 // Writes raw+normalized readings to userData, never to the regular log.
 function buildDebugSink(): DebugSink {
-  if (process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE !== "1") {
+  if (process.env.HIDAY_DEBUG_URL_CAPTURE !== "1") {
     return new NullDebugHarness();
   }
   return new DebugHarness(

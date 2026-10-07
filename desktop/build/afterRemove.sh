@@ -9,16 +9,18 @@
 # that wanted it is gone.
 #
 # Shell rather than reusing removeBrowserActivation directly: this runs as root
-# during dpkg removal, when /opt/Workforce Monitor is being deleted and the app
-# cannot be executed. The marker below is the contract between the two — it must
-# stay identical to ACTIVATION_MARKER in browser-activation.ts, which
-# before-pack.spec.ts asserts.
+# during dpkg removal, when /opt/Hi Day is being deleted and the app
+# cannot be executed. The markers below are the contract between the two — they
+# must stay identical to ACTIVATION_MARKER and LEGACY_ACTIVATION_MARKERS in
+# browser-activation.ts, which after-remove-script.spec.ts asserts. The legacy
+# one is what the agent wrote under its old name, Workforce Monitor.
 #
 # Only files carrying the marker are touched, so a vendor entry or a launcher
 # the user wrote themselves is never removed.
 set -eu
 
-MARKER='# Written by Workforce Monitor to enable website tracking.'
+MARKER='# Written by Hi Day to enable website tracking.'
+LEGACY_MARKER='# Written by Workforce Monitor to enable website tracking.'
 
 for home in /home/* /root; do
     [ -d "$home" ] || continue
@@ -30,7 +32,7 @@ for home in /home/* /root; do
         # Anywhere in the file, matching browser-activation.ts's own
         # contents.includes(ACTIVATION_MARKER) — the agent writes the marker
         # first, but the two must agree on what counts as its own file.
-        if grep -qF "$MARKER" "$entry"; then
+        if grep -qF "$MARKER" "$entry" || grep -qF "$LEGACY_MARKER" "$entry"; then
             rm -f "$entry"
         fi
     done

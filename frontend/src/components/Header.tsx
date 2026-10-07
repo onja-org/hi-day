@@ -19,7 +19,7 @@ export function Header() {
   return (
     <header className="container flex items-center justify-between py-4">
       <span className="text-lg font-semibold text-primary-dark">
-        Workforce Monitoring
+        Hi Day
       </span>
 
       <nav aria-label="Page sections" className="hidden gap-6 md:flex">

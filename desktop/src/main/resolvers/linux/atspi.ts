@@ -57,7 +57,7 @@ const NO_ADDRESS_BAR_TTL_MS = 30_000;
  * side-car inherits its environment, so turning on the debug harness turns
  * this on too, and neither costs anything when off.
  */
-const TRACE_SIGNALS = process.env.WORKFORCE_MONITOR_DEBUG_URL_CAPTURE === '1';
+const TRACE_SIGNALS = process.env.HIDAY_DEBUG_URL_CAPTURE === '1';
 const TRACE_SUMMARY_MS = 30_000;
 
 /**

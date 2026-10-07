@@ -1,4 +1,12 @@
-# Workforce Monitor Desktop
+# Hi Day Desktop
+
+> **Renamed from "Workforce Monitor".** The app ID (`io.hiday.app`), Linux
+> package/executable (`hiday`) and installer names (`hiday-*`) all changed
+> with it, so the OS treats Hi Day as a *new* app: an existing Workforce
+> Monitor install stays alongside it until uninstalled, users sign in and
+> pair the device again, and macOS asks for its permissions again. Browser
+> launcher overrides the old app wrote are still recognised (see
+> `LEGACY_ACTIVATION_MARKERS` in `resolvers/linux/browser-activation.ts`).
 
 The downloadable desktop agent. It handles login, device registration,
 starting/stopping a timer against a Project (and optional Task), idle
@@ -253,12 +261,12 @@ using a UUID generated on first run and persisted under Electron's
     `dist:win`/`dist:mac`, or a real installer on Windows/macOS — see
     **Building installers** below) and launch it once. On Windows, check
     Task Manager's **Startup apps** tab; on macOS, **System Settings →
-    General → Login Items** — "Workforce Monitor" should show up enabled in
+    General → Login Items** — "Hi Day" should show up enabled in
     either, without you having flipped anything by hand. On Linux, instead
-    check that `~/.config/autostart/org.onja.workforce-monitor.desktop`
+    check that `~/.config/autostart/io.hiday.app.desktop`
     exists and `Exec=` points at a real, runnable path (the mounted
     AppImage's own file if you ran the `.AppImage` directly, or
-    `/opt/workforce-monitor/workforce-monitor` for a `.deb` install) — log
+    `/opt/Hi Day/hiday` for a `.deb` install) — log
     out and back in (or reboot) to confirm the app actually launches on its
     own. `pnpm dev` never touches any of this (`app.isPackaged` guards it).
 

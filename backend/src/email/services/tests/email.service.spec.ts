@@ -51,7 +51,7 @@ describe('EmailService', () => {
         to: 'owner@acme.test',
         subject: 'Set your password for Acme Inc',
         html: expect.stringMatching(
-          /(?=.*http:\/\/localhost:3000\/set-password\?token=the-token)(?=.*Workforce Monitoring)(?=.*Acme Inc)/s,
+          /(?=.*http:\/\/localhost:3000\/set-password\?token=the-token)(?=.*Hi Day)(?=.*Acme Inc)/s,
         ) as string,
       }),
     );
@@ -67,7 +67,7 @@ describe('EmailService', () => {
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'owner@acme.test',
-        subject: 'Reset your Workforce Monitoring password',
+        subject: 'Reset your Hi Day password',
         html: expect.stringMatching(
           /(?=.*http:\/\/localhost:3000\/reset-password\?token=the-token)(?=.*Acme Inc)/s,
         ) as string,
@@ -85,7 +85,7 @@ describe('EmailService', () => {
     expect(sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'invitee@acme.test',
-        subject: 'Join Acme Inc on Workforce Monitoring',
+        subject: 'Join Acme Inc on Hi Day',
         html: expect.stringMatching(
           /<a href="http:\/\/localhost:3000\/accept-invitation\?token=the-token"[^>]*>Join Acme Inc<\/a>/,
         ) as string,
@@ -104,7 +104,7 @@ describe('EmailService', () => {
         to: 'owner@acme.test',
         subject: 'Someone tried to register with your email',
         html: expect.stringMatching(
-          /(?=.*<a href="http:\/\/localhost:3000\/login")(?=.*Workforce Monitoring)(?=.*Acme Inc)/s,
+          /(?=.*<a href="http:\/\/localhost:3000\/login")(?=.*Hi Day)(?=.*Acme Inc)/s,
         ) as string,
       }),
     );

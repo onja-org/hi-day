@@ -43,7 +43,7 @@ export function Sidebar({
   // A saved report is listed while it's open or starred; the Customised
   // reports page is where the full list lives.
   const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
-  const organisationName = organisationQuery.data?.name ?? "Workforce";
+  const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
@@ -191,7 +191,7 @@ export function Sidebar({
             W
           </span>
           <span className="hidden text-base font-semibold text-primary-dark lg:inline">
-            Workforce
+            Hi Day
           </span>
         </div>
         <div className="flex flex-col gap-1 px-2 py-4 lg:px-3 lg:py-0">

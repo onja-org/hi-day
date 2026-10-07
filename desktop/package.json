@@ -2,8 +2,8 @@
   "name": "desktop",
   "version": "0.2.6",
   "private": true,
-  "description": "Workforce Monitor desktop agent (login, device registration, and start/stop time tracking)",
-  "homepage": "https://github.com/onja-org/workfoce-monitoring-app",
+  "description": "Hi Day desktop agent (login, device registration, and start/stop time tracking)",
+  "homepage": "https://hiday.io",
   "author": "Rinon <rinon.ten@onja.org>",
   "main": "dist/main/main.js",
   "engines": {

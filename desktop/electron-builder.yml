@@ -1,11 +1,11 @@
-appId: org.onja.workforce-monitor
-productName: Workforce Monitor
+appId: io.hiday.app
+productName: Hi Day
 # Deliberately version-free: the landing page links to
 # github.com/<repo>/releases/latest/download/<this filename>, a URL GitHub
 # keeps pointing at whatever the latest release's matching asset is. If
 # ${version} were in the name, every release would need a landing-page
 # code change to match.
-artifactName: workforce-monitor-${os}-${arch}.${ext}
+artifactName: hiday-${os}-${arch}.${ext}
 # Squeezes the installer harder at build time — Electron apps bundle a full
 # Chromium + Node runtime, so this won't work miracles (typically 5-15%
 # smaller), but it's free size reduction with no functional tradeoff, just
@@ -112,7 +112,7 @@ mac:
     # Shown verbatim in the Automation consent prompt — plain language,
     # not API names (Prompt B.3 point 4).
     NSAppleEventsUsageDescription: >-
-      Workforce Monitor reads the address bar of your browser windows while
+      Hi Day reads the address bar of your browser windows while
       a timer is running, so your time entries can include which websites
       you were working on. It never controls your browser or changes
       anything in it.
@@ -137,7 +137,7 @@ linux:
     - target: deb
       arch: [x64]
   category: Office
-  executableName: workforce-monitor
+  executableName: hiday
   # The legacy AppImage toolset appended --no-sandbox to the generated desktop
   # entry's Exec line on its own; the static runtime (see toolsets above) doesn't.
   # scripts/afterPack.mjs's wrapper already forces the flag at exec() time, so
@@ -146,7 +146,7 @@ linux:
   executableArgs: ["--no-sandbox"]
 
 deb:
-  packageName: workforce-monitor
+  packageName: hiday
   # Removes the browser launcher overrides browser-activation.ts wrote. They
   # live under each user's home and outlive the package, so without this every
   # browser keeps starting with accessibility forced on after uninstall.

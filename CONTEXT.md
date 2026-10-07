@@ -1,4 +1,4 @@
-# Workforce Monitoring Platform
+# Hi Day
 
 A multi-tenant platform that tracks time and activity for organisations and their members.
 

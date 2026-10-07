@@ -1,4 +1,4 @@
-# Workforce Monitoring Platform
+# Hi Day
 
 This is a pnpm workspace monorepo with three packages: `frontend` (Next.js), `backend` (NestJS), and `desktop` (Electron). `frontend` and `backend` each have their own conventions doc — read the one that matches what you're working on before making changes:
 

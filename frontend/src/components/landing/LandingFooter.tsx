@@ -5,7 +5,7 @@ export function LandingFooter() {
     <footer className="border-t border-primary-dark/10 bg-white py-10">
       <div className="container flex flex-col items-center justify-between gap-4 sm:flex-row">
         <span className="text-sm font-semibold text-primary-dark">
-          Workforce Monitoring
+          Hi Day
         </span>
         <nav className="flex items-center gap-6 text-sm text-slate-900">
           <a href="#features" className="cursor-pointer hover:text-primary">
@@ -19,7 +19,7 @@ export function LandingFooter() {
           </Link>
         </nav>
         <span className="text-sm text-slate-900/60">
-          © {new Date().getFullYear()} Workforce Monitoring
+          © {new Date().getFullYear()} Hi Day
         </span>
       </div>
     </footer>

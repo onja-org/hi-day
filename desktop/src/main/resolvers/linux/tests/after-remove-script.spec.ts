@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ACTIVATION_MARKER } from '../browser-activation';
+import { ACTIVATION_MARKER, LEGACY_ACTIVATION_MARKERS } from '../browser-activation';
 
 /**
  * The uninstall cleanup runs as a shell script, because dpkg removal happens as
@@ -18,6 +18,13 @@ const script = readFileSync(
 describe('afterRemove.sh', () => {
   it('matches on the same marker browser-activation.ts writes', () => {
     expect(script).toContain(ACTIVATION_MARKER);
+  });
+
+  it("also cleans up overrides written under the app's old name", () => {
+    for (const marker of LEGACY_ACTIVATION_MARKERS) {
+      expect(script).toContain(marker);
+    }
+    expect(script).toMatch(/grep -qF "\$LEGACY_MARKER" "\$entry"/);
   });
 
   it('deletes only marked files, never every .desktop it finds', () => {
