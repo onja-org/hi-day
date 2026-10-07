@@ -249,7 +249,31 @@ export interface ActivationOutcome {
   activated: boolean;
   /** True when the override was already correct and nothing was written. */
   unchanged?: boolean;
+  /**
+   * True when no override existed here before: this install's first sweep.
+   * Distinguished from a rewrite because it is what a fresh install looks
+   * like — uninstall removes these files (see build/afterRemove.sh), so
+   * their absence is the only durable record of "never activated here",
+   * and the first-run browser-restart screen keys off it.
+   */
+  created?: boolean;
   reason?: string;
+}
+
+/**
+ * Every `Exec=` line of an entry, which is all of it this agent changes.
+ *
+ * Comparing these rather than whole files is what stops a vendor update from
+ * re-shadowing a launcher for nothing. A browser that updates itself rewrites
+ * its entry regularly — a new translated `Comment[de]`, a changed icon path —
+ * and every rewrite of ours replaces the winning `.desktop` file underneath
+ * whatever windows that browser has open, costing them their desktop binding
+ * (see selectRunningBrowsers). Those updates are frequent; genuine command
+ * changes are rare. The cost is that an override keeps the name, icon and
+ * translations it was created with until the command itself changes.
+ */
+export function execLines(contents: string): string[] {
+  return contents.split(/\r?\n/).filter((line) => line.startsWith('Exec='));
 }
 
 export interface ActivationReport {
@@ -281,7 +305,13 @@ export function applyBrowserActivation(options: {
     try {
       mkdirSync(targetDirectory, { recursive: true });
       const desired = activateDesktopEntry(source.contents);
-      if (existsSync(targetPath) && readFileSync(targetPath, 'utf-8') === desired) {
+      const existing = existsSync(targetPath)
+        ? readFileSync(targetPath, 'utf-8')
+        : null;
+      if (
+        existing !== null &&
+        execLines(existing).join('\n') === execLines(desired).join('\n')
+      ) {
         outcomes.push({
           fileName: source.fileName,
           targetPath,
@@ -291,7 +321,12 @@ export function applyBrowserActivation(options: {
         continue;
       }
       writeFileSync(targetPath, desired, 'utf-8');
-      outcomes.push({ fileName: source.fileName, targetPath, activated: true });
+      outcomes.push({
+        fileName: source.fileName,
+        targetPath,
+        activated: true,
+        created: existing === null,
+      });
     } catch (error) {
       outcomes.push({
         fileName: source.fileName,

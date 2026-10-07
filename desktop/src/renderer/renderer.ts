@@ -226,8 +226,14 @@ function listOf(names: string[]): string {
 }
 
 /**
- * A browser open before the agent wrote its launcher overrides has no
- * accessibility tree, so its URLs go unrecorded until it is restarted.
+ * A browser open before the agent wrote its launcher overrides needs
+ * restarting for two reasons: it has no accessibility tree, so its URLs go
+ * unrecorded; and the desktop lost the link between its windows and its
+ * launcher when the override replaced the entry underneath them, so its dock
+ * icon stops showing it as running and clicking that icon opens a new window
+ * instead of raising the open one. The second outlasts the first — it applies
+ * even to a browser that was already tracked — which is why the screen says
+ * so rather than leaving it to be discovered.
  *
  * Asked once, before the login view, and never again on this install — the
  * main process decides that, since it owns the record. Returns false when
@@ -249,8 +255,10 @@ async function showBrowserRestartSetup(): Promise<boolean> {
   const manualNames = prompt.manual.map((entry) => entry.name);
   const named = [...prompt.names, ...manualNames];
   setupMessage.textContent =
-    `Website tracking needs ${listOf(named)} restarted once before it can ` +
-    `see which pages are open.` +
+    `${listOf(named)} ${named.length > 1 ? "need" : "needs"} restarting once ` +
+    `before website tracking can see which pages are open. Until then their ` +
+    `dock icons may not show them as running, and clicking one opens a new ` +
+    `window instead of the one already open.` +
     // Only promised for the ones Continue can actually relaunch.
     (prompt.names.length > 0
       ? ` Continue restarts ${listOf(prompt.names)} for you — save anything ` +

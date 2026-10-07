@@ -9,7 +9,7 @@ import {
 import { markBrowserRestartPromptSeen } from '../setup-state';
 
 /** One blind Chrome, the ordinary case that makes the screen appear. */
-function oneBlindBrowser(): BlindBrowserReportLike {
+function oneOpenBrowser(): BlindBrowserReportLike {
   return {
     restartable: [{ command: 'chrome' }],
     manual: [],
@@ -32,7 +32,7 @@ describe('browserRestartPrompt', () => {
     return browserRestartPrompt({
       platform: 'linux',
       userDataDir,
-      findBlind: oneBlindBrowser,
+      findBrowsers: oneOpenBrowser,
       ...overrides,
     });
   }
@@ -47,13 +47,13 @@ describe('browserRestartPrompt', () => {
   // Linux only: the launcher override this compensates for exists nowhere
   // else, so no other platform may ever see this screen.
   it.each(['darwin', 'win32'])('never asks on %s', (platform) => {
-    const findBlind = vi.fn(oneBlindBrowser);
+    const findBrowsers = vi.fn(oneOpenBrowser);
 
-    const prompt = browserRestartPrompt({ platform, userDataDir, findBlind });
+    const prompt = browserRestartPrompt({ platform, userDataDir, findBrowsers });
 
     expect(prompt.show).toBe(false);
     // Not even scanned: the answer cannot depend on what is running.
-    expect(findBlind).not.toHaveBeenCalled();
+    expect(findBrowsers).not.toHaveBeenCalled();
   });
 
   /**
@@ -86,7 +86,7 @@ describe('browserRestartPrompt', () => {
    */
   it('stays unspent when no browser is blind', () => {
     const prompt = ask({
-      findBlind: () => ({ restartable: [], manual: [], warnings: [] }),
+      findBrowsers: () => ({ restartable: [], manual: [], warnings: [] }),
     });
 
     expect(prompt.show).toBe(false);
@@ -101,7 +101,7 @@ describe('browserRestartPrompt', () => {
    */
   it('keeps a browser it cannot restart out of the restart list', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [{ command: 'chrome' }],
         manual: [
           { browser: { command: 'firefox' }, reason: 'Restart Firefox yourself.' },
@@ -121,7 +121,7 @@ describe('browserRestartPrompt', () => {
   // every one of them by hand.
   it('still asks when every blind browser must be restarted by hand', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [],
         manual: [
           { browser: { command: 'firefox' }, reason: 'Restart Firefox yourself.' },
@@ -135,11 +135,11 @@ describe('browserRestartPrompt', () => {
     expect(prompt.manual.map((e) => e.name)).toEqual(['Firefox']);
   });
 
-  // findBlind reports one entry per process, so two windows of the same
+  // findBrowsers reports one entry per process, so two windows of the same
   // browser must not produce the same sentence twice.
   it('names a browser once however many of its processes are blind', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [{ command: 'chrome' }, { command: 'chrome' }],
         manual: [
           { browser: { command: 'firefox' }, reason: 'No launcher.' },
@@ -158,7 +158,7 @@ describe('browserRestartPrompt', () => {
   // "nothing to ask" rather than take the app down with it.
   it('asks nothing when the scan throws', () => {
     const prompt = ask({
-      findBlind: () => {
+      findBrowsers: () => {
         throw new Error('/proc unreadable');
       },
     });

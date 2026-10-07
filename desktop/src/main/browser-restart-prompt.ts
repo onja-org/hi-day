@@ -19,7 +19,7 @@ export interface BlindBrowserReportLike {
 export interface BrowserRestartPromptDeps {
   platform: string;
   userDataDir: string;
-  findBlind: () => BlindBrowserReportLike;
+  findBrowsers: () => BlindBrowserReportLike;
   log?: (line: string) => void;
 }
 
@@ -27,10 +27,16 @@ export interface BrowserRestartPromptDeps {
  * Whether to open the first-run screen asking for a browser restart, and
  * what it should name.
  *
+ * Asks about every browser that was open when the launchers were shadowed,
+ * not only the untracked ones. A browser that already had an accessibility
+ * tree — one started under a screen reader, say — is tracked fine and would
+ * never appear in the blind set, but its windows lost their launcher binding
+ * along with everyone else's, and only a restart gives it back.
+ *
  * Lives here rather than inline in main.ts so all four ways of answering
  * "no" are testable: off Linux, where the launcher override this
  * compensates for does not exist; once this install has answered; when no
- * blind browser is running, which leaves the one showing unspent for a
+ * browser was open to orphan, which leaves the one showing unspent for a
  * launch that has something to say; and when the scan itself fails, where
  * a missing prompt beats a window that never opens.
  */
@@ -41,7 +47,7 @@ export function browserRestartPrompt(
   if (hasSeenBrowserRestartPrompt(deps.userDataDir)) return NO_PROMPT;
 
   try {
-    const report = deps.findBlind();
+    const report = deps.findBrowsers();
     const names = [
       ...new Set(report.restartable.map((browser) => displayName(browser.command))),
     ];

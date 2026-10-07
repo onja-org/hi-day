@@ -68,11 +68,11 @@ export function browserTokens(desktopFileNames: string[]): string[] {
  */
 const CHILD_PROCESS_ARGS = ['--type=', '-contentproc'];
 
-/** Browsers running without the activation flag, and so without a tree. */
-export function selectBlindBrowsers(
+/** The one process per browser a person actually sees — helpers dropped. */
+function mainBrowserProcesses(
   processes: BrowserProcess[],
   tokens: string[],
-): BlindBrowser[] {
+): BrowserProcess[] {
   return processes
     .filter((process) => isBrowserProcess(process, tokens))
     .filter(
@@ -80,7 +80,37 @@ export function selectBlindBrowsers(
         !process.cmdline.some((arg) =>
           CHILD_PROCESS_ARGS.some((marker) => arg.startsWith(marker)),
         ),
-    )
+    );
+}
+
+/**
+ * Every browser open right now, blind or not.
+ *
+ * Separate from the blind set because the two answer different questions.
+ * Blindness is about URL tracking; this is about the launcher shadowing in
+ * `browser-activation.ts`, which replaces the winning `.desktop` file for a
+ * browser's id while its windows are already open. The desktop loses the
+ * binding between those windows and the launcher — no running indicator, and
+ * clicking the icon opens a new window instead of raising the old one — and
+ * it does so whatever the browser's accessibility state, so a browser that
+ * was never blind still needs the restart.
+ */
+export function selectRunningBrowsers(
+  processes: BrowserProcess[],
+  tokens: string[],
+): BlindBrowser[] {
+  return mainBrowserProcesses(processes, tokens).map((process) => ({
+    pid: process.pid,
+    command: process.command,
+  }));
+}
+
+/** Browsers running without the activation flag, and so without a tree. */
+export function selectBlindBrowsers(
+  processes: BrowserProcess[],
+  tokens: string[],
+): BlindBrowser[] {
+  return mainBrowserProcesses(processes, tokens)
     .filter((process) => !process.cmdline.some((arg) => arg.startsWith(ACTIVATION_FLAG.split('=')[0])))
     .map((process) => ({ pid: process.pid, command: process.command }));
 }

@@ -4,7 +4,9 @@ import {
   displayName,
   readBrowserProcesses,
   selectBlindBrowsers,
+  selectRunningBrowsers,
   type BlindBrowser,
+  type BrowserProcess,
 } from './blind-browsers';
 import type { DiscoveredBrowser } from './browser-activation';
 import {
@@ -81,6 +83,23 @@ export class BrowserRestartService {
 
   /** Blind browsers right now, split by whether we can safely restart them. */
   findBlind(): BlindBrowserReport {
+    return this.report(selectBlindBrowsers);
+  }
+
+  /**
+   * Every browser open right now, blind or not, in the same shape.
+   *
+   * What the first-run screen asks about: shadowing the launchers orphans the
+   * windows of every browser already open, not only the untracked ones — see
+   * selectRunningBrowsers.
+   */
+  findRunning(): BlindBrowserReport {
+    return this.report(selectRunningBrowsers);
+  }
+
+  private report(
+    select: (processes: BrowserProcess[], tokens: string[]) => BlindBrowser[],
+  ): BlindBrowserReport {
     const env = this.deps.env ?? process.env;
     const targetDirectory = activationTargetDirectory('user', env);
     const entries = discoverBrowserEntries(
@@ -89,7 +108,7 @@ export class BrowserRestartService {
     const tokens = browserTokens(entries.map((entry) => entry.fileName));
     if (tokens.length === 0) return { restartable: [], manual: [], warnings: [] };
 
-    const blind = selectBlindBrowsers(readBrowserProcesses(), tokens);
+    const blind = select(readBrowserProcesses(), tokens);
     const firefoxRestores = firefoxRestoresSession(readFirefoxPrefs());
 
     const report: BlindBrowserReport = {

@@ -38,9 +38,15 @@ import {
   resolveWinResolverPath,
 } from "./resolvers/resolver-paths";
 import { applyBrowserActivation } from "./resolvers/linux/browser-activation";
-import { BrowserRestartService } from "./resolvers/linux/browser-restart-service";
+import {
+  BrowserRestartService,
+  type BlindBrowserReport,
+} from "./resolvers/linux/browser-restart-service";
 import { browserRestartPrompt } from "./browser-restart-prompt";
-import { markBrowserRestartPromptSeen } from "./setup-state";
+import {
+  clearBrowserRestartPromptSeen,
+  markBrowserRestartPromptSeen,
+} from "./setup-state";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -912,7 +918,7 @@ async function registerIpcHandlers(): Promise<void> {
       browserRestartPrompt({
         platform: process.platform,
         userDataDir: app.getPath("userData"),
-        findBlind: () => new BrowserRestartService().findBlind(),
+        findBrowsers: () => browsersOpenBeforeActivation,
         log: (line) => console.log(line),
       }),
   );
@@ -927,11 +933,12 @@ async function registerIpcHandlers(): Promise<void> {
     const service = new BrowserRestartService({
       logger: (line) => console.log(line),
     });
-    // Re-read rather than reuse what the screen was drawn from: only
-    // browsers running at this instant are touched, and each is relaunched
-    // from the process we just ended. A browser closed in the meantime has
-    // no process to find, so it is never opened on the person's behalf.
-    await service.restart(service.findBlind().restartable);
+    // Exactly what the screen named, not the live set: a browser opened since
+    // this launch started from the activated entry and has its launcher
+    // binding, so restarting it would cost its tabs and fix nothing. One
+    // closed in the meantime has no process left to signal, and `restart`
+    // skips it rather than opening it on the person's behalf.
+    await service.restart(browsersOpenBeforeActivation.restartable);
   });
 }
 
@@ -943,11 +950,42 @@ async function registerIpcHandlers(): Promise<void> {
  * launched, and a failed write is logged rather than thrown — losing URL
  * capture must never stop time tracking.
  */
+/**
+ * The browsers that were open when this launch shadowed the launchers,
+ * captured before the sweep writes anything.
+ *
+ * The first-run screen offers exactly these. Re-reading the live set when
+ * Continue is pressed would also catch browsers opened since, which started
+ * from the activated entry — already tracked, already bound to their
+ * launcher, and so with nothing but their tabs to lose from a restart.
+ */
+let browsersOpenBeforeActivation: BlindBrowserReport = {
+  restartable: [],
+  manual: [],
+  warnings: [],
+};
+
 function activateBrowsersOnLinux(): void {
   if (process.platform !== "linux") return;
 
   try {
+    // Read before the sweep: the moment an override lands, every window these
+    // processes own has lost its launcher binding, and nothing started after
+    // that point is one of the orphans.
+    browsersOpenBeforeActivation = new BrowserRestartService({
+      logger: (line) => console.log(line),
+    }).findRunning();
+
     const report = applyBrowserActivation({ scope: "user" });
+
+    // A created override — rather than an unchanged or rewritten one — is
+    // what a fresh install looks like, since uninstall takes them with it.
+    // The browsers open right now have just been orphaned and have never
+    // been offered the restart that reseats them, whatever a previous
+    // install on this machine recorded.
+    if (report.outcomes.some((outcome) => outcome.created)) {
+      clearBrowserRestartPromptSeen(app.getPath("userData"));
+    }
     const activated = report.outcomes.filter((outcome) => outcome.activated);
     console.log(
       `[activation] ${activated.length}/${report.outcomes.length} browser launchers activated in ${report.targetDirectory}`,

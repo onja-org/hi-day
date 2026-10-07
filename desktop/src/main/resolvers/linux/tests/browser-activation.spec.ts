@@ -228,6 +228,59 @@ describe.skipIf(process.platform !== 'linux')(
     expect(readFileSync(join(target, 'brave_brave.desktop'), 'utf-8')).toBe(first);
   });
 
+  // `created` is how the first-run browser-restart screen tells a fresh
+  // install from an ordinary launch: uninstall takes the overrides with it,
+  // so nothing else survives the same set of events.
+  it('reports the first sweep as created, and a later rewrite as not', () => {
+    const { source, env } = scenario();
+    const first = applyBrowserActivation({ scope: 'user', env });
+    expect(first.outcomes[0].created).toBe(true);
+
+    writeFileSync(
+      join(source, 'brave_brave.desktop'),
+      BRAVE_ENTRY.replace('/snap/bin/brave %U', '/usr/bin/brave %U'),
+    );
+    const second = applyBrowserActivation({ scope: 'user', env });
+
+    expect(second.outcomes[0]).toMatchObject({ activated: true });
+    expect(second.outcomes[0].created).toBeFalsy();
+  });
+
+  // The rewrite is not free: replacing the winning entry for a browser's id
+  // orphans the windows it already has open from its launcher. Browsers
+  // update themselves often and change their command almost never, so a
+  // whole-file comparison spends that cost on translations and icon paths.
+  it('leaves the override alone when a vendor update changes no command', () => {
+    const { source, target, env } = scenario();
+    applyBrowserActivation({ scope: 'user', env });
+    const written = readFileSync(join(target, 'brave_brave.desktop'), 'utf-8');
+
+    writeFileSync(
+      join(source, 'brave_brave.desktop'),
+      `${BRAVE_ENTRY}\nComment[de]=Brandneu`,
+    );
+    const report = applyBrowserActivation({ scope: 'user', env });
+
+    expect(report.outcomes[0].unchanged).toBe(true);
+    expect(readFileSync(join(target, 'brave_brave.desktop'), 'utf-8')).toBe(written);
+  });
+
+  it('still rewrites when the vendor command itself changes', () => {
+    const { source, target, env } = scenario();
+    applyBrowserActivation({ scope: 'user', env });
+
+    writeFileSync(
+      join(source, 'brave_brave.desktop'),
+      BRAVE_ENTRY.replace('/snap/bin/brave %U', '/usr/bin/brave %U'),
+    );
+    const report = applyBrowserActivation({ scope: 'user', env });
+
+    expect(report.outcomes[0].unchanged).toBeFalsy();
+    expect(readFileSync(join(target, 'brave_brave.desktop'), 'utf-8')).toContain(
+      '/usr/bin/brave',
+    );
+  });
+
   it('removes only its own files on uninstall', () => {
     const { target, env } = scenario();
     applyBrowserActivation({ scope: 'user', env });
