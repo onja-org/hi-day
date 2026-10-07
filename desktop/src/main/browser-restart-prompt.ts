@@ -16,6 +16,26 @@ export interface BlindBrowserReportLike {
   warnings: string[];
 }
 
+/**
+ * The browsers a sweep left orphaned from their launchers: those open when it
+ * ran, but only if it actually created an override.
+ *
+ * A sweep that changed nothing disturbed nothing, so the browsers open during
+ * it are in whatever state they were already in. Keeping the two apart is
+ * what holds the screen to a single appearance: it has something to offer on
+ * the one launch that creates the overrides and nothing on every launch
+ * after, rather than returning each time until someone answers it.
+ */
+export function browsersOrphanedBySweep<T extends BlindBrowserReportLike>(
+  openBeforeSweep: T,
+  outcomes: { created?: boolean }[],
+): T {
+  if (outcomes.some((outcome) => outcome.created)) return openBeforeSweep;
+  // Emptied rather than replaced by a shared constant, so the caller's own
+  // report type survives and nothing downstream needs a cast.
+  return { ...openBeforeSweep, restartable: [], manual: [], warnings: [] };
+}
+
 export interface BrowserRestartPromptDeps {
   platform: string;
   userDataDir: string;

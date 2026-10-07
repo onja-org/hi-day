@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   browserRestartPrompt,
+  browsersOrphanedBySweep,
   type BlindBrowserReportLike,
 } from '../browser-restart-prompt';
 import { markBrowserRestartPromptSeen } from '../setup-state';
@@ -164,5 +165,48 @@ describe('browserRestartPrompt', () => {
     });
 
     expect(prompt.show).toBe(false);
+  });
+});
+
+describe('browsersOrphanedBySweep', () => {
+  const open = {
+    restartable: [{ command: 'firefox' }],
+    manual: [{ browser: { command: 'brave' }, reason: 'Restart Brave yourself.' }],
+    warnings: ['Firefox will not reopen its tabs.'],
+  };
+
+  it('hands back the open browsers when the sweep created an override', () => {
+    expect(browsersOrphanedBySweep(open, [{ created: true }])).toEqual(open);
+  });
+
+  // The guarantee the screen rests on: a sweep that creates nothing disturbs
+  // nothing, so every launch after the first has no one to ask about. Without
+  // this the screen returns on every launch until someone answers it — and
+  // with the predicate now "open" rather than "blind", it would return even
+  // for browsers restarted in the meantime that are perfectly fine.
+  it('hands back nothing when the sweep created no override', () => {
+    expect(browsersOrphanedBySweep(open, [{}, { created: false }])).toEqual({
+      restartable: [],
+      manual: [],
+      warnings: [],
+    });
+  });
+
+  it('hands back nothing when the sweep touched no entry at all', () => {
+    expect(browsersOrphanedBySweep(open, []).restartable).toEqual([]);
+  });
+
+  it('leaves the screen with nothing to show, end to end', () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'orphan-prompt-'));
+    try {
+      const prompt = browserRestartPrompt({
+        platform: 'linux',
+        userDataDir,
+        findBrowsers: () => browsersOrphanedBySweep(open, [{ created: false }]),
+      });
+      expect(prompt.show).toBe(false);
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
   });
 });

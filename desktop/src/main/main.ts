@@ -42,7 +42,10 @@ import {
   BrowserRestartService,
   type BlindBrowserReport,
 } from "./resolvers/linux/browser-restart-service";
-import { browserRestartPrompt } from "./browser-restart-prompt";
+import {
+  browserRestartPrompt,
+  browsersOrphanedBySweep,
+} from "./browser-restart-prompt";
 import {
   clearBrowserRestartPromptSeen,
   markBrowserRestartPromptSeen,
@@ -968,21 +971,38 @@ let browsersOpenBeforeActivation: BlindBrowserReport = {
 function activateBrowsersOnLinux(): void {
   if (process.platform !== "linux") return;
 
+  // Read before the sweep, and in a try of its own: the moment an override
+  // lands, every window these processes own has lost its launcher binding,
+  // and nothing started after that point is one of the orphans. Kept separate
+  // because a scan that throws must cost the restart screen and nothing more
+  // — folding it in with the sweep below would let a failed /proc read stop
+  // the overrides being written at all, which is URL capture itself.
+  let openBeforeSweep: BlindBrowserReport = {
+    restartable: [],
+    manual: [],
+    warnings: [],
+  };
   try {
-    // Read before the sweep: the moment an override lands, every window these
-    // processes own has lost its launcher binding, and nothing started after
-    // that point is one of the orphans.
-    browsersOpenBeforeActivation = new BrowserRestartService({
+    openBeforeSweep = new BrowserRestartService({
       logger: (line) => console.log(line),
     }).findRunning();
+  } catch (error) {
+    console.log(`[activation] could not list open browsers: ${String(error)}`);
+  }
 
+  try {
     const report = applyBrowserActivation({ scope: "user" });
 
     // A created override — rather than an unchanged or rewritten one — is
     // what a fresh install looks like, since uninstall takes them with it.
     // The browsers open right now have just been orphaned and have never
     // been offered the restart that reseats them, whatever a previous
-    // install on this machine recorded.
+    // install on this machine recorded. Every later launch leaves the set
+    // empty, which is what holds the screen to one appearance.
+    browsersOpenBeforeActivation = browsersOrphanedBySweep(
+      openBeforeSweep,
+      report.outcomes,
+    );
     if (report.outcomes.some((outcome) => outcome.created)) {
       clearBrowserRestartPromptSeen(app.getPath("userData"));
     }
