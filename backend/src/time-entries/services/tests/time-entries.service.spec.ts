@@ -9,6 +9,7 @@ import { CaptureCleanupService } from '../../../captures/services/capture-cleanu
 import type { PrunedCaptures } from '../../../captures/services/capture-cleanup.service';
 import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { Membership } from '../../../database/entities/membership.entity';
+import { Organisation } from '../../../database/entities/organisation.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { Project } from '../../../database/entities/project.entity';
 import { ProjectMembership } from '../../../database/entities/project-membership.entity';
@@ -158,11 +159,24 @@ describe('TimeEntriesService', () => {
     };
   }
 
+  /**
+   * Only the day-boundary splitter reads it, for the Organisation's
+   * timezone. Defaults to UTC so the split lands on a fixed instant whatever
+   * timezone the test runner sits in — CI is UTC, this machine is not, and a
+   * server-local expectation passes in one and fails in the other.
+   */
+  function makeOrganisationsRepo(timezone = 'UTC') {
+    return {
+      findOne: jest.fn().mockResolvedValue({ settings: { timezone } }),
+    } as unknown as Repository<Organisation>;
+  }
+
   function makeService(
     overrides: {
       timeEntriesRepo?: Repository<TimeEntry>;
       timeEntryPausesRepo?: Repository<TimeEntryPause>;
       membershipsRepo?: Repository<Membership>;
+      organisationsRepo?: Repository<Organisation>;
       projectMembershipsRepo?: Repository<ProjectMembership>;
       projectTeamsRepo?: Repository<ProjectTeam>;
       projectsRepo?: Repository<Project>;
@@ -177,6 +191,7 @@ describe('TimeEntriesService', () => {
       overrides.timeEntriesRepo ?? makeTimeEntriesRepo(),
       overrides.timeEntryPausesRepo ?? makeTimeEntryPausesRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
+      overrides.organisationsRepo ?? makeOrganisationsRepo(),
       overrides.projectMembershipsRepo ?? makeProjectMembershipsRepo(),
       overrides.projectTeamsRepo ?? makeProjectTeamsRepo(),
       overrides.projectsRepo ?? makeProjectsRepo(),
@@ -672,6 +687,69 @@ describe('TimeEntriesService', () => {
           .mockResolvedValue({ id: 'm-admin', role: MembershipRole.ADMIN }),
       });
     }
+
+    it('refuses a span that overlaps time already tracked on a device', async () => {
+      // The reason manual gets its own scope: a manual entry has no Device,
+      // a tracked one does, so a device-scoped check would never see this.
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({
+            ...runningEntry,
+            deviceId: 'device-a',
+            endedAt: new Date('2026-01-01T10:30:00.000Z'),
+          }),
+        }),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    /**
+     * Creating excludes no entry, because none exists yet. Passing an empty
+     * string instead of omitting the clause reached Postgres as a uuid and
+     * failed the whole request with a 500 — invisible to a mocked repository,
+     * so this asserts the shape of the query rather than its result.
+     */
+    it('searches without excluding any entry id', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+      });
+
+      await service.createManual('org-1', 'user-1', 'project-1', {
+        startedAt: '2026-01-01T09:00:00.000Z',
+        endedAt: '2026-01-01T10:00:00.000Z',
+      });
+
+      const [[query]] = findOne.mock.calls as [[{ where: object[] }]];
+      const where = query.where;
+      for (const clause of where) {
+        expect(clause).not.toHaveProperty('id');
+      }
+    });
+
+    it('allows a span with nothing else in the way', async () => {
+      const service = makeService({
+        membershipsRepo: makeAdminMembershipsRepo(),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).resolves.toBeDefined();
+    });
 
     it('creates a completed entry with source=manual and records an audit log entry', async () => {
       const { auditLogService, record } = makeAuditLogService();
@@ -1948,126 +2026,101 @@ describe('TimeEntriesService', () => {
   });
 
   describe('pause', () => {
-    it('opens a pause span for the running entry and records an audit log entry', async () => {
+    // A Time entry is one unbroken span now: pausing ends it, and pressing
+    // play starts another. The hole-in-an-entry model made Duration
+    // disagree with the Start-End shown beside it.
+    it('ends the running entry, recording itself as a pause', async () => {
+      const save = jest.fn((entry: unknown) => Promise.resolve(entry));
       const timeEntriesRepo = makeTimeEntriesRepo({
         findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
-      });
-      const save = jest.fn().mockResolvedValue(undefined);
-      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
         save,
-        // Simulates the row `save` just persisted, so the subsequent
-        // toSummary() read (a separate `find` call) sees it as open.
-        find: jest.fn().mockResolvedValue([
-          {
-            id: 'pause-1',
-            timeEntryId: 'entry-running',
-            pausedAt: new Date('2026-01-01T09:20:00Z'),
-            resumedAt: null,
-          } as TimeEntryPause,
-        ]),
       });
       const { auditLogService, record } = makeAuditLogService();
-      const service = makeService({
-        timeEntriesRepo,
-        timeEntryPausesRepo,
-        auditLogService,
-      });
+      const service = makeService({ timeEntriesRepo, auditLogService });
 
       const result = await service.pause('org-1', 'user-1', null);
 
-      expect(save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          timeEntryId: 'entry-running',
-          resumedAt: null,
-        }),
-      );
+      expect(result.endedAt).not.toBeNull();
       expect(record).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ action: 'time_entry.paused' }),
       );
-      expect(result.pausedAt).toBeInstanceOf(Date);
     });
 
-    it('rejects with 404 when no timer is running', async () => {
+    it('writes no pause span at all', async () => {
+      const save = jest.fn().mockResolvedValue(undefined);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+        }),
+        timeEntryPausesRepo: makeTimeEntryPausesRepo({ save }),
+      });
+
+      await service.pause('org-1', 'user-1', null);
+
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('throws when nothing is running on this device', async () => {
       const service = makeService();
 
       await expect(
         service.pause('org-1', 'user-1', null),
       ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it('rejects with 409 when already paused', async () => {
-      const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
-      });
-      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
-        findOne: jest.fn().mockResolvedValue({
-          id: 'pause-open',
-          timeEntryId: 'entry-running',
-          pausedAt: new Date('2026-01-01T09:10:00Z'),
-          resumedAt: null,
-        }),
-      });
-      const service = makeService({ timeEntriesRepo, timeEntryPausesRepo });
-
-      await expect(
-        service.pause('org-1', 'user-1', null),
-      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
   describe('resume', () => {
-    it('closes the open pause span and records an audit log entry', async () => {
-      const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
-      });
-      const openPause = {
-        id: 'pause-open',
-        timeEntryId: 'entry-running',
-        pausedAt: new Date('2026-01-01T09:10:00Z'),
-        resumedAt: null,
-      } as TimeEntryPause;
-      const save = jest.fn((input: Partial<TimeEntryPause>) =>
-        Promise.resolve(input as TimeEntryPause),
-      );
-      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
-        findOne: jest.fn().mockResolvedValue(openPause),
-        save,
-      });
-      const { auditLogService, record } = makeAuditLogService();
+    // Nothing to resume any more, so this starts a fresh entry on whatever
+    // the device last tracked — kept so an agent that has not updated, and
+    // still calls pause then resume, keeps working.
+    it('starts a new entry on the last project tracked', async () => {
+      const findOne = jest
+        .fn()
+        // No running entry…
+        .mockResolvedValueOnce(null)
+        // …so it falls back to the most recently stopped one.
+        .mockResolvedValueOnce({
+          ...runningEntry,
+          projectId: 'project-1',
+          endedAt: new Date('2026-01-01T10:00:00.000Z'),
+        })
+        .mockResolvedValue(null);
       const service = makeService({
-        timeEntriesRepo,
-        timeEntryPausesRepo,
-        auditLogService,
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne,
+          find: jest.fn().mockResolvedValue([]),
+        }),
       });
 
-      await service.resume('org-1', 'user-1', null);
+      const result = await service.resume('org-1', 'user-1', null);
 
-      const savedPause = save.mock.calls[0][0] as TimeEntryPause;
-      expect(savedPause.resumedAt).toBeInstanceOf(Date);
-      expect(record).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ action: 'time_entry.resumed' }),
-      );
+      expect(result.projectId).toBe('project-1');
+      expect(result.endedAt).toBeNull();
     });
 
-    it('rejects with 404 when no timer is running', async () => {
-      const service = makeService();
+    it('answers with the running entry when one already is', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+        }),
+      });
+
+      const result = await service.resume('org-1', 'user-1', null);
+
+      expect(result.id).toBe('entry-running');
+    });
+
+    it('throws when the device has never tracked anything', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      });
 
       await expect(
         service.resume('org-1', 'user-1', null),
       ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it('rejects with 409 when not currently paused', async () => {
-      const timeEntriesRepo = makeTimeEntriesRepo({
-        findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
-      });
-      const service = makeService({ timeEntriesRepo });
-
-      await expect(
-        service.resume('org-1', 'user-1', null),
-      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -2633,10 +2686,10 @@ describe('TimeEntriesService', () => {
     });
 
     it('closes an overnight entry at local midnight and opens a new one for today', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2650,14 +2703,14 @@ describe('TimeEntriesService', () => {
       await service.splitRunningEntriesAcrossDayBoundary();
 
       const oldEntry = fake.entries.get('entry-orig')!;
-      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 6, 0, 0, 0));
+      expect(oldEntry.endedAt).toEqual(new Date('2026-01-06T00:00:00.000Z'));
 
       const newEntries = [...fake.entries.values()].filter(
         (e) => e.id !== 'entry-orig',
       );
       expect(newEntries).toHaveLength(1);
       expect(newEntries[0]).toMatchObject({
-        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+        startedAt: new Date('2026-01-06T00:00:00.000Z'),
         endedAt: null,
         projectId: 'project-1',
         taskId: 'task-1',
@@ -2666,10 +2719,10 @@ describe('TimeEntriesService', () => {
     });
 
     it('catches a multi-day-old entry fully up in one call', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 8, 12, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-08T12:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2687,53 +2740,72 @@ describe('TimeEntriesService', () => {
       const stillOpen = [...fake.entries.values()].find(
         (e) => e.endedAt === null,
       );
-      expect(stillOpen?.startedAt).toEqual(new Date(2026, 0, 8, 0, 0, 0));
+      expect(stillOpen?.startedAt).toEqual(
+        new Date('2026-01-08T00:00:00.000Z'),
+      );
     });
 
-    it('carries an open pause across the split instead of silently resuming it', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 10, 0, 0));
+    /**
+     * The 3:00 AM bug. Production runs UTC, so splitting at the *server's*
+     * midnight cut an EAT team's day at 03:00 local and left everyone with
+     * an entry starting at an hour they had not worked.
+     */
+    it("cuts at the organisation's midnight, not the server's", async () => {
+      // 10:00 UTC, well past both midnights.
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 5, 9, 0, 0),
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
       });
-      const openPause = {
-        id: 'pause-1',
-        organisationId: 'org-1',
-        timeEntryId: 'entry-orig',
-        pausedAt: new Date(2026, 0, 5, 20, 0, 0),
-        resumedAt: null,
-      } as TimeEntryPause;
-      const fake = makeFakeDataSource([original], [openPause]);
-      const timeEntriesRepo = makeTimeEntriesRepo({
-        find: jest.fn().mockResolvedValue([original]),
-      });
+      const fake = makeFakeDataSource([original], []);
       const service = makeService({
-        timeEntriesRepo,
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        // Africa/Nairobi is UTC+3, so its midnight is 21:00 UTC the day
+        // before — three hours earlier than the server's.
+        organisationsRepo: makeOrganisationsRepo('Africa/Nairobi'),
         dataSource: fake.dataSource,
       });
 
       await service.splitRunningEntriesAcrossDayBoundary();
 
-      const boundary = new Date(2026, 0, 6, 0, 0, 0);
-      const oldPause = fake.pauses.get('pause-1')!;
-      expect(oldPause.resumedAt).toEqual(boundary);
-
-      const newEntry = [...fake.entries.values()].find(
+      const next = [...fake.entries.values()].find(
         (e) => e.id !== 'entry-orig',
       )!;
-      const newPause = [...fake.pauses.values()].find(
-        (p) => p.timeEntryId === newEntry.id,
-      );
-      expect(newPause).toMatchObject({ pausedAt: boundary, resumedAt: null });
+      expect(next.startedAt.toISOString()).toBe('2026-01-05T21:00:00.000Z');
+    });
+
+    // Pausing ends an entry now, so no open pause can reach midnight. The
+    // splitter used to close one at the boundary and open another on the
+    // new entry, which manufactured rows holding nothing but a pause.
+    it('leaves pause spans alone entirely', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original], []);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(fake.pauses.size).toBe(0);
+      expect([...fake.entries.values()]).toHaveLength(2);
     });
 
     it('still splits into a positive-duration entry when startedAt is already exactly a previous midnight', async () => {
       // The steady-state shape this job's own output takes the night after
       // it first runs.
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 7, 8, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-07T08:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-orig',
-        startedAt: new Date(2026, 0, 6, 0, 0, 0),
+        startedAt: new Date('2026-01-06T00:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({
@@ -2747,17 +2819,17 @@ describe('TimeEntriesService', () => {
       await service.splitRunningEntriesAcrossDayBoundary();
 
       const oldEntry = fake.entries.get('entry-orig')!;
-      expect(oldEntry.endedAt).toEqual(new Date(2026, 0, 7, 0, 0, 0));
+      expect(oldEntry.endedAt).toEqual(new Date('2026-01-07T00:00:00.000Z'));
       expect(oldEntry.endedAt!.getTime()).toBeGreaterThan(
         oldEntry.startedAt.getTime(),
       );
     });
 
     it('leaves an entry that started today untouched', async () => {
-      jest.useFakeTimers().setSystemTime(new Date(2026, 0, 6, 15, 0, 0));
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T15:00:00.000Z'));
       const original = makeRunningEntry({
         id: 'entry-today',
-        startedAt: new Date(2026, 0, 6, 9, 0, 0),
+        startedAt: new Date('2026-01-06T09:00:00.000Z'),
       });
       const fake = makeFakeDataSource([original]);
       const timeEntriesRepo = makeTimeEntriesRepo({

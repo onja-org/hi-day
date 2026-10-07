@@ -1,13 +1,10 @@
 import type { DateRangePreset } from "./dateRange";
-import type { SendReportFileType } from "./sendReport";
+import type { SendReportInput } from "./sendReport";
 
 export type ScheduleFrequency = "daily" | "weekly" | "monthly";
 
 /** When and to whom a saved report is meant to be emailed. */
-export type ReportSchedule = {
-  emails: string[];
-  message: string;
-  fileType: SendReportFileType;
+export type ReportSchedule = Omit<SendReportInput, "subject"> & {
   /** The period the delivered report covers, resolved when it's sent. */
   dateRange: DateRangePreset;
   frequency: ScheduleFrequency;

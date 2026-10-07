@@ -1,37 +1,17 @@
 export {};
 
-// AuthStatus/TrackedProject/.../Window.api are declared once, ambiently,
-// in window.d.ts — shared across every renderer entry point.
-
-// How often the agent re-syncs with the server's own idea of what's
-// running — catches a timer started/stopped from the web console, and
-// keeps the elapsed display correct even if this device's clock drifts.
 const STATUS_POLL_INTERVAL_MS = 15_000;
-// How often the agent checks the OS's own idle-time counter while a timer
-// is running. Only matters while `idlePolicy.handling !== 'off'`.
 const IDLE_POLL_INTERVAL_MS = 10_000;
-// Bounded so an abandoned pairing attempt stops polling, not so this races
-// the backend's own expiry. Must stay comfortably ABOVE the 10-minute
-// PAIRING_TTL_MS in backend/src/devices/services/device-pairing.service.ts —
-// this used to be a 3-minute ceiling (60 attempts), which cut off well
-// before a normal first-time login (open the browser, type credentials,
-// click through) reliably finishes, always showing "link expired" even
-// though the code was still good server-side. 210 attempts (10.5 minutes)
-// gives a small buffer past the real TTL so "expired" only ever reflects
-// the server's own answer, never this client guessing early.
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 210;
 const DEFAULT_PAIRING_MESSAGE =
   "Sign in from your browser to link this device.";
-// After "Grant Access" is clicked, macOS gives no callback for when the
-// person actually flips the switch in System Settings — poll a few times
-// a second for a short window to detect it and auto-dismiss the banner.
 const SCREEN_RECORDING_POLL_INTERVAL_MS = 2_500;
 const SCREEN_RECORDING_POLL_TIMEOUT_MS = 30_000;
 
 function show(viewId: string): void {
   for (const el of document.querySelectorAll<HTMLElement>(
-    "#loading-view, #login-view, #status-view",
+    "#setup-view, #loading-view, #login-view, #status-view",
   )) {
     el.hidden = el.id !== viewId;
   }
@@ -55,7 +35,10 @@ userAvatar.addEventListener("click", () => {
 
 document.addEventListener("click", (event) => {
   if (profileMenu.hidden) return;
-  if (event.target instanceof Node && (userAvatar.contains(event.target) || profileMenu.contains(event.target))) {
+  if (
+    event.target instanceof Node &&
+    (userAvatar.contains(event.target) || profileMenu.contains(event.target))
+  ) {
     return;
   }
   hideProfileMenu();
@@ -96,6 +79,7 @@ function showLoginView(errorMessage?: string): void {
   // below empties the list rather than redrawing the old user's projects.
   projects = [];
   todaySecondsByProject = new Map();
+  lastTrackedProjectId = null;
   // Stops the clock, tells main to stop url-capture, and clears the row
   // highlight — otherwise the timer keeps counting behind the login screen.
   setRunning(null);
@@ -113,11 +97,6 @@ function showLoginView(errorMessage?: string): void {
   stopPairingPoll();
 }
 
-// How often the auto-update banner re-polls once the app is running — the
-// manual GitHub-releases check (checkForUpdate below) only ever needs to
-// run once at launch, but a silent download's progress/"restart to apply"
-// state can change at any point during the day, so this refreshes on an
-// interval instead.
 const AUTO_UPDATE_POLL_INTERVAL_MS = 10_000;
 
 const updateBannerEl = document.getElementById("update-banner")!;
@@ -126,26 +105,22 @@ const updateButtonEl = document.getElementById(
   "update-button",
 ) as HTMLButtonElement;
 
-// 'view' opens the releases page (the manual, GitHub-based fallback this
-// app has always had); 'restart' quits and installs a silently-downloaded
-// update (win/linux only — see auto-updater.ts). Set by refreshUpdateBanner
-// just before the banner is shown, read by the button's one click handler.
 let updateButtonMode: "view" | "restart" = "view";
-// Remembers which state the banner is currently showing (and, separately,
-// which one it was last dismissed for — phase + version) so a dismissed
-// banner stays hidden across polls until something actually changes (a new
-// version, or downloading finishing) rather than reappearing on the very
-// next 10s tick.
 let currentUpdateKey: string | null = null;
 let updateDismissedForKey: string | null = null;
 
-function showUpdateBanner(message: string, buttonMode: "view" | "restart", key: string): void {
+function showUpdateBanner(
+  message: string,
+  buttonMode: "view" | "restart",
+  key: string,
+): void {
   currentUpdateKey = key;
   if (updateDismissedForKey === key) return;
   updateMessageEl.textContent = message;
   updateButtonMode = buttonMode;
   updateButtonEl.hidden = false;
-  updateButtonEl.textContent = buttonMode === "restart" ? "Restart now" : "View update";
+  updateButtonEl.textContent =
+    buttonMode === "restart" ? "Restart now" : "View update";
   updateBannerEl.hidden = false;
 }
 
@@ -212,16 +187,81 @@ document.getElementById("update-dismiss")!.addEventListener("click", () => {
   updateDismissedForKey = currentUpdateKey;
 });
 
-async function init(): Promise<void> {
+const setupMessage = document.getElementById("setup-message")!;
+const setupManual = document.getElementById("setup-manual")!;
+const setupWarning = document.getElementById("setup-warning")!;
+const setupContinueButton = document.getElementById(
+  "setup-continue-button",
+) as HTMLButtonElement;
+
+/** "Chrome", "Chrome and Firefox", "Chrome, Edge and Firefox". */
+function listOf(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+async function showBrowserRestartSetup(): Promise<boolean> {
+  let prompt: BrowserRestartPrompt;
+  try {
+    prompt = await window.api.setup.browserRestartPrompt();
+  } catch {
+    return false;
+  }
+  if (!prompt.show) return false;
+
+  const manualNames = prompt.manual.map((entry) => entry.name);
+  const named = [...prompt.names, ...manualNames];
+  setupMessage.textContent =
+    `Website tracking needs ${listOf(named)} restarted once before it can ` +
+    `see which pages are open.` +
+    // Only promised for the ones Continue can actually relaunch.
+    (prompt.names.length > 0
+      ? ` Continue restarts ${listOf(prompt.names)} for you — save anything ` +
+        `unsaved first.`
+      : "");
+
+  // Said plainly rather than left to the person to notice: the button above
+  // will not touch these, so the screen has to say who does.
+  setupManual.textContent =
+    manualNames.length > 0
+      ? `${listOf(manualNames)} ${manualNames.length > 1 ? "need" : "needs"} ` +
+        `restarting by hand — Continue cannot do ${manualNames.length > 1 ? "those" : "that"} one.`
+      : "";
+  setupManual.hidden = manualNames.length === 0;
+
+  // One line only: a sentence per browser turned this into a wall of text.
+  setupWarning.textContent = prompt.warnings[0] ?? "";
+  setupWarning.hidden = prompt.warnings.length === 0;
+
+  show("setup-view");
+  return true;
+}
+
+function startApp(): void {
   void refreshUpdateBanner();
   setInterval(() => void refreshUpdateBanner(), AUTO_UPDATE_POLL_INTERVAL_MS);
 
-  const status = await window.api.getStatus();
-  if (status.loggedIn && status.organisationName) {
-    showLoggedIn(status.organisationName, status.email, status.name);
-  } else {
-    showLoginView();
-  }
+  void window.api
+    .getStatus()
+    .then((status) => {
+      if (status.loggedIn && status.organisationName) {
+        showLoggedIn(status.organisationName, status.email, status.name);
+      } else {
+        showLoginView();
+      }
+    })
+
+    .catch(() => showLoginView("Could not read this device's session."));
+}
+
+setupContinueButton.addEventListener("click", () => {
+  void window.api.setup.continueFromBrowserRestart();
+  startApp();
+});
+
+async function init(): Promise<void> {
+  if (await showBrowserRestartSetup()) return;
+  startApp();
 }
 
 async function pollPairing(): Promise<void> {
@@ -313,7 +353,9 @@ const idleAssignList = document.getElementById(
 const idleNotice = document.getElementById("idle-notice")!;
 const todayTotalEl = document.getElementById("today-total")!;
 const trackingProjectNameEl = document.getElementById("tracking-project-name")!;
-const taskTrigger = document.getElementById("task-trigger") as HTMLButtonElement;
+const taskTrigger = document.getElementById(
+  "task-trigger",
+) as HTMLButtonElement;
 const taskPanel = document.getElementById("task-panel")!;
 const taskPanelProject = document.getElementById("task-panel-project")!;
 const taskPanelClose = document.getElementById(
@@ -336,81 +378,6 @@ const screenRecordingGrantButton = document.getElementById(
 const screenRecordingSettingsButton = document.getElementById(
   "screen-recording-settings-button",
 ) as HTMLButtonElement;
-const browserRestartBanner = document.getElementById("browser-restart-banner")!;
-const browserRestartMessage = document.getElementById("browser-restart-message")!;
-const browserRestartButton = document.getElementById(
-  "browser-restart-button",
-) as HTMLButtonElement;
-const browserRestartDismiss = document.getElementById("browser-restart-dismiss")!;
-
-/** Dismissed for this run only, so it returns next start if the browser is
- * still untracked — it just stops repeating while someone is mid-task. */
-let browserRestartDismissed = false;
-
-/**
- * A browser open before the agent wrote its launcher overrides has no
- * accessibility tree, so its URLs go unrecorded until it is restarted, and
- * nothing else says so.
- *
- * Never blocking: losing URL capture must not stop time tracking, and a
- * modal over the timer would do exactly that.
- */
-/**
- * The platform the app is running on, as the main process reports it. Held
- * here so every path that shows the banner reads the same value — passing it
- * per call let one caller hand in a literal and defeat the Linux gate.
- */
-let hostPlatform: string | null = null;
-
-async function refreshBrowserRestartBanner(): Promise<void> {
-  // Linux-only: the launcher override this compensates for exists nowhere
-  // else. The main process answers empty off Linux too — this is the second
-  // of two gates.
-  if (hostPlatform !== "linux" || browserRestartDismissed) {
-    browserRestartBanner.hidden = true;
-    return;
-  }
-
-  const status = await window.api.browserRestart.status();
-  const names = [...new Set([...status.needsRestart, ...status.manual.map((m) => m.name)])];
-  if (names.length === 0) {
-    browserRestartBanner.hidden = true;
-    return;
-  }
-
-  // Reasons are deduplicated and the list is capped: one sentence per
-  // browser turned the banner into a wall of repeated text.
-  const reasons = [
-    ...new Set([...status.warnings, ...status.manual.map((e) => e.reason)]),
-  ];
-  const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} and others` : names.join(", ");
-
-  // Only offer the button when pressing it would finish the job; the rest is
-  // a browser we will not restart for them, and the reason says why.
-  browserRestartButton.hidden = status.needsRestart.length === 0;
-  browserRestartMessage.textContent = [
-    `Website tracking needs ${list} restarted.`,
-    ...reasons.slice(0, 1),
-  ].join(" ");
-  browserRestartBanner.hidden = false;
-}
-
-browserRestartDismiss.addEventListener("click", () => {
-  browserRestartDismissed = true;
-  browserRestartBanner.hidden = true;
-});
-
-browserRestartButton.addEventListener("click", () => {
-  browserRestartButton.disabled = true;
-  browserRestartMessage.textContent = "Restarting…";
-  void window.api.browserRestart
-    .restart()
-    .then(() => refreshBrowserRestartBanner())
-    .finally(() => {
-      browserRestartButton.disabled = false;
-    });
-});
-
 const accessibilityBanner = document.getElementById("accessibility-banner")!;
 const accessibilityBannerMessage = document.getElementById(
   "accessibility-banner-message",
@@ -424,35 +391,18 @@ let tickHandle: ReturnType<typeof setInterval> | null = null;
 let idlePollHandle: ReturnType<typeof setInterval> | null = null;
 let screenRecordingPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
-// Server clock minus local clock, at the moment of the last successful
-// poll — lets the 1s tick compute elapsed time from the server's own
-// notion of "now" instead of trusting this device's clock.
+
 let serverOffsetMs = 0;
-/**
- * The account-wide worked milliseconds as of the last poll, and the local
- * instant it was read, so the 1s tick advances it without re-polling. Null
- * until the first successful poll, and left null while offline — which is
- * what makes liveElapsedMs fall back to this device's own elapsed time.
- */
 let accountWorkedMs = 0;
 let accountWorkedMsAt: number | null = null;
 /** The account total frozen at the instant this device paused. */
 let pausedAtWorkedMs = 0;
 let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
 let projects: TrackedProject[] = [];
-/**
- * Seconds already recorded against each Project TODAY, from entries that
- * have ended. Switching Projects necessarily ends the previous entry — only
- * one may be open at a time — so without this the timer would read zero
- * every time someone returned to a Project they had already worked on.
- * Excludes the running entry, whose time is added live by `tick()`.
- */
+
 let todaySecondsByProject = new Map<string, number>();
-// Open Tasks of the Project last loaded — the panel filters these locally.
 let currentProjectTasks: TrackedTask[] = [];
-// Applies to the next start/switch only; never edits a running entry.
 let selectedTaskId: string | null = null;
-// Phosphor Play/Pause (regular), the same glyphs the web console uses.
 const PLAY_PATH =
   "M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z";
 const PAUSE_PATH =
@@ -462,10 +412,6 @@ const PAUSE_PATH =
 const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
-// The OS idle-time counter only ever decreases when real input happens —
-// comparing consecutive polls is how we detect "the person came back" and
-// re-arm the prompt for the *next* idle stretch, rather than only ever
-// firing once per app session.
 let lastIdleSeconds = 0;
 let idleHandled = false;
 let pendingIdleDiscardAt: string | null = null;
@@ -477,12 +423,6 @@ function showTrackingError(message: string): void {
   trackingError.hidden = false;
 }
 
-/**
- * Runs a tracking call and returns to the login view if the device session
- * has been revoked. `unauthorized` is a real 401, not a transient failure,
- * so a remote sign-out takes effect here rather than showing an inline
- * error the person has to act on.
- */
 async function callTracking<T>(
   fn: () => Promise<TrackingResult<T>>,
 ): Promise<TrackingResult<T>> {
@@ -521,13 +461,27 @@ function formatElapsed(ms: number): string {
 }
 
 function projectNameFor(projectId: string): string {
-  return projects.find((project) => project.id === projectId)?.name ?? projectId;
+  return (
+    projects.find((project) => project.id === projectId)?.name ?? projectId
+  );
 }
+
+// Lets a paused timer keep showing its project and frozen total.
+let lastTrackedProjectId: string | null = null;
 
 function tick(): void {
   if (!runningEntry) {
-    timerDisplay.hidden = true;
-    trackingProjectNameEl.textContent = "";
+    const projectId = lastTrackedProjectId;
+    if (!projectId || !projects.some((project) => project.id === projectId)) {
+      timerDisplay.hidden = true;
+      trackingProjectNameEl.textContent = "";
+      return;
+    }
+    trackingProjectNameEl.textContent = projectNameFor(projectId);
+    timerDisplay.hidden = false;
+    timerDisplay.textContent = formatElapsed(
+      displayedSecondsFor(projectId) * 1000,
+    );
     return;
   }
 
@@ -546,7 +500,12 @@ function tick(): void {
   if (activeTotal) activeTotal.textContent = formatted;
 }
 
+// Lets an in-flight status poll detect that its snapshot is stale.
+let runningStateVersion = 0;
+
 function setRunning(entry: TimeEntry | null): void {
+  runningStateVersion++;
+  if (entry) lastTrackedProjectId = entry.projectId;
   // "Accumulating", not just "an entry exists": a paused entry is still
   // non-null (endedAt stays null so the one-running-timer rule holds), so
   // keying on null-ness alone let capture accrue straight through a pause.
@@ -589,7 +548,9 @@ function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
   idleSinceEl.textContent = formatClockTime(idleStartedAtIso);
 
   idleBannerMessage.textContent = "";
-  idleBannerMessage.append(document.createTextNode("No keyboard or mouse activity while tracking "));
+  idleBannerMessage.append(
+    document.createTextNode("No keyboard or mouse activity while tracking "),
+  );
   const projectNameStrong = document.createElement("strong");
   projectNameStrong.textContent = runningEntry
     ? projectNameFor(runningEntry.projectId)
@@ -701,15 +662,6 @@ function displayedSecondsFor(projectId: string): number {
 function liveElapsedMs(): number {
   if (!runningEntry) return 0;
 
-  // The account's total, not this device's entry: a person may track on a
-  // laptop and a desktop at once, and both show the same figure — the union
-  // of their time, counting a shared hour once (ADR-0022). A device joining
-  // at 10:00 shows the hour the other already accrued, not zero.
-  //
-  // Frozen while *this* device is paused. The account total may still be
-  // climbing because another device kept tracking, but a clock ticking under
-  // the word "Paused" reads as a bug to the person who just paused it; it
-  // re-syncs on resume.
   if (runningEntry.pausedAt) return pausedAtWorkedMs;
 
   if (accountWorkedMsAt === null) {
@@ -743,13 +695,6 @@ async function refreshTodayTotals(): Promise<void> {
   todaySecondsByProject = totals;
 }
 
-/**
- * Renders one row per Project, each showing today's tracked total and
- * whether the timer is currently on it. Clicking a row moves the timer
- * there: the previous Project's entry is ended (its time is kept, and
- * shown in its row) and a new entry opens for the chosen one — the closest
- * thing to "pause the other project" the single-open-entry rule allows.
- */
 function renderProjects(): void {
   projectList.innerHTML = "";
   projectTotalElements.clear();
@@ -821,7 +766,8 @@ async function selectProject(projectId: string): Promise<void> {
   // pause icon, so doing nothing would make that icon a lie.
   if (runningEntry?.projectId === projectId && !runningEntry.pausedAt) {
     const paused = await window.api.tracking.pause();
-    if (paused.ok) setRunning(paused.data);
+
+    if (paused.ok) setRunning(null);
     else handleTrackingFailure(paused);
     return;
   }
@@ -850,12 +796,6 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   if (!result.ok) return null;
   const status = result.data;
 
-  // On macOS, window titles and screenshots are gated by the same Screen
-  // Recording permission (see docs/adr/0011-..., docs/adr/0012-...), so the
-  // banner there covers either capture feature being on. On Linux/Wayland,
-  // only screenshots need a grant (the portal call in screenshot-portal.ts)
-  // — window tracking already works there via AT-SPI2 (docs/adr/0016-...)
-  // with no permission step of its own.
   const isMacCaptureGate =
     status.platform === "macos" &&
     (status.windowTrackingEnabled || status.screenshotsEnabled);
@@ -873,16 +813,10 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
-  // Shown whenever the grant is missing, not just at first run, since the user
-  // can revoke it mid-session. Not gated on Firefox being installed: the app
-  // cannot tell without probing, and a redundant banner beats a silent gap.
   accessibilityBanner.hidden = !(
     status.platform === "macos" && !status.accessibilityGranted
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
-
-  hostPlatform = status.platform;
-  void refreshBrowserRestartBanner();
 
   return status;
 }
@@ -894,9 +828,6 @@ function stopScreenRecordingGrantPolling(): void {
 
 screenRecordingGrantButton.addEventListener("click", () => {
   void window.api.tracking.requestScreenRecordingAccess().then(() => {
-    // macOS won't re-show its native prompt on repeat calls, so grant
-    // detection has to be polled rather than awaited — stop as soon as
-    // access is detected, or after a bounded timeout either way.
     stopScreenRecordingGrantPolling();
     const deadline = Date.now() + SCREEN_RECORDING_POLL_TIMEOUT_MS;
     screenRecordingPollHandle = setInterval(() => {
@@ -1052,13 +983,6 @@ function startOfToday(): number {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
 
-/**
- * Keeps the visible timer to today only. An entry started before midnight
- * is switched to a fresh one if still running, or closed at the instant it
- * was paused — never at "now", which would bill the intervening hours.
- *
- * Returns true when it acted, so the caller skips the stale entry.
- */
 async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
   if (new Date(entry.startedAt).getTime() >= startOfToday()) return false;
 
@@ -1077,19 +1001,14 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
 }
 
 async function refreshStatus(): Promise<void> {
+  const versionAtStart = runningStateVersion;
   const result = await callTracking(() => window.api.tracking.status());
   if (!result.ok) {
     if (result.unauthorized) {
-      // Not a transient/offline blip — the backend has actually revoked
-      // this session (e.g. an admin's remote sign-out). Every future poll
-      // would fail identically, so switch to the login screen right away
-      // instead of silently retrying forever.
       showLoginView(result.message);
       return;
     }
-    // A genuinely transient/offline failure shouldn't wipe the
-    // currently-displayed timer — just skip this poll and try again next
-    // interval.
+
     return;
   }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
@@ -1105,6 +1024,8 @@ async function refreshStatus(): Promise<void> {
   // ended elsewhere (the web console, a midnight split) and its time needs
   // to move into the per-Project rows.
   await refreshTodayTotals();
+  // A click finished mid-poll; applying this snapshot would revert it.
+  if (versionAtStart !== runningStateVersion) return;
   setRunning(entry);
 }
 
@@ -1161,11 +1082,12 @@ async function startTracking(): Promise<void> {
     return;
   }
 
-  await loadTasks(target.projectId);
-  if (target.taskId) {
-    selectedTaskId = target.taskId;
-    updateCurrentTaskLabel();
-  }
+  void loadTasks(target.projectId).then(() => {
+    if (target.taskId) {
+      selectedTaskId = target.taskId;
+      updateCurrentTaskLabel();
+    }
+  });
 
   const result = await window.api.tracking.start(
     target.projectId,
@@ -1193,11 +1115,18 @@ timerToggle.addEventListener("click", () => {
       }
 
       clearTrackingError();
+      // `pausedAt` is never set any more — pausing ends the entry — so this
+      // always pauses, and starting again goes through the `!runningEntry`
+      // branch above. `resume` stays reachable for an older agent.
       const result = runningEntry.pausedAt
         ? await window.api.tracking.resume()
         : await window.api.tracking.pause();
       if (result.ok) {
-        setRunning(result.data);
+        setRunning(result.data.endedAt ? null : result.data);
+        if (result.data.endedAt) await refreshTodayTotals();
+      } else if (/no timer is currently running/i.test(result.message)) {
+        // Already stopped server-side: resync instead of showing an error.
+        await refreshStatus();
       } else {
         handleTrackingFailure(result);
       }
@@ -1231,13 +1160,17 @@ idleKeepButton.addEventListener("click", () => {
 });
 
 /** Ends the entry at when idleness started, then starts a fresh one on `resumeProjectId`. */
-async function discardIdleTimeAndResume(resumeProjectId: string): Promise<void> {
+async function discardIdleTimeAndResume(
+  resumeProjectId: string,
+): Promise<void> {
   if (!pendingIdleDiscardAt) return;
   const discardAt = pendingIdleDiscardAt;
   const taskId = runningEntry?.taskId ?? null;
   hideIdleBanner();
 
-  const stopResult = await callTracking(() => window.api.tracking.stop(discardAt));
+  const stopResult = await callTracking(() =>
+    window.api.tracking.stop(discardAt),
+  );
   if (!stopResult.ok) {
     handleTrackingFailure(stopResult);
     return;
@@ -1271,7 +1204,10 @@ idleAssignToggle.addEventListener("click", () => {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = project.name;
-    button.addEventListener("click", () => void discardIdleTimeAndResume(project.id));
+    button.addEventListener(
+      "click",
+      () => void discardIdleTimeAndResume(project.id),
+    );
 
     const item = document.createElement("li");
     item.appendChild(button);
@@ -1289,14 +1225,8 @@ async function initTracking(): Promise<void> {
   );
   idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
 
-  // Settle the server's view before deciding whether to auto-start, so an
-  // already-running or paused entry is respected rather than met with a
-  // duplicate start the backend would 409. Ahead of startPolling() so the
-  // decision isn't racing its first refresh.
   await refreshStatus();
 
-  // Signing in is itself the intent to track, so no click is required.
-  // Only fires when nothing is tracked yet — a paused entry stays paused.
   if (!runningEntry) {
     await startTracking();
   }

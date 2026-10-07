@@ -20,7 +20,12 @@ import {
 } from 'class-validator';
 import { REPORT_DATE_PRESETS } from '../../common/report-date-range.util';
 
-export const SAVED_REPORT_TYPES = ['time-and-activity', 'daily-totals'];
+export const SAVED_REPORT_TYPES = [
+  'time-and-activity',
+  'daily-totals',
+  'apps-and-urls',
+  'work-sessions',
+];
 const GROUPINGS = ['none', 'day', 'week', 'project', 'member', 'team', 'todo'];
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_FILTER_VALUES = 200;

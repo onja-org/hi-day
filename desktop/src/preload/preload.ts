@@ -99,16 +99,21 @@ export type TrackingResult<T> =
     };
 
 /**
- * Browsers running without an accessibility tree, so their URLs go
- * untracked until they are restarted. Linux only — `needsRestart` is empty
- * everywhere else.
+ * The first-run screen asking for a browser restart: whether to show it at
+ * all, and what it should say. Linux only — `show` is false everywhere
+ * else, and false again once this install has answered once.
  */
-export interface BlindBrowserStatus {
-  /** Names we can restart for them. */
-  needsRestart: string[];
-  /** Names with no launcher to relaunch them from, and why. */
+export interface BrowserRestartPrompt {
+  show: boolean;
+  /** Browsers Continue will restart, by display name. */
+  names: string[];
+  /**
+   * Browsers Continue cannot restart — no launcher to start them from — so
+   * the person has to do it themselves. Named apart from `names` because
+   * the screen must only promise what pressing the button actually does.
+   */
   manual: { name: string; reason: string }[];
-  /** What to tell them before they press the button. */
+  /** What to tell them before they press Continue. */
   warnings: string[];
 }
 
@@ -230,11 +235,13 @@ const api = {
       ipcRenderer.send("urlCapture:timerStateChanged", running);
     },
   },
-  browserRestart: {
-    status: (): Promise<BlindBrowserStatus> =>
-      ipcRenderer.invoke("browserRestart:status") as Promise<BlindBrowserStatus>,
-    restart: (): Promise<BlindBrowserStatus> =>
-      ipcRenderer.invoke("browserRestart:restart") as Promise<BlindBrowserStatus>,
+  setup: {
+    browserRestartPrompt: (): Promise<BrowserRestartPrompt> =>
+      ipcRenderer.invoke(
+        "setup:browserRestartPrompt",
+      ) as Promise<BrowserRestartPrompt>,
+    continueFromBrowserRestart: (): Promise<void> =>
+      ipcRenderer.invoke("setup:continueFromBrowserRestart") as Promise<void>,
   },
   update: {
     status: (): Promise<UpdateCheckResult> =>

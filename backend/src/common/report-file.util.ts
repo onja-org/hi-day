@@ -46,7 +46,7 @@ function formatTime(date: Date, zone: string): string {
   }).format(date);
 }
 
-function formatDuration(seconds: number | null): string {
+export function formatDuration(seconds: number | null): string {
   if (seconds === null) return '';
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -77,15 +77,39 @@ export function reportRows(entries: ReportEntry[], zone: string): string[][] {
  * spreadsheet would run as a formula (`=…`, `+…`, `-…`, `@…`) is prefixed
  * with an apostrophe, which makes Excel and Sheets show it as plain text.
  */
-function csvCell(value: string): string {
+export function csvCell(value: string): string {
   const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-export function buildReportCsv(entries: ReportEntry[], zone: string): string {
-  return [HEADER, ...reportRows(entries, zone)]
+/** A header and rows as CSV text, one `csvCell`-escaped line per row. */
+export function buildCsv(header: string[], rows: string[][]): string {
+  return [header, ...rows]
     .map((row) => row.map(csvCell).join(','))
     .join('\r\n');
+}
+
+/** A landscape PDF: `title` above a table of `header` and `rows`. */
+export function buildTablePdf(
+  title: string,
+  header: string[],
+  rows: string[][],
+  fontSize: number,
+): Buffer {
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(14);
+  doc.text(title, 14, 15);
+  autoTable(doc, {
+    head: [header],
+    body: rows,
+    startY: 20,
+    styles: { fontSize },
+  });
+  return Buffer.from(doc.output('arraybuffer'));
+}
+
+export function buildReportCsv(entries: ReportEntry[], zone: string): string {
+  return buildCsv(HEADER, reportRows(entries, zone));
 }
 
 export function buildReportPdf(
@@ -93,14 +117,5 @@ export function buildReportPdf(
   entries: ReportEntry[],
   zone: string,
 ): Buffer {
-  const doc = new jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14);
-  doc.text(title, 14, 15);
-  autoTable(doc, {
-    head: [HEADER],
-    body: reportRows(entries, zone),
-    startY: 20,
-    styles: { fontSize: 8 },
-  });
-  return Buffer.from(doc.output('arraybuffer'));
+  return buildTablePdf(title, HEADER, reportRows(entries, zone), 8);
 }

@@ -36,6 +36,7 @@ export function ForgotPasswordForm() {
         label="Email address"
         name="email"
         type="email"
+        placeholder="you@company.com"
         autoComplete="email"
         required
         disabled={mutation.data?.ok}

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Put,
@@ -15,6 +16,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { SetSchedulePausedDto } from '../dto/set-schedule-paused.dto';
 import { UpsertSavedReportDto } from '../dto/upsert-saved-report.dto';
 import type { SavedReportView } from '../services/saved-reports.service';
 import { SavedReportsService } from '../services/saved-reports.service';
@@ -64,6 +66,24 @@ export class SavedReportsController {
       dto,
     );
     return { report, message: 'Report saved' };
+  }
+
+  @Patch(':savedReportId/schedule-paused')
+  async setSchedulePaused(
+    @Param('savedReportId', ParseUUIDPipe) savedReportId: string,
+    @Body() dto: SetSchedulePausedDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ report: SavedReportView; message: string }> {
+    const report = await this.savedReportsService.setSchedulePaused(
+      request.organisationId!,
+      request.userId,
+      savedReportId,
+      dto.paused,
+    );
+    return {
+      report,
+      message: dto.paused ? 'Delivery paused' : 'Delivery resumed',
+    };
   }
 
   @Delete(':savedReportId')

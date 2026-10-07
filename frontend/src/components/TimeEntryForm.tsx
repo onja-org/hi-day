@@ -9,13 +9,22 @@ import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
+import { findOverlappingEntry } from "@/lib/findOverlappingEntry";
+import { formatClockTime } from "@/lib/formatClockTime";
 import type { TimeEntryChange } from "@/lib/describeTimeEntryChanges";
+import {
+  hasNoErrors,
+  serverMessageToField,
+  validateTimeRange,
+  type TimeEntryFieldErrors,
+} from "@/lib/timeEntryFieldErrors";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem, UpdateTimeEntryInput } from "@/types/timeEntry";
 import { LogTimeForSelect } from "@/components/LogTimeForSelect";
 import { Spinner } from "@/components/Spinner";
 import { TimeEntryEditConfirmDialog } from "@/components/TimeEntryEditConfirmDialog";
 import { TimeEntryTimeFields } from "@/components/TimeEntryTimeFields";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { SelectField } from "@/components/ui/form/SelectField";
 
 type TimeEntryFormProps =
@@ -26,6 +35,8 @@ type TimeEntryFormProps =
       /** Whose timesheet the entry lands on. Set when an admin is adding
        * time to someone else's day; omitted, it's the caller's own. */
       forMembershipId?: string;
+      /** Entries already on screen, for warning about a clash early. */
+      existingEntries?: TimeEntryListItem[];
       onSaved: () => void;
     }
   | {
@@ -33,6 +44,7 @@ type TimeEntryFormProps =
       mode: "edit";
       entry: TimeEntryListItem;
       forMembershipId?: undefined;
+      existingEntries?: TimeEntryListItem[];
       onSaved: () => void;
     };
 
@@ -41,10 +53,12 @@ export function TimeEntryForm({
   mode,
   entry,
   forMembershipId,
+  existingEntries,
   onSaved,
 }: TimeEntryFormProps) {
   const projectsQuery = useMyProjects(organisationId);
   const [projectId, setProjectId] = useState(entry?.projectId ?? "");
+  const [errors, setErrors] = useState<TimeEntryFieldErrors>({});
   // An edit is held here between submitting the form and confirming it, so
   // the confirmation shows the real diff and applies exactly what was
   // shown. Null means nothing is awaiting confirmation.
@@ -77,11 +91,15 @@ export function TimeEntryForm({
       endedAt: string;
       membershipId?: string;
     }) => createManualTimeEntry(organisationId, input),
+    // Shown under the field at fault rather than as a toast in the corner
+    meta: { inlineErrors: true },
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
         onSaved();
+        return;
       }
+      setErrors(serverMessageToField(result.message));
     },
   });
 
@@ -92,13 +110,54 @@ export function TimeEntryForm({
       startedAt?: string;
       endedAt?: string;
     }) => updateTimeEntry(organisationId, entry!.id, input),
+    meta: { inlineErrors: true },
     onSuccess: (result) => {
       if (result.ok) {
         invalidate();
         onSaved();
+        return;
       }
+      setPendingEdit(null);
+      setErrors(serverMessageToField(result.message));
     },
   });
+
+  /** Judges the times as they are picked, rather than on submit. Silent
+   * while either is empty — someone part-way through has not erred yet. */
+  function handleTimesChange(startedAt: string, endedAt: string): void {
+    if (startedAt === "" || endedAt === "") {
+      setErrors({});
+      return;
+    }
+
+    const rangeErrors = validateTimeRange(startedAt, endedAt);
+    if (!hasNoErrors(rangeErrors)) {
+      setErrors(rangeErrors);
+      return;
+    }
+
+    // Only when we know whose day it is, or an admin's view of someone
+    // else's entry would read as a clash.
+    const membershipId = entry?.membershipId ?? forMembershipId;
+    const clash =
+      existingEntries && membershipId
+        ? findOverlappingEntry({
+            entries: existingEntries,
+            membershipId,
+            excludeId: entry?.id,
+            startedAt,
+            endedAt,
+          })
+        : null;
+
+    setErrors(
+      clash
+        ? {
+            range: `Overlaps ${clash.projectName}, already tracked ${formatClockTime(clash.startedAt)}–${clash.endedAt ? formatClockTime(clash.endedAt) : "now"}.`,
+          }
+        : {},
+    );
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -107,6 +166,15 @@ export function TimeEntryForm({
     const startedAt = String(formData.get("startedAt") ?? "");
     const endedAt = String(formData.get("endedAt") ?? "");
     const membershipId = String(formData.get("membershipId") ?? "");
+
+    if (!isTicking) {
+      const rangeErrors = validateTimeRange(startedAt, endedAt);
+      if (!hasNoErrors(rangeErrors)) {
+        setErrors(rangeErrors);
+        return;
+      }
+    }
+    setErrors({});
 
     if (mode === "create") {
       createMutation.mutate({
@@ -223,7 +291,11 @@ export function TimeEntryForm({
           startedAt={startedAtDefault}
           endedAt={endedAtDefault}
           isTicking={isTicking}
+          errors={errors}
+          onChange={handleTimesChange}
         />
+
+        {errors.form && <ErrorMessage message={errors.form} />}
 
         <button
           type="submit"

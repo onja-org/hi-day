@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PaperPlaneRightIcon } from "@phosphor-icons/react";
+import { useModalSubmit } from "@/hooks/useModalSubmit";
 import type { SendReportInput } from "@/types/sendReport";
 import { SendReportModal } from "./SendReportModal";
 
@@ -14,12 +15,11 @@ type SendReportButtonProps = {
 /** An icon button that opens the send-report modal. */
 export function SendReportButton({ defaultSubject, onSend }: SendReportButtonProps) {
   const [open, setOpen] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | undefined>();
-  const [isPending, setIsPending] = useState(false);
+  const sending = useModalSubmit();
 
   function close() {
     setOpen(false);
-    setErrorMessage(undefined);
+    sending.reset();
   }
 
   return (
@@ -36,16 +36,11 @@ export function SendReportButton({ defaultSubject, onSend }: SendReportButtonPro
       {open && (
         <SendReportModal
           defaultSubject={defaultSubject}
-          errorMessage={errorMessage}
-          isPending={isPending}
+          errorMessage={sending.errorMessage}
+          isPending={sending.isPending}
           onClose={close}
           onSend={async (input) => {
-            setIsPending(true);
-            setErrorMessage(undefined);
-            const failure = await onSend(input);
-            setIsPending(false);
-            if (failure) setErrorMessage(failure);
-            else close();
+            if (await sending.submit(() => onSend(input))) close();
           }}
         />
       )}

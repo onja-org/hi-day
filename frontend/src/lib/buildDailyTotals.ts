@@ -1,4 +1,5 @@
 import { entrySeconds } from "./entrySeconds";
+import { keyAsLocalDate, localDateToKey } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type DailyTotal = {
@@ -10,18 +11,6 @@ export type WeeklyBucket = {
   label: string;
   seconds: number;
 };
-
-function toDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-export function fromDateKey(dateKey: string): Date {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
 
 /**
  * Zero-filled per-local-calendar-day totals across `[from, to]` (inclusive),
@@ -40,12 +29,12 @@ export function buildDailyTotals(
   let cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   const end = new Date(to.getFullYear(), to.getMonth(), to.getDate());
   while (cursor.getTime() <= end.getTime()) {
-    totals.set(toDateKey(cursor), 0);
+    totals.set(localDateToKey(cursor), 0);
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
   }
 
   for (const entry of entries) {
-    const key = toDateKey(new Date(entry.startedAt));
+    const key = localDateToKey(new Date(entry.startedAt));
     if (totals.has(key)) {
       totals.set(key, totals.get(key)! + entrySeconds(entry, elapsedNow));
     }
@@ -63,8 +52,8 @@ export function bucketWeekly(daily: DailyTotal[]): WeeklyBucket[] {
   const buckets: WeeklyBucket[] = [];
   for (let i = 0; i < daily.length; i += WEEK_CHUNK_SIZE) {
     const chunk = daily.slice(i, i + WEEK_CHUNK_SIZE);
-    const start = fromDateKey(chunk[0].dateKey);
-    const end = fromDateKey(chunk[chunk.length - 1].dateKey);
+    const start = keyAsLocalDate(chunk[0].dateKey);
+    const end = keyAsLocalDate(chunk[chunk.length - 1].dateKey);
     const label =
       start.getMonth() === end.getMonth()
         ? `${start.toLocaleDateString([], { month: "short", day: "numeric" })}–${end.getDate()}`

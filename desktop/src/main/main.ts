@@ -39,8 +39,9 @@ import {
 } from "./resolvers/resolver-paths";
 import { applyBrowserActivation } from "./resolvers/linux/browser-activation";
 import { BrowserRestartService } from "./resolvers/linux/browser-restart-service";
-import { displayName } from "./resolvers/linux/blind-browsers";
-import type { BlindBrowserStatus } from "../preload/preload";
+import { browserRestartPrompt } from "./browser-restart-prompt";
+import { markBrowserRestartPromptSeen } from "./setup-state";
+import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
   SETTINGS_DEEP_LINKS,
@@ -906,78 +907,32 @@ async function registerIpcHandlers(): Promise<void> {
   });
 
   ipcMain.handle(
-    "browserRestart:status",
-    (): BlindBrowserStatus => blindBrowserStatus(),
+    "setup:browserRestartPrompt",
+    (): BrowserRestartPrompt =>
+      browserRestartPrompt({
+        platform: process.platform,
+        userDataDir: app.getPath("userData"),
+        findBlind: () => new BrowserRestartService().findBlind(),
+        log: (line) => console.log(line),
+      }),
   );
 
-  ipcMain.handle(
-    "browserRestart:restart",
-    async (): Promise<BlindBrowserStatus> => {
-      if (process.platform !== "linux")
-    return { needsRestart: [], manual: [], warnings: [] };
-      const service = new BrowserRestartService({
-        logger: (line) => console.log(line),
-      });
-      await service.restart(service.findBlind().restartable);
-      // Re-read rather than assume: a browser that refused to die is still
-      // blind, and the banner should keep saying so.
-      invalidateBlindBrowserCache();
-      return blindBrowserStatus();
-    },
-  );
-}
+  ipcMain.handle("setup:continueFromBrowserRestart", async (): Promise<void> => {
+    // Recorded before the restart, not after: the person has given their
+    // answer, and a browser that refuses to die must not buy them the same
+    // screen again on the next launch.
+    markBrowserRestartPromptSeen(app.getPath("userData"));
+    if (process.platform !== "linux") return;
 
-/**
- * Cached because the renderer asks on every capture-status refresh — as
- * often as every 2.5 seconds during a permission grant — and each answer
- * costs a full `/proc` scan. Cached permanently once empty: activation has
- * run by then, so the set can only shrink.
- */
-let blindBrowserCache: { status: BlindBrowserStatus; atMs: number } | null = null;
-const BLIND_BROWSER_CACHE_MS = 10_000;
-
-function invalidateBlindBrowserCache(): void {
-  blindBrowserCache = null;
-}
-
-/**
- * Browsers still running without an accessibility tree. Reported, not acted
- * on: restarting one ends whatever is unsaved, so the timing is the
- * person's.
- */
-function blindBrowserStatus(): BlindBrowserStatus {
-  if (process.platform !== "linux")
-    return { needsRestart: [], manual: [], warnings: [] };
-
-  const cached = blindBrowserCache;
-  if (cached) {
-    const isEmpty =
-      cached.status.needsRestart.length === 0 && cached.status.manual.length === 0;
-    if (isEmpty || Date.now() - cached.atMs < BLIND_BROWSER_CACHE_MS) {
-      return cached.status;
-    }
-  }
-
-  try {
-    const report = new BrowserRestartService().findBlind();
-    const status: BlindBrowserStatus = {
-      needsRestart: [...new Set(report.restartable.map((b) => displayName(b.command)))],
-      manual: [
-        ...new Map(
-          report.manual.map((entry) => [
-            entry.browser.command,
-            { name: displayName(entry.browser.command), reason: entry.reason },
-          ]),
-        ).values(),
-      ],
-      warnings: report.warnings,
-    };
-    blindBrowserCache = { status, atMs: Date.now() };
-    return status;
-  } catch (error) {
-    console.log(`[browser-restart] status unavailable: ${String(error)}`);
-    return { needsRestart: [], manual: [], warnings: [] };
-  }
+    const service = new BrowserRestartService({
+      logger: (line) => console.log(line),
+    });
+    // Re-read rather than reuse what the screen was drawn from: only
+    // browsers running at this instant are touched, and each is relaunched
+    // from the process we just ended. A browser closed in the meantime has
+    // no process to find, so it is never opened on the person's behalf.
+    await service.restart(service.findBlind().restartable);
+  });
 }
 
 /**
@@ -1067,10 +1022,13 @@ if (!gotSingleInstanceLock) {
     console.error(`[child-process] gone: ${details.type} ${details.reason}`);
   });
 
-  // Quitting must PAUSE the running timer, never stop or discard it — the
-  // elapsed value has to survive to the next launch. The pause is a network
-  // call, so the first quit is deferred until it settles and then re-issued.
-  // `quitPauseComplete` makes that re-issue a plain quit instead of looping.
+  // Quitting ends the running timer rather than leaving it open. Pausing is
+  // what does that now — an entry is one unbroken span, so pause closes it —
+  // and the elapsed time survives in the finished entry rather than in an
+  // entry still open at midnight for the day-boundary split to carve up.
+  // The call is over the network, so the first quit is deferred until it
+  // settles and then re-issued; `quitPauseComplete` makes that re-issue a
+  // plain quit instead of looping.
   app.on("before-quit", (event) => {
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();

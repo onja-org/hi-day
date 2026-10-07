@@ -1,96 +1,92 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { CaretLeftIcon } from "@phosphor-icons/react";
-import { ActionsMenu } from "@/components/ActionsMenu";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Spinner } from "@/components/Spinner";
 import { Table } from "@/components/ui/table/Table";
 import { TableBody } from "@/components/ui/table/TableBody";
-import { TableCell } from "@/components/ui/table/TableCell";
 import { TableHead } from "@/components/ui/table/TableHead";
 import { TableHeader } from "@/components/ui/table/TableHeader";
 import { TableRow } from "@/components/ui/table/TableRow";
-import { describeSchedule } from "@/lib/describeSchedule";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
+import type { ReportSchedule } from "@/types/reportSchedule";
 import type { SavedReport } from "@/types/savedReport";
+import { ReportPageHeader } from "./ReportPageHeader";
+import { ReportStatus } from "./ReportStatus";
+import { SavedReportRow } from "./SavedReportRow";
 
 type CustomisedReportsPageContentProps = {
   organisationId: string;
 };
 
-function scheduleStatus(report: SavedReport): string {
-  if (!report.schedule) return "-";
-  if (report.lastError) return `Failed: ${report.lastError}`;
-  if (report.lastSentAt) return `Last sent ${new Date(report.lastSentAt).toLocaleString()}`;
-  return "Scheduled";
-}
-
 export function CustomisedReportsPageContent({ organisationId }: CustomisedReportsPageContentProps) {
-  const { reports, isReady, error, deleteReport } = useSavedReports(organisationId);
+  const { reports, isReady, error, saveReport, setSchedulePaused, deleteReport } = useSavedReports(organisationId);
+  const organisationQuery = useCurrentOrganisation();
+  const zone = organisationQuery.data?.timezone ?? "UTC";
+  const { favouriteIds, toggleFavourite } = useFavouriteReports(Number(organisationId));
   const [deleting, setDeleting] = useState<SavedReport | null>(null);
   const [deleteError, setDeleteError] = useState<string | undefined>();
   const reportsBase = `/organisations/${organisationId}/reports`;
 
+  async function saveSchedule(
+    report: SavedReport,
+    input: { name: string; schedule: ReportSchedule },
+  ): Promise<string | void> {
+    const result = await saveReport({ id: report.id, settings: report.settings, ...input });
+    if (!result.ok) return result.message;
+  }
+
+  async function togglePaused(report: SavedReport) {
+    setDeleteError(undefined);
+    const result = await setSchedulePaused(report.id, !report.schedulePaused);
+    if (!result.ok) setDeleteError(result.message);
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <Link href={`${reportsBase}/all`} className="flex w-fit items-center gap-1 text-sm text-primary hover:underline">
-          <CaretLeftIcon size={14} aria-hidden="true" />
-          Reports
-        </Link>
-        <h1 className="text-2xl font-semibold text-primary-dark">Customised reports</h1>
-      </header>
+      <ReportPageHeader organisationId={organisationId} title="Customised reports" />
 
-      {!isReady ? (
-        <p className="flex items-center gap-2 text-slate-900">
-          <Spinner className="text-primary-dark" />
-          Loading reports…
-        </p>
-      ) : error ? (
-        <ErrorMessage message={error.message} />
+      {!isReady || error ? (
+        <ReportStatus isLoading={!isReady} error={error} loadingLabel="Loading reports…" />
       ) : reports.length === 0 ? (
         <p className="rounded-lg border border-input-border bg-white p-6 text-center text-sm text-slate-900/70">
           No customised reports yet. Save a report from its page to find it here.
         </p>
       ) : (
-        <Table className="min-w-2xl">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Report type</TableHead>
-              <TableHead>Date last modified</TableHead>
-              <TableHead>Schedule details</TableHead>
-              <TableHead>Schedule status</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {reports.map((report) => (
-              <TableRow key={report.id}>
-                <TableCell>
-                  <Link href={`${reportsBase}/saved/${report.id}`} className="font-medium text-primary hover:underline">
-                    {report.name}
-                  </Link>
-                </TableCell>
-                <TableCell>Time &amp; activity</TableCell>
-                <TableCell>{new Date(report.modifiedAt).toLocaleString()}</TableCell>
-                <TableCell>{report.schedule ? describeSchedule(report.schedule) : "-"}</TableCell>
-                <TableCell>{scheduleStatus(report)}</TableCell>
-                <TableCell align="right">
-                  <ActionsMenu
-                    items={[
-                      { label: "Open", href: `${reportsBase}/saved/${report.id}` },
-                      { label: "Delete", tone: "danger", onSelect: () => setDeleting(report) },
-                    ]}
-                  />
-                </TableCell>
+        <div className="rounded-lg border border-input-border">
+          <Table bare className="min-w-2xl">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Report type</TableHead>
+                <TableHead>Date last modified</TableHead>
+                <TableHead>Schedule details</TableHead>
+                <TableHead>Schedule status</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {reports.map((report) => (
+                <SavedReportRow
+                  key={report.id}
+                  report={report}
+                  href={`${reportsBase}/saved/${report.id}`}
+                  zone={zone}
+                  isFavourite={favouriteIds.includes(report.id)}
+                  onToggleFavourite={() => toggleFavourite(report.id)}
+                  onSaveSchedule={saveSchedule}
+                  onTogglePaused={() => togglePaused(report)}
+                  onDelete={() => setDeleting(report)}
+                />
+              ))}
+            </TableBody>
+          </Table>
+          <p className="border-t border-input-border p-3 text-sm text-slate-900/70">
+            Showing {reports.length} {reports.length === 1 ? "report" : "reports"}
+          </p>
+        </div>
       )}
 
       {deleteError && <ErrorMessage message={deleteError} />}

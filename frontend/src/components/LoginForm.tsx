@@ -97,6 +97,7 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
         name="email"
         type="email"
         autoComplete="email"
+        placeholder="you@company.com"
         required
         defaultValue={lastEmail}
         disabled={mutation.data?.ok}

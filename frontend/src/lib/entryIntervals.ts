@@ -58,12 +58,18 @@ export function mergeIntervals(intervals: Interval[]): Interval[] {
   return merged;
 }
 
-/** An open pause runs to the entry's end: it never resumed. */
+/**
+ * An open pause runs to the entry's end: it never resumed.
+ *
+ * Never backwards. A span that resumes before it was paused — rows exist,
+ * see the backend's `closeOpenPause` — would otherwise carve two
+ * overlapping pieces out of the entry and make it total more than its own
+ * span. Collapsed to nothing instead, so it removes no time at all.
+ */
 function pauseInterval(pause: PauseSpan, entryEnd: number): Interval {
-  return {
-    start: Date.parse(pause.pausedAt),
-    end: pause.resumedAt ? Date.parse(pause.resumedAt) : entryEnd,
-  };
+  const start = Date.parse(pause.pausedAt);
+  const end = pause.resumedAt ? Date.parse(pause.resumedAt) : entryEnd;
+  return { start, end: Math.max(start, end) };
 }
 
 function subtract(from: Interval, hole: Interval): Interval[] {

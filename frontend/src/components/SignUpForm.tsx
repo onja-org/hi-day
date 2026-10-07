@@ -34,6 +34,7 @@ export function SignUpForm() {
           name="firstName"
           type="text"
           autoComplete="given-name"
+          placeholder="Jane"
           required
         />
 
@@ -42,6 +43,7 @@ export function SignUpForm() {
           name="lastName"
           type="text"
           autoComplete="family-name"
+          placeholder="Doe"
           required
         />
       </div>
@@ -51,6 +53,7 @@ export function SignUpForm() {
         name="email"
         type="email"
         autoComplete="email"
+        placeholder="you@company.com"
         required
       />
 
@@ -59,6 +62,7 @@ export function SignUpForm() {
         name="companyName"
         type="text"
         autoComplete="organization"
+        placeholder="Acme Inc."
         required
       />
 
@@ -67,6 +71,7 @@ export function SignUpForm() {
         name="address"
         type="text"
         autoComplete="street-address"
+        placeholder="Street, city, country"
         required
       />
 
