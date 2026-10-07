@@ -5,6 +5,7 @@ import { useSavedReports } from "@/hooks/useSavedReports";
 import { AppsUrlsReportPage } from "./AppsUrlsReportPage";
 import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
 import { ReportStatus } from "./ReportStatus";
+import { WorkSessionsReportPage } from "./WorkSessionsReportPage";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
 
 type SavedReportPageProps = {
@@ -35,6 +36,10 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
 
   if (savedReport.reportType === "apps-and-urls") {
     return <AppsUrlsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />;
+  }
+
+  if (savedReport.reportType === "work-sessions") {
+    return <WorkSessionsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />;
   }
 
   if (savedReport.reportType === "daily-totals") {

@@ -1,8 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Not, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Not, Repository } from 'typeorm';
+import { AppEventsService } from '../../app-events/services/app-events.service';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import {
+  buildAppsUrlsCsv,
+  buildAppsUrlsPdf,
+  buildAppsUrlsTable,
+} from '../../common/apps-urls-file.util';
+import type {
+  AppsUrlsGrouping,
+  AppsUrlsItem,
+} from '../../common/apps-urls-file.util';
 import {
   buildDailyTotalsCsv,
   buildDailyTotalsPdf,
@@ -13,17 +23,23 @@ import { resolveReportDateRange } from '../../common/report-date-range.util';
 import type { ReportDatePreset } from '../../common/report-date-range.util';
 import { isScheduleDue } from '../../common/report-schedule.util';
 import { isValidTimezone } from '../../common/timezone.util';
-import { zonedParts } from '../../common/zoned-time.util';
+import { addDaysToKey, zonedParts } from '../../common/zoned-time.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { Project } from '../../database/entities/project.entity';
 import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailService } from '../../email/services/email.service';
 import { MembershipsService } from '../../members/services/memberships.service';
+import { UrlSessionsService } from '../../url-sessions/services/url-sessions.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 
 const DEFAULT_TIMEZONE = 'UTC';
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
+// The activity API answers one day at a time, so a range is capped.
+const APPS_URLS_MAX_DAYS = 31;
+// Member-days, so an "all" report can't fan out into thousands of queries.
+const APPS_URLS_MAX_MEMBER_DAYS = 200;
 
 export type ScheduledRunOutcome = 'sent' | 'skipped' | 'failed';
 
@@ -62,6 +78,10 @@ export class ScheduledReportsService {
     private readonly membershipsService: MembershipsService,
     private readonly emailService: EmailService,
     private readonly auditLogService: AuditLogService,
+    @InjectRepository(Project)
+    private readonly projects: Repository<Project>,
+    private readonly appEventsService: AppEventsService,
+    private readonly urlSessionsService: UrlSessionsService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
@@ -132,17 +152,27 @@ export class ScheduledReportsService {
         now,
         zone,
       );
-      const entries = await this.collectEntries(report, range);
-      const title = `${report.name} — ${dayKey(range.from, zone)} to ${dayKey(range.to, zone)}`;
-      const content = this.buildContent(
-        report.reportType,
-        schedule.fileType,
-        title,
-        entries,
-        dayKey(range.from, zone),
-        dayKey(range.to, zone),
-        zone,
-      );
+      const fromKey = dayKey(range.from, zone);
+      const toKey = dayKey(range.to, zone);
+      const title = `${report.name} — ${fromKey} to ${toKey}`;
+      const content =
+        report.reportType === 'apps-and-urls'
+          ? await this.buildAppsUrlsContent(
+              report,
+              schedule.fileType,
+              title,
+              fromKey,
+              toKey,
+            )
+          : this.buildContent(
+              report.reportType,
+              schedule.fileType,
+              title,
+              await this.collectEntries(report, range),
+              fromKey,
+              toKey,
+              zone,
+            );
 
       const sent = await this.emailService.sendReportEmail({
         to: schedule.emails,
@@ -184,6 +214,128 @@ export class ScheduledReportsService {
     }
   }
 
+  /**
+   * The Apps & URLs report, as the report page shows it: the owner's own app
+   * and website time for each day in the range, in the chosen projects.
+   */
+  private async buildAppsUrlsContent(
+    report: SavedReport,
+    fileType: 'pdf' | 'csv',
+    title: string,
+    fromKey: string,
+    toKey: string,
+  ): Promise<Buffer> {
+    const { membership, organisationId } = report;
+    const { filters, scope } = report.settings;
+    const userId = membership.userId;
+
+    const dateKeys: string[] = [];
+    for (let key = fromKey; key <= toKey; key = addDaysToKey(key, 1)) {
+      dateKeys.push(key);
+    }
+    if (dateKeys.length > APPS_URLS_MAX_DAYS) {
+      throw new Error(
+        `Choose a date range of ${APPS_URLS_MAX_DAYS} days or fewer.`,
+      );
+    }
+
+    // Same scoping as collectEntries: "all" only widens while the owner is
+    // still an admin or manager, and only to the members shown to them.
+    const ownName = membership.user.name ?? membership.user.email;
+    let members: { id: string | undefined; name: string }[] = [
+      { id: undefined, name: ownName },
+    ];
+    if (scope === 'all' && ORG_WIDE_ROLES.includes(membership.role)) {
+      const listed = await this.membershipsService.listActiveForOrganisation(
+        organisationId,
+        userId,
+      );
+      members = listed
+        .filter(
+          (member) =>
+            (filters.memberIds.length === 0 ||
+              filters.memberIds.includes(member.id)) &&
+            (filters.teamIds.length === 0 ||
+              member.teamIds.some((id) => filters.teamIds.includes(id))),
+        )
+        .map((member) => ({
+          id: member.id,
+          name: member.name ?? member.email,
+        }));
+    }
+    if (dateKeys.length * members.length > APPS_URLS_MAX_MEMBER_DAYS) {
+      throw new Error('Choose a shorter date range or fewer members.');
+    }
+
+    const projects = await this.projects.find({
+      where: {
+        organisationId,
+        ...(filters.projectIds.length > 0 && { id: In(filters.projectIds) }),
+      },
+      select: { id: true, name: true },
+    });
+    const projectName = (projectId: string | null): string =>
+      projects.find((project) => project.id === projectId)?.name ?? 'Untracked';
+    const included = (projectId: string | null): boolean =>
+      filters.projectIds.length === 0 ||
+      (projectId !== null && filters.projectIds.includes(projectId));
+
+    const items: AppsUrlsItem[] = [];
+    for (const member of members) {
+      for (const date of dateKeys) {
+        const [apps, urls] = await Promise.all([
+          member.id === undefined
+            ? this.appEventsService.getMyDay(organisationId, userId, date)
+            : this.appEventsService.getDayForMembership(
+                organisationId,
+                userId,
+                member.id,
+                date,
+              ),
+          this.urlSessionsService.getDayGroupedByUrl(
+            organisationId,
+            userId,
+            date,
+            {},
+            member.id,
+          ),
+        ]);
+        for (const bucket of apps.buckets) {
+          for (const item of bucket.items) {
+            if (!included(item.projectId)) continue;
+            items.push({
+              dateKey: date,
+              projectName: projectName(item.projectId),
+              memberName: member.name,
+              label: item.appName,
+              seconds: item.secondsSpent,
+            });
+          }
+        }
+        for (const bucket of urls.buckets) {
+          for (const page of bucket.pages) {
+            if (!included(page.projectId)) continue;
+            items.push({
+              dateKey: date,
+              projectName: projectName(page.projectId),
+              memberName: member.name,
+              label: page.host,
+              seconds: page.activeMs / 1000,
+            });
+          }
+        }
+      }
+    }
+
+    const table = buildAppsUrlsTable(
+      items,
+      report.settings.grouping as AppsUrlsGrouping,
+    );
+    return fileType === 'csv'
+      ? Buffer.from(buildAppsUrlsCsv(table), 'utf-8')
+      : buildAppsUrlsPdf(title, table);
+  }
+
   private buildContent(
     reportType: string,
     fileType: 'pdf' | 'csv',
@@ -199,6 +351,7 @@ export class ScheduledReportsService {
         ? Buffer.from(buildDailyTotalsCsv(table), 'utf-8')
         : buildDailyTotalsPdf(title, table);
     }
+    // Time and activity and Work sessions both list each session as a row.
     return fileType === 'csv'
       ? Buffer.from(buildReportCsv(entries, zone), 'utf-8')
       : buildReportPdf(title, entries, zone);

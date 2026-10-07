@@ -9,19 +9,15 @@ import { formatReportDay } from "@/lib/formatReportDay";
 import type { DailyTotalsReport } from "@/lib/buildDailyTotalsReport";
 import { ReportsBarChart } from "./ReportsBarChart";
 import { ReportsStatCard } from "./ReportsStatCard";
-import { ReportTableHeading } from "./ReportTableHeading";
 import { ReportsTable } from "./ReportsTable";
 
 type DailyTotalsReportBodyProps = {
   report: DailyTotalsReport;
-  organisationName: string | undefined;
-  /** The zone the days are read in. */
-  zone: string;
-  /** Export, send and schedule controls, shown on the table's heading line. */
+  /** Export, send and schedule controls, shown above the table. */
   actions: ReactNode;
 };
 
-export function DailyTotalsReportBody({ report, organisationName, zone, actions }: DailyTotalsReportBodyProps) {
+export function DailyTotalsReportBody({ report, actions }: DailyTotalsReportBodyProps) {
   const totalSeconds = report.days.reduce((sum, day) => sum + day.seconds, 0);
   const averageSeconds = report.days.length > 0 ? totalSeconds / report.days.length : 0;
 
@@ -43,7 +39,7 @@ export function DailyTotalsReportBody({ report, organisationName, zone, actions 
         />
       </section>
 
-      <ReportTableHeading organisationName={organisationName} zone={zone} actions={actions} />
+      <div className="flex flex-wrap items-center justify-end gap-3">{actions}</div>
 
       <ReportsTable
         columns={dailyTotalsTable(report).columns}

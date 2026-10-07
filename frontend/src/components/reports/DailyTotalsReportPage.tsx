@@ -19,6 +19,7 @@ import { ReportDateRangePicker } from "./ReportDateRangePicker";
 import { ReportPageHeader } from "./ReportPageHeader";
 import { ReportScopeTabs } from "./ReportScopeTabs";
 import { ReportStatus } from "./ReportStatus";
+import { ReportTableHeading } from "./ReportTableHeading";
 import { ScheduleReportButton } from "./ScheduleReportButton";
 import { ScheduleReportDialog } from "./ScheduleReportDialog";
 import { SendReportButton } from "./SendReportButton";
@@ -78,6 +79,8 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
         title={`Daily totals report (Weekly)${savedReport ? ` - ${savedReport.name}` : ""}`}
       />
 
+      <ReportTableHeading organisationName={organisationQuery.data?.name} zone={zone} />
+
       {canViewOthers && <ReportScopeTabs value={scope} onChange={setScope} />}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -105,14 +108,12 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
       {entries && report && table && (
         <DailyTotalsReportBody
           report={report}
-          organisationName={organisationQuery.data?.name}
-          zone={zone}
           actions={
             <>
               <ExportButtons
-                csv={reportTableToCsv(table.columns, table.rows)}
+                csv={table ? reportTableToCsv(table.columns, table.rows) : ""}
                 filenameBase={filenameBase}
-                disabled={report.rows.length === 0}
+                disabled={!report || report.rows.length === 0}
               />
               <SendReportButton
                 defaultSubject={`Daily totals report${savedReport ? ` - ${savedReport.name}` : ""}`}

@@ -125,7 +125,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
 
       {canViewOthers && <ReportScopeTabs value={scope} onChange={setScope} />}
 
-      <div className="flex flex-wrap items-end justify-end gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <ReportDateRangePicker
           id="apps-urls-date-range"
           range={range}
