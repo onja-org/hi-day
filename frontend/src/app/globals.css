@@ -95,6 +95,53 @@
   --color-project-pink: var(--color-project-pink);
   --color-project-gray: var(--color-project-gray);
   --font-sans: var(--font-roboto);
+  /* Hi Day brand faces — loaded only by the landing page (app/page.tsx),
+     so these classes do nothing elsewhere. */
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-brand: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-data: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+/* Hi Day brand tokens (see the brand guide's Colour / Typography pages).
+   User-approved for the landing page and brand surfaces only — the app's
+   own UI still uses the primary/secondary palette above. See
+   frontend/CLAUDE.md "Hi Day brand tokens". */
+@theme {
+  --color-sun: #ffc72c;
+  --color-sun-tint: #fff0c4;
+  --color-ink: #121117;
+  --color-ink-raised: #1e1c25;
+  --color-ink-muted: #4a4852;
+  --color-ink-soft: #c9c6d1;
+  --color-chalk: #f8f6f1;
+  --color-punch: #ff4f33;
+  --color-punch-tint: #ffdcd5;
+  --color-volt: #3d5afe;
+  --color-volt-light: #8a9bff;
+  --color-volt-tint: #dde3ff;
+  --color-mint: #2bd99f;
+  --color-mint-tint: #cff7e8;
+  --color-bubble: #ff8fd1;
+  --color-bubble-tint: #ffe3f3;
+
+  /* Hard offset, no blur. Recolour with a shadow-colour class (e.g. the
+     volt shadow under the hero card). */
+  --shadow-hard-sm: 4px 4px 0 0 #121117;
+  --shadow-hard: 5px 5px 0 0 #121117;
+  --shadow-hard-lg: 8px 8px 0 0 #121117;
+
+  --radius-brand-sm: 14px;
+  --radius-brand: 20px;
+  --radius-brand-lg: 28px;
+
+  --text-display: clamp(3rem, 7vw, 5.5rem);
+  --text-display--line-height: 0.95;
+  --text-heading: clamp(2.25rem, 5vw, 3.5rem);
+  --text-heading--line-height: 1;
+  --text-closing: clamp(2.75rem, 6vw, 5rem);
+  --text-closing--line-height: 0.95;
+
+  --tracking-heading: -0.04em;
 }
 
 body {

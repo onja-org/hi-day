@@ -1,33 +1,23 @@
-import Link from "next/link";
-import { ScrollReveal } from "../ScrollReveal";
+import { LandingButtonLink } from "./LandingButtonLink";
 
 export function LandingCta() {
   return (
-    <section
-      id="get-started"
-      className="relative overflow-hidden bg-primary-dark py-20 lg:py-28"
-    >
+    <section className="relative overflow-hidden border-b-3 border-ink bg-volt text-chalk">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-16 right-0 h-72 w-72 rounded-full bg-primary/20 blur-3xl motion-safe:animate-float"
+        className="absolute right-6 bottom-0 hidden h-45 w-90 rounded-t-full border-4 border-b-0 border-ink bg-sun md:block lg:right-24"
       />
-
-      <div className="container relative">
-        <ScrollReveal className="mx-auto flex max-w-2xl flex-col items-center gap-6 text-center">
-          <h2 className="text-3xl font-semibold text-white sm:text-4xl">
-            Ready to see where the hours go?
-          </h2>
-          <p className="text-lg text-white/80">
-            Set up your organisation, invite your team, and get visibility
-            into time and activity today.
-          </p>
-          <Link
-            href="/signup"
-            className="cursor-pointer rounded-md bg-white px-6 py-3 font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
-          >
-            Get started free
-          </Link>
-        </ScrollReveal>
+      <div className="relative mx-auto flex max-w-300 flex-col items-start gap-6 px-6 pt-26 pb-30">
+        <h2 className="max-w-190 font-display text-closing font-extrabold tracking-tighter">
+          Say hi to your best week.
+        </h2>
+        <p className="max-w-xl text-lg">Set up in minutes. Invite your team, pick what&apos;s tracked and you&apos;re off.</p>
+        <div className="flex flex-wrap gap-3.5">
+          <LandingButtonLink href="/signup">Get started</LandingButtonLink>
+          <LandingButtonLink href="/login" tone="chalk">
+            Log in
+          </LandingButtonLink>
+        </div>
       </div>
     </section>
   );

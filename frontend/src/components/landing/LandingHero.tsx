@@ -1,60 +1,45 @@
-import { Sparkle } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { LandingDashboardPreview } from "./LandingDashboardPreview";
-import { ScrollReveal } from "../ScrollReveal";
+import { LandingButtonLink } from "./LandingButtonLink";
+import { LandingTimerCard } from "./LandingTimerCard";
 
 export function LandingHero() {
   return (
-    <section id="hero" className="relative overflow-hidden bg-white">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/20 blur-3xl motion-safe:animate-float"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-secondary/20 blur-3xl motion-safe:animate-float-slow"
-      />
-
-      <div className="container relative grid gap-12 py-20 lg:grid-cols-2 lg:items-center lg:py-28">
+    <section className="relative overflow-hidden border-b-3 border-ink">
+      <div className="mx-auto grid max-w-300 items-center gap-14 px-6 pt-18 pb-22 lg:grid-cols-2">
         <div className="flex flex-col gap-6">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-cream px-4 py-1.5 text-sm font-medium text-primary-dark">
-            <Sparkle size={16} aria-hidden="true" />
-            Built for growing teams
+          <span className="self-start rounded-full border-3 border-ink bg-mint-tint px-3.5 py-1.5 text-xs font-extrabold tracking-widest uppercase">
+            Balanced time tracking
           </span>
-
-          <h1 className="text-4xl font-semibold text-balance text-primary-dark sm:text-5xl lg:text-6xl">
-            Know where every hour goes, without the guesswork.
+          <h1 className="font-display text-display font-extrabold tracking-tighter">
+            Time tracking that says hi, not gotcha.
           </h1>
-
-          <p className="max-w-xl text-lg text-slate-900">
-            Hi Day brings timesheets, activity, teams, and
-            permissions into one dashboard — so admins and managers always
-            know how their organisation is spending its time.
+          <p className="max-w-xl text-lg text-ink-muted">
+            Track time, projects and activity in the desktop app and on the web. Your team sees exactly
+            what managers see, so nobody wonders what&apos;s being counted.
           </p>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <Link
-              href="/signup"
-              className="cursor-pointer rounded-md bg-primary px-6 py-3 font-medium text-white transition-colors duration-150 hover:bg-primary/90"
-            >
-              Get started free
-            </Link>
-            <a
-              href="#how-it-works"
-              className="cursor-pointer rounded-md border border-primary-dark/20 px-6 py-3 font-medium text-primary-dark transition-colors duration-150 hover:bg-cream"
-            >
-              See how it works
-            </a>
+          <div className="flex flex-wrap gap-3.5">
+            <LandingButtonLink href="/signup">Get started</LandingButtonLink>
+            <LandingButtonLink href="#download" tone="white">
+              Get the desktop app
+            </LandingButtonLink>
           </div>
-
-          <p className="text-sm text-slate-900/60">
-            No credit card required · Set up your organisation in minutes
-          </p>
+          <span className="text-sm text-ink-muted">Set up your organisation in minutes.</span>
         </div>
 
-        <ScrollReveal>
-          <LandingDashboardPreview />
-        </ScrollReveal>
+        <div className="relative flex min-h-110 items-center justify-center">
+          <div
+            aria-hidden="true"
+            className="absolute top-2.5 -right-10 size-95 rounded-full border-4 border-ink bg-sun"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute bottom-5 left-0 size-30 rounded-full border-4 border-ink bg-bubble"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute top-7.5 left-10 h-11.25 w-22.5 rounded-t-full border-4 border-b-0 border-ink bg-mint"
+          />
+          <LandingTimerCard />
+        </div>
       </div>
     </section>
   );
