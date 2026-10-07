@@ -9,6 +9,8 @@ import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
+import { findOverlappingEntry } from "@/lib/findOverlappingEntry";
+import { formatClockTime } from "@/lib/formatClockTime";
 import type { TimeEntryChange } from "@/lib/describeTimeEntryChanges";
 import {
   hasNoErrors,
@@ -33,6 +35,8 @@ type TimeEntryFormProps =
       /** Whose timesheet the entry lands on. Set when an admin is adding
        * time to someone else's day; omitted, it's the caller's own. */
       forMembershipId?: string;
+      /** Entries already on screen, for warning about a clash early. */
+      existingEntries?: TimeEntryListItem[];
       onSaved: () => void;
     }
   | {
@@ -40,6 +44,7 @@ type TimeEntryFormProps =
       mode: "edit";
       entry: TimeEntryListItem;
       forMembershipId?: undefined;
+      existingEntries?: TimeEntryListItem[];
       onSaved: () => void;
     };
 
@@ -48,6 +53,7 @@ export function TimeEntryForm({
   mode,
   entry,
   forMembershipId,
+  existingEntries,
   onSaved,
 }: TimeEntryFormProps) {
   const projectsQuery = useMyProjects(organisationId);
@@ -115,6 +121,43 @@ export function TimeEntryForm({
       setErrors(serverMessageToField(result.message));
     },
   });
+
+  /** Judges the times as they are picked, rather than on submit. Silent
+   * while either is empty — someone part-way through has not erred yet. */
+  function handleTimesChange(startedAt: string, endedAt: string): void {
+    if (startedAt === "" || endedAt === "") {
+      setErrors({});
+      return;
+    }
+
+    const rangeErrors = validateTimeRange(startedAt, endedAt);
+    if (!hasNoErrors(rangeErrors)) {
+      setErrors(rangeErrors);
+      return;
+    }
+
+    // Only when we know whose day it is, or an admin's view of someone
+    // else's entry would read as a clash.
+    const membershipId = entry?.membershipId ?? forMembershipId;
+    const clash =
+      existingEntries && membershipId
+        ? findOverlappingEntry({
+            entries: existingEntries,
+            membershipId,
+            excludeId: entry?.id,
+            startedAt,
+            endedAt,
+          })
+        : null;
+
+    setErrors(
+      clash
+        ? {
+            range: `Overlaps ${clash.projectName}, already tracked ${formatClockTime(clash.startedAt)}–${clash.endedAt ? formatClockTime(clash.endedAt) : "now"}.`,
+          }
+        : {},
+    );
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -249,7 +292,7 @@ export function TimeEntryForm({
           endedAt={endedAtDefault}
           isTicking={isTicking}
           errors={errors}
-          onChange={() => setErrors({})}
+          onChange={handleTimesChange}
         />
 
         {errors.form && <ErrorMessage message={errors.form} />}

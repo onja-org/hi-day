@@ -106,6 +106,7 @@ export function TimesheetTable({
         <TimeEntryFormModal
           organisationId={organisationId}
           entry={editingEntry}
+          existingEntries={entries}
           onClose={() => setEditingEntry(null)}
         />
       )}
