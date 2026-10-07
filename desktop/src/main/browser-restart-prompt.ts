@@ -16,10 +16,30 @@ export interface BlindBrowserReportLike {
   warnings: string[];
 }
 
+/**
+ * The browsers a sweep left orphaned from their launchers: those open when it
+ * ran, but only if it actually created an override.
+ *
+ * A sweep that changed nothing disturbed nothing, so the browsers open during
+ * it are in whatever state they were already in. Keeping the two apart is
+ * what holds the screen to a single appearance: it has something to offer on
+ * the one launch that creates the overrides and nothing on every launch
+ * after, rather than returning each time until someone answers it.
+ */
+export function browsersOrphanedBySweep<T extends BlindBrowserReportLike>(
+  openBeforeSweep: T,
+  outcomes: { created?: boolean }[],
+): T {
+  if (outcomes.some((outcome) => outcome.created)) return openBeforeSweep;
+  // Emptied rather than replaced by a shared constant, so the caller's own
+  // report type survives and nothing downstream needs a cast.
+  return { ...openBeforeSweep, restartable: [], manual: [], warnings: [] };
+}
+
 export interface BrowserRestartPromptDeps {
   platform: string;
   userDataDir: string;
-  findBlind: () => BlindBrowserReportLike;
+  findBrowsers: () => BlindBrowserReportLike;
   log?: (line: string) => void;
 }
 
@@ -27,10 +47,16 @@ export interface BrowserRestartPromptDeps {
  * Whether to open the first-run screen asking for a browser restart, and
  * what it should name.
  *
+ * Asks about every browser that was open when the launchers were shadowed,
+ * not only the untracked ones. A browser that already had an accessibility
+ * tree — one started under a screen reader, say — is tracked fine and would
+ * never appear in the blind set, but its windows lost their launcher binding
+ * along with everyone else's, and only a restart gives it back.
+ *
  * Lives here rather than inline in main.ts so all four ways of answering
  * "no" are testable: off Linux, where the launcher override this
  * compensates for does not exist; once this install has answered; when no
- * blind browser is running, which leaves the one showing unspent for a
+ * browser was open to orphan, which leaves the one showing unspent for a
  * launch that has something to say; and when the scan itself fails, where
  * a missing prompt beats a window that never opens.
  */
@@ -41,7 +67,7 @@ export function browserRestartPrompt(
   if (hasSeenBrowserRestartPrompt(deps.userDataDir)) return NO_PROMPT;
 
   try {
-    const report = deps.findBlind();
+    const report = deps.findBrowsers();
     const names = [
       ...new Set(report.restartable.map((browser) => displayName(browser.command))),
     ];

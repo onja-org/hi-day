@@ -112,6 +112,23 @@ export function restartWarning(
 const LAUNCHER_PLACEHOLDERS = /^(%[fFuUdDnNickvm]|@@u?)$/;
 
 /**
+ * Strips one matching pair of surrounding quotes, of either kind.
+ *
+ * The desktop-entry spec only ever quotes with `"`, but real vendor entries
+ * use `'` too — the snap-packaged Vivaldi ships
+ * `Exec=... '--class=Vivaldi-snap' %U`. These tokens become an argv, which no
+ * shell ever sees, so a quote left on is part of the argument: Chromium read
+ * `'--class=Vivaldi-snap'` as something to open rather than as a flag,
+ * silently dropping the class it names and opening a tab for the junk string.
+ *
+ * Matched pairs only, so a token holding one quote of its own keeps it.
+ */
+function unquote(token: string): string {
+  const quoted = /^(["'])([\s\S]*)\1$/.exec(token);
+  return quoted ? quoted[2] : token;
+}
+
+/**
  * The command line that relaunches a browser from its *activated* entry.
  *
  * Built from the override's own `Exec=`, not handed to `gio launch`, which
@@ -123,8 +140,8 @@ export function relaunchCommand(
   activatedExec: string,
   command: string,
 ): { command: string; args: string[] } | null {
-  const tokens = (activatedExec.match(/"[^"]*"|\S+/g) ?? [])
-    .map((token) => token.replace(/^"|"$/g, ''))
+  const tokens = (activatedExec.match(/"[^"]*"|'[^']*'|\S+/g) ?? [])
+    .map(unquote)
     .filter((token) => !LAUNCHER_PLACEHOLDERS.test(token));
   if (tokens.length === 0) return null;
 

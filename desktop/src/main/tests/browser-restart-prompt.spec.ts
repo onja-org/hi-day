@@ -4,12 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   browserRestartPrompt,
+  browsersOrphanedBySweep,
   type BlindBrowserReportLike,
 } from '../browser-restart-prompt';
 import { markBrowserRestartPromptSeen } from '../setup-state';
 
 /** One blind Chrome, the ordinary case that makes the screen appear. */
-function oneBlindBrowser(): BlindBrowserReportLike {
+function oneOpenBrowser(): BlindBrowserReportLike {
   return {
     restartable: [{ command: 'chrome' }],
     manual: [],
@@ -32,7 +33,7 @@ describe('browserRestartPrompt', () => {
     return browserRestartPrompt({
       platform: 'linux',
       userDataDir,
-      findBlind: oneBlindBrowser,
+      findBrowsers: oneOpenBrowser,
       ...overrides,
     });
   }
@@ -47,13 +48,13 @@ describe('browserRestartPrompt', () => {
   // Linux only: the launcher override this compensates for exists nowhere
   // else, so no other platform may ever see this screen.
   it.each(['darwin', 'win32'])('never asks on %s', (platform) => {
-    const findBlind = vi.fn(oneBlindBrowser);
+    const findBrowsers = vi.fn(oneOpenBrowser);
 
-    const prompt = browserRestartPrompt({ platform, userDataDir, findBlind });
+    const prompt = browserRestartPrompt({ platform, userDataDir, findBrowsers });
 
     expect(prompt.show).toBe(false);
     // Not even scanned: the answer cannot depend on what is running.
-    expect(findBlind).not.toHaveBeenCalled();
+    expect(findBrowsers).not.toHaveBeenCalled();
   });
 
   /**
@@ -86,7 +87,7 @@ describe('browserRestartPrompt', () => {
    */
   it('stays unspent when no browser is blind', () => {
     const prompt = ask({
-      findBlind: () => ({ restartable: [], manual: [], warnings: [] }),
+      findBrowsers: () => ({ restartable: [], manual: [], warnings: [] }),
     });
 
     expect(prompt.show).toBe(false);
@@ -101,7 +102,7 @@ describe('browserRestartPrompt', () => {
    */
   it('keeps a browser it cannot restart out of the restart list', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [{ command: 'chrome' }],
         manual: [
           { browser: { command: 'firefox' }, reason: 'Restart Firefox yourself.' },
@@ -121,7 +122,7 @@ describe('browserRestartPrompt', () => {
   // every one of them by hand.
   it('still asks when every blind browser must be restarted by hand', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [],
         manual: [
           { browser: { command: 'firefox' }, reason: 'Restart Firefox yourself.' },
@@ -135,11 +136,11 @@ describe('browserRestartPrompt', () => {
     expect(prompt.manual.map((e) => e.name)).toEqual(['Firefox']);
   });
 
-  // findBlind reports one entry per process, so two windows of the same
+  // findBrowsers reports one entry per process, so two windows of the same
   // browser must not produce the same sentence twice.
   it('names a browser once however many of its processes are blind', () => {
     const prompt = ask({
-      findBlind: () => ({
+      findBrowsers: () => ({
         restartable: [{ command: 'chrome' }, { command: 'chrome' }],
         manual: [
           { browser: { command: 'firefox' }, reason: 'No launcher.' },
@@ -158,11 +159,54 @@ describe('browserRestartPrompt', () => {
   // "nothing to ask" rather than take the app down with it.
   it('asks nothing when the scan throws', () => {
     const prompt = ask({
-      findBlind: () => {
+      findBrowsers: () => {
         throw new Error('/proc unreadable');
       },
     });
 
     expect(prompt.show).toBe(false);
+  });
+});
+
+describe('browsersOrphanedBySweep', () => {
+  const open = {
+    restartable: [{ command: 'firefox' }],
+    manual: [{ browser: { command: 'brave' }, reason: 'Restart Brave yourself.' }],
+    warnings: ['Firefox will not reopen its tabs.'],
+  };
+
+  it('hands back the open browsers when the sweep created an override', () => {
+    expect(browsersOrphanedBySweep(open, [{ created: true }])).toEqual(open);
+  });
+
+  // The guarantee the screen rests on: a sweep that creates nothing disturbs
+  // nothing, so every launch after the first has no one to ask about. Without
+  // this the screen returns on every launch until someone answers it — and
+  // with the predicate now "open" rather than "blind", it would return even
+  // for browsers restarted in the meantime that are perfectly fine.
+  it('hands back nothing when the sweep created no override', () => {
+    expect(browsersOrphanedBySweep(open, [{}, { created: false }])).toEqual({
+      restartable: [],
+      manual: [],
+      warnings: [],
+    });
+  });
+
+  it('hands back nothing when the sweep touched no entry at all', () => {
+    expect(browsersOrphanedBySweep(open, []).restartable).toEqual([]);
+  });
+
+  it('leaves the screen with nothing to show, end to end', () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'orphan-prompt-'));
+    try {
+      const prompt = browserRestartPrompt({
+        platform: 'linux',
+        userDataDir,
+        findBrowsers: () => browsersOrphanedBySweep(open, [{ created: false }]),
+      });
+      expect(prompt.show).toBe(false);
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
   });
 });

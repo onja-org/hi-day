@@ -3,6 +3,7 @@ import {
   browserTokens,
   isBrowserProcess,
   selectBlindBrowsers,
+  selectRunningBrowsers,
   type BrowserProcess,
 } from '../blind-browsers';
 
@@ -152,5 +153,43 @@ describe('selectBlindBrowsers', () => {
     const editor = chrome({ command: 'code', executablePath: '/usr/share/code/code' });
 
     expect(selectBlindBrowsers([editor], tokens)).toEqual([]);
+  });
+});
+
+describe('selectRunningBrowsers', () => {
+  // The two sets answer different questions, and this is the case that
+  // separates them: a browser started with accessibility already active is
+  // tracked fine, so it is never blind — but shadowing its launcher still
+  // orphaned its windows, and only a restart reseats them.
+  it('includes an activated browser that selectBlindBrowsers excludes', () => {
+    const activated = chrome({ cmdline: ['/opt/google/chrome/chrome', ACTIVATED] });
+
+    expect(selectBlindBrowsers([activated], tokens)).toEqual([]);
+    expect(selectRunningBrowsers([activated], tokens)).toEqual([
+      { pid: 5614, command: 'chrome' },
+    ]);
+  });
+
+  it('still drops helper processes, so one browser is one entry', () => {
+    const main = chrome();
+    const renderer = chrome({
+      pid: 5700,
+      cmdline: ['/opt/google/chrome/chrome', '--type=renderer'],
+    });
+
+    expect(selectRunningBrowsers([main, renderer], tokens)).toEqual([
+      { pid: 5614, command: 'chrome' },
+    ]);
+  });
+
+  it('never claims a non-browser', () => {
+    const editor = chrome({
+      pid: 900,
+      command: 'gedit',
+      executablePath: '/usr/bin/gedit',
+      cmdline: ['/usr/bin/gedit'],
+    });
+
+    expect(selectRunningBrowsers([editor], tokens)).toEqual([]);
   });
 });

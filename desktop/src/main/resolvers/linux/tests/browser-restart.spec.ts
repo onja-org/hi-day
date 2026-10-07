@@ -131,6 +131,41 @@ describe('relaunchCommand', () => {
     expect(args).not.toContain('@@u');
   });
 
+  // Taken from the real snap-packaged Vivaldi entry. These tokens become an
+  // argv with no shell in between, so a surviving quote is part of the
+  // argument — Chromium read `'--class=Vivaldi-snap'` as something to open
+  // instead of as a flag, dropping the class and opening a tab for the junk
+  // string on every restart. Confirmed against a live spawn before fixing.
+  it("strips the single quotes a vendor entry uses, not just the spec's double ones", () => {
+    const { args } = relaunchCommand(
+      "env GNOME_ACCESSIBILITY=1 /snap/bin/vivaldi --force-renderer-accessibility=basic '--class=Vivaldi-snap' %U",
+      'vivaldi',
+    )!;
+
+    expect(args).toContain('--class=Vivaldi-snap');
+    expect(args).not.toContain("'--class=Vivaldi-snap'");
+  });
+
+  it('still strips the double quotes the spec does define', () => {
+    const { args } = relaunchCommand(
+      '/usr/bin/chrome "--user-data-dir=/home/a b/profile" %U',
+      'chrome',
+    )!;
+
+    expect(args).toContain('--user-data-dir=/home/a b/profile');
+  });
+
+  // Only matched pairs: an apostrophe inside an argument is part of it, and
+  // stripping a lone quote would corrupt a path rather than clean it.
+  it("leaves an unmatched quote alone", () => {
+    const { args } = relaunchCommand(
+      "/usr/bin/chrome --profile=/home/o'brien/data %U",
+      'chrome',
+    )!;
+
+    expect(args).toContain("--profile=/home/o'brien/data");
+  });
+
   it('returns null when there is nothing to run', () => {
     expect(relaunchCommand('', 'chrome')).toBeNull();
   });
