@@ -22,7 +22,7 @@ export function HeaderTimerRunningPanel({ timer }: HeaderTimerRunningPanelProps)
           {timer.activeProject?.name ?? "Tracking time"}
         </span>
       </div>
-      <p className="text-center text-3xl font-semibold tabular-nums text-primary-dark">
+      <p className="text-center font-data text-3xl font-bold tracking-tight tabular-nums text-primary-dark">
         {formatElapsed(timer.elapsedMs)}
       </p>
       <p className="text-center text-xs text-slate-900/60">

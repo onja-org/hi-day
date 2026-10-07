@@ -40,20 +40,27 @@
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #0f172a;
+  /* Hi Day brand (see the brand tokens further down): the app's semantic
+     colour names keep their meaning, mapped onto the brand palette —
+     primary = Volt (links, focus, active), primary-dark = Ink (text, dark
+     surfaces), cream = Sun tint (highlights), page ground = Chalk with
+     white cards. */
+  --background: #f8f6f1;
+  --foreground: #121117;
 
-  --color-primary: #4f46e5;
-  --color-primary-dark: #0f172a;
-  --color-secondary: #5d5490;
-  --color-cream: #fff6d6;
+  --color-primary: #3d5afe;
+  --color-primary-dark: #121117;
+  --color-secondary: #4a4852;
+  --color-cream: #fff0c4;
   --color-white: #ffffff;
   --color-error: #dc2626;
   --color-success: #16a34a;
-  --color-input-border: #d6dbe6;
-  --color-icon: #2b343f;
-  --color-sidebar: #f3f4f6;
-  --color-sidebar-active: #e5e7eb;
+  --color-input-border: #c9c6d1;
+  --color-icon: #4a4852;
+  /* Neutral tracks/wells (progress bars, empty chart bars) — a shade of
+     Chalk so they still show on the white cards. */
+  --color-sidebar: #edeae2;
+  --color-sidebar-active: #e1ddd3;
 
   /* Fixed swatch set for Project colour tags — not part of the brand
      palette, deliberately separate so a project's colour stays a themeable
@@ -68,7 +75,7 @@
   --color-project-pink: #ec4899;
   --color-project-gray: #6b7280;
 
-  --font-body: var(--font-roboto), ui-sans-serif, system-ui, -apple-system,
+  --font-body: var(--font-figtree), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
 }
 
@@ -94,19 +101,20 @@
   --color-project-teal: var(--color-project-teal);
   --color-project-pink: var(--color-project-pink);
   --color-project-gray: var(--color-project-gray);
-  --font-sans: var(--font-roboto);
-  /* Hi Day brand faces — loaded only by the landing page (app/page.tsx),
-     so these classes do nothing elsewhere. */
+  --font-sans: var(--font-figtree);
+  /* Hi Day brand faces, loaded app-wide by the root layout. */
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-brand: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
   --font-data: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
 /* Hi Day brand tokens (see the brand guide's Colour / Typography pages).
-   User-approved for the landing page and brand surfaces only — the app's
-   own UI still uses the primary/secondary palette above. See
-   frontend/CLAUDE.md "Hi Day brand tokens". */
+   See frontend/CLAUDE.md "Hi Day brand tokens". */
 @theme {
+  /* Tailwind's default slate-900 is the approved body-text class; point it
+     at Ink so existing body copy picks up the brand. */
+  --color-slate-900: #121117;
+
   --color-sun: #ffc72c;
   --color-sun-tint: #fff0c4;
   --color-ink: #121117;
@@ -148,6 +156,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-body);
+}
+
+/* Page and section headings use the brand display face (Bricolage
+   Grotesque) everywhere; body copy and UI stay in Figtree. In the base
+   layer so a heading's own utility classes still win. */
+@layer base {
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
 }
 
 @utility container {

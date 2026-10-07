@@ -52,7 +52,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
                   <span className="text-xs font-normal text-secondary">Paused</span>
                 )}
               </span>
-              <span className="text-3xl font-semibold tabular-nums text-primary-dark">
+              <span className="font-data text-3xl font-bold tracking-tight tabular-nums text-primary-dark">
                 {formatElapsed(timer.elapsedMs)}
               </span>
               <span className="text-xs text-slate-900/60">

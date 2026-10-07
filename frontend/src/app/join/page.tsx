@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JoinViaLinkForm } from "@/components/JoinViaLinkForm";
+import { AuthLogo } from "@/components/AuthLogo";
 
 export const metadata: Metadata = {
   title: "Join your team",
@@ -14,6 +15,7 @@ export default async function JoinPage({ searchParams }: JoinPageProps) {
 
   return (
     <main className="container flex flex-col gap-8 py-8">
+      <AuthLogo />
       <h1 className="text-2xl font-semibold text-primary-dark">Join your team</h1>
       {token ? (
         <JoinViaLinkForm token={token} />

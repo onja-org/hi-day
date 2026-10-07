@@ -22,6 +22,13 @@ copyInto(
   ['index.html', 'styles.css', 'hiday-mark.svg'],
 );
 
+// The renderer's bundled brand fonts (styles.css @font-face).
+copyInto(
+  join(rootDir, 'src', 'renderer', 'fonts'),
+  join(rootDir, 'dist', 'renderer', 'fonts'),
+  ['Figtree-Variable.woff2', 'JetBrainsMono-Variable.woff2'],
+);
+
 // The window icon BrowserWindow loads from main.ts's own __dirname.
 copyInto(
   join(rootDir, 'src', 'main', 'assets'),

@@ -33,9 +33,9 @@ export function SidebarNavLink({
         isRail && "justify-center lg:justify-start lg:pl-4",
         isRail && nested && "lg:pl-12",
         !isRail && nested && "pl-12",
-        active && "border-primary bg-white text-primary",
+        active && "border-primary bg-cream font-semibold text-primary-dark",
         !active &&
-          "border-transparent text-slate-900 hover:border-primary/30 hover:bg-white hover:text-primary-dark",
+          "border-transparent text-slate-900 hover:border-primary/30 hover:bg-cream/50 hover:text-primary-dark",
       )}
     >
       <link.icon

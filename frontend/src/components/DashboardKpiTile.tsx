@@ -61,7 +61,7 @@ export function DashboardKpiTile({
 
       <div className="flex items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <span className="text-2xl font-semibold tabular-nums text-primary-dark">
+          <span className="font-data text-2xl font-bold tabular-nums text-primary-dark">
             {value}
           </span>
           {subLabel && (
