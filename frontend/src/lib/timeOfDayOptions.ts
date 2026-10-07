@@ -12,15 +12,11 @@ type TimeOfDayArgs = {
   date: string;
   now?: Date;
   stepMinutes?: number;
-  /**
-   * A time to keep in the list even when it is off-step. An entry recorded
-   * at 09:37 must still be editable, and dropping it would silently move
-   * the entry to the nearest step the moment anything else was changed.
-   */
+  /** A time to keep listed even when it is off-step, so an entry recorded
+   * at 09:37 stays editable. */
   include?: string;
 };
 
-/** Every minute of the day, so a step always divides it evenly. */
 const MINUTES_IN_DAY = 24 * 60;
 
 function label(minutes: number): string {
@@ -35,14 +31,7 @@ function toMinutes(value: string): number | null {
   return minutes >= 0 && minutes < MINUTES_IN_DAY ? minutes : null;
 }
 
-/**
- * The times a picker may offer for one date, and which of them are out of
- * reach because they haven't happened yet.
- *
- * Unlike `max` on a native input — which only greys out later *days* and
- * leaves the hour spinner free — a disabled option cannot be chosen at all,
- * which is the point of listing them rather than spinning them.
- */
+/** The times a picker may offer for one date, and which have not happened. */
 export function timeOfDayOptions({
   date,
   now = new Date(),
@@ -57,8 +46,6 @@ export function timeOfDayOptions({
   for (let minute = 0; minute < MINUTES_IN_DAY; minute += stepMinutes) {
     minutes.add(minute);
   }
-  // Added after the regular steps so it lands in order once sorted, rather
-  // than tacked on the end where nobody would look for it.
   const extra = include ? toMinutes(include) : null;
   if (extra !== null) minutes.add(extra);
 
@@ -66,9 +53,7 @@ export function timeOfDayOptions({
     .sort((a, b) => a - b)
     .map((minute) => ({
       value: label(minute),
-      // A time already on the entry stays choosable even past the cut-off:
-      // it is what the entry says, and refusing it would make the form
-      // unable to re-save its own unchanged value.
+      // The entry's own time stays choosable, or it could not re-save itself.
       disabled: isToday && minute > cutoff && minute !== extra,
     }));
 }

@@ -15,19 +15,14 @@ type TimeEntryTimeFieldsProps = {
   isTicking: boolean;
   /** Shown under whichever field is at fault — see `timeEntryFieldErrors`. */
   errors?: TimeEntryFieldErrors;
-  /** Both current values, so the form can judge them as they are typed
-   * rather than waiting for a submit to say what is wrong. */
+  /** Both current values, so the form can judge them as they are picked. */
   onChange?: (startedAt: string, endedAt: string) => void;
 };
 
 /** How often the cut-off catches up with the clock while the form is open. */
 const NOW_REFRESH_MS = 30_000;
 
-/** The Start and End inputs of the time-entry form.
- *
- * Each is a date plus a list of times rather than one `datetime-local`: a
- * native one cannot refuse a time of day, only a later date, so the times
- * that haven't happened are listed as disabled instead. */
+/** The Start and End inputs of the time-entry form. */
 export function TimeEntryTimeFields({
   startedAt,
   endedAt,
@@ -39,8 +34,6 @@ export function TimeEntryTimeFields({
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    // Fixed at mount, the cut-off would start refusing the real current
-    // minute a few minutes into filling the form in.
     const handle = setInterval(() => setNow(new Date()), NOW_REFRESH_MS);
     return () => clearInterval(handle);
   }, []);
@@ -53,9 +46,9 @@ export function TimeEntryTimeFields({
     endedAt ? toDatetimeLocalValue(endedAt) : "",
   );
 
-  // A belt to the disabled options' braces: the date half is still a native
-  // input, whose `max` greys out its calendar without stopping a later date
-  // being typed into it.
+  // The date half is still a native input, whose `max` does not stop a later
+  // date being typed. Clamping on render also pulls back a value the passing
+  // clock has left in the future.
   const startValue = clampDatetimeLocal(start, max);
   const endValue = clampDatetimeLocal(end, max);
 
@@ -64,10 +57,6 @@ export function TimeEntryTimeFields({
       const value = clampDatetimeLocal(raw, max);
       if (field === "start") setStart(value);
       else setEnd(value);
-      // The shown values, not the raw state: the untouched field may have
-      // been pulled back by the clock since it was entered, and judging the
-      // pair on a value no longer on screen would report a clash nobody can
-      // see.
       onChange?.(
         field === "start" ? value : startValue,
         field === "end" ? value : endValue,

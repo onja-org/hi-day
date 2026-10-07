@@ -24,14 +24,11 @@ type DateAndTimeFieldProps = {
 const LABEL_DATE = "2000-01-01T";
 
 /**
- * A date and a time of day, entered separately and submitted as one
- * `datetime-local` value.
+ * A date and a time of day, submitted as one `datetime-local` value.
  *
- * Two controls rather than one `<input type="datetime-local">` because a
- * native one cannot refuse a time: `max` greys out later days in its
- * calendar, but the hour and minute spinner belongs to the browser and no
- * attribute disables it. A list of times can disable the ones that haven't
- * happened, which is the whole reason this exists.
+ * Two controls rather than one native input, which cannot refuse a time of
+ * day — only a later date. A list can disable the times that haven't
+ * happened.
  */
 export function DateAndTimeField({
   label,
@@ -47,8 +44,6 @@ export function DateAndTimeField({
   const options = timeOfDayOptions({
     date,
     now,
-    // The entry's own time is kept choosable however odd it is — see
-    // `timeOfDayOptions`.
     include: time === "" ? undefined : time,
   });
 
@@ -93,8 +88,6 @@ export function DateAndTimeField({
 
       {error && <span className="text-xs text-error">{error}</span>}
 
-      {/* The pair reaches the form as the single value it stands for, so
-          nothing downstream has to know it was entered in two parts. */}
       <input type="hidden" name={name} value={value} />
     </div>
   );

@@ -35,8 +35,7 @@ type TimeEntryFormProps =
       /** Whose timesheet the entry lands on. Set when an admin is adding
        * time to someone else's day; omitted, it's the caller's own. */
       forMembershipId?: string;
-      /** Entries already on screen, for warning about a clash as the times
-       * are typed. Partial by nature — the server still decides. */
+      /** Entries already on screen, for warning about a clash early. */
       existingEntries?: TimeEntryListItem[];
       onSaved: () => void;
     }
@@ -123,15 +122,8 @@ export function TimeEntryForm({
     },
   });
 
-  /**
-   * Judges the times as they are typed, so a clash or a backwards range
-   * shows under the field straight away instead of after a submit and a
-   * round trip.
-   *
-   * Silent while either field is empty: someone part-way through entering a
-   * time has not made a mistake yet, and saying so would nag at every
-   * keystroke.
-   */
+  /** Judges the times as they are picked, rather than on submit. Silent
+   * while either is empty — someone part-way through has not erred yet. */
   function handleTimesChange(startedAt: string, endedAt: string): void {
     if (startedAt === "" || endedAt === "") {
       setErrors({});
@@ -144,8 +136,8 @@ export function TimeEntryForm({
       return;
     }
 
-    // Only when we know whose day it is; otherwise another person's entry
-    // on the same screen would read as a clash with this one.
+    // Only when we know whose day it is, or an admin's view of someone
+    // else's entry would read as a clash.
     const membershipId = entry?.membershipId ?? forMembershipId;
     const clash =
       existingEntries && membershipId

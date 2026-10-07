@@ -12,8 +12,6 @@ describe("clampDatetimeLocal", () => {
     expect(clampDatetimeLocal(NOW, NOW)).toBe(NOW);
   });
 
-  // The case `max` alone misses: the calendar greys out later days, but the
-  // spinner still winds the hour past now.
   it("holds a later time today back to now", () => {
     expect(clampDatetimeLocal("2026-10-06T23:59", NOW)).toBe(NOW);
   });
@@ -23,16 +21,13 @@ describe("clampDatetimeLocal", () => {
   });
 
   it("compares by time rather than by digits", () => {
-    // 09:00 sorts before 14:30 on both readings; 2027 must not sort before
-    // 2026 just because the later string is shorter or longer anywhere.
     expect(clampDatetimeLocal("2027-01-01T00:00", NOW)).toBe(NOW);
     expect(clampDatetimeLocal("2025-12-31T23:59", NOW)).toBe(
       "2025-12-31T23:59",
     );
   });
 
-  // An empty field is someone part-way through filling it in, not a value
-  // to correct — clamping it would write a time they never chose.
+  // Mid-edit, not a value to correct.
   it("leaves an empty value empty", () => {
     expect(clampDatetimeLocal("", NOW)).toBe("");
   });

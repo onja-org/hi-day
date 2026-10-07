@@ -9,8 +9,7 @@ type TimeEntryFormModalProps = {
   entry?: TimeEntryListItem;
   /** Whose timesheet a new entry lands on. Omitted, it's the caller's own. */
   forMembershipId?: string;
-  /** Entries already on screen, so a clash is flagged while the times are
-   * being typed rather than on save. */
+  /** Entries already on screen, so a clash is flagged as times are picked. */
   existingEntries?: TimeEntryListItem[];
   onClose: () => void;
 };

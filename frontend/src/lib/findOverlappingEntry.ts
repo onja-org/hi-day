@@ -1,7 +1,6 @@
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 type OverlapSearch = {
-  /** Entries already on screen — see the caveat on the return value. */
   entries: TimeEntryListItem[];
   /** Whose timesheet the new times land on. */
   membershipId?: string;
@@ -16,11 +15,8 @@ type OverlapSearch = {
 /**
  * The first already-tracked entry the given times run into, or null.
  *
- * Only ever an early warning, never the verdict: the browser knows the
- * entries currently loaded — one day, one filter, one page — and the person
- * may well be typing times that land outside all of them. The server does
- * the real check on save; this exists so the common mistake is caught while
- * the field still has focus instead of after a round trip.
+ * An early warning only: the browser knows the entries currently loaded, so
+ * the server still does the real check on save.
  */
 export function findOverlappingEntry({
   entries,
@@ -37,22 +33,17 @@ export function findOverlappingEntry({
   return (
     entries.find((entry) => {
       if (entry.id === excludeId) return false;
-      // An admin's timesheet lists several people; only the one these times
-      // are being written for can be run into.
       if (membershipId !== undefined && entry.membershipId !== membershipId) {
         return false;
       }
 
       const entryStart = new Date(entry.startedAt).getTime();
-      // A running entry has no end yet but still occupies the time up to
-      // now, which is exactly the stretch someone is most likely to
-      // double-book.
+      // A running entry still occupies the time up to now.
       const entryEnd =
         entry.endedAt === null ? now.getTime() : new Date(entry.endedAt).getTime();
       if (Number.isNaN(entryStart) || Number.isNaN(entryEnd)) return false;
 
-      // Touching at an endpoint is not overlapping: one entry ending at
-      // 10:00 and the next starting at 10:00 is an ordinary handover.
+      // Touching at an endpoint is a handover, not an overlap.
       return start < entryEnd && end > entryStart;
     }) ?? null
   );

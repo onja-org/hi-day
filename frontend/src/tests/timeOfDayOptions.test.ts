@@ -31,7 +31,6 @@ describe("timeOfDayOptions", () => {
     expect(options[1].value).toBe("00:15");
   });
 
-  // The whole point: a later time is unchoosable, not merely corrected.
   it("disables times after now on today", () => {
     expect(valueOf(TODAY, "14:30")?.disabled).toBe(false);
     expect(valueOf(TODAY, "14:35")?.disabled).toBe(true);
@@ -42,11 +41,7 @@ describe("timeOfDayOptions", () => {
     expect(optionsFor(YESTERDAY).some((option) => option.disabled)).toBe(false);
   });
 
-  /**
-   * Entries are recorded to the minute, so an existing one rarely sits on a
-   * step. Dropping its time would silently move the entry as soon as
-   * anything else on the form changed.
-   */
+  // Entries are recorded to the minute, so one rarely sits on a step.
   it("keeps an off-step time, in order", () => {
     const options = optionsFor(TODAY, { include: "09:37" });
     const index = options.findIndex((option) => option.value === "09:37");
@@ -62,10 +57,7 @@ describe("timeOfDayOptions", () => {
     expect(options.filter((option) => option.value === "09:35")).toHaveLength(1);
   });
 
-  /**
-   * An entry already recorded past the cut-off must stay re-savable — the
-   * form has to be able to submit its own unchanged value.
-   */
+  // An entry past the cut-off must still be re-savable.
   it("keeps an included time choosable even after the cut-off", () => {
     expect(valueOf(TODAY, "20:00", { include: "20:00" })?.disabled).toBe(false);
     expect(valueOf(TODAY, "20:05", { include: "20:00" })?.disabled).toBe(true);

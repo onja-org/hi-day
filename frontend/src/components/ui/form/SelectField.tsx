@@ -11,8 +11,7 @@ type SelectFieldProps = {
    * every row would just be noise. */
   hideLabel?: boolean;
   hint?: ReactNode;
-  /** Marks the control as wrong, styled to match `TextField`'s own — the
-   * message itself sits with whatever owns the error. */
+  /** Marks the control as wrong; the message sits with whatever owns it. */
   invalid?: boolean;
   compact?: boolean;
   className?: string;
@@ -31,19 +30,14 @@ export function SelectField({
   children,
   ...selectProps
 }: SelectFieldProps) {
-  // Read rather than only forwarded: the caret is a sibling of the select,
-  // so `disabled:opacity-50` on the control never reaches it and it would
-  // stay at full strength beside faded text.
+  // The caret is a sibling, so the control's disabled styling misses it.
   const { disabled } = selectProps;
 
   return (
     <label className={clsx("flex flex-col gap-1.5", className)}>
       <Label className={hideLabel ? "sr-only" : undefined}>{label}</Label>
-      {/* The caret is drawn here rather than left to the browser: a native
-          one sits hard against the border at a fixed offset that padding
-          cannot move, so there is no way to give it room. Same arrangement
-          as PasswordInput's visibility toggle — pr-10 on the control, icon
-          at right-3 — so both form controls hold their icon alike. */}
+      {/* Drawn here because a native caret sits at a fixed offset from the
+          border that padding cannot move. Laid out as PasswordInput's. */}
       <div className="relative flex items-center">
         <select
           aria-invalid={invalid ? true : undefined}
@@ -58,8 +52,6 @@ export function SelectField({
         >
           {children}
         </select>
-        {/* Decorative: the control it sits on is already labelled, and it
-            must not swallow the click that opens the list. */}
         <CaretDownIcon
           size={16}
           weight="bold"

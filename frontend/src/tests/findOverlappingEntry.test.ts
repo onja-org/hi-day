@@ -63,7 +63,6 @@ describe("findOverlappingEntry", () => {
     expect(search("2026-01-05T11:00", "2026-01-05T12:00")).toBeNull();
   });
 
-  // One entry ending as the next begins is an ordinary handover, not a clash.
   it("allows times that only touch at an endpoint", () => {
     expect(search("2026-01-05T10:00", "2026-01-05T11:00")).toBeNull();
     expect(search("2026-01-05T08:00", "2026-01-05T09:00")).toBeNull();
@@ -73,17 +72,12 @@ describe("findOverlappingEntry", () => {
     expect(search("2026-01-05T09:15", "2026-01-05T09:45", { excludeId: "e-1" })).toBeNull();
   });
 
-  // An admin's timesheet lists several people at once.
   it("ignores another person's entry", () => {
     expect(
       search("2026-01-05T09:15", "2026-01-05T09:45", { membershipId: "m-2" }),
     ).toBeNull();
   });
 
-  /**
-   * A running entry has no end yet but still occupies the time up to now —
-   * the stretch someone is most likely to double-book by hand.
-   */
   it("treats a running entry as occupying time up to now", () => {
     const running = [entry({ id: "e-2", startedAt: "2026-01-05T17:00", endedAt: null })];
 
@@ -105,7 +99,6 @@ describe("findOverlappingEntry", () => {
     ).toBeNull();
   });
 
-  // Half-typed times are not a clash to report — the field is mid-edit.
   it("says nothing about incomplete or backwards times", () => {
     expect(search("", "2026-01-05T09:45")).toBeNull();
     expect(search("2026-01-05T09:45", "")).toBeNull();
