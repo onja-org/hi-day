@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -21,6 +22,7 @@ export interface SavedReportView {
   reportType: string;
   settings: SavedReportSettings;
   schedule: ReportScheduleSettings | null;
+  schedulePaused: boolean;
   modifiedAt: string;
   lastSentAt: string | null;
   lastError: string | null;
@@ -33,6 +35,7 @@ function toView(report: SavedReport): SavedReportView {
     reportType: report.reportType,
     settings: report.settings,
     schedule: report.schedule,
+    schedulePaused: report.schedulePaused,
     modifiedAt: report.updatedAt.toISOString(),
     lastSentAt: report.lastSentAt?.toISOString() ?? null,
     lastError: report.lastError,
@@ -110,6 +113,8 @@ export class SavedReportsService {
     // A changed schedule starts a clean slate for the status column; the
     // last-sent day is kept so editing doesn't re-send what already went out.
     if (scheduleChanged) report.lastError = null;
+    // Removing the schedule leaves nothing to pause.
+    if (!report.schedule) report.schedulePaused = false;
 
     await this.dataSource.transaction(async (manager) => {
       await manager.save(SavedReport, report);
@@ -122,6 +127,33 @@ export class SavedReportsService {
           scheduled: !!report.schedule,
           scheduleChanged,
         },
+      });
+    });
+
+    return toView(report);
+  }
+
+  async setSchedulePaused(
+    organisationId: string,
+    userId: string,
+    savedReportId: string,
+    paused: boolean,
+  ): Promise<SavedReportView> {
+    const report = await this.getOwned(organisationId, userId, savedReportId);
+    if (!report.schedule) {
+      throw new BadRequestException('This report has no schedule to pause.');
+    }
+    report.schedulePaused = paused;
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(SavedReport, report);
+      await this.auditLogService.record(manager, {
+        action: paused
+          ? 'saved_report.schedule_paused'
+          : 'saved_report.schedule_resumed',
+        organisationId,
+        actorUserId: userId,
+        metadata: { savedReportId },
       });
     });
 

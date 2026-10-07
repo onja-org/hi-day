@@ -73,7 +73,7 @@ export function ScheduleReportModal({
   }
 
   return (
-    <Modal title="Schedule report" onClose={onClose}>
+    <Modal title={initialSchedule ? "Edit schedule" : "Schedule report"} onClose={onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <TextField label="Name *" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Give this report a name" />
         <TextField
