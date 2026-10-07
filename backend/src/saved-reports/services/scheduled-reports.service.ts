@@ -90,7 +90,7 @@ export class ScheduledReportsService {
     this.running = true;
     try {
       const scheduled = await this.savedReports.find({
-        where: { schedule: Not(IsNull()) },
+        where: { schedule: Not(IsNull()), schedulePaused: false },
         relations: {
           organisation: true,
           membership: { user: true, teamMemberships: true },
@@ -113,7 +113,7 @@ export class ScheduledReportsService {
 
   async runOne(report: SavedReport, now: Date): Promise<ScheduledRunOutcome> {
     const { schedule, membership, organisation } = report;
-    if (!schedule) return 'skipped';
+    if (!schedule || report.schedulePaused) return 'skipped';
 
     const configured = organisation.settings?.timezone;
     const zone =
