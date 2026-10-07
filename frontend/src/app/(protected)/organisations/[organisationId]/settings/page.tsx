@@ -1,16 +1,28 @@
-import type { Metadata } from "next";
-import { OrganisationSettingsPageContent } from "@/components/OrganisationSettingsPageContent";
-
-export const metadata: Metadata = {
-  title: "Settings",
-};
+import { redirect } from "next/navigation";
+import { defaultSettingsHref } from "@/lib/settingsNavigation";
 
 type SettingsPageProps = {
+  params: Promise<{ organisationId: string }>;
   searchParams: Promise<{ confirmDeletion?: string }>;
 };
 
-export default async function SettingsPage({ searchParams }: SettingsPageProps) {
+/**
+ * Settings has sections of its own now, so the bare path forwards to the
+ * first. `confirmDeletion` is carried across rather than dropped: the
+ * deletion-confirmation email links here, and the token is the whole point
+ * of that link.
+ */
+export default async function SettingsPage({
+  params,
+  searchParams,
+}: SettingsPageProps) {
+  const { organisationId } = await params;
   const { confirmDeletion } = await searchParams;
+  const href = defaultSettingsHref(organisationId);
 
-  return <OrganisationSettingsPageContent confirmDeletionToken={confirmDeletion} />;
+  redirect(
+    confirmDeletion
+      ? `${href}?confirmDeletion=${encodeURIComponent(confirmDeletion)}`
+      : href,
+  );
 }

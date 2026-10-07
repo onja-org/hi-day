@@ -54,9 +54,11 @@ export type GetOrganisationResult =
   | { ok: true; organisation: OrganisationProfile }
   | { ok: false; message: string };
 
+/** Every field optional: the API merges what it is given, so a settings
+ * section sends only its own. */
 export type UpdateOrganisationInput = {
-  name: string;
-  address: string;
+  name?: string;
+  address?: string;
   website?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
