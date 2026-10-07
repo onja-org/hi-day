@@ -19,7 +19,7 @@ function copyInto(srcDir, outDir, files) {
 copyInto(
   join(rootDir, 'src', 'renderer'),
   join(rootDir, 'dist', 'renderer'),
-  ['index.html', 'styles.css'],
+  ['index.html', 'styles.css', 'hiday-mark.svg'],
 );
 
 // The window icon BrowserWindow loads from main.ts's own __dirname.

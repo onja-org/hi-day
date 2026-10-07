@@ -51,15 +51,10 @@ h1 {
 }
 
 .app-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  background: var(--color-primary-dark);
-  color: #ffffff;
 }
 
 .app-brand-text {

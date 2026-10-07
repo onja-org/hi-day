@@ -336,8 +336,9 @@ macOS hardware" limitation below.
 
 ### App icon
 
-The icon is the same "W" mark as the web app's favicon
-(`frontend/src/app/icon.svg`). `build/icon.svg` is the source; the files
+The icon is the Hi Day sun mark — the same as the web app's favicon
+(`frontend/src/app/icon.svg`; every brand file lives in
+`frontend/public/brand/`). `build/icon.svg` is the source; the files
 actually used are generated from it and committed:
 
 - `build/icon.png` — 1024px, padded macOS-style. electron-builder turns it

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 type Section = {
@@ -18,9 +19,7 @@ const SECTIONS: Section[] = [
 export function Header() {
   return (
     <header className="container flex items-center justify-between py-4">
-      <span className="text-lg font-semibold text-primary-dark">
-        Hi Day
-      </span>
+      <Image src="/brand/hiday-lockup.svg" alt="Hi Day" width={126} height={36} priority />
 
       <nav aria-label="Page sections" className="hidden gap-6 md:flex">
         {SECTIONS.map((section) => (

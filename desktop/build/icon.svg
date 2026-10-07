@@ -1,8 +1,5 @@
-<!-- Desktop app icon source (same mark as frontend/src/app/icon.svg).
-     Padded so macOS/Linux launchers show it at the same visual size as
-     other app icons. Regenerate the PNG/ICO files from this — see
-     desktop/README.md "App icon". -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="#4F46E5"/>
-  <path d="M280.25 370.38 396.13 679.38 512 434.75 627.88 679.38 743.75 370.38" fill="none" stroke="#FFFFFF" stroke-width="82.4" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<!-- Desktop app icon source: the Hi Day sun mark (frontend/public/brand/
+     hiday-mark-sun.svg), padded inside a 1024 canvas so macOS/Linux
+     launchers show it at the same visual size as other app icons.
+     Regenerate the PNG/ICO files from this — see README "App icon". -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g transform="translate(100 100) scale(6.866667)"><rect x="0" y="0" width="120" height="120" rx="28" fill="#FFC72C"/><path d="M24 84 A36 36 0 0 1 96 84 Z" fill="#121117"/><g stroke="#121117" stroke-width="8" stroke-linecap="round" fill="none"><path d="M60 40 V30"/><path d="M91.1 52.9 L98.2 45.8"/><path d="M28.9 52.9 L21.8 45.8"/></g><g stroke="#FFC72C" stroke-width="6" stroke-linecap="round" fill="none"><path d="M60 84 V62"/><path d="M60 84 L75 74"/></g><path d="M30 100 H90" stroke="#FF4F33" stroke-width="8" stroke-linecap="round"/></g></svg>
