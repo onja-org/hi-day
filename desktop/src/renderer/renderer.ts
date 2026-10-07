@@ -15,7 +15,37 @@ function show(viewId: string): void {
   )) {
     el.hidden = el.id !== viewId;
   }
+  // The account menu and the compact bar only mean something signed in.
+  document.getElementById("profile")!.hidden = viewId !== "status-view";
+  if (viewId !== "status-view") setCompact(false);
 }
+
+// --- Window chrome: frameless title bar and the compact bar -------------
+
+const fullView = document.getElementById("full-view")!;
+const compactView = document.getElementById("compact-view")!;
+let isCompact = false;
+
+function setCompact(compact: boolean): void {
+  if (compact === isCompact) return;
+  isCompact = compact;
+  fullView.hidden = compact;
+  compactView.hidden = !compact;
+  void window.api.windowControls.setCompact(compact);
+}
+
+document.getElementById("minimise-button")!.addEventListener("click", () => {
+  void window.api.windowControls.minimise();
+});
+document.getElementById("close-button")!.addEventListener("click", () => {
+  void window.api.windowControls.close();
+});
+document.getElementById("compact-button")!.addEventListener("click", () => {
+  setCompact(true);
+});
+document.getElementById("expand-button")!.addEventListener("click", () => {
+  setCompact(false);
+});
 
 const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
 const profileMenu = document.getElementById("profile-menu")!;
@@ -85,6 +115,9 @@ function showLoginView(errorMessage?: string): void {
   setRunning(null);
   clearTrackingError();
   timerDisplay.hidden = true;
+  projectSearch.value = "";
+  lastSyncedAt = null;
+  syncFailing = false;
   hideProfileMenu();
 
   pairingErrorEl.hidden = !errorMessage;
@@ -320,6 +353,25 @@ document.getElementById("logout-button")!.addEventListener("click", () => {
 // --- Time tracking -----------------------------------------------------
 
 const projectList = document.getElementById("project-list") as HTMLUListElement;
+const projectListEmpty = document.getElementById("project-list-empty")!;
+const projectCountEl = document.getElementById("project-count")!;
+const projectSearch = document.getElementById(
+  "project-search",
+) as HTMLInputElement;
+const greetingEl = document.getElementById("greeting")!;
+const timerCard = document.getElementById("timer-card")!;
+const timerStateEl = document.getElementById("timer-state")!;
+const timerStateLabelEl = document.getElementById("timer-state-label")!;
+const syncStatusEl = document.getElementById("sync-status")!;
+const syncStatusLabelEl = document.getElementById("sync-status-label")!;
+const compactProjectNameEl = document.getElementById("compact-project-name")!;
+const compactTimerEl = document.getElementById("compact-timer")!;
+const compactTimerToggle = document.getElementById(
+  "compact-timer-toggle",
+) as HTMLButtonElement;
+const compactTimerTogglePath = document.getElementById(
+  "compact-timer-toggle-path",
+) as unknown as Element;
 const currentTaskLabelEl = document.getElementById("current-task-label")!;
 const timerDisplay = document.getElementById("timer-display")!;
 const trackingError = document.getElementById("tracking-error")!;
@@ -403,10 +455,24 @@ let projects: TrackedProject[] = [];
 let todaySecondsByProject = new Map<string, number>();
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
+// 24×24 icons. "Stop" rather than pause: pausing ends the entry.
 const PLAY_PATH =
-  "M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z";
-const PAUSE_PATH =
-  "M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z";
+  "M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z";
+const STOP_PATH =
+  "M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z";
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+/** A status poll older than this reads as minutes ago rather than "just now". */
+const SYNC_FRESH_MS = 60_000;
+let lastSyncedAt: number | null = null;
+let syncFailing = false;
 
 /** Per-Project total elements, so the 1s tick updates text instead of rebuilding rows. */
 const projectTotalElements = new Map<string, HTMLElement>();
@@ -421,6 +487,8 @@ let idleEndedAtMs: number | null = null;
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
   trackingError.hidden = false;
+  // The compact bar has no room for it — open the full window instead.
+  setCompact(false);
 }
 
 async function callTracking<T>(
@@ -460,6 +528,39 @@ function formatElapsed(ms: number): string {
     .join(":");
 }
 
+/** "4:57" — hours and minutes, for the per-Project rows. */
+function formatHoursMinutes(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
+/** Every Project's time today, the live entry included. */
+function todayTotalSeconds(): number {
+  const projectIds = new Set(todaySecondsByProject.keys());
+  if (runningEntry) projectIds.add(runningEntry.projectId);
+  let total = 0;
+  for (const projectId of projectIds) total += displayedSecondsFor(projectId);
+  return total;
+}
+
+function updateSyncStatus(): void {
+  syncStatusEl.classList.toggle("is-offline", syncFailing);
+  if (syncFailing) {
+    syncStatusLabelEl.textContent = "Can't reach Hi Day — retrying";
+    return;
+  }
+  if (lastSyncedAt === null) {
+    syncStatusLabelEl.textContent = "Connecting…";
+    return;
+  }
+  const ageMs = Date.now() - lastSyncedAt;
+  syncStatusLabelEl.textContent =
+    ageMs < SYNC_FRESH_MS
+      ? "Synced just now"
+      : `Synced ${Math.floor(ageMs / 60_000)} min ago`;
+}
+
 function projectNameFor(projectId: string): string {
   return (
     projects.find((project) => project.id === projectId)?.name ?? projectId
@@ -470,22 +571,34 @@ function projectNameFor(projectId: string): string {
 let lastTrackedProjectId: string | null = null;
 
 function tick(): void {
+  greetingEl.textContent = `Hi, ${WEEKDAYS[new Date().getDay()]}.`;
+  todayTotalEl.textContent = formatElapsed(todayTotalSeconds() * 1000);
+  updateSyncStatus();
+
   if (!runningEntry) {
     const projectId = lastTrackedProjectId;
     if (!projectId || !projects.some((project) => project.id === projectId)) {
       timerDisplay.hidden = true;
       trackingProjectNameEl.textContent = "";
+      compactProjectNameEl.textContent = "Stopped";
+      compactTimerEl.textContent = formatElapsed(0);
       return;
     }
-    trackingProjectNameEl.textContent = projectNameFor(projectId);
+    const name = projectNameFor(projectId);
+    const formatted = formatElapsed(displayedSecondsFor(projectId) * 1000);
+    trackingProjectNameEl.textContent = name;
     timerDisplay.hidden = false;
-    timerDisplay.textContent = formatElapsed(
-      displayedSecondsFor(projectId) * 1000,
-    );
+    timerDisplay.textContent = formatted;
+    compactProjectNameEl.textContent = `${name} · Stopped`;
+    compactTimerEl.textContent = formatted;
     return;
   }
 
-  trackingProjectNameEl.textContent = projectNameFor(runningEntry.projectId);
+  const name = projectNameFor(runningEntry.projectId);
+  trackingProjectNameEl.textContent = name;
+  compactProjectNameEl.textContent = runningEntry.pausedAt
+    ? `${name} · Paused`
+    : name;
 
   // Shows the Project's whole day, not just this entry: switching away and
   // back ends one entry and opens another, and the person tracking time
@@ -494,10 +607,10 @@ function tick(): void {
   const formatted = formatElapsed(seconds * 1000);
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatted;
-  todayTotalEl.textContent = formatted;
+  compactTimerEl.textContent = formatted;
 
   const activeTotal = projectTotalElements.get(runningEntry.projectId);
-  if (activeTotal) activeTotal.textContent = formatted;
+  if (activeTotal) activeTotal.textContent = formatHoursMinutes(seconds);
 }
 
 // Lets an in-flight status poll detect that its snapshot is stale.
@@ -514,13 +627,25 @@ function setRunning(entry: TimeEntry | null): void {
   runningEntry = entry;
   const isPaused = entry?.pausedAt != null;
   const isRunning = entry !== null && !isPaused;
-  // One control, two faces: pause while running, play otherwise. One path
-  // re-pointed, the same swap the project rows use.
-  timerTogglePath.setAttribute("d", isRunning ? PAUSE_PATH : PLAY_PATH);
-  timerToggle.setAttribute(
-    "aria-label",
-    isRunning ? "Pause timer" : entry ? "Resume timer" : "Start timer",
-  );
+  // One control, two faces: stop while running, play otherwise. One path
+  // re-pointed, mirrored on the compact bar.
+  const toggleLabel = isRunning
+    ? "Stop timer"
+    : entry
+      ? "Resume timer"
+      : "Start timer";
+  for (const [button, path] of [
+    [timerToggle, timerTogglePath],
+    [compactTimerToggle, compactTimerTogglePath],
+  ] as const) {
+    path.setAttribute("d", isRunning ? STOP_PATH : PLAY_PATH);
+    button.setAttribute("aria-label", toggleLabel);
+    button.classList.toggle("is-running", isRunning);
+  }
+  timerCard.classList.toggle("is-running", isRunning);
+  compactView.classList.toggle("is-running", isRunning);
+  timerStateEl.hidden = isRunning;
+  timerStateLabelEl.textContent = isPaused ? "Paused" : "Stopped";
   renderProjects();
   if (!entry) {
     idleHandled = false;
@@ -565,6 +690,9 @@ function showIdleBanner(idleSeconds: number, idleStartedAtIso: string): void {
   pendingIdleDiscardAt = idleStartedAtIso;
   updateIdleStats(idleSeconds, idleStartedAtIso);
   idleBanner.hidden = false;
+  // Needs an answer, so it can't wait behind the compact bar or in the tray.
+  setCompact(false);
+  void window.api.windowControls.show();
 }
 
 function hideIdleBanner(): void {
@@ -698,37 +826,64 @@ async function refreshTodayTotals(): Promise<void> {
 function renderProjects(): void {
   projectList.innerHTML = "";
   projectTotalElements.clear();
+  projectCountEl.textContent = String(projects.length);
 
-  for (const project of projects) {
-    const isActive = runningEntry?.projectId === project.id;
+  const query = projectSearch.value.trim().toLowerCase();
+  const matches = projects.filter(
+    (project) =>
+      !query ||
+      project.name.toLowerCase().includes(query) ||
+      (project.client ?? "").toLowerCase().includes(query),
+  );
+  projectListEmpty.hidden = matches.length > 0 || projects.length === 0;
+
+  for (const project of matches) {
+    // Stays on the last-tracked Project after a stop, so it is one click
+    // to pick back up.
+    const isActive =
+      (runningEntry?.projectId ?? lastTrackedProjectId) === project.id;
     // Only the project actually accruing time counts as running — the
     // active-but-paused one still offers play, because that is what
     // clicking it does.
-    const isRunningHere = isActive && runningEntry?.pausedAt == null;
+    const isRunningHere =
+      runningEntry?.projectId === project.id && runningEntry.pausedAt == null;
 
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-current", String(isActive));
-    button.classList.toggle("is-running", isRunningHere);
-
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("viewBox", "0 0 256 256");
-    icon.setAttribute("width", "16");
-    icon.setAttribute("height", "16");
-    icon.setAttribute("aria-hidden", "true");
-    const iconPath = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "path",
+    button.setAttribute(
+      "aria-label",
+      `${isRunningHere ? "Stop tracking" : "Track"} ${project.name}`,
     );
-    // The icon states what the click will do: pause the one that is
-    // running, play anything else.
-    iconPath.setAttribute("d", isRunningHere ? PAUSE_PATH : PLAY_PATH);
-    iconPath.setAttribute("fill", "currentColor");
-    icon.appendChild(iconPath);
+    button.classList.toggle("is-running", isRunningHere);
 
     const iconWrapper = document.createElement("span");
     iconWrapper.className = "project-icon";
-    iconWrapper.appendChild(icon);
+    iconWrapper.setAttribute("aria-hidden", "true");
+    if (isRunningHere) {
+      // Three level bars: this one is live.
+      for (let bar = 0; bar < 3; bar++) {
+        const barEl = document.createElement("span");
+        barEl.className = "project-icon-bar";
+        iconWrapper.appendChild(barEl);
+      }
+    } else {
+      const icon = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg",
+      );
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("width", "12");
+      icon.setAttribute("height", "12");
+      const iconPath = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path",
+      );
+      iconPath.setAttribute("d", "M7 4.5v15l13-7.5z");
+      iconPath.setAttribute("fill", "currentColor");
+      icon.appendChild(iconPath);
+      iconWrapper.appendChild(icon);
+    }
 
     const label = document.createElement("span");
     label.className = "project-name";
@@ -742,7 +897,7 @@ function renderProjects(): void {
 
     const total = document.createElement("span");
     total.className = "project-total";
-    total.textContent = formatElapsed(displayedSecondsFor(project.id) * 1000);
+    total.textContent = formatHoursMinutes(displayedSecondsFor(project.id));
 
     projectTotalElements.set(project.id, total);
     button.append(iconWrapper, text, total);
@@ -974,6 +1129,7 @@ function closeTaskPanel(): void {
 }
 
 taskTrigger.addEventListener("click", () => void openTaskPanel());
+projectSearch.addEventListener("input", renderProjects);
 taskPanelClose.addEventListener("click", closeTaskPanel);
 taskSearch.addEventListener("input", renderTaskPanelList);
 
@@ -1009,8 +1165,12 @@ async function refreshStatus(): Promise<void> {
       return;
     }
 
+    syncFailing = true;
+    updateSyncStatus();
     return;
   }
+  syncFailing = false;
+  lastSyncedAt = Date.now();
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   accountWorkedMs = (result.data.workedSeconds ?? 0) * 1000;
   accountWorkedMsAt = Date.now();
@@ -1134,6 +1294,11 @@ timerToggle.addEventListener("click", () => {
       timerToggle.disabled = false;
     }
   })();
+});
+
+// The compact bar's button does exactly what the full window's does.
+compactTimerToggle.addEventListener("click", () => {
+  if (!timerToggle.disabled) timerToggle.click();
 });
 
 switchButton.addEventListener("click", () => {

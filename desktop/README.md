@@ -86,6 +86,17 @@ app in your system browser to approve the device; logging out of the web
 app also signs this device out automatically, next time it talks to the
 backend. See "Logging in" below.
 
+**The window is frameless** (`frame: false` in `src/main/main.ts`): the
+renderer draws its own sun title bar, which is the drag region, with
+minimise and close buttons. Close **hides the window to the tray**, it does not
+quit, so tracking keeps running. Quit from the tray menu ("Quit Hi Day"),
+which goes through the usual pause-on-quit path. Stock GNOME shows no tray
+icons without the AppIndicator extension; there, launching Hi Day again
+brings the hidden window back (single-instance lock → `showMainWindow`).
+The status bar's compact button shrinks the window to a 360×72
+always-on-top bar with just the timer and start/stop; an idle prompt or a
+tracking error expands it back automatically.
+
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)
 using a UUID generated on first run and persisted under Electron's

@@ -26,7 +26,7 @@ copyInto(
 copyInto(
   join(rootDir, 'src', 'renderer', 'fonts'),
   join(rootDir, 'dist', 'renderer', 'fonts'),
-  ['Figtree-Variable.woff2', 'JetBrainsMono-Variable.woff2'],
+  ['BricolageGrotesque-Variable.woff2', 'Figtree-Variable.woff2', 'JetBrainsMono-Variable.woff2'],
 );
 
 // The window icon BrowserWindow loads from main.ts's own __dirname.
