@@ -9,6 +9,9 @@ type TimeEntryFormModalProps = {
   entry?: TimeEntryListItem;
   /** Whose timesheet a new entry lands on. Omitted, it's the caller's own. */
   forMembershipId?: string;
+  /** Entries already on screen, so a clash is flagged while the times are
+   * being typed rather than on save. */
+  existingEntries?: TimeEntryListItem[];
   onClose: () => void;
 };
 
@@ -16,6 +19,7 @@ export function TimeEntryFormModal({
   organisationId,
   entry,
   forMembershipId,
+  existingEntries,
   onClose,
 }: TimeEntryFormModalProps) {
   return (
@@ -25,6 +29,7 @@ export function TimeEntryFormModal({
           organisationId={organisationId}
           mode="edit"
           entry={entry}
+          existingEntries={existingEntries}
           onSaved={onClose}
         />
       ) : (
@@ -32,6 +37,7 @@ export function TimeEntryFormModal({
           organisationId={organisationId}
           mode="create"
           forMembershipId={forMembershipId}
+          existingEntries={existingEntries}
           onSaved={onClose}
         />
       )}

@@ -365,6 +365,13 @@ export function TimeEntriesPageContent({
         <TimeEntryFormModal
           organisationId={organisationId}
           forMembershipId={membershipId}
+          // Unfiltered on purpose: an entry hidden by a project filter still
+          // occupies its time, and a clash with it is still a clash.
+          existingEntries={
+            (viewMode === "daily"
+              ? dailyEntriesQuery.data
+              : weekEntriesQuery.data) ?? []
+          }
           onClose={() => setAddingTime(false)}
         />
       )}
