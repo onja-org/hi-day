@@ -1,10 +1,4 @@
-/** One row of a landing-page bar illustration. `share` picks a fixed bar width. */
-export type LandingStatRow = {
-  label: string;
-  value: string;
-  share: "large" | "medium" | "small";
-  tone: "sun" | "mint" | "volt";
-};
+import type { BrandStatRow } from "./brandStat";
 
 /** A tab of the landing page's feature switcher. */
 export type LandingFeature = {
@@ -14,6 +8,6 @@ export type LandingFeature = {
   body: string;
   points: string[];
   statsTitle: string;
-  statsTotal: string;
-  stats: LandingStatRow[];
+  /** Example rows for the tab's BrandStatCard; the card total is their sum. */
+  stats: Omit<BrandStatRow, "key">[];
 };

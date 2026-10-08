@@ -4,6 +4,7 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { TeamAppsAndSites } from "./TeamAppsAndSites";
+import { TeamGlanceCards } from "./TeamGlanceCards";
 import { TeamKpiRow } from "./TeamKpiRow";
 import { TeamProjectActivity } from "./TeamProjectActivity";
 import { TeamRecentActivity } from "./TeamRecentActivity";
@@ -46,6 +47,8 @@ export function TeamDashboardSections() {
       </p>
 
       <TeamKpiRow organisationId={organisationId} />
+
+      <TeamGlanceCards organisationId={organisationId} />
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-primary-dark">

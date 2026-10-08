@@ -7,6 +7,7 @@ import { formatElapsed } from "@/lib/formatElapsed";
 import { CurrentProjectActivity } from "./CurrentProjectActivity";
 import { DashboardKpiRow } from "./DashboardKpiRow";
 import { ErrorMessage } from "./ErrorMessage";
+import { MyGlanceCards } from "./MyGlanceCards";
 import { RecentActivityScreenshots } from "./RecentActivityScreenshots";
 import { RecentTimesheetWidget } from "./RecentTimesheetWidget";
 import { Spinner } from "./Spinner";
@@ -53,6 +54,8 @@ export function DashboardSections() {
       </p>
 
       <DashboardKpiRow organisationId={organisationId} />
+
+      <MyGlanceCards organisationId={organisationId} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-2">

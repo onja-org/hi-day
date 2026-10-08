@@ -1,8 +1,10 @@
 import { Repository } from 'typeorm';
 import { AppEvent } from '../../../database/entities/app-event.entity';
+import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { ProjectColour } from '../../../database/entities/project-colour.enum';
+import { Team } from '../../../database/entities/team.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
@@ -117,6 +119,42 @@ describe('TeamDashboardService', () => {
     } as unknown as ScreenshotsService;
   }
 
+  function makeTeamsRepo(
+    teams: { id: string; name: string; memberIds: string[] }[] = [],
+  ): Repository<Team> {
+    return {
+      find: jest.fn().mockResolvedValue(
+        teams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          teamMemberships: team.memberIds.map((membershipId) => ({
+            membershipId,
+            teamId: team.id,
+          })),
+        })),
+      ),
+    } as unknown as Repository<Team>;
+  }
+
+  function makeCallerRepo(
+    caller: {
+      role: MembershipRole;
+      managedTeamIds?: string[];
+    } | null = { role: MembershipRole.ADMIN },
+  ): Repository<Membership> {
+    return {
+      findOne: jest.fn().mockResolvedValue(
+        caller && {
+          role: caller.role,
+          teamMemberships: (caller.managedTeamIds ?? []).map((teamId) => ({
+            teamId,
+            isManager: true,
+          })),
+        },
+      ),
+    } as unknown as Repository<Membership>;
+  }
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(NOW);
@@ -135,6 +173,8 @@ describe('TeamDashboardService', () => {
       makeUrlSessionsRepo(),
       makeMembershipsService([]),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -170,6 +210,8 @@ describe('TeamDashboardService', () => {
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -204,6 +246,8 @@ describe('TeamDashboardService', () => {
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -230,6 +274,8 @@ describe('TeamDashboardService', () => {
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
       makeScreenshotsService({ 'm-busy': [{ id: 's-1' }, { id: 's-2' }] }),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -254,6 +300,8 @@ describe('TeamDashboardService', () => {
       ]),
       makeMembershipsService(members),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     const summary = await service.getSummary('org-1', 'user-1');
@@ -275,6 +323,8 @@ describe('TeamDashboardService', () => {
       urlSessionsRepo,
       makeMembershipsService(members),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     await service.getSummary('org-1', 'user-1');
@@ -297,6 +347,8 @@ describe('TeamDashboardService', () => {
       makeUrlSessionsRepo([]),
       makeMembershipsService(members),
       makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
 
     await service.getSummary('org-1', 'user-1');
@@ -309,5 +361,71 @@ describe('TeamDashboardService', () => {
     expect(repo.__queryBuilder.groupBy).toHaveBeenCalledWith(
       'appEvent.appName',
     );
+  });
+
+  describe('teamsThisWeek', () => {
+    const members = [member({ id: 'm-1' }), member({ id: 'm-2' })];
+    const teams = [
+      { id: 't-design', name: 'Design', memberIds: ['m-1'] },
+      { id: 't-eng', name: 'Engineering', memberIds: ['m-1', 'm-2'] },
+      { id: 't-empty', name: 'Support', memberIds: [] },
+    ];
+    const thisWeekEntries = () => [
+      entry({
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 11, 0, 0), // 2h
+      }),
+      entry({
+        membershipId: 'm-2',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 10, 0, 0), // 1h
+      }),
+    ];
+
+    function serviceFor(caller: Parameters<typeof makeCallerRepo>[0]) {
+      return new TeamDashboardService(
+        makeTimeEntriesRepo(thisWeekEntries(), [], []),
+        makePausesRepo(),
+        makeAppEventsRepo(),
+        makeUrlSessionsRepo(),
+        makeMembershipsService(members),
+        makeScreenshotsService(),
+        makeTeamsRepo(teams),
+        makeCallerRepo(caller),
+      );
+    }
+
+    it('gives an admin every team, busiest first, counting someone in two teams towards both', async () => {
+      const summary = await serviceFor({ role: MembershipRole.ADMIN }).getSummary(
+        'org-1',
+        'user-1',
+      );
+
+      expect(summary.teamsThisWeek).toEqual([
+        { teamId: 't-eng', teamName: 'Engineering', seconds: 3 * 3600 },
+        { teamId: 't-design', teamName: 'Design', seconds: 2 * 3600 },
+        { teamId: 't-empty', teamName: 'Support', seconds: 0 },
+      ]);
+    });
+
+    it('gives a manager only the teams they manage', async () => {
+      const summary = await serviceFor({
+        role: MembershipRole.MANAGER,
+        managedTeamIds: ['t-design'],
+      }).getSummary('org-1', 'user-1');
+
+      expect(summary.teamsThisWeek).toEqual([
+        { teamId: 't-design', teamName: 'Design', seconds: 2 * 3600 },
+      ]);
+    });
+
+    it('is empty when the caller has no active membership', async () => {
+      const summary = await serviceFor(null).getSummary('org-1', 'user-1');
+
+      expect(summary.teamsThisWeek).toEqual([]);
+    });
   });
 });

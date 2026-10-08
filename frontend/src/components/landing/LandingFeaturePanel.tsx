@@ -1,6 +1,6 @@
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/ssr";
 import type { LandingFeature } from "@/types/landing";
-import { LandingStatBars } from "./LandingStatBars";
+import { BrandStatCard } from "../BrandStatCard";
 
 export function LandingFeaturePanel({ feature }: { feature: LandingFeature }) {
   return (
@@ -20,7 +20,11 @@ export function LandingFeaturePanel({ feature }: { feature: LandingFeature }) {
           ))}
         </ul>
       </div>
-      <LandingStatBars title={feature.statsTitle} total={feature.statsTotal} rows={feature.stats} />
+      <BrandStatCard
+        title={feature.statsTitle}
+        totalSeconds={feature.stats.reduce((sum, row) => sum + row.seconds, 0)}
+        rows={feature.stats.map((row) => ({ ...row, key: row.label }))}
+      />
     </div>
   );
 }

@@ -3,12 +3,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, IsNull, Repository } from 'typeorm';
 import { SAMPLE_INTERVAL_SECONDS } from '../../app-events/services/app-events.service';
 import { localDateKey } from '../../common/local-date-key.util';
+import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import {
   buildPauseStates,
   computeActiveSeconds,
   PauseState,
 } from '../../common/time-entry-active-seconds.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
+import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { Team } from '../../database/entities/team.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
@@ -60,6 +65,12 @@ export interface TeamAppOrSiteUsage {
   seconds: number;
 }
 
+export interface TeamTime {
+  teamId: string;
+  teamName: string;
+  seconds: number;
+}
+
 export interface TeamDashboardSummary {
   memberCount: number;
   workedThisWeekSeconds: number;
@@ -76,6 +87,11 @@ export interface TeamDashboardSummary {
   /** Combined app + browser-domain usage this week across every scoped
    * member — desc by seconds, capped to APPS_AND_SITES_LIMIT. */
   appsAndSites: TeamAppOrSiteUsage[];
+  /** Each visible team's members' time this week — every team for an
+   * admin, only the managed ones for a manager — desc by seconds. Someone
+   * in two teams counts towards both, so these can add up to more than
+   * workedThisWeekSeconds. */
+  teamsThisWeek: TeamTime[];
 }
 
 // A function, not a module-level constant — Nest services are singletons,
@@ -93,6 +109,7 @@ function emptySummary(): TeamDashboardSummary {
     members: [],
     recentActivity: [],
     appsAndSites: [],
+    teamsThisWeek: [],
   };
 }
 
@@ -117,6 +134,10 @@ export class TeamDashboardService {
     private readonly urlSessions: Repository<UrlSession>,
     private readonly membershipsService: MembershipsService,
     private readonly screenshotsService: ScreenshotsService,
+    @InjectRepository(Team)
+    private readonly teams: Repository<Team>,
+    @InjectRepository(Membership)
+    private readonly memberships: Repository<Membership>,
   ) {}
 
   async getSummary(
@@ -232,9 +253,10 @@ export class TeamDashboardService {
       })
       .sort((a, b) => b.workedThisWeekSeconds - a.workedThisWeekSeconds);
 
-    const [recentActivity, appsAndSites] = await Promise.all([
+    const [recentActivity, appsAndSites, teamsThisWeek] = await Promise.all([
       this.getRecentActivity(organisationId, callerUserId, members),
       this.getAppsAndSites(membershipIds, weekStart, weekEnd),
+      this.getTeamsThisWeek(organisationId, callerUserId, memberWeekSeconds),
     ]);
 
     return {
@@ -250,7 +272,52 @@ export class TeamDashboardService {
       members,
       recentActivity,
       appsAndSites,
+      teamsThisWeek,
     };
+  }
+
+  /**
+   * Team visibility uses the same rule as the member scope above
+   * (getManagerScopeTeamIds): an admin sees every team, a manager only the
+   * teams they manage. `memberWeekSeconds` only holds scoped, active
+   * members, so a team's total never includes anyone the caller can't see.
+   */
+  private async getTeamsThisWeek(
+    organisationId: string,
+    callerUserId: string,
+    memberWeekSeconds: Map<string, number>,
+  ): Promise<TeamTime[]> {
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: callerUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+    if (!caller) return [];
+
+    const teams = await this.teams.find({
+      where: { organisationId },
+      relations: { teamMemberships: true },
+    });
+    const managedTeamIds = new Set(getManagerScopeTeamIds(caller));
+    const visibleTeams =
+      caller.role === MembershipRole.ADMIN
+        ? teams
+        : teams.filter((team) => managedTeamIds.has(team.id));
+
+    return visibleTeams
+      .map((team) => ({
+        teamId: team.id,
+        teamName: team.name,
+        seconds: team.teamMemberships.reduce(
+          (sum, teamMembership) =>
+            sum + (memberWeekSeconds.get(teamMembership.membershipId) ?? 0),
+          0,
+        ),
+      }))
+      .sort((a, b) => b.seconds - a.seconds);
   }
 
   private async getRecentActivity(

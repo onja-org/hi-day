@@ -25,6 +25,12 @@ export type TeamAppOrSiteUsage = {
   seconds: number;
 };
 
+export type TeamTime = {
+  teamId: string;
+  teamName: string;
+  seconds: number;
+};
+
 export type TeamDashboardSummary = {
   memberCount: number;
   workedThisWeekSeconds: number;
@@ -41,6 +47,10 @@ export type TeamDashboardSummary = {
   /** Combined app + browser-domain usage this week across every scoped
    * member — desc by seconds, capped to a small top-N. */
   appsAndSites: TeamAppOrSiteUsage[];
+  /** Each visible team's members' time this week — every team for an
+   * admin, only the managed ones for a manager — desc by seconds. Someone
+   * in two teams counts towards both. */
+  teamsThisWeek: TeamTime[];
 };
 
 export type GetTeamDashboardSummaryResult =

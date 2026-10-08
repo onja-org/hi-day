@@ -4,6 +4,7 @@ import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { Team } from '../../database/entities/team.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
@@ -24,6 +25,7 @@ import { TeamDashboardService } from '../services/team-dashboard.service';
       UrlSession,
       Membership,
       Organisation,
+      Team,
     ]),
     JwtAuthModule,
     OrganisationsModule,
