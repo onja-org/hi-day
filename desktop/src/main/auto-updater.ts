@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import { isNewerVersion } from './update-checker';
 
 export type AutoUpdatePhase =
   | 'idle'
@@ -22,7 +23,26 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 let state: AutoUpdateState = { phase: 'idle' };
 
 export function getAutoUpdateState(): AutoUpdateState {
-  return state;
+  return withoutStaleUpdate(state, app.getVersion());
+}
+
+/**
+ * A download/restart banner only makes sense for a version newer than the
+ * one already running — anything else (the same version, or an older one)
+ * is reported as idle so the renderer hides the banner.
+ */
+export function withoutStaleUpdate(
+  current: AutoUpdateState,
+  currentVersion: string,
+): AutoUpdateState {
+  if (
+    (current.phase === 'downloading' || current.phase === 'downloaded') &&
+    current.latestVersion !== undefined &&
+    !isNewerVersion(currentVersion, current.latestVersion)
+  ) {
+    return { phase: 'idle' };
+  }
+  return current;
 }
 
 /**
