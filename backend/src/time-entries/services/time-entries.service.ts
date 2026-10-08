@@ -1113,6 +1113,7 @@ export class TimeEntriesService {
         metadata: {
           timeEntryId: saved.id,
           changed,
+          ...(dto.reason ? { reason: dto.reason } : {}),
           ...(result ? { prunedCaptures: this.capturesSummary(result) } : {}),
         },
       });

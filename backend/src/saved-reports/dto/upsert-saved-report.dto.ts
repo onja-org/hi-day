@@ -25,6 +25,7 @@ export const SAVED_REPORT_TYPES = [
   'daily-totals',
   'apps-and-urls',
   'work-sessions',
+  'manual-time-edits',
 ];
 const GROUPINGS = ['none', 'day', 'week', 'project', 'member', 'team', 'todo'];
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;

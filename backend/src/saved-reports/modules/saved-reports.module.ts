@@ -9,6 +9,7 @@ import { Project } from '../../database/entities/project.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailModule } from '../../email/modules/email.module';
+import { ReportsModule } from '../../reports/modules/reports.module';
 import { UrlSessionsModule } from '../../url-sessions/modules/url-sessions.module';
 import { MembersModule } from '../../members/modules/members.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
@@ -24,6 +25,7 @@ import { ScheduledReportsService } from '../services/scheduled-reports.service';
     EmailModule,
     JwtAuthModule,
     MembersModule,
+    ReportsModule,
     TimeEntriesModule,
     UrlSessionsModule,
   ],

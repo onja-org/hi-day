@@ -6,6 +6,7 @@
   "homepage": "https://hiday.io",
   "author": "Rinon <rinon.ten@onja.org>",
   "main": "dist/main/main.js",
+  "desktopName": "hiday.desktop",
   "engines": {
     "node": ">=22 <24"
   },

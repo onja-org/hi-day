@@ -91,6 +91,8 @@ export type UpdateTimeEntryInput = {
   taskId?: string | null;
   startedAt?: string;
   endedAt?: string;
+  /** Why the entry was changed; kept in the audit log and the Manual time edits report. */
+  reason?: string;
 };
 
 export type CreateManualTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
