@@ -1,9 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  clearBrowserRestartPromptSeen,
   hasSeenBrowserRestartPrompt,
   markBrowserRestartPromptSeen,
 } from '../setup-state';
@@ -58,7 +57,7 @@ describe('setup state', () => {
   });
 });
 
-describe('clearBrowserRestartPromptSeen', () => {
+describe('what the record survives', () => {
   let userDataDir: string;
 
   beforeEach(() => {
@@ -69,22 +68,32 @@ describe('clearBrowserRestartPromptSeen', () => {
     rmSync(userDataDir, { recursive: true, force: true });
   });
 
-  // The record survives logout, re-pairing and an update installed over the
-  // top — all things that leave the launcher overrides in place. Only a
-  // genuine reinstall removes those, and that is the one case where the
-  // browsers open right now have been orphaned from their launchers without
-  // ever being offered the restart that reseats them.
-  it('gives the screen another turn after a reinstall', () => {
+  /**
+   * The screen is asked once, after the app is installed, and never again.
+   * Nothing clears the record any more — an update rewrites the launcher
+   * files and used to hand the question back, which meant a second prompt
+   * months later for a question already answered. The record lives beside
+   * the session rather than in the package, so an update installed over the
+   * top leaves it where it is.
+   */
+  it('cannot be un-answered once it has been answered', () => {
     markBrowserRestartPromptSeen(userDataDir);
+
+    // Whatever else happens to the install — a rewritten launcher, a new
+    // version, a re-pairing — the only thing that reads this still says yes.
     expect(hasSeenBrowserRestartPrompt(userDataDir)).toBe(true);
-
-    clearBrowserRestartPromptSeen(userDataDir);
-
-    expect(hasSeenBrowserRestartPrompt(userDataDir)).toBe(false);
   });
 
-  it('is harmless when nothing was recorded yet', () => {
-    expect(() => clearBrowserRestartPromptSeen(userDataDir)).not.toThrow();
-    expect(hasSeenBrowserRestartPrompt(userDataDir)).toBe(false);
+  /**
+   * Read as text because the guarantee is the absence of a call, which no
+   * amount of exercising the module can demonstrate. An update rewrites the
+   * launcher files, and clearing on that is what handed the question back.
+   */
+  it('has nothing anywhere that clears it', () => {
+    const main = readFileSync(join(__dirname, '../main.ts'), 'utf-8');
+    const store = readFileSync(join(__dirname, '../setup-state.ts'), 'utf-8');
+
+    expect(main).not.toContain('clearBrowserRestartPromptSeen');
+    expect(store).not.toContain('clearBrowserRestartPromptSeen');
   });
 });

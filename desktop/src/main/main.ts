@@ -48,12 +48,8 @@ import {
 import {
   browserRestartPrompt,
   browsersOrphanedBySweep,
-  sweepWroteAnyEntry,
 } from "./browser-restart-prompt";
-import {
-  clearBrowserRestartPromptSeen,
-  markBrowserRestartPromptSeen,
-} from "./setup-state";
+import { markBrowserRestartPromptSeen } from "./setup-state";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -1096,11 +1092,6 @@ function activateBrowsersOnLinux(): void {
       openBeforeSweep,
       report.outcomes,
     );
-    // Same test as the orphan filter above, or the screen would have
-    // browsers to offer and a stale "already answered" keeping it shut.
-    if (sweepWroteAnyEntry(report.outcomes)) {
-      clearBrowserRestartPromptSeen(app.getPath("userData"));
-    }
     const activated = report.outcomes.filter((outcome) => outcome.activated);
     console.log(
       `[activation] ${activated.length}/${report.outcomes.length} browser launchers activated in ${report.targetDirectory}`,
