@@ -26,6 +26,35 @@ const tokens = browserTokens([
   'com.microsoft.Edge.desktop',
 ]);
 
+/**
+ * Opera ships `opera_crashreporter` beside `opera`, and the name matches the
+ * same token. Counted as a browser it was offered for restart, and a real
+ * session reported four browsers open where three were.
+ */
+describe('helper binaries that share a browser name', () => {
+  it("does not take Opera's crash reporter for Opera", () => {
+    const reporter = chrome({
+      pid: 505066,
+      command: 'opera_crashrepo',
+      executablePath: '/snap/opera/501/usr/lib/x86_64-linux-gnu/opera/opera_crashreporter',
+      cmdline: ['/snap/opera/501/usr/lib/x86_64-linux-gnu/opera/opera_crashreporter'],
+    });
+
+    expect(isBrowserProcess(reporter, browserTokens(['opera_opera.desktop']))).toBe(false);
+  });
+
+  it('still takes Opera itself for a browser', () => {
+    const opera = chrome({
+      pid: 504981,
+      command: 'opera',
+      executablePath: '/snap/opera/501/usr/lib/x86_64-linux-gnu/opera/opera',
+      cmdline: ['/snap/opera/501/usr/lib/x86_64-linux-gnu/opera/opera'],
+    });
+
+    expect(isBrowserProcess(opera, browserTokens(['opera_opera.desktop']))).toBe(true);
+  });
+});
+
 describe('browserTokens', () => {
   it('keeps the words that name a browser', () => {
     expect(tokens).toContain('chrome');
