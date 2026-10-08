@@ -8,6 +8,7 @@ import {
 } from '../../../database/entities/saved-report.entity';
 import { AppEventsService } from '../../../app-events/services/app-events.service';
 import { Project } from '../../../database/entities/project.entity';
+import { ManualTimeEditsService } from '../../../reports/services/manual-time-edits.service';
 import { UrlSessionsService } from '../../../url-sessions/services/url-sessions.service';
 import { EmailService } from '../../../email/services/email.service';
 import { MembershipsService } from '../../../members/services/memberships.service';
@@ -142,6 +143,25 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     buckets: [],
   });
 
+  const manualEdits = jest.fn().mockResolvedValue([
+    {
+      id: 'a1',
+      action: 'add',
+      membershipId: 'm1',
+      memberName: 'Ada',
+      memberEmail: 'ada@example.com',
+      projectId: 'p1',
+      projectName: 'Alpha',
+      taskName: null,
+      startedAt: '2026-09-22T08:00:00.000Z',
+      endedAt: '2026-09-22T09:00:00.000Z',
+      changeSeconds: 3600,
+      reason: null,
+      changedByName: 'Admin',
+      changedAt: '2026-09-22T10:00:00.000Z',
+    },
+  ]);
+
   const service = new ScheduledReportsService(
     savedReports,
     { transaction } as unknown as DataSource,
@@ -152,6 +172,7 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     { find: projectFind } as unknown as Repository<Project>,
     { getMyDay, getDayForMembership: getMyDay } as unknown as AppEventsService,
     { getDayGroupedByUrl } as unknown as UrlSessionsService,
+    { list: manualEdits } as unknown as ManualTimeEditsService,
   );
   return {
     service,
@@ -163,6 +184,7 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
     sendReportEmail,
     record,
     getMyDay,
+    manualEdits,
   };
 }
 
@@ -256,6 +278,46 @@ describe('ScheduledReportsService', () => {
             filename: 'weekly-report-2026-09-21-to-2026-09-27.csv',
           }) as object,
         }),
+      );
+    });
+
+    it("lists the owner's own edits for a manual time edits report", async () => {
+      const { service, sendReportEmail, manualEdits } = setup();
+
+      const edits = report({ reportType: 'manual-time-edits' });
+      expect(await service.runOne(edits, NOW)).toBe('sent');
+
+      expect(manualEdits).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        'me',
+        expect.any(Date),
+        expect.any(Date),
+      );
+      expect(sendReportEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachment: expect.objectContaining({
+            filename: 'weekly-report-2026-09-21-to-2026-09-27.csv',
+          }) as object,
+        }),
+      );
+    });
+
+    it("keeps a non-admin owner's all-scope manual time edits report to their own edits", async () => {
+      const { service, manualEdits } = setup();
+
+      const member = report({
+        reportType: 'manual-time-edits',
+        settings: { ...settings, scope: 'all' },
+      });
+      await service.runOne(member, NOW);
+
+      expect(manualEdits).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        'me',
+        expect.any(Date),
+        expect.any(Date),
       );
     });
 

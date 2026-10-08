@@ -5,10 +5,15 @@ import type { Request } from 'express';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { Project } from '../../database/entities/project.entity';
+import { Task } from '../../database/entities/task.entity';
+import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { ReportsController } from '../controllers/reports.controller';
+import { ManualTimeEditsService } from '../services/manual-time-edits.service';
 import { ReportsService } from '../services/reports.service';
 
 // Per caller and organisation rather than per IP, so one person behind a
@@ -21,7 +26,14 @@ function sendReportTracker(req: Request): string {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Membership, Organisation]),
+    TypeOrmModule.forFeature([
+      AuditLog,
+      Membership,
+      Organisation,
+      Project,
+      Task,
+      TimeEntry,
+    ]),
     AuditLogModule,
     EmailModule,
     JwtAuthModule,
@@ -35,6 +47,7 @@ function sendReportTracker(req: Request): string {
     ]),
   ],
   controllers: [ReportsController],
-  providers: [ReportsService, RoleGuard],
+  providers: [ReportsService, ManualTimeEditsService, RoleGuard],
+  exports: [ManualTimeEditsService],
 })
 export class ReportsModule {}

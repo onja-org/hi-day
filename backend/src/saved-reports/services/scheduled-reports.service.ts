@@ -18,6 +18,11 @@ import {
   buildDailyTotalsPdf,
   buildDailyTotalsTable,
 } from '../../common/daily-totals-file.util';
+import {
+  buildManualTimeEditsCsv,
+  buildManualTimeEditsPdf,
+  buildManualTimeEditsTable,
+} from '../../common/manual-time-edits-file.util';
 import { buildReportCsv, buildReportPdf } from '../../common/report-file.util';
 import { resolveReportDateRange } from '../../common/report-date-range.util';
 import type { ReportDatePreset } from '../../common/report-date-range.util';
@@ -30,6 +35,7 @@ import { Project } from '../../database/entities/project.entity';
 import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailService } from '../../email/services/email.service';
 import { MembershipsService } from '../../members/services/memberships.service';
+import { ManualTimeEditsService } from '../../reports/services/manual-time-edits.service';
 import { UrlSessionsService } from '../../url-sessions/services/url-sessions.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
@@ -82,6 +88,7 @@ export class ScheduledReportsService {
     private readonly projects: Repository<Project>,
     private readonly appEventsService: AppEventsService,
     private readonly urlSessionsService: UrlSessionsService,
+    private readonly manualTimeEditsService: ManualTimeEditsService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
@@ -155,24 +162,34 @@ export class ScheduledReportsService {
       const fromKey = dayKey(range.from, zone);
       const toKey = dayKey(range.to, zone);
       const title = `${report.name} — ${fromKey} to ${toKey}`;
-      const content =
-        report.reportType === 'apps-and-urls'
-          ? await this.buildAppsUrlsContent(
-              report,
-              schedule.fileType,
-              title,
-              fromKey,
-              toKey,
-            )
-          : this.buildContent(
-              report.reportType,
-              schedule.fileType,
-              title,
-              await this.collectEntries(report, range),
-              fromKey,
-              toKey,
-              zone,
-            );
+      let content: Buffer;
+      if (report.reportType === 'apps-and-urls') {
+        content = await this.buildAppsUrlsContent(
+          report,
+          schedule.fileType,
+          title,
+          fromKey,
+          toKey,
+        );
+      } else if (report.reportType === 'manual-time-edits') {
+        content = await this.buildManualTimeEditsContent(
+          report,
+          schedule.fileType,
+          title,
+          range,
+          zone,
+        );
+      } else {
+        content = this.buildContent(
+          report.reportType,
+          schedule.fileType,
+          title,
+          await this.collectEntries(report, range),
+          fromKey,
+          toKey,
+          zone,
+        );
+      }
 
       const sent = await this.emailService.sendReportEmail({
         to: schedule.emails,
@@ -334,6 +351,47 @@ export class ScheduledReportsService {
     return fileType === 'csv'
       ? Buffer.from(buildAppsUrlsCsv(table), 'utf-8')
       : buildAppsUrlsPdf(title, table);
+  }
+
+  /**
+   * The Manual time edits report as the page shows it. "All" only widens
+   * beyond the owner's own edits while they are still an admin or manager,
+   * like `collectEntries`; the report page's Action filter isn't a saved
+   * setting, so every action is included.
+   */
+  private async buildManualTimeEditsContent(
+    report: SavedReport,
+    fileType: 'pdf' | 'csv',
+    title: string,
+    range: { from: Date; to: Date },
+    zone: string,
+  ): Promise<Buffer> {
+    const { membership, organisationId } = report;
+    const { filters, scope } = report.settings;
+    const edits = await this.manualTimeEditsService.list(
+      organisationId,
+      membership.userId,
+      scope === 'all' && ORG_WIDE_ROLES.includes(membership.role)
+        ? 'all'
+        : 'me',
+      range.from,
+      range.to,
+    );
+    const table = buildManualTimeEditsTable(
+      edits.filter(
+        (edit) =>
+          (filters.memberIds.length === 0 ||
+            (edit.membershipId !== null &&
+              filters.memberIds.includes(edit.membershipId))) &&
+          (filters.projectIds.length === 0 ||
+            (edit.projectId !== null &&
+              filters.projectIds.includes(edit.projectId))),
+      ),
+      zone,
+    );
+    return fileType === 'csv'
+      ? Buffer.from(buildManualTimeEditsCsv(table), 'utf-8')
+      : buildManualTimeEditsPdf(title, table);
   }
 
   private buildContent(

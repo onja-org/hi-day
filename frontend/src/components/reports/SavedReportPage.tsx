@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { AppsUrlsReportPage } from "./AppsUrlsReportPage";
 import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
+import { ManualTimeEditsReportPage } from "./ManualTimeEditsReportPage";
 import { ReportStatus } from "./ReportStatus";
 import { WorkSessionsReportPage } from "./WorkSessionsReportPage";
 import { TimeActivityReportPage } from "./TimeActivityReportPage";
@@ -40,6 +41,12 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
 
   if (savedReport.reportType === "work-sessions") {
     return <WorkSessionsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />;
+  }
+
+  if (savedReport.reportType === "manual-time-edits") {
+    return (
+      <ManualTimeEditsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />
+    );
   }
 
   if (savedReport.reportType === "daily-totals") {
