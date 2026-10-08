@@ -83,6 +83,9 @@ function showLoggedIn(
   userAvatar.textContent = email ? email.trim().charAt(0).toUpperCase() : "";
   profileSignedInAsEl.textContent = `Signed in as ${name ?? email ?? ""}`;
   profileEmailEl.textContent = email ?? "";
+  // First name only — "Hi, Rinon." — falling back when the account has no name.
+  const firstName = name?.trim().split(/\s+/)[0];
+  greetingEl.textContent = firstName ? `Hi, ${firstName}.` : "Hi there.";
   hideProfileMenu();
 
   show("status-view");
@@ -476,15 +479,6 @@ const PLAY_PATH =
   "M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z";
 const STOP_PATH =
   "M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z";
-const WEEKDAYS = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
 /** A status poll older than this reads as minutes ago rather than "just now". */
 const SYNC_FRESH_MS = 60_000;
 let lastSyncedAt: number | null = null;
@@ -587,7 +581,6 @@ function projectNameFor(projectId: string): string {
 let lastTrackedProjectId: string | null = null;
 
 function tick(): void {
-  greetingEl.textContent = `Hi, ${WEEKDAYS[new Date().getDay()]}.`;
   todayTotalEl.textContent = formatElapsed(todayTotalSeconds() * 1000);
   updateSyncStatus();
 
