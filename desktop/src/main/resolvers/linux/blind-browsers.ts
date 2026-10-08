@@ -120,7 +120,18 @@ export function selectBlindBrowsers(
  * app bundles `chrome_crashpad_handler`, so a name match alone claims Slack
  * and VS Code — and restarting one would open a browser in its place.
  */
-const HELPER_BINARY_WORDS = ['crashpad', 'handler', 'zygote', 'sandbox', 'helper', 'updater'];
+const HELPER_BINARY_WORDS = [
+  'crashpad',
+  // Opera ships `opera_crashreporter` beside `opera`; counted as a browser it
+  // was offered for restart, and every tally read one higher than the number
+  // of browsers anyone has open.
+  'crashrepo',
+  'handler',
+  'zygote',
+  'sandbox',
+  'helper',
+  'updater',
+];
 
 /** Matched on the executable's filename: a path match would claim anything
  * under a vendor directory, and `comm` is truncated to 15 characters. */

@@ -51,21 +51,3 @@ export function markBrowserRestartPromptSeen(userDataDir: string): void {
     'utf-8',
   );
 }
-
-/**
- * Forgets that answer, so the screen gets another turn.
- *
- * Called when the activation sweep created a launcher override that was not
- * there before — the state this file survives (logout, re-pairing, an update
- * over the top) all leave those overrides in place, so creating one means
- * this is a genuinely fresh install on a machine that was uninstalled from
- * (build/afterRemove.sh removes them) or never had the agent at all. The
- * browsers open at that moment have just lost their launcher binding and
- * have never been offered the restart that fixes it.
- */
-export function clearBrowserRestartPromptSeen(userDataDir: string): void {
-  mkdirSync(userDataDir, { recursive: true });
-  const state = read(userDataDir);
-  delete state.browserRestartPromptSeen;
-  writeFileSync(filePath(userDataDir), JSON.stringify(state), 'utf-8');
-}

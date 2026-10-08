@@ -214,6 +214,14 @@ export class BrowserRestartService {
       }
     }
 
+    // One line each, not only the tally. A count cannot say whether a browser
+    // refused the signal, had no launcher, or was still shutting down — and
+    // when three of four silently failed, the count was all there was to go on.
+    for (const outcome of outcomes.filter((o) => !o.restarted)) {
+      this.log(
+        `[browser-restart] ${outcome.command}#${outcome.pid} not restarted: ${outcome.reason ?? 'no reason given'}`,
+      );
+    }
     this.log(
       `[browser-restart] ${outcomes.filter((o) => o.restarted).length}/${outcomes.length} restarted`,
     );

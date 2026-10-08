@@ -85,6 +85,30 @@ describe('BrowserRestartService.restart', () => {
     killed.mockRestore();
   });
 
+  /**
+   * A tally cannot say whether a browser refused the signal, had no launcher,
+   * or was still shutting down. Three of four once failed silently in a real
+   * session and the count was the only evidence there was.
+   */
+  it('says which browser failed and why', async () => {
+    const lines: string[] = [];
+    const service = new BrowserRestartService({
+      env,
+      shutdownGraceMs: 300,
+      logger: (line) => lines.push(line),
+    });
+    const killed = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw new Error('EPERM: operation not permitted');
+    });
+
+    await service.restart([chrome(4242)]);
+
+    expect(lines.some((line) => line.includes('chrome#4242'))).toBe(true);
+    expect(lines.some((line) => line.includes('EPERM'))).toBe(true);
+    expect(lines.some((line) => line.includes('0/1 restarted'))).toBe(true);
+    killed.mockRestore();
+  });
+
   // Nothing running means nothing to do — not "launch the default browser".
   it('launches nothing when given no browsers', async () => {
     const outcomes = await new BrowserRestartService({ env }).restart([]);
