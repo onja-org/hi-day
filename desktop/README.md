@@ -353,13 +353,16 @@ The icon is the Hi Day sun mark — the same as the web app's favicon
 actually used are generated from it and committed:
 
 - `build/icon.png` — 1024px, padded macOS-style. electron-builder turns it
-  into the macOS `.icns` and uses it for the Linux AppImage/.deb.
+  into the macOS `.icns`.
+- `build/icons/NxN.png` — Linux, 16–512px, downscaled from `build/icon.png`.
+  Must stay ≤512px: a lone 1024px icon isn't in hicolor's size list, so
+  GNOME shows the generic gear in the launcher.
 - `build/icon.ico` — Windows, 16–256px, from the full-bleed web SVG so it
   stays legible at small taskbar sizes.
 - `src/main/assets/icon.png` — 512px, the `BrowserWindow` icon (Linux's
   window/taskbar icon, and `pnpm dev` on every OS).
 
-If the mark or brand colour changes, re-render those three from the SVGs
+If the mark or brand colour changes, re-render those from the SVGs
 (any SVG rasteriser works) rather than editing the PNG/ICO files directly.
 
 ### Window tracking (`@paymoapp/active-window`) — packaging notes
