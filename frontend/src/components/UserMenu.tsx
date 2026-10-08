@@ -43,7 +43,7 @@ export function UserMenu() {
         onClick={() => setMenuOpen((open) => !open)}
         aria-label="Account menu"
         aria-expanded={menuOpen}
-        className="flex size-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary text-white transition-colors duration-150 hover:bg-primary/90"
+        className="flex size-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink font-bold"
       >
         {avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -54,7 +54,7 @@ export function UserMenu() {
       </button>
 
       {menuOpen && (
-        <div className="absolute top-full right-0 z-50 mt-2 flex w-48 flex-col gap-1 rounded-md border border-primary-dark/20 bg-white p-2 shadow-lg">
+        <div className="absolute top-full right-0 z-50 mt-2 flex w-48 flex-col gap-1 rounded-brand-sm border-2 border-ink bg-white p-2 shadow-hard-sm">
           <Link
             href="/account/edit"
             target="_blank"

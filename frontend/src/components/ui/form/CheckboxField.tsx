@@ -20,7 +20,7 @@ export function CheckboxField({
     >
       <input
         type="checkbox"
-        className="h-4 w-4 cursor-pointer rounded border-input-border text-primary focus:ring-2 focus:ring-primary/30"
+        className="h-4 w-4 cursor-pointer accent-primary focus:ring-2 focus:ring-primary/30"
         {...inputProps}
       />
       {label}

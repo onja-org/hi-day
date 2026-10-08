@@ -41,7 +41,7 @@ export function SuspendedOwnerActions({
           type="button"
           onClick={() => restoreMutation.mutate()}
           disabled={restoreMutation.isPending}
-          className="flex w-fit cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-fit cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
         >
           {restoreMutation.isPending && <Spinner />}
           Restore organisation
@@ -49,7 +49,7 @@ export function SuspendedOwnerActions({
         <button
           type="button"
           onClick={() => setIsPermanentModalOpen(true)}
-          className="w-fit cursor-pointer rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90"
+          className="w-fit cursor-pointer rounded-brand-sm bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 border-2 border-ink font-bold"
         >
           Permanently delete now
         </button>

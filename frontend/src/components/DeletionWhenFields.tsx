@@ -53,7 +53,7 @@ export function DeletionWhenFields({
               min={minDate}
               onChange={(event) => onScheduledDateChange(event.target.value)}
               required
-              className="w-fit rounded-md border border-input-border bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="w-fit rounded-brand-sm border-2 border-ink bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </label>
           {scheduledDate && (

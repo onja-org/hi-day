@@ -27,7 +27,7 @@ export function DeletionExportNotice({
         <Link
           href={`/organisations/${organisationId}/time_entries`}
           target="_blank"
-          className="flex h-9 items-center gap-1.5 rounded-md border border-input-border bg-white px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream"
+          className="flex h-9 items-center gap-1.5 rounded-brand-sm border-2 border-ink bg-white px-3 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-cream"
         >
           <ArrowSquareOutIcon size={16} aria-hidden="true" />
           Open time entries
@@ -35,7 +35,7 @@ export function DeletionExportNotice({
         <Link
           href={`/organisations/${organisationId}/activities`}
           target="_blank"
-          className="flex h-9 items-center gap-1.5 rounded-md border border-input-border bg-white px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream"
+          className="flex h-9 items-center gap-1.5 rounded-brand-sm border-2 border-ink bg-white px-3 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-cream"
         >
           <ArrowSquareOutIcon size={16} aria-hidden="true" />
           Open activity

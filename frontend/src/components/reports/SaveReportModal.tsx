@@ -60,7 +60,7 @@ export function SaveReportModal({
             onChange={(event) => setName(event.target.value)}
             required
             placeholder="Give this report a name"
-            className="h-11 rounded-md border border-input-border px-3 text-sm font-normal tracking-normal text-slate-900 normal-case focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+            className="h-11 rounded-brand-sm border-2 border-ink px-3 text-sm font-normal tracking-normal text-slate-900 normal-case focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
           />
         </label>
 

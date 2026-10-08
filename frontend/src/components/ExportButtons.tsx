@@ -61,7 +61,7 @@ export function ExportButtons({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-label="Export"
-        className="flex h-11 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-11 cursor-pointer items-center gap-1.5 rounded-brand-sm border-2 border-ink px-3 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
       >
         <DownloadSimpleIcon size={16} aria-hidden="true" />
         Export
@@ -71,7 +71,7 @@ export function ExportButtons({
       {isOpen && (
         <ul
           role="menu"
-          className="absolute top-full right-0 z-20 mt-1 w-40 rounded-md border border-input-border bg-white py-1 shadow-lg"
+          className="absolute top-full right-0 z-20 mt-1 w-40 rounded-brand-sm border-2 border-ink bg-white py-1 shadow-hard-sm"
         >
           {formats.map((format) => (
             <li key={format.label}>

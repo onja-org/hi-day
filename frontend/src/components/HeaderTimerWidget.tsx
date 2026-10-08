@@ -59,10 +59,9 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
         aria-expanded={open}
         aria-label={timer.entry ? "Open running timer" : "Open timer"}
         className={clsx(
-          "flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150",
-          timer.entry
-            ? "bg-primary text-white hover:bg-primary/90"
-            : "border border-input-border text-slate-900 hover:bg-cream",
+          "flex cursor-pointer items-center gap-2 rounded-brand-sm border-2 border-ink px-3 py-1.5 text-sm font-semibold transition-colors duration-150",
+          timer.entry && "bg-primary text-white hover:bg-primary/90",
+          !timer.entry && "text-slate-900 hover:bg-cream",
         )}
       >
         {timer.entry ? (
@@ -85,7 +84,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 z-50 mt-2 w-80 rounded-lg border border-primary-dark/20 bg-white p-4 shadow-lg">
+        <div className="absolute top-full right-0 z-50 mt-2 w-80 rounded-brand-sm border-2 border-ink bg-white p-4 shadow-hard-sm">
           {timer.entry ? (
             <HeaderTimerRunningPanel timer={timer} />
           ) : (

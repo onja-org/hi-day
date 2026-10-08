@@ -131,7 +131,7 @@ export function DisclosureDraftForm() {
           <button
             type="submit"
             disabled={saveDraftMutation.isPending}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-primary px-4 h-11 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm border-2 border-primary px-4 h-11 text-primary transition-colors duration-150 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 font-semibold"
           >
             {saveDraftMutation.isPending && <Spinner />}
             {saveDraftMutation.isPending ? "Saving…" : "Save draft"}
@@ -140,7 +140,7 @@ export function DisclosureDraftForm() {
             type="button"
             onClick={handlePublish}
             disabled={publishMutation.isPending}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
           >
             {publishMutation.isPending && <Spinner />}
             {publishMutation.isPending ? "Publishing…" : "Publish"}

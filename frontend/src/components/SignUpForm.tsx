@@ -93,7 +93,7 @@ export function SignUpForm() {
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-all duration-150 hover:scale-105 hover:bg-primary/90 active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 border-2 border-ink font-bold"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Creating your account…" : "Create account"}

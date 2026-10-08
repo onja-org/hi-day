@@ -31,7 +31,7 @@ export function NumberFieldWithUnit({
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-slate-900">{label}</span>
-      <span className="flex h-11 items-center overflow-hidden rounded-md border border-input-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30">
+      <span className="flex h-11 items-center overflow-hidden rounded-brand-sm border-2 border-ink bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30">
         <input
           name={name}
           type="number"
@@ -47,7 +47,7 @@ export function NumberFieldWithUnit({
             : { defaultValue })}
           className="h-full w-full min-w-0 flex-1 px-3 text-slate-900 focus:outline-none"
         />
-        <span className="flex h-full shrink-0 items-center border-l border-input-border bg-sidebar px-3 text-sm text-slate-900/60">
+        <span className="flex h-full shrink-0 items-center border-l-2 border-ink bg-sidebar px-3 text-sm text-slate-900/60">
           {unit}
         </span>
       </span>

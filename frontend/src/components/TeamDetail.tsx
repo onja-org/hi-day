@@ -72,7 +72,7 @@ export function TeamDetail({ organisationId, teamId, showName = true }: TeamDeta
             <button
               type="button"
               onClick={() => setIsAddingMember(true)}
-              className="cursor-pointer rounded-md bg-primary px-4 h-11 text-sm text-white transition-colors duration-150 hover:bg-primary/90"
+              className="cursor-pointer rounded-brand-sm bg-primary px-4 h-11 text-sm text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink font-bold"
             >
               Add members
             </button>

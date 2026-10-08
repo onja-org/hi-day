@@ -74,7 +74,7 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
         type="button"
         onClick={() => approveMutation.mutate()}
         disabled={approveMutation.isPending}
-        className="flex items-center justify-center gap-2 cursor-pointer rounded-md px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
+        className="flex items-center justify-center gap-2 cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 font-bold"
       >
         {approveMutation.isPending && <Spinner />}
         {approveMutation.isPending ? "Logging in…" : "Log in"}

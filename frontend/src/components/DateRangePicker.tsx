@@ -139,9 +139,9 @@ export function DateRangePicker({
           aria-expanded={open}
           onClick={() => (open ? close() : openPopover())}
           className={clsx(
-            "flex h-11 cursor-pointer items-center gap-3 rounded-md border-2 bg-white px-3 text-sm text-slate-900 transition-colors duration-150",
-            open && "border-primary/50",
-            !open && "border-input-border hover:border-primary/50",
+            "flex h-11 cursor-pointer items-center gap-3 rounded-brand-sm border-2 bg-white px-3 text-sm text-slate-900 transition-colors duration-150",
+            open && "border-primary",
+            !open && "border-ink hover:border-primary",
           )}
         >
           {formatDay(appliedDays.from)} - {formatDay(appliedDays.to)}
@@ -172,7 +172,7 @@ export function DateRangePicker({
         <div
           role="dialog"
           aria-label="Choose a date range"
-          className="absolute top-full left-0 z-20 mt-2 flex flex-col overflow-hidden rounded-md border border-input-border bg-white shadow-lg sm:flex-row"
+          className="absolute top-full left-0 z-20 mt-2 flex flex-col overflow-hidden rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm sm:flex-row"
         >
           <div className="flex flex-col gap-4 p-3 sm:w-44">
             <DateRangePresetList value={draftPreset} onSelect={selectPreset} />
@@ -180,14 +180,14 @@ export function DateRangePicker({
               <button
                 type="button"
                 onClick={apply}
-                className="cursor-pointer rounded-md bg-primary px-3 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+                className="cursor-pointer rounded-brand-sm bg-primary px-3 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink"
               >
                 Apply
               </button>
               <button
                 type="button"
                 onClick={close}
-                className="cursor-pointer rounded-md border border-input-border px-3 h-11 text-sm font-medium text-slate-900 hover:bg-cream"
+                className="cursor-pointer rounded-brand-sm border-2 border-ink px-3 h-11 text-sm font-semibold text-slate-900 hover:bg-cream"
               >
                 Cancel
               </button>

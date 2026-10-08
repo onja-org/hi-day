@@ -105,7 +105,7 @@ export function DatePicker({
           role="dialog"
           aria-label={label}
           className={clsx(
-            "absolute top-full z-20 mt-2 overflow-hidden rounded-md border border-input-border bg-white shadow-lg",
+            "absolute top-full z-20 mt-2 overflow-hidden rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm",
             embedded && "left-1/2 -translate-x-1/2",
             !embedded && "left-0",
           )}

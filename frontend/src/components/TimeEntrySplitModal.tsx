@@ -62,7 +62,7 @@ export function TimeEntrySplitModal({
             type="datetime-local"
             value={at}
             onChange={(event) => setAt(event.target.value)}
-            className="w-full rounded-md border border-input-border bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-brand-sm border-2 border-ink bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
@@ -92,7 +92,7 @@ export function TimeEntrySplitModal({
           type="button"
           onClick={() => splitMutation.mutate()}
           disabled={!halves || splitMutation.isPending}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
         >
           {splitMutation.isPending && <Spinner />}
           Split into two entries

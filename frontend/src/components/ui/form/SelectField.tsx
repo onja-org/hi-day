@@ -42,9 +42,9 @@ export function SelectField({
         <select
           aria-invalid={invalid ? true : undefined}
           className={clsx(
-            "h-11 w-full appearance-none rounded-md border bg-white pl-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 disabled:opacity-50",
+            "h-11 w-full appearance-none rounded-brand-sm border-2 bg-white pl-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 disabled:opacity-50",
             invalid && "border-error focus:border-error focus:ring-error/30",
-            !invalid && "border-input-border focus:border-primary focus:ring-primary/30",
+            !invalid && "border-ink focus:border-primary focus:ring-primary/30",
             compact && "text-sm",
             selectClassName,
           )}

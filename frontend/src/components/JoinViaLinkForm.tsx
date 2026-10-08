@@ -97,14 +97,14 @@ export function JoinViaLinkForm({ token }: JoinViaLinkFormProps) {
           onChange={(event) => setEmail(event.target.value)}
           autoComplete="email"
           required
-          className="rounded-md border border-input-border px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+          className="rounded-brand-sm border-2 border-ink px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
         />
       </label>
       {failure && <ErrorMessage message={failure} />}
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
       >
         {mutation.isPending && <Spinner />}
         Send me an invitation

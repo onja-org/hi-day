@@ -32,9 +32,9 @@ export function TextField({
       <input
         aria-invalid={error || invalid ? true : undefined}
         className={clsx(
-          "h-11 rounded-md border bg-white px-3 text-slate-900 transition-all duration-150 focus:outline-none focus:ring-2 disabled:opacity-50",
+          "h-11 rounded-brand-sm border-2 bg-white px-3 text-slate-900 transition-all duration-150 focus:outline-none focus:ring-2 disabled:opacity-50",
           (error || invalid) && "border-error focus:border-error focus:ring-error/30",
-          !error && !invalid && "border-input-border focus:border-primary focus:ring-primary/30",
+          !error && !invalid && "border-ink focus:border-primary focus:ring-primary/30",
           compact && "text-sm",
           inputClassName,
         )}

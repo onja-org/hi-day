@@ -76,7 +76,7 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
               placeholder="Search by name, email, or platform"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="h-11 w-full rounded-md border border-input-border bg-white pr-4 pl-10 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="h-11 w-full rounded-brand-sm border-2 border-ink bg-white pr-4 pl-10 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
         </label>

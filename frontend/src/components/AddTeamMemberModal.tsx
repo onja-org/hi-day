@@ -119,7 +119,7 @@ export function AddTeamMemberModal({
           type="button"
           onClick={handleSubmit}
           disabled={addMutation.isPending || selected.size === 0}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
         >
           {addMutation.isPending && <Spinner />}
           {selected.size === 0

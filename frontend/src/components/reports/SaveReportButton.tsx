@@ -32,7 +32,7 @@ export function SaveReportButton({ settings, initialName, initialScheduled, onSa
         type="button"
         title="Save report for easy access or to schedule delivery"
         onClick={() => setOpen(true)}
-        className="flex h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+        className="flex h-11 cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink"
       >
         <FloppyDiskIcon size={16} aria-hidden="true" />
         Save

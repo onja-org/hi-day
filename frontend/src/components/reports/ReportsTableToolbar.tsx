@@ -31,7 +31,7 @@ export function ReportsTableToolbar({
           type="button"
           onClick={onToggleExpandAll}
           aria-label="Expand or collapse all rows"
-          className="cursor-pointer rounded-md border border-input-border p-2 text-icon hover:bg-primary/10"
+          className="cursor-pointer rounded-brand-sm border-2 border-ink p-2 text-icon hover:bg-primary/10 font-semibold"
         >
           <CaretUpDownIcon size={16} aria-hidden="true" />
         </button>
@@ -43,7 +43,7 @@ export function ReportsTableToolbar({
         >
           <ColumnsIcon size={16} aria-hidden="true" />
         </summary>
-        <div className="absolute right-0 z-10 mt-1 flex max-h-72 w-60 flex-col gap-3 overflow-y-auto rounded-md border border-input-border bg-white p-4 shadow-md">
+        <div className="absolute right-0 z-10 mt-1 flex max-h-72 w-60 flex-col gap-3 overflow-y-auto rounded-brand-sm border-2 border-ink bg-white p-4 shadow-hard-sm">
           {groups.map(({ group, columns }) => (
             <fieldset key={group ?? "ungrouped"} className="flex flex-col gap-3">
               {group && (

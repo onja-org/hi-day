@@ -72,7 +72,7 @@ export function UrlSessionDomainAccordion({
                 onClick={() => onDelete(page.url)}
                 disabled={isDeleting}
                 aria-label={`Delete tracked activity for ${page.url}`}
-                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-brand-sm border-2 border-ink px-3 py-1.5 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50 font-semibold"
               >
                 <TrashIcon size={16} aria-hidden="true" />
                 Delete

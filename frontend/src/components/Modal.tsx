@@ -59,7 +59,7 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
         aria-labelledby="modal-title"
         onClick={(event) => event.stopPropagation()}
         className={clsx(
-          "flex max-h-full w-full cursor-auto flex-col gap-6 overflow-y-auto rounded-lg bg-white p-6 transition-all duration-200",
+          "flex max-h-full w-full cursor-auto flex-col gap-6 overflow-y-auto rounded-brand border-3 border-ink bg-white p-6 shadow-hard transition-all duration-200",
           size === "default" && "max-w-lg",
           size === "wide" && "max-w-2xl",
           visible && "scale-100 opacity-100",

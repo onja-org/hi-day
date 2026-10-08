@@ -94,7 +94,7 @@ export function TimeEntryDeleteModal({
             maxLength={500}
             required
             placeholder="Why are you deleting this time entry? (ex: Forgot to stop timer)"
-            className="w-full rounded-md border border-input-border bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-brand-sm border-2 border-ink bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
@@ -102,7 +102,7 @@ export function TimeEntryDeleteModal({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:bg-cream"
+            className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-cream"
           >
             Cancel
           </button>
@@ -110,7 +110,7 @@ export function TimeEntryDeleteModal({
             type="button"
             disabled={trimmedReason === "" || deleteMutation.isPending}
             onClick={() => deleteMutation.mutate(trimmedReason)}
-            className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40"
+            className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-error px-4 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40 border-2 border-ink"
           >
             {deleteMutation.isPending && <Spinner />}
             Delete

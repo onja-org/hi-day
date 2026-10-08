@@ -30,7 +30,7 @@ export function InviteLinkLimitFields({
             value={expiryDate}
             min={today}
             onChange={(event) => onExpiryDateChange(event.target.value)}
-            className="rounded-md border border-input-border px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+            className="rounded-brand-sm border-2 border-ink px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
           />
           <span className="text-xs text-slate-900/60">Leave blank for no expiration.</span>
         </label>
@@ -44,7 +44,7 @@ export function InviteLinkLimitFields({
             value={usageCap}
             placeholder="∞ Unlimited"
             onChange={(event) => onUsageCapChange(event.target.value)}
-            className="rounded-md border border-input-border px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
+            className="rounded-brand-sm border-2 border-ink px-3 h-11 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
           />
           <span className="text-xs text-slate-900/60">How many people can join through this link.</span>
         </label>

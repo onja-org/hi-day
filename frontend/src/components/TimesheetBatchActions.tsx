@@ -56,7 +56,7 @@ export function TimesheetBatchActions({
         aria-expanded={isOpen}
         aria-haspopup="menu"
         className={clsx(
-          "inline-flex cursor-pointer items-center gap-2 rounded-md border border-input-border bg-white px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary",
+          "inline-flex cursor-pointer items-center gap-2 rounded-brand-sm border-2 border-ink bg-white px-4 h-11 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary",
           isEmpty && "invisible",
         )}
       >
@@ -68,7 +68,7 @@ export function TimesheetBatchActions({
       {isOpen && (
         <div
           role="menu"
-          className="absolute top-full left-0 z-20 mt-1 flex w-44 flex-col items-stretch rounded-md border border-input-border bg-white shadow-lg"
+          className="absolute top-full left-0 z-20 mt-1 flex w-44 flex-col items-stretch rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm"
         >
           <button
             type="button"

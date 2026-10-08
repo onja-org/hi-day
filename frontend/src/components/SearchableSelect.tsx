@@ -128,7 +128,7 @@ export function SearchableSelect({
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="h-11 w-full rounded-md border border-input-border bg-white px-3 pr-8 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="h-11 w-full rounded-brand-sm border-2 border-ink bg-white px-3 pr-8 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
         {isOpen && query ? (
           <button
@@ -153,7 +153,7 @@ export function SearchableSelect({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-input-border bg-white py-1 text-sm shadow-md"
+          className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-brand-sm border-2 border-ink bg-white py-1 text-sm shadow-hard-sm"
         >
           {query && filteredOptions.length === 0 && (
             <li className="px-3 py-1.5 text-slate-900/60">{noMatchesLabel}</li>

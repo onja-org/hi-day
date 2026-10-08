@@ -123,7 +123,7 @@ export function TimeEntryDetailModal({
                   entry.canDelete ? undefined : "You can only delete your own entries."
                 }
                 onClick={() => setAction("delete")}
-                className="cursor-pointer rounded-md bg-error px-4 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40"
+                className="cursor-pointer rounded-brand-sm bg-error px-4 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40 border-2 border-ink"
               >
                 Delete
               </button>
@@ -134,7 +134,7 @@ export function TimeEntryDetailModal({
                 disabled={editBlocked !== undefined}
                 title={editBlocked}
                 onClick={() => setAction("edit")}
-                className="cursor-pointer rounded-md bg-primary px-4 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/40"
+                className="cursor-pointer rounded-brand-sm bg-primary px-4 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/40 border-2 border-ink"
               >
                 Edit
               </button>
@@ -143,7 +143,7 @@ export function TimeEntryDetailModal({
                 disabled={splitBlocked !== undefined}
                 title={splitBlocked}
                 onClick={() => setAction("split")}
-                className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:border-input-border disabled:text-slate-900/40 disabled:hover:border-input-border disabled:hover:text-slate-900/40"
+                className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:border-input-border disabled:text-slate-900/40 disabled:hover:border-input-border disabled:hover:text-slate-900/40"
               >
                 Split
               </button>

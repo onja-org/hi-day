@@ -19,7 +19,7 @@ export function DeletionEmailSentModal({
         <button
           type="button"
           onClick={onClose}
-          className="cursor-pointer rounded-md bg-primary-dark px-4 h-11 text-white"
+          className="cursor-pointer rounded-brand-sm border-2 border-ink bg-primary-dark px-4 h-11 text-white font-bold"
         >
           Done
         </button>

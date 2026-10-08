@@ -31,7 +31,7 @@ export function ConfirmDialog({
         <button
           type="button"
           onClick={onClose}
-          className="cursor-pointer rounded-md px-4 h-11 text-sm font-medium text-slate-900 hover:bg-cream"
+          className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-semibold text-slate-900 hover:bg-cream"
         >
           Cancel
         </button>
@@ -40,8 +40,9 @@ export function ConfirmDialog({
           onClick={onConfirm}
           disabled={isPending}
           className={clsx(
-            "cursor-pointer rounded-md px-4 h-11 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50",
-            isDangerous ? "bg-error" : "bg-primary-dark",
+            "cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50",
+            isDangerous && "bg-error",
+            !isDangerous && "bg-primary-dark",
           )}
         >
           {confirmLabel}

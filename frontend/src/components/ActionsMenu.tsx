@@ -76,9 +76,9 @@ export function ActionsMenu({ items, label = "Actions", align = "right" }: Actio
         aria-expanded={open}
         aria-haspopup="true"
         className={clsx(
-          "flex h-11 cursor-pointer items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-primary-dark transition-colors duration-150 hover:border-primary hover:text-primary",
+          "flex h-11 cursor-pointer items-center gap-1.5 rounded-brand-sm border-2 px-3 text-sm font-semibold text-primary-dark transition-colors duration-150 hover:border-primary hover:text-primary",
           open && "border-primary text-primary",
-          !open && "border-input-border",
+          !open && "border-ink",
         )}
       >
         {label}
@@ -90,7 +90,7 @@ export function ActionsMenu({ items, label = "Actions", align = "right" }: Actio
         <ul
           ref={panelRef}
           style={{ top: position.top, left: position.left }}
-          className="fixed z-50 flex w-52 flex-col rounded-lg bg-white py-2 text-left shadow-xl"
+          className="fixed z-50 flex w-52 flex-col rounded-brand-sm border-2 border-ink bg-white py-2 text-left shadow-hard-sm"
         >
           {items.map((item) => (
             <li key={item.label}>

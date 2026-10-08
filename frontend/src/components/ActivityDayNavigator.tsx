@@ -30,7 +30,7 @@ export function ActivityDayNavigator({ dayOffset, onChange }: ActivityDayNavigat
         type="button"
         aria-label="Previous day"
         onClick={() => onChange(dayOffset - 1)}
-        className="cursor-pointer rounded-md border border-input-border p-1.5 text-slate-900 hover:bg-cream"
+        className="cursor-pointer rounded-brand-sm border-2 border-ink p-1.5 text-slate-900 hover:bg-cream font-semibold"
       >
         <CaretLeftIcon size={16} aria-hidden="true" />
       </button>
@@ -41,7 +41,7 @@ export function ActivityDayNavigator({ dayOffset, onChange }: ActivityDayNavigat
         type="button"
         aria-label="Next day"
         onClick={() => onChange(dayOffset + 1)}
-        className="cursor-pointer rounded-md border border-input-border p-1.5 text-slate-900 hover:bg-cream"
+        className="cursor-pointer rounded-brand-sm border-2 border-ink p-1.5 text-slate-900 hover:bg-cream font-semibold"
       >
         <CaretRightIcon size={16} aria-hidden="true" />
       </button>

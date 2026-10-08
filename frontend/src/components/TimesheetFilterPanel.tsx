@@ -190,7 +190,7 @@ export function TimesheetFilterPanel({
         type="button"
         disabled={activeCount === 0}
         onClick={() => onChange(EMPTY_TIMESHEET_FILTERS)}
-        className="cursor-pointer rounded-md border border-input-border px-4 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
+        className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 py-2 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:text-slate-900/40 disabled:hover:border-input-border"
       >
         Clear filters
       </button>

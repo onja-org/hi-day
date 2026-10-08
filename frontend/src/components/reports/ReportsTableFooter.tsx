@@ -27,7 +27,7 @@ export function ReportsTableFooter({
           value={perPage}
           onChange={(event) => onPerPageChange(Number(event.target.value))}
           aria-label="Rows per page"
-          className="rounded-full border border-input-border bg-white px-2 py-1 text-slate-900"
+          className="rounded-full border-2 border-ink bg-white px-2 py-1 text-slate-900"
         >
           {PER_PAGE_OPTIONS.map((option) => (
             <option key={option} value={option}>

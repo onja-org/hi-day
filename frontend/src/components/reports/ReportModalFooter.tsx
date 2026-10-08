@@ -33,14 +33,14 @@ export function ReportModalFooter({ onClose, onSendPreview, isPending, submitDis
         <button
           type="button"
           onClick={onClose}
-          className="h-11 cursor-pointer rounded-md border border-primary px-4 text-primary"
+          className="h-11 cursor-pointer rounded-brand-sm border-2 border-primary px-4 text-primary font-semibold"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitDisabled || isPending}
-          className="flex h-11 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
         >
           {isPending && <Spinner />}
           {children}

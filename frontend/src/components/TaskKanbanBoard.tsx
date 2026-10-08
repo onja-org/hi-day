@@ -116,7 +116,7 @@ export function TaskKanbanBoard({
       </div>
       <DragOverlay>
         {dragging && (
-          <div className="rotate-1 cursor-grabbing rounded-md border border-primary bg-white p-3 shadow-lg">
+          <div className="rotate-1 cursor-grabbing rounded-brand-sm border-2 border-ink bg-white p-3 shadow-hard-sm">
             <TaskCardContent task={dragging} />
           </div>
         )}

@@ -56,7 +56,7 @@ export function NoteDayList({ organisationId, notes, canDelete }: NoteDayListPro
               onClick={() => deleteMutation.mutate(note.id)}
               disabled={deleteMutation.isPending}
               aria-label="Delete note"
-              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-input-border px-3 py-1.5 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-brand-sm border-2 border-ink px-3 py-1.5 text-sm text-slate-900 transition-colors duration-150 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50 font-semibold"
             >
               <TrashIcon size={16} aria-hidden="true" />
             </button>

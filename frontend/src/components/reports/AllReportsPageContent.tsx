@@ -34,7 +34,7 @@ export function AllReportsPageContent({ organisationId }: AllReportsPageContentP
           onChange={(event) => setQuery(event.target.value)}
           aria-label="Search reports"
           placeholder="Search reports"
-          className="w-full rounded-full border border-input-border bg-white px-4 py-2 text-sm text-slate-900 sm:w-64"
+          className="w-full rounded-full border-2 border-ink bg-white px-4 py-2 text-sm text-slate-900 sm:w-64"
         />
       </div>
 

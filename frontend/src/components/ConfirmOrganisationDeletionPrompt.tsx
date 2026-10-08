@@ -89,7 +89,7 @@ export function ConfirmOrganisationDeletionPrompt({
             <button
               type="button"
               onClick={() => router.replace(settingsPath)}
-              className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
+              className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-slate-900 font-semibold"
             >
               Cancel
             </button>
@@ -97,7 +97,7 @@ export function ConfirmOrganisationDeletionPrompt({
               type="button"
               onClick={() => confirmMutation.mutate()}
               disabled={confirmMutation.isPending || statusQuery.isLoading}
-              className="flex cursor-pointer items-center gap-2 rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
             >
               {confirmMutation.isPending && <Spinner />}
               {isPermanent ? "Delete permanently" : "Confirm deletion"}

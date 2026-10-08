@@ -29,7 +29,7 @@ export function SendReportButton({ defaultSubject, onSend }: SendReportButtonPro
         aria-label="Send report"
         title="Send report by email"
         onClick={() => setOpen(true)}
-        className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-input-border text-primary transition-colors duration-150 hover:border-primary"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink text-primary transition-colors duration-150 hover:border-primary font-semibold"
       >
         <PaperPlaneRightIcon size={16} aria-hidden="true" />
       </button>

@@ -105,7 +105,7 @@ export function ImportProjectsModal({ organisationId, onClose }: ImportProjectsM
               accept=".csv,.xlsx"
               onChange={handleFile}
               disabled={lookupsLoading || lookupsError}
-              className="rounded-md border border-input-border px-3 py-2 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-primary"
+              className="rounded-brand-sm border-2 border-ink bg-white px-3 py-2 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-primary"
             />
           </label>
         )}
@@ -117,7 +117,7 @@ export function ImportProjectsModal({ organisationId, onClose }: ImportProjectsM
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-md border border-input-border px-4 h-11 text-slate-900"
+            className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-slate-900 font-semibold"
           >
             {mutation.data ? "Done" : "Cancel"}
           </button>
@@ -126,7 +126,7 @@ export function ImportProjectsModal({ organisationId, onClose }: ImportProjectsM
               type="button"
               onClick={() => mutation.mutate()}
               disabled={validRows.length === 0 || mutation.isPending}
-              className="flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
             >
               {mutation.isPending && <Spinner />}
               Import {validRows.length} {validRows.length === 1 ? "project" : "projects"}

@@ -144,7 +144,7 @@ export function MultiSelectFilter({
           <ul
             role="listbox"
             aria-multiselectable="true"
-            className="absolute top-full right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-input-border bg-white shadow-lg"
+            className="absolute top-full right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm"
           >
             {searchable && (
               <li className="p-2">

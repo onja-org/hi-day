@@ -25,7 +25,7 @@ export function ConfirmNameField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           autoComplete="off"
-          className="w-full rounded-md border border-input-border bg-white px-3 pr-9 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="w-full rounded-brand-sm border-2 border-ink bg-white px-3 pr-9 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
         {value === expectedName && (
           <CheckIcon

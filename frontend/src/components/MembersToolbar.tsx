@@ -60,14 +60,14 @@ export function MembersToolbar({
           <button
             type="button"
             onClick={() => setOpenModal("import")}
-            className="cursor-pointer rounded-md border border-primary px-4 h-11 text-sm font-medium text-primary transition-colors duration-150 hover:bg-primary/10"
+            className="cursor-pointer rounded-brand-sm border-2 border-primary px-4 h-11 text-sm font-semibold text-primary transition-colors duration-150 hover:bg-primary/10"
           >
             Import members
           </button>
           <button
             type="button"
             onClick={() => setOpenModal("invite")}
-            className="cursor-pointer rounded-md bg-primary px-5 h-11 text-sm font-medium text-white transition-colors duration-150 hover:bg-primary/90"
+            className="cursor-pointer rounded-brand-sm bg-primary px-5 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink"
           >
             Add members
           </button>

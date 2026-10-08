@@ -225,7 +225,7 @@ export function TimeEntriesPageContent({
             <button
               type="button"
               onClick={() => setAddingTime(true)}
-              className="cursor-pointer rounded-md bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90"
+              className="cursor-pointer rounded-brand-sm bg-primary px-4 py-2 text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink font-bold"
             >
               Add time
             </button>
@@ -234,7 +234,7 @@ export function TimeEntriesPageContent({
             type="button"
             onClick={() => setShowFilters(true)}
             aria-expanded={showFilters}
-            className="flex h-11 cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
+            className="flex h-11 cursor-pointer items-center gap-2 rounded-brand-sm border-2 border-ink px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
           >
             <FunnelIcon size={16} aria-hidden="true" />
             Filters

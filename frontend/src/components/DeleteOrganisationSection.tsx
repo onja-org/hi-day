@@ -58,7 +58,7 @@ export function DeleteOrganisationSection({
                   type="button"
                   onClick={() => cancelMutation.mutate()}
                   disabled={cancelMutation.isPending}
-                  className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-input-border px-4 h-11 text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-fit cursor-pointer items-center gap-2 rounded-brand-sm border-2 border-ink px-4 h-11 text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 font-semibold"
                 >
                   {cancelMutation.isPending && <Spinner />}
                   Cancel scheduled deletion
@@ -66,7 +66,7 @@ export function DeleteOrganisationSection({
                 <button
                   type="button"
                   onClick={() => setOpenModal("permanent")}
-                  className="w-fit cursor-pointer rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90"
+                  className="w-fit cursor-pointer rounded-brand-sm bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 border-2 border-ink font-bold"
                 >
                   Delete permanently now
                 </button>
@@ -77,7 +77,7 @@ export function DeleteOrganisationSection({
             <button
               type="button"
               onClick={() => setOpenModal("any")}
-              className="w-fit cursor-pointer rounded-md bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90"
+              className="w-fit cursor-pointer rounded-brand-sm bg-error px-4 h-11 text-white transition-colors duration-150 hover:bg-error/90 border-2 border-ink font-bold"
             >
               Delete organisation
             </button>

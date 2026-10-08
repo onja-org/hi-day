@@ -52,7 +52,7 @@ export function AppsUrlsReportBody({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search"
-            className="h-11 w-full rounded-full border border-input-border bg-white pr-4 pl-9 text-sm text-slate-900 sm:w-64"
+            className="h-11 w-full rounded-full border-2 border-ink bg-white pr-4 pl-9 text-sm text-slate-900 sm:w-64"
           />
         </label>
       </div>

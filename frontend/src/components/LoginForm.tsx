@@ -121,7 +121,7 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
       <button
         type="submit"
         disabled={mutation.isPending || mutation.data?.ok}
-        className="flex items-center justify-center gap-2 cursor-pointer rounded-md px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100"
+        className="flex items-center justify-center gap-2 cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 font-bold"
       >
         {mutation.isPending && <Spinner />}
         {mutation.isPending ? "Logging in…" : "Log in"}

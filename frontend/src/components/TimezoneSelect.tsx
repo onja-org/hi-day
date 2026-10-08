@@ -43,7 +43,7 @@ export function TimezoneSelect({ options, value, onChange }: TimezoneSelectProps
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label="Time zone to read this in"
-        className="flex cursor-pointer items-center gap-1.5 rounded-md border border-input-border bg-white px-3 py-2 text-sm font-medium text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
+        className="flex cursor-pointer items-center gap-1.5 rounded-brand-sm border-2 border-ink bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary"
       >
         {selected?.zone ? timezoneAbbreviation(selected.zone) : "Time zone"}
         <CaretDownIcon size={12} aria-hidden="true" />
@@ -52,7 +52,7 @@ export function TimezoneSelect({ options, value, onChange }: TimezoneSelectProps
       {isOpen && (
         <ul
           role="listbox"
-          className="absolute top-full right-0 z-20 mt-1 w-72 rounded-md border border-input-border bg-white py-1 shadow-lg"
+          className="absolute top-full right-0 z-20 mt-1 w-72 rounded-brand-sm border-2 border-ink bg-white py-1 shadow-hard-sm"
         >
           {options.map((option) => {
             // No zone recorded — saying so beats showing their hours on

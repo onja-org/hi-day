@@ -12,7 +12,7 @@ export function ScheduleReportButton({ onClick }: ScheduleReportButtonProps) {
       aria-label="Schedule report"
       title="Schedule report delivery"
       onClick={onClick}
-      className="flex size-11 cursor-pointer items-center justify-center rounded-md border border-input-border text-primary transition-colors duration-150 hover:border-primary"
+      className="flex size-11 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink text-primary transition-colors duration-150 hover:border-primary font-semibold"
     >
       <ClockIcon size={16} aria-hidden="true" />
     </button>

@@ -60,7 +60,7 @@ export function TeamRenameForm({
         <button
           type="submit"
           disabled={renameMutation.isPending}
-          className="cursor-pointer rounded-md bg-primary px-4 h-11 text-sm text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+          className="cursor-pointer rounded-brand-sm bg-primary px-4 h-11 text-sm text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
         >
           Save
         </button>
