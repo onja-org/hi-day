@@ -263,13 +263,11 @@ async function showBrowserRestartSetup(): Promise<boolean> {
   const named = [...prompt.names, ...manualNames];
   setupMessage.textContent =
     `${listOf(named)} ${named.length > 1 ? "need" : "needs"} restarting once ` +
-    `before website tracking can see which pages are open. Until then their ` +
-    `dock icons may not show them as running, and clicking one opens a new ` +
-    `window instead of the one already open.` +
+    `before website tracking can start.` +
     // Only promised for the ones Continue can actually relaunch.
     (prompt.names.length > 0
-      ? ` Continue restarts ${listOf(prompt.names)} for you — save anything ` +
-        `unsaved first.`
+      ? ` Continue restarts ${prompt.names.length > 1 ? "them" : "it"} — save ` +
+        `anything unsaved first.`
       : "");
 
   // Said plainly rather than left to the person to notice: the button above
