@@ -32,7 +32,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 ];
 
 export function settingsHref(
-  organisationId: string,
+  organisationId: string | number,
   groupKey: string,
   sectionKey: string,
 ): string {

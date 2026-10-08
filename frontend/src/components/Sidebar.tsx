@@ -9,7 +9,9 @@ import {
   Desktop,
   FolderSimple,
   Gauge,
+  Buildings,
   Gear,
+  SquaresFour,
   ListChecks,
   Star,
   User,
@@ -18,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
@@ -163,10 +166,29 @@ export function Sidebar({
     ...(isAdmin
       ? [
           {
-            kind: "link" as const,
+            kind: "group" as const,
             label: "Settings",
-            href: `/organisations/${organisationId}/settings`,
             icon: Gear,
+            children: [
+              // "All settings" first, so the card page listing every group
+              // is always one click away from inside a section.
+              {
+                kind: "link" as const,
+                label: "All settings",
+                href: `/organisations/${organisationId}/settings`,
+                icon: SquaresFour,
+              },
+              ...SETTINGS_GROUPS.map((group) => ({
+                kind: "link" as const,
+                label: group.label,
+                href: settingsHref(
+                  organisationId,
+                  group.key,
+                  group.sections[0].key,
+                ),
+                icon: group.key === "organization" ? Buildings : ChartLineUp,
+              })),
+            ],
           },
         ]
       : []),

@@ -2,15 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CaretLeftIcon } from "@phosphor-icons/react";
-import { activeSettingsLocation, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
+import { BuildingsIcon, ChartLineUpIcon } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
+import clsx from "clsx";
+import {
+  activeSettingsLocation,
+  settingsHref,
+  SETTINGS_GROUPS,
+} from "@/lib/settingsNavigation";
 import { useSettingsDirty } from "@/components/SettingsDirtyProvider";
 
 type SettingsHeaderProps = {
   organisationId: string;
 };
 
-/** Names where you are: the area on the card page, the section inside one. */
+const GROUP_ICONS: Record<string, Icon> = {
+  organization: BuildingsIcon,
+  tracking: ChartLineUpIcon,
+};
+
+/**
+ * Names where you are: the area on the card page, and inside a group, the
+ * group plus its sections as tabs.
+ */
 export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
   const pathname = usePathname();
   const { confirmLeave } = useSettingsDirty();
@@ -28,26 +42,44 @@ export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
   }
 
   const group = SETTINGS_GROUPS.find((candidate) => candidate.key === active.groupKey);
-  const section = group?.sections.find((candidate) => candidate.key === active.sectionKey);
+  if (!group) return null;
+  const GroupIcon = GROUP_ICONS[group.key];
 
   return (
-    <header className="mb-6 flex flex-col gap-2">
-      <Link
-        href={`/organisations/${organisationId}/settings`}
-        // Asks before leaving, same as any other way out of a dirty section.
-        onClick={(event) => {
-          if (!confirmLeave()) event.preventDefault();
-        }}
-        className="flex w-fit items-center gap-1 text-sm font-medium text-primary transition-colors duration-150 hover:text-primary-dark"
-      >
-        <CaretLeftIcon size={14} weight="bold" aria-hidden="true" />
-        All settings
-      </Link>
-
-      <h1 className="text-2xl font-semibold text-primary-dark">
-        {section?.label ?? "Settings"}
+    <header className="mb-6 flex flex-col gap-4">
+      <h1 className="flex items-center gap-2 text-2xl font-semibold text-primary-dark">
+        {GroupIcon && <GroupIcon size={24} weight="bold" aria-hidden="true" className="text-primary" />}
+        {group.label}
       </h1>
-      {group && <p className="text-sm text-slate-900/60">{group.label}</p>}
+
+      <nav aria-label={`${group.label} sections`}>
+        <ul className="flex flex-wrap gap-1 border-b-2 border-input-border">
+          {group.sections.map((section) => {
+            const isActive = section.key === active.sectionKey;
+            return (
+              <li key={section.key}>
+                <Link
+                  href={settingsHref(organisationId, group.key, section.key)}
+                  // Asks before leaving, same as any other way out of a
+                  // section with unsaved edits.
+                  onClick={(event) => {
+                    if (!confirmLeave()) event.preventDefault();
+                  }}
+                  aria-current={isActive ? "page" : undefined}
+                  className={clsx(
+                    "-mb-0.5 block border-b-2 px-4 py-2 text-sm font-semibold tracking-wide whitespace-nowrap uppercase transition-colors duration-150",
+                    isActive && "border-primary text-primary",
+                    !isActive &&
+                      "border-transparent text-slate-900 hover:text-primary-dark",
+                  )}
+                >
+                  {section.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </header>
   );
 }
