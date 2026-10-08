@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "Hi Day desktop agent (login, device registration, and start/stop time tracking)",
   "homepage": "https://hiday.io",
