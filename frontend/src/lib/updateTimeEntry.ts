@@ -20,6 +20,8 @@ export async function updateTimeEntry(
     body.endedAt = new Date(input.endedAt).toISOString();
   }
 
+  if (input.reason) body.reason = input.reason;
+
   let response: Response;
   try {
     response = await fetch(

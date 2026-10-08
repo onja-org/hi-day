@@ -22,6 +22,7 @@ import { updateTimeEntry } from "@/lib/updateTimeEntry";
 import type { TimeEntryListItem, UpdateTimeEntryInput } from "@/types/timeEntry";
 import { LogTimeForSelect } from "@/components/LogTimeForSelect";
 import { Spinner } from "@/components/Spinner";
+import { TimeEntryReasonField } from "@/components/TimeEntryReasonField";
 import { TimeEntryEditConfirmDialog } from "@/components/TimeEntryEditConfirmDialog";
 import { TimeEntryTimeFields } from "@/components/TimeEntryTimeFields";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -109,6 +110,7 @@ export function TimeEntryForm({
       taskId?: string | null;
       startedAt?: string;
       endedAt?: string;
+      reason?: string;
     }) => updateTimeEntry(organisationId, entry!.id, input),
     meta: { inlineErrors: true },
     onSuccess: (result) => {
@@ -166,6 +168,7 @@ export function TimeEntryForm({
     const startedAt = String(formData.get("startedAt") ?? "");
     const endedAt = String(formData.get("endedAt") ?? "");
     const membershipId = String(formData.get("membershipId") ?? "");
+    const reason = String(formData.get("reason") ?? "").trim();
 
     if (!isTicking) {
       const rangeErrors = validateTimeRange(startedAt, endedAt);
@@ -194,6 +197,7 @@ export function TimeEntryForm({
         taskId: taskId !== (entry.taskId ?? "") ? taskId || null : undefined,
         startedAt,
         endedAt: isTicking ? undefined : endedAt,
+        reason: reason || undefined,
       };
       const changes = describeTimeEntryChanges(
         {
@@ -294,6 +298,8 @@ export function TimeEntryForm({
           errors={errors}
           onChange={handleTimesChange}
         />
+
+        {mode === "edit" && <TimeEntryReasonField />}
 
         {errors.form && <ErrorMessage message={errors.form} />}
 

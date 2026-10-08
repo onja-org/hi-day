@@ -1088,6 +1088,29 @@ describe('TimeEntriesService', () => {
       });
     }
 
+    it('keeps the reason an admin gave on the audit row', async () => {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: findEntryThenNoOverlap({ ...completedEntry }),
+      });
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        timeEntriesRepo,
+        auditLogService,
+        membershipsRepo: makeAdminMembershipsRepo(),
+      });
+
+      await service.update('org-1', 'admin-1', 'entry-done', {
+        endedAt: '2026-01-01T11:00:00.000Z',
+        reason: 'Forgot to stop timer',
+      });
+
+      const call = record.mock.calls[0] as [
+        unknown,
+        { metadata: { reason?: string } },
+      ];
+      expect(call[1].metadata.reason).toBe('Forgot to stop timer');
+    });
+
     it("lets an admin edit someone else's entry and records an audit diff", async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
         findOne: findEntryThenNoOverlap({ ...completedEntry }),
