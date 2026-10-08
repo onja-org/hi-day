@@ -152,6 +152,10 @@ linux:
 
 deb:
   packageName: hiday
+  # electron-builder's own after-install minus the AppArmor profile it
+  # generates — that profile's label is what stops a snap-confined browser
+  # sending us its accessibility events. See the script for the measurements.
+  afterInstall: build/afterInstall.sh
   # Removes the browser launcher overrides browser-activation.ts wrote. They
   # live under each user's home and outlive the package, so without this every
   # browser keeps starting with accessibility forced on after uninstall.
