@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   activeSettingsLocation,
-  defaultSettingsHref,
   settingsHref,
   SETTINGS_GROUPS,
 } from "@/lib/settingsNavigation";
@@ -28,12 +27,6 @@ describe("settingsHref", () => {
   it("points at a group's section", () => {
     expect(settingsHref(ORG, "tracking", "screenshots")).toBe(
       "/organisations/org-1/settings/tracking/screenshots",
-    );
-  });
-
-  it("defaults to the first section of the first group", () => {
-    expect(defaultSettingsHref(ORG)).toBe(
-      "/organisations/org-1/settings/organization/company-information",
     );
   });
 });

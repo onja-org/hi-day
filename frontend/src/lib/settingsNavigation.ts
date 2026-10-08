@@ -39,12 +39,6 @@ export function settingsHref(
   return `/organisations/${organisationId}/settings/${groupKey}/${sectionKey}`;
 }
 
-/** Where /settings itself sends an admin. */
-export function defaultSettingsHref(organisationId: string): string {
-  const group = SETTINGS_GROUPS[0];
-  return settingsHref(organisationId, group.key, group.sections[0].key);
-}
-
 /**
  * The group and section a path is showing, or null when it is not a settings
  * section — so the nav can mark one entry active without string-matching at
