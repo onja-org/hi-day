@@ -192,6 +192,36 @@ describe('browsersOrphanedBySweep', () => {
     });
   });
 
+  /**
+   * What renaming the app did: every override already existed, so none was
+   * created, but all were replaced — and the browsers open at the time lost
+   * their launcher binding (no running indicator, and the icon opening a new
+   * window) with nothing offering to reseat them.
+   */
+  it('hands back the open browsers when the sweep rewrote an override', () => {
+    expect(
+      browsersOrphanedBySweep(open, [{ activated: true, created: false }]),
+    ).toEqual(open);
+  });
+
+  // The guarantee that holds the screen to one appearance: an ordinary
+  // launch leaves every entry alone and so disturbs nobody.
+  it('hands back nothing when every entry was left untouched', () => {
+    expect(
+      browsersOrphanedBySweep(open, [
+        { activated: true, unchanged: true },
+        { activated: true, unchanged: true },
+      ]),
+    ).toEqual({ restartable: [], manual: [], warnings: [] });
+  });
+
+  // A write that failed orphaned nothing, because nothing was replaced.
+  it('hands back nothing when the sweep could not write at all', () => {
+    expect(
+      browsersOrphanedBySweep(open, [{ activated: false }]).restartable,
+    ).toEqual([]);
+  });
+
   it('hands back nothing when the sweep touched no entry at all', () => {
     expect(browsersOrphanedBySweep(open, []).restartable).toEqual([]);
   });
