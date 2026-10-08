@@ -138,6 +138,11 @@ linux:
       arch: [x64]
   category: Office
   executableName: hiday
+  # A directory of NxN.png files, installed as hicolor/NxN/apps/hiday.png.
+  # Don't fall back to the top-level 1024px icon here: the hicolor theme
+  # index tops out at 512x512, so GNOME can't find a 1024x1024 entry and
+  # shows the generic gear icon for the launcher/app grid.
+  icon: build/icons
   # The legacy AppImage toolset appended --no-sandbox to the generated desktop
   # entry's Exec line on its own; the static runtime (see toolsets above) doesn't.
   # scripts/afterPack.mjs's wrapper already forces the flag at exec() time, so
