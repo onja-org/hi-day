@@ -26,11 +26,34 @@ export interface BlindBrowserReportLike {
  * the one launch that creates the overrides and nothing on every launch
  * after, rather than returning each time until someone answers it.
  */
+export interface ActivationOutcomeLike {
+  created?: boolean;
+  unchanged?: boolean;
+  activated?: boolean;
+}
+
+/**
+ * Whether the sweep actually replaced a launcher file.
+ *
+ * Written, not merely created: a rewrite replaces the same file and costs the
+ * open windows the same launcher binding — renaming the app did exactly that,
+ * and the browsers it orphaned were left out of the screen meant to reseat
+ * them. An entry left untouched, which is every ordinary launch, disturbs
+ * nothing and so asks nobody.
+ */
+export function sweepWroteAnyEntry(outcomes: ActivationOutcomeLike[]): boolean {
+  return outcomes.some(
+    (outcome) =>
+      outcome.unchanged !== true &&
+      (outcome.created === true || outcome.activated === true),
+  );
+}
+
 export function browsersOrphanedBySweep<T extends BlindBrowserReportLike>(
   openBeforeSweep: T,
-  outcomes: { created?: boolean }[],
+  outcomes: ActivationOutcomeLike[],
 ): T {
-  if (outcomes.some((outcome) => outcome.created)) return openBeforeSweep;
+  if (sweepWroteAnyEntry(outcomes)) return openBeforeSweep;
   // Emptied rather than replaced by a shared constant, so the caller's own
   // report type survives and nothing downstream needs a cast.
   return { ...openBeforeSweep, restartable: [], manual: [], warnings: [] };

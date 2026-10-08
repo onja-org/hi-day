@@ -49,6 +49,10 @@ const ENABLING_EVENTS = [
 /** Enough for every window a person realistically keeps open; oldest is evicted past this. */
 const MAX_REMEMBERED_ADDRESS_BARS = 64;
 
+/** Bounds the per-index fallback — browser chrome is tens of nodes wide, and
+ * a page's content node can be thousands. */
+const MAX_ENUMERATED_CHILDREN = 128;
+
 /** How long "this window has no address bar" is trusted before re-checking. */
 const NO_ADDRESS_BAR_TTL_MS = 30_000;
 
@@ -612,8 +616,68 @@ export class AtspiClient {
     return role;
   }
 
+  /**
+   * A node's children, by whichever call actually returns them all.
+   *
+   * `GetChildren` is the cheap one but cannot be trusted: Firefox answers it
+   * with a single `menu` for a frame whose `ChildCount` is 32, and the four
+   * tool bars it omits are where the address bar lives — so the walk gave up
+   * one level above it and Firefox URLs were never read. Chrome under-reports
+   * too (1 of 2) and only worked because the child it does return happens to
+   * contain the address bar.
+   *
+   * So the count decides: when `GetChildren` is short, each child is fetched
+   * by index instead. Costs one extra property read per node walked, which
+   * the address-bar path cache keeps off the hot path.
+   */
   private async getChildren(bus: string, path: string): Promise<[string, string][]> {
     const [children] = await this.call<[[string, string][]]>(bus, path, ACCESSIBLE_IFACE, 'GetChildren');
+    const count = await this.readChildCount(bus, path);
+    if (count <= children.length) return children;
+
+    return await this.readChildrenByIndex(bus, path, count);
+  }
+
+  private async readChildCount(bus: string, path: string): Promise<number> {
+    try {
+      const [variant] = await this.call<[dbus.Variant<number>]>(
+        bus,
+        path,
+        PROPERTIES_IFACE,
+        'Get',
+        'ss',
+        [ACCESSIBLE_IFACE, 'ChildCount'],
+      );
+      return Number.isFinite(variant.value) ? variant.value : 0;
+    } catch {
+      // No count to compare against, so whatever GetChildren said stands.
+      return 0;
+    }
+  }
+
+  private async readChildrenByIndex(
+    bus: string,
+    path: string,
+    count: number,
+  ): Promise<[string, string][]> {
+    const children: [string, string][] = [];
+    for (let index = 0; index < Math.min(count, MAX_ENUMERATED_CHILDREN); index++) {
+      try {
+        const [child] = await this.call<[[string, string]]>(
+          bus,
+          path,
+          ACCESSIBLE_IFACE,
+          'GetChildAtIndex',
+          'i',
+          [index],
+        );
+        // A hole in the middle is not the end of the list — browser chrome
+        // hides toolbar items rather than renumbering around them.
+        if (child?.[1]) children.push(child);
+      } catch {
+        // Same race as the walk itself: a node can vanish mid-enumeration.
+      }
+    }
     return children;
   }
 

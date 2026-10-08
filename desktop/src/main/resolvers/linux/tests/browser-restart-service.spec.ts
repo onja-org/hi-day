@@ -66,6 +66,25 @@ describe('BrowserRestartService.restart', () => {
     killed.mockRestore();
   });
 
+  /**
+   * Firefox saves its session on the way out and can outlast the grace
+   * period. Relaunching then meets the profile lock the dying process still
+   * holds, the new instance exits on the spot, and the person is left with
+   * no browser at all — so it is reported rather than relaunched blind.
+   */
+  it('does not relaunch a browser that has not finished exiting', async () => {
+    const service = new BrowserRestartService({ env, shutdownGraceMs: 300 });
+    // Accepts the signal and then stays alive, as a slow shutdown does.
+    const killed = vi.spyOn(process, 'kill').mockReturnValue(true);
+
+    const outcomes = await service.restart([chrome(4242)]);
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(outcomes[0].restarted).toBe(false);
+    expect(outcomes[0].reason).toContain('shutting down');
+    killed.mockRestore();
+  });
+
   // Nothing running means nothing to do — not "launch the default browser".
   it('launches nothing when given no browsers', async () => {
     const outcomes = await new BrowserRestartService({ env }).restart([]);

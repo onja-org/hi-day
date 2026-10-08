@@ -61,8 +61,13 @@ function entryFor(
     .sort((a, b) => b.length - a.length)[0]?.fileName;
 }
 
-/** How long a browser gets to shut down cleanly before it is relaunched. */
-const SHUTDOWN_GRACE_MS = 4_000;
+/**
+ * How long a browser gets to shut down before the relaunch is abandoned.
+ * Four seconds was enough for Chromium and not for Firefox, which saves its
+ * session on the way out and routinely takes longer — so it was killed and
+ * never came back.
+ */
+const SHUTDOWN_GRACE_MS = 20_000;
 
 /**
  * Finds browsers running without an accessibility tree, and restarts them on
@@ -74,6 +79,8 @@ export class BrowserRestartService {
     private readonly deps: {
       logger?: (line: string) => void;
       env?: NodeJS.ProcessEnv;
+      /** Overridden only by tests, which cannot wait out a real shutdown. */
+      shutdownGraceMs?: number;
     } = {},
   ) {}
 
@@ -173,7 +180,21 @@ export class BrowserRestartService {
         continue;
       }
 
-      await waitForExit(browser.pid, SHUTDOWN_GRACE_MS);
+      const grace = this.deps.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
+      if (!(await waitForExit(browser.pid, grace))) {
+        // Launching now would meet a profile lock the dying process still
+        // holds, and the new instance would exit on the spot — leaving the
+        // browser closed rather than restarted, which is worse than never
+        // having touched it. It is still on its way out, so the next launch
+        // starts from the activated entry anyway.
+        outcomes.push({
+          pid: browser.pid,
+          command: browser.command,
+          restarted: false,
+          reason: 'Still shutting down — reopen it yourself.',
+        });
+        continue;
+      }
 
       try {
         // Detached, so the browser outlives this agent rather than dying
@@ -201,14 +222,16 @@ export class BrowserRestartService {
 }
 
 /** Resolves once the process is gone, or when the grace period runs out. */
-async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
+/** Whether the process actually went, rather than merely being asked to. */
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       process.kill(pid, 0);
     } catch {
-      return;
+      return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
+  return false;
 }
