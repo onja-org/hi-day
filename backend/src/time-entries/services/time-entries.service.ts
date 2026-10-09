@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -42,6 +43,7 @@ import { Task } from '../../database/entities/task.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { ActivitySample } from '../../database/entities/activity-sample.entity';
+import { Device } from '../../database/entities/device.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { TimeEntryType } from '../../database/entities/time-entry-type.enum';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
@@ -62,6 +64,16 @@ const LIST_LIMIT = 200;
 // query isn't paired with a membershipId like everything else here, so it's
 // the one query in this service that scans across every org at once.
 const DAY_BOUNDARY_SPLIT_BATCH_SIZE = 200;
+
+/**
+ * How long a Device may go unheard before its running timer is treated as
+ * abandoned. Generous on purpose: the entry is ended at `lastSeenAt`
+ * whatever the wait, so a longer grace costs no accuracy and buys immunity
+ * from a dropped wifi connection closing a timer somebody is still using.
+ */
+const ABANDONED_DEVICE_GRACE_MS = 30 * 60 * 1000;
+
+const ABANDONED_ENTRY_BATCH_SIZE = 200;
 
 export interface TimeEntrySummary {
   id: string;
@@ -170,6 +182,8 @@ const NO_PAUSE_STATE: PauseState = {
 
 @Injectable()
 export class TimeEntriesService {
+  private readonly logger = new Logger(TimeEntriesService.name);
+
   constructor(
     @InjectRepository(TimeEntry)
     private readonly timeEntries: Repository<TimeEntry>,
@@ -729,6 +743,12 @@ export class TimeEntriesService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async splitRunningEntriesAcrossDayBoundary(): Promise<void> {
+    // Before the split, never after: an entry whose Device has gone should
+    // be closed where the Device was last heard from, and splitting it
+    // first would leave the half after midnight starting later than that
+    // instant and so impossible to close honestly.
+    await this.closeEntriesFromDevicesThatWentAway();
+
     const now = new Date();
     // The widest possible boundary, so the query cannot miss an entry whose
     // own Organisation sits in a later timezone; each is then split against
@@ -746,6 +766,90 @@ export class TimeEntriesService {
         entry.id,
         this.startOfDayInZone(now, zone),
         zone,
+      );
+    }
+  }
+
+  /**
+   * Ends a timer whose Device stopped reporting, at the instant it was last
+   * heard from.
+   *
+   * A closing stop is best-effort by nature: the agent asks the server to
+   * end the timer when the machine suspends or shuts down, and the OS does
+   * not wait for an HTTP call to finish. When that request dies with the
+   * machine the entry simply stays open, and nothing else closes it — the
+   * day-boundary split only ever *splits* a running entry, so an abandoned
+   * one is carried forward night after night, billing hours nobody worked.
+   *
+   * `lastSeenAt` is the evidence: the agent heartbeats every 60 seconds, so
+   * it marks the last minute the machine was alive. Ending there bills what
+   * was actually worked and nothing after it.
+   *
+   * Only Devices, never the web's own timer — a browser tab sends no
+   * heartbeat, so there is no last-seen to end it at.
+   */
+  async closeEntriesFromDevicesThatWentAway(now = new Date()): Promise<void> {
+    const goneSince = new Date(now.getTime() - ABANDONED_DEVICE_GRACE_MS);
+
+    const abandoned = await this.timeEntries
+      .createQueryBuilder('entry')
+      .innerJoin(Device, 'device', 'device.id = entry.deviceId')
+      .where('entry.endedAt IS NULL')
+      .andWhere('entry.deviceId IS NOT NULL')
+      .andWhere('device.lastSeenAt IS NOT NULL')
+      .andWhere('device.lastSeenAt < :goneSince', { goneSince })
+      .select(['entry.id', 'entry.startedAt'])
+      .addSelect('device.lastSeenAt', 'device_lastSeenAt')
+      .take(ABANDONED_ENTRY_BATCH_SIZE)
+      .getRawAndEntities();
+
+    for (const [index, entry] of abandoned.entities.entries()) {
+      const lastSeenAt = new Date(
+        (abandoned.raw[index] as { device_lastSeenAt: string | Date })
+          .device_lastSeenAt,
+      );
+
+      // A Device last heard from before its own entry began says something
+      // has gone wrong with a clock; ending there would write a backwards
+      // entry, which is worse than leaving it open for a person to fix.
+      if (lastSeenAt.getTime() <= entry.startedAt.getTime()) {
+        this.logger.warn(
+          `[abandoned] entry=${entry.id} not closed: device last seen ${lastSeenAt.toISOString()} ` +
+            `is not after the entry's start ${entry.startedAt.toISOString()}`,
+        );
+        continue;
+      }
+
+      await this.dataSource.transaction(async (manager) => {
+        // Re-read inside the transaction: the agent may have come back and
+        // stopped it between the query above and here.
+        const fresh = await manager.findOne(TimeEntry, {
+          where: { id: entry.id },
+        });
+        if (!fresh || fresh.endedAt !== null) return;
+
+        fresh.endedAt = lastSeenAt;
+        await manager.save(fresh);
+        await this.closeOpenPause(
+          manager.getRepository(TimeEntryPause),
+          fresh.id,
+          lastSeenAt,
+        );
+
+        await this.auditLogService.record(manager, {
+          action: 'time_entry.closed_device_offline',
+          organisationId: fresh.organisationId,
+          metadata: {
+            timeEntryId: fresh.id,
+            deviceId: fresh.deviceId,
+            endedAt: lastSeenAt.toISOString(),
+          },
+        });
+      });
+
+      this.logger.log(
+        `[abandoned] entry=${entry.id} ended at ${lastSeenAt.toISOString()} — ` +
+          `its device had not reported since then`,
       );
     }
   }

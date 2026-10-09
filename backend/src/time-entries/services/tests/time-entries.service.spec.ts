@@ -30,6 +30,19 @@ describe('TimeEntriesService', () => {
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
       ),
+      // The abandoned-entry closer joins Device from here; nothing abandoned
+      // unless a test says so.
+      createQueryBuilder: jest.fn(() => ({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawAndEntities: jest
+          .fn()
+          .mockResolvedValue({ entities: [], raw: [] }),
+      })),
       ...overrides,
     } as unknown as Repository<TimeEntry>;
   }
@@ -2617,6 +2630,131 @@ describe('TimeEntriesService', () => {
       await expect(
         service.hasRunningEntryForProject('project-1'),
       ).resolves.toBe(false);
+    });
+  });
+
+  describe('closeEntriesFromDevicesThatWentAway', () => {
+    /** Only what the closer touches: the entry, and a transaction to save it. */
+    function openEntry(startedAt: Date): TimeEntry {
+      return {
+        id: 'entry-abandoned',
+        organisationId: 'org-1',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: null,
+        startedAt,
+        endedAt: null,
+        source: TimeEntrySource.AGENT,
+        deviceId: 'device-1',
+      } as TimeEntry;
+    }
+
+    function transactionOver(entry: TimeEntry) {
+      const saved = { ...entry };
+      const manager = {
+        findOne: jest.fn().mockResolvedValue(saved),
+        save: jest.fn((row: TimeEntry) => {
+          Object.assign(saved, row);
+          return Promise.resolve(saved);
+        }),
+        getRepository: jest.fn(() => ({
+          findOne: jest.fn().mockResolvedValue(null),
+          save: jest.fn(),
+        })),
+      };
+      return {
+        saved,
+        dataSource: {
+          transaction: jest.fn((cb: (m: unknown) => unknown) => cb(manager)),
+        },
+      };
+    }
+
+    /** An entry still open, on a device last heard from at `lastSeenAt`. */
+    function abandoned(startedAt: Date, lastSeenAt: Date) {
+      const entry = openEntry(startedAt);
+      return {
+        entry,
+        repo: makeTimeEntriesRepo({
+          createQueryBuilder: jest.fn(() => ({
+            innerJoin: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            select: jest.fn().mockReturnThis(),
+            addSelect: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
+            getRawAndEntities: jest.fn().mockResolvedValue({
+              entities: [entry],
+              raw: [{ device_lastSeenAt: lastSeenAt }],
+            }),
+          })),
+        } as unknown as Partial<Repository<TimeEntry>>),
+      };
+    }
+
+    /**
+     * The reported case: worked from 18:51, suspended the machine, opened
+     * the app again at 09:51 the next morning — and the timesheet billed the
+     * night. The closing stop never reached the server, so nothing ended it.
+     */
+    it('ends the entry where the device was last heard from', async () => {
+      const startedAt = new Date('2026-10-08T15:51:00.000Z');
+      const lastSeenAt = new Date('2026-10-08T15:51:40.000Z');
+      const { entry, repo } = abandoned(startedAt, lastSeenAt);
+      const tx = transactionOver(entry);
+      const service = makeService({
+        timeEntriesRepo: repo,
+        dataSource: tx.dataSource,
+      });
+
+      await service.closeEntriesFromDevicesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      expect(tx.saved.endedAt).toEqual(lastSeenAt);
+    });
+
+    // A clock that disagrees with itself must not write a backwards entry.
+    it('leaves an entry alone when the device was last seen before it began', async () => {
+      const startedAt = new Date('2026-10-08T15:51:00.000Z');
+      const { entry, repo } = abandoned(
+        startedAt,
+        new Date('2026-10-08T15:00:00.000Z'),
+      );
+      const tx = transactionOver(entry);
+      const service = makeService({
+        timeEntriesRepo: repo,
+        dataSource: tx.dataSource,
+      });
+
+      await service.closeEntriesFromDevicesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      expect(tx.saved.endedAt).toBeNull();
+      expect(tx.dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Ordering matters: the split would otherwise carry the entry past
+     * midnight, and the half after it starts later than the device was last
+     * seen — so there would be no honest instant left to end it at.
+     */
+    it('runs before the day-boundary split', async () => {
+      const startedAt = new Date('2026-10-08T15:51:00.000Z');
+      const lastSeenAt = new Date('2026-10-08T15:51:40.000Z');
+      const { entry, repo } = abandoned(startedAt, lastSeenAt);
+      const tx = transactionOver(entry);
+      const service = makeService({
+        timeEntriesRepo: repo,
+        dataSource: tx.dataSource,
+      });
+      const closer = jest.spyOn(service, 'closeEntriesFromDevicesThatWentAway');
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(closer).toHaveBeenCalled();
+      expect(tx.saved.endedAt).toEqual(lastSeenAt);
     });
   });
 
