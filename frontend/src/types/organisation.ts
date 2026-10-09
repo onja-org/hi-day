@@ -3,6 +3,9 @@ import type { MembershipRole } from "./membership";
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
 
+/** The organisation's 3-way "Track apps & URLs" default. */
+export type AppUrlTracking = "off" | "apps" | "apps_urls";
+
 export type OrganisationProfile = {
   id: number;
   name: string;
@@ -12,6 +15,7 @@ export type OrganisationProfile = {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
@@ -63,6 +67,7 @@ export type UpdateOrganisationInput = {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  appUrlTracking?: AppUrlTracking;
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;

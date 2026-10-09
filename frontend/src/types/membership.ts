@@ -1,4 +1,5 @@
 import type { ApiResult } from "./api";
+import type { AppUrlTracking } from "./organisation";
 
 export type MembershipRole = "admin" | "manager" | "member" | "finance";
 
@@ -17,6 +18,8 @@ export type ActiveMember = {
   disclosureRegion: string | null;
   /** Their own IANA zone; null until a client has reported one. */
   timezone: string | null;
+  /** Per-member override of the org's Track apps & URLs default; `null` inherits. */
+  appUrlTracking: AppUrlTracking | null;
 };
 
 /** A Members-page row — see the backend's ActiveMemberListItem. */
@@ -44,6 +47,8 @@ export type UpdateMembershipInput = {
   disclosureRegion?: string | null;
   firstName?: string;
   lastName?: string;
+  /** `null` clears the override; omit to leave the override as-is. */
+  appUrlTracking?: AppUrlTracking | null;
 };
 
 export type UpdateMembershipResult = ApiResult<{ member: ActiveMember }>;
