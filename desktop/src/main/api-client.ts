@@ -263,12 +263,14 @@ export class ApiClient {
     deviceToken: string,
     projectId: string,
     taskId: string | null,
+    /** When start was really pressed, for a start made while offline. */
+    startedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest(
       'POST',
       `/device/projects/${projectId}/time-entries/start`,
       deviceToken,
-      taskId ? { taskId } : {},
+      { ...(taskId ? { taskId } : {}), ...(startedAt ? { startedAt } : {}) },
     );
   }
 

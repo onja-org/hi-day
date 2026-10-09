@@ -119,7 +119,14 @@ declare global {
 
   type TrackingResult<T> =
     | { ok: true; data: T }
-    | { ok: false; message: string; runningEntry?: TimeEntry; unauthorized?: boolean };
+    | {
+        ok: false;
+        message: string;
+        runningEntry?: TimeEntry;
+        unauthorized?: boolean;
+        /** HTTP status; absent when the server could not be reached. */
+        status?: number;
+      };
 
   interface Window {
     api: {
