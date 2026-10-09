@@ -25,7 +25,16 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { REPORTS } from "@/lib/reportCatalog";
+import type { Icon } from "@phosphor-icons/react";
 import type { NavEntry, NavLink } from "@/types/navigation";
+
+/** Keyed to match SettingsCards and SettingsHeader, so a group wears the
+ * same icon in the sidebar, on its card, and in its own header. */
+const SETTINGS_GROUP_ICONS: Record<string, Icon> = {
+  organization: Buildings,
+  members: Users,
+  tracking: ChartLineUp,
+};
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
 import { SidebarNavEntries } from "./SidebarNavEntries";
 
@@ -171,12 +180,16 @@ export function Sidebar({
             icon: Gear,
             children: [
               // "All settings" first, so the card page listing every group
-              // is always one click away from inside a section.
+              // is always one click away from inside a section. `exact`
+              // because its href is the parent of every section's — without
+              // it, it would light up on all of them instead of the group
+              // the section actually belongs to.
               {
                 kind: "link" as const,
                 label: "All settings",
                 href: `/organisations/${organisationId}/settings`,
                 icon: SquaresFour,
+                exact: true,
               },
               ...SETTINGS_GROUPS.map((group) => ({
                 kind: "link" as const,
@@ -186,7 +199,11 @@ export function Sidebar({
                   group.key,
                   group.sections[0].key,
                 ),
-                icon: group.key === "organization" ? Buildings : ChartLineUp,
+                // The link goes to the group's first section, but the group
+                // owns all of them — so every section in it keeps this entry
+                // highlighted, not just the one linked here.
+                activePrefix: `/organisations/${organisationId}/settings/${group.key}`,
+                icon: SETTINGS_GROUP_ICONS[group.key] ?? ChartLineUp,
               })),
             ],
           },
