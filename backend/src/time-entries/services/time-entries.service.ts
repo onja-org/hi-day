@@ -809,14 +809,15 @@ export class TimeEntriesService {
           .device_lastSeenAt,
       );
 
-      // A Device last heard from before its own entry began says something
-      // has gone wrong with a clock; ending there would write a backwards
-      // entry, which is worse than leaving it open for a person to fix.
+      // An entry that began after its Device was last heard from covers a
+      // stretch the machine provably was not alive for — `lastSeenAt` moves
+      // only on a heartbeat, every 60s, so nothing else produces this shape.
+      // The day-boundary split makes them: it carries an abandoned timer past
+      // midnight, and the half after the boundary begins long after the
+      // machine went. It holds no worked time and never did, so it is removed
+      // rather than closed — a zero-length row is a record of nothing.
       if (lastSeenAt.getTime() <= entry.startedAt.getTime()) {
-        this.logger.warn(
-          `[abandoned] entry=${entry.id} not closed: device last seen ${lastSeenAt.toISOString()} ` +
-            `is not after the entry's start ${entry.startedAt.toISOString()}`,
-        );
+        await this.removeEntryHoldingNoWork(entry, lastSeenAt);
         continue;
       }
 
@@ -852,6 +853,45 @@ export class TimeEntriesService {
           `its device had not reported since then`,
       );
     }
+  }
+
+  /**
+   * Removes an entry that covers a stretch its Device was not alive for.
+   *
+   * Deleted rather than closed: it was manufactured by the day-boundary
+   * split from a timer that should already have ended, so there is no
+   * worked time in it to keep and a zero-length row would only be a record
+   * of nothing. Pause spans go with it through the foreign key; nothing
+   * else can reference it, since no capture falls inside a window with no
+   * machine running.
+   */
+  private async removeEntryHoldingNoWork(
+    entry: TimeEntry,
+    deviceLastSeenAt: Date,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const fresh = await manager.findOne(TimeEntry, {
+        where: { id: entry.id },
+      });
+      if (!fresh || fresh.endedAt !== null) return;
+
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.removed_device_offline',
+        organisationId: fresh.organisationId,
+        metadata: {
+          timeEntryId: fresh.id,
+          deviceId: fresh.deviceId,
+          startedAt: fresh.startedAt.toISOString(),
+          deviceLastSeenAt: deviceLastSeenAt.toISOString(),
+        },
+      });
+      await manager.delete(TimeEntry, { id: fresh.id });
+    });
+
+    this.logger.log(
+      `[abandoned] entry=${entry.id} removed — it began ${entry.startedAt.toISOString()}, ` +
+        `after its device was last seen ${deviceLastSeenAt.toISOString()}, so it holds no worked time`,
+    );
   }
 
   /** Cached per run: a batch is usually one or two Organisations. */

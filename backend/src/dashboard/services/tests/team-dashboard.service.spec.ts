@@ -399,10 +399,9 @@ describe('TeamDashboardService', () => {
     }
 
     it('gives an admin every team, busiest first, counting someone in two teams towards both', async () => {
-      const summary = await serviceFor({ role: MembershipRole.ADMIN }).getSummary(
-        'org-1',
-        'user-1',
-      );
+      const summary = await serviceFor({
+        role: MembershipRole.ADMIN,
+      }).getSummary('org-1', 'user-1');
 
       expect(summary.teamsThisWeek).toEqual([
         { teamId: 't-eng', teamName: 'Engineering', seconds: 3 * 3600 },

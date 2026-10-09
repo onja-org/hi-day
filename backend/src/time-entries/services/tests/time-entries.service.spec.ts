@@ -2651,8 +2651,13 @@ describe('TimeEntriesService', () => {
 
     function transactionOver(entry: TimeEntry) {
       const saved = { ...entry };
+      const deleted: unknown[] = [];
       const manager = {
         findOne: jest.fn().mockResolvedValue(saved),
+        delete: jest.fn((_entity: unknown, criteria: unknown) => {
+          deleted.push(criteria);
+          return Promise.resolve({ affected: 1 });
+        }),
         save: jest.fn((row: TimeEntry) => {
           Object.assign(saved, row);
           return Promise.resolve(saved);
@@ -2664,6 +2669,7 @@ describe('TimeEntriesService', () => {
       };
       return {
         saved,
+        deleted,
         dataSource: {
           transaction: jest.fn((cb: (m: unknown) => unknown) => cb(manager)),
         },
@@ -2714,12 +2720,17 @@ describe('TimeEntriesService', () => {
       expect(tx.saved.endedAt).toEqual(lastSeenAt);
     });
 
-    // A clock that disagrees with itself must not write a backwards entry.
-    it('leaves an entry alone when the device was last seen before it began', async () => {
-      const startedAt = new Date('2026-10-08T15:51:00.000Z');
+    /**
+     * What the split leaves behind when it carries an abandoned timer past
+     * midnight: a half that begins hours after the machine went. It holds no
+     * worked time and never did, so it is removed rather than kept as a
+     * zero-length record of nothing.
+     */
+    it('removes an entry that began after its device went', async () => {
+      const startedAt = new Date('2026-10-09T00:00:00.000Z'); // the boundary
       const { entry, repo } = abandoned(
         startedAt,
-        new Date('2026-10-08T15:00:00.000Z'),
+        new Date('2026-10-08T15:51:40.000Z'),
       );
       const tx = transactionOver(entry);
       const service = makeService({
@@ -2731,8 +2742,8 @@ describe('TimeEntriesService', () => {
         new Date('2026-10-09T06:51:00.000Z'),
       );
 
+      expect(tx.deleted).toEqual([{ id: 'entry-abandoned' }]);
       expect(tx.saved.endedAt).toBeNull();
-      expect(tx.dataSource.transaction).not.toHaveBeenCalled();
     });
 
     /**
