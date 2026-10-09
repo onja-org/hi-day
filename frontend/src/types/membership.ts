@@ -1,5 +1,5 @@
 import type { ApiResult } from "./api";
-import type { AppUrlTracking } from "./organisation";
+import type { AppUrlTracking, TimesheetModifyTime } from "./organisation";
 
 export type MembershipRole = "admin" | "manager" | "member" | "finance";
 
@@ -20,6 +20,10 @@ export type ActiveMember = {
   timezone: string | null;
   /** Per-member override of the org's Track apps & URLs default; `null` inherits. */
   appUrlTracking: AppUrlTracking | null;
+  /** Per-member override of the org's Timesheets "Modify time" default; `null` inherits. */
+  timesheetModifyTime: TimesheetModifyTime | null;
+  /** Per-member override of the org's Timesheets "Require approval" default; `null` inherits. */
+  timesheetRequireApproval: boolean | null;
 };
 
 /** A Members-page row — see the backend's ActiveMemberListItem. */
@@ -49,6 +53,10 @@ export type UpdateMembershipInput = {
   lastName?: string;
   /** `null` clears the override; omit to leave the override as-is. */
   appUrlTracking?: AppUrlTracking | null;
+  /** `null` clears the override; omit to leave the override as-is. */
+  timesheetModifyTime?: TimesheetModifyTime | null;
+  /** `null` clears the override; omit to leave the override as-is. */
+  timesheetRequireApproval?: boolean | null;
 };
 
 export type UpdateMembershipResult = ApiResult<{ member: ActiveMember }>;

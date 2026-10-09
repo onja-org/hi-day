@@ -8,9 +8,19 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
 import { Team } from '../../database/entities/team.entity';
+import { TimesheetReason } from '../../database/entities/timesheet-reason.entity';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
+import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
+import {
+  DEFAULT_TIMESHEET_MANAGERS_APPROVE_OWN,
+  DEFAULT_TIMESHEET_MODIFY_TIME,
+  DEFAULT_TIMESHEET_REASONS,
+  DEFAULT_TIMESHEET_REQUIRE_APPROVAL,
+  DEFAULT_TIMESHEET_REQUIRE_REASON,
+  TimesheetModifyTime,
+} from '../timesheet-settings';
 import { generateSlug } from '../slug.util';
 import {
   DEFAULT_WORKING_HOURS_POLICY,
@@ -36,6 +46,11 @@ export interface OrganisationProfile {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  appUrlTracking: AppUrlTracking;
+  timesheetModifyTime: TimesheetModifyTime;
+  timesheetRequireApproval: boolean;
+  timesheetManagersApproveOwn: boolean;
+  timesheetRequireReason: boolean;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
@@ -57,6 +72,11 @@ interface OrganisationSettings {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  appUrlTracking?: AppUrlTracking;
+  timesheetModifyTime?: TimesheetModifyTime;
+  timesheetRequireApproval?: boolean;
+  timesheetManagersApproveOwn?: boolean;
+  timesheetRequireReason?: boolean;
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
@@ -116,6 +136,17 @@ export class OrganisationsService {
         name: DEFAULT_TEAM_NAME,
         organisationId: organisation.id,
       }),
+    );
+
+    // Same transaction as the Organisation itself, so the Reasons picker is
+    // never empty for an org that exists.
+    await manager.save(
+      DEFAULT_TIMESHEET_REASONS.map((label) =>
+        manager.create(TimesheetReason, {
+          organisationId: organisation.id,
+          label,
+        }),
+      ),
     );
 
     // The founding admin gets no `team_memberships` row — admins see every
@@ -253,6 +284,21 @@ export class OrganisationsService {
       ...(dto.windowTrackingEnabled !== undefined
         ? { windowTrackingEnabled: dto.windowTrackingEnabled }
         : {}),
+      ...(dto.appUrlTracking !== undefined
+        ? { appUrlTracking: dto.appUrlTracking }
+        : {}),
+      ...(dto.timesheetModifyTime !== undefined
+        ? { timesheetModifyTime: dto.timesheetModifyTime }
+        : {}),
+      ...(dto.timesheetRequireApproval !== undefined
+        ? { timesheetRequireApproval: dto.timesheetRequireApproval }
+        : {}),
+      ...(dto.timesheetManagersApproveOwn !== undefined
+        ? { timesheetManagersApproveOwn: dto.timesheetManagersApproveOwn }
+        : {}),
+      ...(dto.timesheetRequireReason !== undefined
+        ? { timesheetRequireReason: dto.timesheetRequireReason }
+        : {}),
       ...(dto.screenshotsEnabled !== undefined
         ? { screenshotsEnabled: dto.screenshotsEnabled }
         : {}),
@@ -327,6 +373,8 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      appUrlTracking:
+        settings.appUrlTracking ?? DEFAULT_CAPTURE_SETTINGS.appUrlTracking,
       screenshotsEnabled:
         settings.screenshotsEnabled ??
         DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
@@ -358,6 +406,16 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
+      timesheetModifyTime:
+        settings.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME,
+      timesheetRequireApproval:
+        settings.timesheetRequireApproval ?? DEFAULT_TIMESHEET_REQUIRE_APPROVAL,
+      timesheetManagersApproveOwn:
+        settings.timesheetManagersApproveOwn ??
+        DEFAULT_TIMESHEET_MANAGERS_APPROVE_OWN,
+      timesheetRequireReason:
+        settings.timesheetRequireReason ?? DEFAULT_TIMESHEET_REQUIRE_REASON,
       screenshotsEnabled:
         settings.screenshotsEnabled ??
         DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,

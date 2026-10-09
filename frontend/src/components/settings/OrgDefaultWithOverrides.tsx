@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { SearchInput } from "@/components/SearchInput";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { Spinner } from "@/components/Spinner";
+import { Switch } from "@/components/Switch";
 import { getInitials } from "@/lib/getInitials";
 import { matchesSearch } from "@/lib/matchesSearch";
 
@@ -20,6 +21,24 @@ export type OverrideRow<K extends string> = {
   email: string;
   /** `null` means this member inherits the organisation default. */
   override: K | null;
+  /** The secondary column's override; `null` inherits. Ignored unless a
+   * `secondary` column is configured. */
+  secondaryOverride?: boolean | null;
+};
+
+/**
+ * An optional on/off column beside the main control, for a setting that
+ * only qualifies the first one (Timesheets' "Require approval" beside
+ * "Modify time"). `disabledWhen` greys it out per row — approval means
+ * nothing for someone who can't modify time at all — without clearing what
+ * was stored, so the value returns when the main control comes back on.
+ */
+export type SecondaryToggleColumn<K extends string> = {
+  label: string;
+  orgValue: boolean;
+  onOrgChange: (next: boolean) => void;
+  onMemberChange: (membershipId: string, next: boolean | null) => void;
+  disabledWhen: (effective: K) => boolean;
 };
 
 type Props<K extends string> = {
@@ -36,6 +55,7 @@ type Props<K extends string> = {
   /** Clears every per-member override at once ("Apply to all"). */
   onApplyToAll: () => void;
   isResetting: boolean;
+  secondary?: SecondaryToggleColumn<K>;
 };
 
 /** The reusable "org default + per-member override" pattern — a 3-way (or
@@ -55,6 +75,7 @@ export function OrgDefaultWithOverrides<K extends string>({
   savingMemberIds,
   onApplyToAll,
   isResetting,
+  secondary,
 }: Props<K>) {
   const [search, setSearch] = useState("");
 
@@ -62,8 +83,15 @@ export function OrgDefaultWithOverrides<K extends string>({
     () => rows.filter((row) => matchesSearch([row.name, row.email], search)),
     [rows, search],
   );
+  // Either column counts: "Apply to all" clears both in one request, so a
+  // row overriding only the secondary still has something to reset.
   const anyOverride = useMemo(
-    () => rows.some((row) => row.override !== null),
+    () =>
+      rows.some(
+        (row) =>
+          row.override !== null ||
+          (row.secondaryOverride ?? null) !== null,
+      ),
     [rows],
   );
 
@@ -87,6 +115,22 @@ export function OrgDefaultWithOverrides<K extends string>({
             value={orgValue}
             onChange={onOrgChange}
           />
+          {secondary && (
+            <span
+              className={clsx(
+                "flex items-center gap-2 text-sm font-medium text-slate-900",
+                secondary.disabledWhen(orgValue) && "text-slate-900/50",
+              )}
+            >
+              <Switch
+                label={secondary.label}
+                checked={secondary.orgValue}
+                onCheckedChange={secondary.onOrgChange}
+                disabled={secondary.disabledWhen(orgValue)}
+              />
+              {secondary.label}
+            </span>
+          )}
           {isSavingOrg && <Spinner className="text-primary-dark" />}
           <button
             type="button"
@@ -120,6 +164,17 @@ export function OrgDefaultWithOverrides<K extends string>({
           />
         </div>
 
+        {/* Names the columns the rows below carry. Deliberately not
+            width-matched to the controls — the segmented control's width
+            follows its option labels, so any fixed alignment would drift. */}
+        <div className="hidden items-center justify-between gap-6 px-4 text-xs font-semibold tracking-wider text-slate-900/60 uppercase md:flex">
+          <span>Name</span>
+          <span className="flex items-center gap-6">
+            <span>{title}</span>
+            {secondary && <span>{secondary.label}</span>}
+          </span>
+        </div>
+
         <ul className="flex flex-col divide-y-2 divide-input-border rounded-brand-sm border-2 border-ink bg-white">
           {filteredRows.length === 0 && (
             <li className="px-4 py-6 text-sm text-slate-900/60">
@@ -130,7 +185,8 @@ export function OrgDefaultWithOverrides<K extends string>({
           )}
           {filteredRows.map((row) => {
             const effective: K = row.override ?? orgValue;
-            const isOverridden = row.override !== null;
+            const isOverridden =
+              row.override !== null || (row.secondaryOverride ?? null) !== null;
             const isSaving = savingMemberIds.has(row.membershipId);
             return (
               <li
@@ -163,11 +219,28 @@ export function OrgDefaultWithOverrides<K extends string>({
                     value={effective}
                     onChange={(next) => onMemberChange(row.membershipId, next)}
                   />
+                  {secondary && (
+                    <Switch
+                      label={`${secondary.label} for ${row.name ?? row.email}`}
+                      // The row's own effective value, not the org default:
+                      // a member overridden to Off has nothing to approve.
+                      checked={row.secondaryOverride ?? secondary.orgValue}
+                      disabled={secondary.disabledWhen(effective)}
+                      onCheckedChange={(next) =>
+                        secondary.onMemberChange(row.membershipId, next)
+                      }
+                    />
+                  )}
                   {isOverridden && (
                     <button
                       type="button"
                       aria-label={`Clear override for ${row.name ?? row.email}`}
-                      onClick={() => onMemberChange(row.membershipId, null)}
+                      onClick={() => {
+                        onMemberChange(row.membershipId, null);
+                        // Both columns go together, matching "Apply to all":
+                        // a cleared row inherits the org default outright.
+                        secondary?.onMemberChange(row.membershipId, null);
+                      }}
                       className="rounded-brand-sm p-1 text-slate-900/60 hover:bg-cream hover:text-primary-dark"
                     >
                       <XCircle size={20} weight="fill" aria-hidden="true" />

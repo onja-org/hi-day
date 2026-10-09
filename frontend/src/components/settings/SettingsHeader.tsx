@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BuildingsIcon, ChartLineUpIcon } from "@phosphor-icons/react";
+import { BuildingsIcon, ChartLineUpIcon, UsersIcon } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import {
@@ -18,6 +18,7 @@ type SettingsHeaderProps = {
 
 const GROUP_ICONS: Record<string, Icon> = {
   organization: BuildingsIcon,
+  members: UsersIcon,
   tracking: ChartLineUpIcon,
 };
 

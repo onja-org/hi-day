@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { BuildingsIcon, ChartLineUpIcon } from "@phosphor-icons/react/dist/ssr";
+import {
+  BuildingsIcon,
+  ChartLineUpIcon,
+  UsersIcon,
+} from "@phosphor-icons/react/dist/ssr";
 import type { Icon } from "@phosphor-icons/react";
 import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
 
@@ -10,6 +14,7 @@ type SettingsCardsProps = {
 /** One per group, keyed so the nav tree stays free of components. */
 const GROUP_ICONS: Record<string, Icon> = {
   organization: BuildingsIcon,
+  members: UsersIcon,
   tracking: ChartLineUpIcon,
 };
 

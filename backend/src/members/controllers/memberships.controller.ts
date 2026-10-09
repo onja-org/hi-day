@@ -100,6 +100,49 @@ export class MembershipsController {
     return { member, message: 'Membership updated' };
   }
 
+  /**
+   * Clears every Membership's per-member Track apps & URLs override for this
+   * Organisation. Backs the "Apply to all" button on that setting — one
+   * server-side UPDATE rather than N PATCHes from the client.
+   */
+  @Post('app-url-tracking/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetAppUrlTrackingOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllAppUrlTrackingOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
+  /**
+   * Clears every Membership's Timesheets per-member overrides (both
+   * `timesheetModifyTime` and `timesheetRequireApproval`) for this
+   * Organisation. Backs the "Apply to all" button on the Modify time
+   * (manual time) setting.
+   */
+  @Post('timesheets/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetTimesheetOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllTimesheetOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Get(':membershipId/activities')
   @RequireRole(
     MembershipRole.ADMIN,

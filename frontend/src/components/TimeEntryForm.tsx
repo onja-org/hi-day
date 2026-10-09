@@ -7,6 +7,7 @@ import { useMyProjects } from "@/hooks/useMyProjects";
 import { useProject } from "@/hooks/useProject";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
+import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
 import { findOverlappingEntry } from "@/lib/findOverlappingEntry";
@@ -60,6 +61,10 @@ export function TimeEntryForm({
   const projectsQuery = useMyProjects(organisationId);
   const [projectId, setProjectId] = useState(entry?.projectId ?? "");
   const [errors, setErrors] = useState<TimeEntryFieldErrors>({});
+  // Held here rather than read off FormData: the field is a picker with an
+  // "Other…" free-text fallback, so it needs controlled state.
+  const [reason, setReason] = useState("");
+  const isReasonRequired = useRequireTimeEntryReason();
   // An edit is held here between submitting the form and confirming it, so
   // the confirmation shows the real diff and applies exactly what was
   // shown. Null means nothing is awaiting confirmation.
@@ -91,6 +96,7 @@ export function TimeEntryForm({
       startedAt: string;
       endedAt: string;
       membershipId?: string;
+      reason?: string;
     }) => createManualTimeEntry(organisationId, input),
     // Shown under the field at fault rather than as a toast in the corner
     meta: { inlineErrors: true },
@@ -168,7 +174,12 @@ export function TimeEntryForm({
     const startedAt = String(formData.get("startedAt") ?? "");
     const endedAt = String(formData.get("endedAt") ?? "");
     const membershipId = String(formData.get("membershipId") ?? "");
-    const reason = String(formData.get("reason") ?? "").trim();
+    const trimmedReason = reason.trim();
+
+    if (isReasonRequired && trimmedReason === "") {
+      setErrors({ form: "Give a reason for this change." });
+      return;
+    }
 
     if (!isTicking) {
       const rangeErrors = validateTimeRange(startedAt, endedAt);
@@ -190,6 +201,7 @@ export function TimeEntryForm({
         // an empty string has to fall through to undefined rather than be
         // sent and fail the backend's UUID validation.
         membershipId: forMembershipId ?? (membershipId || undefined),
+        reason: trimmedReason || undefined,
       });
     } else {
       const input: UpdateTimeEntryInput = {
@@ -197,7 +209,7 @@ export function TimeEntryForm({
         taskId: taskId !== (entry.taskId ?? "") ? taskId || null : undefined,
         startedAt,
         endedAt: isTicking ? undefined : endedAt,
-        reason: reason || undefined,
+        reason: trimmedReason || undefined,
       };
       const changes = describeTimeEntryChanges(
         {
@@ -299,7 +311,13 @@ export function TimeEntryForm({
           onChange={handleTimesChange}
         />
 
-        {mode === "edit" && <TimeEntryReasonField />}
+        {/* Both modes: an added entry is a manual time change like any
+            other, and the Manual time edits report has a column for it. */}
+        <TimeEntryReasonField
+          organisationId={organisationId}
+          value={reason}
+          onChange={setReason}
+        />
 
         {errors.form && <ErrorMessage message={errors.form} />}
 
