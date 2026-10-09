@@ -771,22 +771,16 @@ export class TimeEntriesService {
   }
 
   /**
-   * Ends a timer whose Device stopped reporting, at the instant it was last
-   * heard from.
+   * Ends a timer at the last time its Device was heard from.
    *
-   * A closing stop is best-effort by nature: the agent asks the server to
-   * end the timer when the machine suspends or shuts down, and the OS does
-   * not wait for an HTTP call to finish. When that request dies with the
-   * machine the entry simply stays open, and nothing else closes it — the
-   * day-boundary split only ever *splits* a running entry, so an abandoned
-   * one is carried forward night after night, billing hours nobody worked.
+   * Shutdown requests are best-effort, so a timer may remain open
+   * if the machine stops before the request completes. Day-boundary
+   * splits keep carrying it forward, potentially billing unworked time.
    *
-   * `lastSeenAt` is the evidence: the agent heartbeats every 60 seconds, so
-   * it marks the last minute the machine was alive. Ending there bills what
-   * was actually worked and nothing after it.
+   * Since the agent heartbeats every 60 seconds, `lastSeenAt` marks
+   * the last known active time.
    *
-   * Only Devices, never the web's own timer — a browser tab sends no
-   * heartbeat, so there is no last-seen to end it at.
+   * Only applies to Devices; browser timers have no heartbeat.
    */
   async closeEntriesFromDevicesThatWentAway(now = new Date()): Promise<void> {
     const goneSince = new Date(now.getTime() - ABANDONED_DEVICE_GRACE_MS);
@@ -809,13 +803,10 @@ export class TimeEntriesService {
           .device_lastSeenAt,
       );
 
-      // An entry that began after its Device was last heard from covers a
-      // stretch the machine provably was not alive for — `lastSeenAt` moves
-      // only on a heartbeat, every 60s, so nothing else produces this shape.
-      // The day-boundary split makes them: it carries an abandoned timer past
-      // midnight, and the half after the boundary begins long after the
-      // machine went. It holds no worked time and never did, so it is removed
-      // rather than closed — a zero-length row is a record of nothing.
+      // An entry starting after its Device's last heartbeat spans time the
+      // machine was not alive. Day-boundary splits create these by carrying
+      // abandoned timers past midnight. Since they contain no worked time,
+      // they are deleted rather than closed to avoid empty records.
       if (lastSeenAt.getTime() <= entry.startedAt.getTime()) {
         await this.removeEntryHoldingNoWork(entry, lastSeenAt);
         continue;
@@ -856,14 +847,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * Removes an entry that covers a stretch its Device was not alive for.
-   *
-   * Deleted rather than closed: it was manufactured by the day-boundary
-   * split from a timer that should already have ended, so there is no
-   * worked time in it to keep and a zero-length row would only be a record
-   * of nothing. Pause spans go with it through the foreign key; nothing
-   * else can reference it, since no capture falls inside a window with no
-   * machine running.
+   * Deletes an entry created by splitting a timer past its Device's lifetime.
+   * No worked time exists to preserve; associated pauses are deleted via the
+   * foreign key, and no captures can reference an entry outside the Device's
+   * runtime.
    */
   private async removeEntryHoldingNoWork(
     entry: TimeEntry,
