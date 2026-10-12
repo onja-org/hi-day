@@ -261,6 +261,41 @@ describe('TimeEntriesService', () => {
       );
     });
 
+    it('starts at the time an offline device pressed start, never in the future', async () => {
+      const create = jest.fn((value: object) => value);
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        create,
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      const service = makeService({ timeEntriesRepo });
+      const past = new Date(Date.now() - 3_600_000);
+
+      await service.start(
+        'org-1',
+        'user-1',
+        'project-1',
+        undefined,
+        TimeEntrySource.AGENT,
+        'device-1',
+        past,
+      );
+      expect(create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ startedAt: past }),
+      );
+
+      await service.start(
+        'org-1',
+        'user-1',
+        'project-1',
+        undefined,
+        TimeEntrySource.AGENT,
+        'device-1',
+        new Date(Date.now() + 3_600_000),
+      );
+      const used = create.mock.calls[1][0] as { startedAt: Date };
+      expect(used.startedAt.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
     /**
      * The web is account-level, so a timer running anywhere blocks a web
      * start — otherwise it becomes a second parallel timer of its own.

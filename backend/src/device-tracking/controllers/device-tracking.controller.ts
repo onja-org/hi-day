@@ -250,6 +250,7 @@ export class DeviceTrackingController {
       dto.taskId,
       TimeEntrySource.AGENT,
       request.deviceId,
+      dto.startedAt ? new Date(dto.startedAt) : undefined,
     );
   }
 

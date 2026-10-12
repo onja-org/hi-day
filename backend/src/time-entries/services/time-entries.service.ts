@@ -386,6 +386,8 @@ export class TimeEntriesService {
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
+    /** A device that was offline when start was pressed reports when that was. */
+    requestedStartedAt?: Date,
   ): Promise<TimeEntrySummary> {
     const { membership, task } = await this.validateStart(
       organisationId,
@@ -444,12 +446,17 @@ export class TimeEntriesService {
       });
     }
 
+    const startedAt = await this.resolveStartedAt(
+      membership.id,
+      deviceId,
+      requestedStartedAt,
+    );
     const entry = this.timeEntries.create({
       organisationId,
       membershipId: membership.id,
       projectId,
       taskId: task?.id ?? null,
-      startedAt: new Date(),
+      startedAt,
       endedAt: null,
       source,
       deviceId,
@@ -1886,6 +1893,34 @@ export class TimeEntriesService {
    * create, edit, and a backdated stop alike, so the rule (end after
    * start, never in the future) can't drift between the three call sites.
    */
+  /**
+   * A reported start can't be in the future (a skewed clock) or overlap the
+   * entry this Device last ended — in either case it is moved to the nearest
+   * valid instant rather than rejected, since the device has no way to
+   * redo it and the person did press start.
+   */
+  private async resolveStartedAt(
+    membershipId: string,
+    deviceId: string | null,
+    requested?: Date,
+  ): Promise<Date> {
+    const now = new Date();
+    if (!requested) return now;
+    let startedAt = requested.getTime() > now.getTime() ? now : requested;
+    const last = await this.timeEntries.findOne({
+      where: {
+        membershipId,
+        deviceId: deviceId === null ? IsNull() : Equal(deviceId),
+        endedAt: Not(IsNull()),
+      },
+      order: { endedAt: 'DESC' },
+    });
+    if (last?.endedAt && last.endedAt.getTime() > startedAt.getTime()) {
+      startedAt = last.endedAt;
+    }
+    return startedAt;
+  }
+
   private assertValidRange(startedAt: Date, endedAt: Date): void {
     if (endedAt.getTime() <= startedAt.getTime()) {
       throw new ConflictException('End time must be after the start time.');

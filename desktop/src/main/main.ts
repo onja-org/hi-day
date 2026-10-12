@@ -11,13 +11,14 @@ import {
   systemPreferences,
   Tray,
 } from "electron";
-import type { PairingPollResult, TrackingResult } from "./api-client";
+import type { PairingPollResult, TimeEntry, TrackingResult } from "./api-client";
 import { ApiClient } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
+import { PendingTimerOps } from "./pending-timer-ops";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { X11WindowTracker } from "./x11-window-tracker";
@@ -476,6 +477,7 @@ function createTray(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
+  const pendingOps = new PendingTimerOps(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
@@ -710,7 +712,7 @@ async function registerIpcHandlers(): Promise<void> {
       // Pause BEFORE revoking the session — afterwards the token is dead
       // and the running entry could never be paused, leaving it to run
       // unattended until the next login noticed it.
-      await apiClient.pauseTimer(session.deviceToken);
+      await pendingOps.pause(session.deviceToken, apiClient);
       await apiClient.logout(session.deviceToken);
       authStore.clear();
     }
@@ -737,6 +739,16 @@ async function registerIpcHandlers(): Promise<void> {
     if (!session) return NOT_LOGGED_IN;
 
     const result = await call(session.deviceToken);
+    if (result.ok) {
+      // Keeps the offline-pause fallback supplied with the live entry.
+      const data = result.data as
+        | { entry?: TimeEntry | null; startedAt?: string; endedAt?: string | null }
+        | null;
+      if (data && "entry" in data) pendingOps.remember(data.entry ?? null);
+      else if (data?.startedAt && !data.endedAt) {
+        pendingOps.remember(data as TimeEntry);
+      }
+    }
     if (!result.ok && result.unauthorized) {
       authStore.clear();
       stopUrlCapture();
@@ -753,8 +765,19 @@ async function registerIpcHandlers(): Promise<void> {
   pauseRunningTimer = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    await apiClient.pauseTimer(session.deviceToken);
+    await pendingOps.pause(session.deviceToken, apiClient);
   };
+
+  // Offline pauses/starts are only real to the server once this lands, so
+  // reading the timer settles them first.
+  const flushPendingOps = async (): Promise<void> => {
+    const session = authStore.load();
+    if (!session) return;
+    if (await pendingOps.flush(session.deviceToken, apiClient)) {
+      void timerStatusGate.pollOnce();
+    }
+  };
+  setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 
   ipcMain.handle("tracking:listProjects", () =>
     callDeviceApi((token) => apiClient.listProjects(token)),
@@ -771,7 +794,7 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:start",
     async (_event, projectId: string, taskId: string | null) => {
       const result = await callDeviceApi((token) =>
-        apiClient.startTimer(token, projectId, taskId),
+        pendingOps.start(token, projectId, taskId, apiClient),
       );
       if (result.ok) authStore.rememberProject(projectId, taskId);
       // Instant local feedback for window tracking rather than waiting on
@@ -786,7 +809,7 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:switch",
     async (_event, projectId: string, taskId: string | null) => {
       const result = await callDeviceApi((token) =>
-        apiClient.switchTimer(token, projectId, taskId),
+        pendingOps.switchTo(token, projectId, taskId, apiClient),
       );
       if (result.ok) authStore.rememberProject(projectId, taskId);
       void timerStatusGate.pollOnce();
@@ -804,6 +827,7 @@ async function registerIpcHandlers(): Promise<void> {
   });
 
   ipcMain.handle("tracking:stop", async (_event, endedAt?: string) => {
+    await flushPendingOps();
     const result = await callDeviceApi((token) =>
       apiClient.stopTimer(token, endedAt),
     );
@@ -811,12 +835,15 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
-  ipcMain.handle("tracking:status", () =>
-    callDeviceApi((token) => apiClient.getCurrentTimer(token)),
-  );
+  ipcMain.handle("tracking:status", async () => {
+    await flushPendingOps();
+    return callDeviceApi((token) => apiClient.getCurrentTimer(token));
+  });
 
   ipcMain.handle("tracking:pause", async () => {
-    const result = await callDeviceApi((token) => apiClient.pauseTimer(token));
+    const result = await callDeviceApi((token) =>
+      pendingOps.pause(token, apiClient),
+    );
     // Instant local feedback rather than waiting on TimerStatusGate's poll —
     // capture must stop as soon as the person pauses, not up to 15s later.
     void timerStatusGate.pollOnce();
