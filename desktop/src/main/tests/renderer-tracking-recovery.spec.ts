@@ -104,6 +104,7 @@ function launch(scenario: Scenario) {
   let running: typeof entry | null = scenario.runningElsewhere ? entry : null;
   let entrySeq = 1;
   const reopenListeners: (() => void)[] = [];
+  const closeRequestListeners: (() => void)[] = [];
   const completed: { projectId: string; durationSeconds: number }[] = [];
   /** Seconds the running entry has on the server's books. */
   const serverWorkedSeconds = () =>
@@ -198,6 +199,10 @@ function launch(scenario: Scenario) {
       onReopened: (listener: () => void) => {
         reopenListeners.push(listener);
       },
+      onCloseRequested: (listener: () => void) => {
+        closeRequestListeners.push(listener);
+      },
+      answerClose: async () => {},
     },
     setup: {
       browserRestartPrompt: () =>
@@ -226,6 +231,9 @@ function launch(scenario: Scenario) {
     advanceClock: (ms: number) => {
       clock.offsetMs += ms;
     },
+    /** Main asking the renderer how a close should go. */
+    requestClose: () => closeRequestListeners.forEach((listener) => listener()),
+    closePromptVisible: () => !document.getElementById('close-prompt')!.hidden,
     /** Main's signal that the window came back from the tray. */
     reopen: () => reopenListeners.forEach((listener) => listener()),
     isRunning: () => running !== null,
@@ -257,23 +265,55 @@ async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<voi
   }
 }
 
+/** Setup has finished: projects listed and the first status poll answered. */
+async function waitForSetup(app: ReturnType<typeof launch>): Promise<void> {
+  await waitFor(() => app.projectCount() !== '0' && app.calls.status > 0 && app.playReady());
+}
+
+/** The timer never starts on its own — the person presses play. */
+async function startTimer(app: ReturnType<typeof launch>): Promise<void> {
+  await waitForSetup(app);
+  app.clickPlay();
+  await waitFor(() => app.isRunning() && app.playReady());
+}
+
+describe('renderer leaves the timer stopped at launch', () => {
+  it('does not start the timer when the app opens', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    await settle(FAST_POLL_MS * 3);
+
+    expect(app.calls.start).toBe(0);
+    expect(app.isRunning()).toBe(false);
+    app.close();
+  });
+
+  it('starts only when play is pressed', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await startTimer(app);
+
+    expect(app.calls.start).toBe(1);
+    expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+});
+
 describe('renderer tracking setup recovers from a failed first load', () => {
-  it('loads projects and starts the timer once the server becomes reachable', async () => {
+  it('loads projects once the server becomes reachable', async () => {
     const app = launch({ failingProjectLoads: 1 });
-    await waitFor(() => app.isRunning());
+    await waitForSetup(app);
 
     expect(app.projectCount()).toBe('1');
-    expect(app.isRunning()).toBe(true);
+    expect(app.isRunning()).toBe(false);
     expect(app.trackingError()).toBeNull();
     app.close();
   });
 
   it('keeps retrying through several failures', async () => {
     const app = launch({ failingProjectLoads: 4 });
-    await waitFor(() => app.isRunning());
+    await waitForSetup(app);
 
     expect(app.projectCount()).toBe('1');
-    expect(app.isRunning()).toBe(true);
     app.close();
   });
 
@@ -330,6 +370,8 @@ describe('renderer tracking setup recovers from a failed first load', () => {
 
   it('still says "No projects" when the account genuinely has none', async () => {
     const app = launch({ failingProjectLoads: 0, projects: [] });
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+    app.clickPlay();
     await waitFor(() => app.trackingError() !== null);
 
     expect(app.trackingError()).toBe('No projects are available to track time against.');
@@ -343,7 +385,6 @@ describe('renderer idle policy', () => {
     await waitFor(() => app.calls.idlePolicy >= 2);
 
     expect(app.calls.idlePolicy).toBeGreaterThanOrEqual(2);
-    expect(app.isRunning()).toBe(true);
     app.close();
   });
 
@@ -372,7 +413,7 @@ describe('renderer asks for login before the timer can start on an ended session
   it('shows the login view when play is pressed after the session ended', async () => {
     // Long poll: nothing but the click itself can discover the sign-out.
     const app = launch({ failingProjectLoads: 0, pollMs: 60_000 });
-    await waitFor(() => app.isRunning());
+    await startTimer(app);
     app.clickPlay(); // pause
     await waitFor(() => !app.isRunning() && app.playReady());
     app.server.revoked = true;
@@ -418,7 +459,7 @@ describe('renderer timer runs on the local clock', () => {
 
   it('resumes from where it stopped instead of jumping to the server time', async () => {
     const app = launch({ failingProjectLoads: 0, serverShortfallSeconds: 20 });
-    await waitFor(() => app.isRunning() && app.playReady());
+    await startTimer(app);
 
     app.advanceClock(100_000);
     await letPollsRun(app);
@@ -449,7 +490,7 @@ describe('renderer timer runs on the local clock', () => {
   it('does not count time spent stopped once the timer starts again', async () => {
     // Long poll: no status poll lands between stop and start to hide a stale baseline.
     const app = launch({ failingProjectLoads: 0, pollMs: 60_000 });
-    await waitFor(() => app.isRunning() && app.playReady());
+    await startTimer(app);
     app.advanceClock(100_000);
     app.clickPlay(); // stop
     await waitFor(() => !app.isRunning() && app.playReady());
@@ -465,7 +506,7 @@ describe('renderer timer runs on the local clock', () => {
 
   it("re-reads the day's time from the server when the window is reopened", async () => {
     const app = launch({ failingProjectLoads: 0, serverShortfallSeconds: 20 });
-    await waitFor(() => app.isRunning() && app.playReady());
+    await startTimer(app);
     app.advanceClock(100_000);
     app.clickPlay(); // stop: the server books 80s, the device shows 100s
     await waitFor(() => !app.isRunning() && app.playReady());
@@ -476,6 +517,28 @@ describe('renderer timer runs on the local clock', () => {
     await waitFor(() => app.timerSeconds() < 100);
 
     expect(app.timerSeconds()).toBe(80);
+    app.close();
+  });
+});
+
+describe('renderer close prompt', () => {
+  it('asks before closing while signed in', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.visibleView() === 'status-view');
+    app.requestClose();
+
+    expect(app.closePromptVisible()).toBe(true);
+    app.close();
+  });
+
+  it('still asks after signing out', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.visibleView() === 'status-view');
+    app.clickLogout();
+    await waitFor(() => app.visibleView() === 'login-view');
+    app.requestClose();
+
+    expect(app.closePromptVisible()).toBe(true);
     app.close();
   });
 });

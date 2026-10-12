@@ -3,9 +3,13 @@ import { join } from 'node:path';
 
 const SETUP_FILE_NAME = 'setup-state.json';
 
-/** One-time steps this install has already been through. */
+/** What closing the window does, once the person has said "remember my choice". */
+export type CloseAction = 'minimize' | 'quit';
+
+/** One-time steps and remembered answers for this install. */
 interface SetupState {
   browserRestartPromptSeen?: boolean;
+  closeAction?: CloseAction;
 }
 
 /**
@@ -44,10 +48,25 @@ export function hasSeenBrowserRestartPrompt(userDataDir: string): boolean {
  * their answer, and re-asking on the next launch is not what they agreed to.
  */
 export function markBrowserRestartPromptSeen(userDataDir: string): void {
+  write(userDataDir, { ...read(userDataDir), browserRestartPromptSeen: true });
+}
+
+function write(userDataDir: string, state: SetupState): void {
   mkdirSync(userDataDir, { recursive: true });
-  writeFileSync(
-    filePath(userDataDir),
-    JSON.stringify({ ...read(userDataDir), browserRestartPromptSeen: true }),
-    'utf-8',
-  );
+  writeFileSync(filePath(userDataDir), JSON.stringify(state), 'utf-8');
+}
+
+/** The remembered answer to the close prompt, or null to ask every time. */
+export function rememberedCloseAction(userDataDir: string): CloseAction | null {
+  const action = read(userDataDir).closeAction;
+  // Anything else (a hand-edited file) means ask, never a silent quit.
+  return action === 'minimize' || action === 'quit' ? action : null;
+}
+
+/** Remembers `action` for every later close; null goes back to asking. */
+export function rememberCloseAction(userDataDir: string, action: CloseAction | null): void {
+  const state = read(userDataDir);
+  if (action) state.closeAction = action;
+  else delete state.closeAction;
+  write(userDataDir, state);
 }

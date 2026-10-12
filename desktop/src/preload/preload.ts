@@ -250,6 +250,15 @@ const api = {
     onReopened: (listener: () => void): void => {
       ipcRenderer.on("window:reopened", () => listener());
     },
+    onCloseRequested: (listener: () => void): void => {
+      ipcRenderer.on("window:closeRequested", () => listener());
+    },
+    /** null cancels: the window stays as it is. */
+    answerClose: (
+      action: "minimize" | "quit" | null,
+      remember: boolean,
+    ): Promise<void> =>
+      ipcRenderer.invoke("window:answerClose", action, remember) as Promise<void>,
   },
   setup: {
     browserRestartPrompt: (): Promise<BrowserRestartPrompt> =>

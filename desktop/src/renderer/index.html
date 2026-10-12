@@ -313,6 +313,35 @@
         </svg>
       </button>
     </div>
+    <div id="close-prompt" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="close-prompt-title"
+        aria-describedby="close-prompt-message"
+      >
+        <h2 id="close-prompt-title" class="close-prompt-title">Quit Hi Day?</h2>
+        <p id="close-prompt-message" class="close-prompt-message">
+          Quitting stops your timer. Minimise to keep tracking from the tray.
+        </p>
+        <label class="close-prompt-remember">
+          <input id="close-prompt-remember" type="checkbox" />
+          Remember my choice
+        </label>
+        <div class="close-prompt-actions">
+          <button id="close-prompt-minimise" type="button" class="button button-sun">
+            Minimise to tray
+          </button>
+          <button id="close-prompt-quit" type="button" class="button button-secondary">
+            Quit
+          </button>
+          <button id="close-prompt-cancel" type="button" class="button button-ghost">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
     <script type="module" src="renderer.js"></script>
   </body>
 </html>

@@ -40,6 +40,46 @@ document.getElementById("minimise-button")!.addEventListener("click", () => {
 document.getElementById("close-button")!.addEventListener("click", () => {
   void window.api.windowControls.close();
 });
+
+// --- Close prompt: minimise to the tray, or quit ------------------------
+
+const closePrompt = document.getElementById("close-prompt")!;
+const closePromptRemember = document.getElementById(
+  "close-prompt-remember",
+) as HTMLInputElement;
+const closePromptMinimise = document.getElementById(
+  "close-prompt-minimise",
+) as HTMLButtonElement;
+
+function answerClose(action: "minimize" | "quit" | null): void {
+  closePrompt.hidden = true;
+  void window.api.windowControls.answerClose(
+    action,
+    action !== null && closePromptRemember.checked,
+  );
+}
+
+window.api.windowControls.onCloseRequested(() => {
+  if (!closePrompt.hidden) return; // already asking
+  // The compact bar is too short to hold the prompt.
+  setCompact(false);
+  closePromptRemember.checked = false;
+  closePrompt.hidden = false;
+  closePromptMinimise.focus();
+});
+closePromptMinimise.addEventListener("click", () => answerClose("minimize"));
+document
+  .getElementById("close-prompt-quit")!
+  .addEventListener("click", () => answerClose("quit"));
+document
+  .getElementById("close-prompt-cancel")!
+  .addEventListener("click", () => answerClose(null));
+closePrompt.addEventListener("click", (event) => {
+  if (event.target === closePrompt) answerClose(null); // backdrop
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !closePrompt.hidden) answerClose(null);
+});
 document.getElementById("compact-button")!.addEventListener("click", () => {
   setCompact(true);
 });
@@ -1275,7 +1315,7 @@ function stopPolling(): void {
 
 /**
  * Resolves which Project a start should track against, so neither
- * auto-start nor the play icon ever has to prompt:
+ * play nor the stopped timer card ever has to prompt:
  *   1. whatever the timer last ran against, if it is still available, else
  *   2. the first Project in the list.
  * Returns null only when the account has no Projects at all.
@@ -1296,14 +1336,14 @@ async function resolveProjectToTrack(): Promise<{
   return { projectId: projects[0].id, taskId: null };
 }
 
-/** Starts a new entry against the resolved Project. Shared by auto-start and play. */
+/** Starts a new entry against the resolved Project, when play is pressed. */
 async function startTracking(): Promise<void> {
   if (!projectsLoaded) {
     // Setup is still waiting on its retry. Retrying now reaches the server,
     // so an ended session lands on the login screen instead of "No projects".
-    // It starts the timer itself once projects load.
     await initTracking();
-    return;
+    // Signed out, still unreachable, or a timer turned up running elsewhere.
+    if (!projectsLoaded || runningEntry) return;
   }
   clearTrackingError();
   const target = await resolveProjectToTrack();
@@ -1498,8 +1538,16 @@ async function runInitTracking(): Promise<void> {
 
   await refreshStatus(true);
 
-  if (!runningEntry) {
-    await startTracking();
+  // Never starts the timer: quitting stopped it, and only the person
+  // pressing play starts it again. Shows what play would resume instead,
+  // with that Project's time so far today.
+  if (!runningEntry && !lastTrackedProjectId) {
+    const target = await resolveProjectToTrack();
+    if (target && !runningEntry) {
+      lastTrackedProjectId = target.projectId;
+      renderProjects();
+      tick();
+    }
   }
 
   void refreshCapturePermissionBanner();

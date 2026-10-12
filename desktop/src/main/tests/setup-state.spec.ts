@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   hasSeenBrowserRestartPrompt,
   markBrowserRestartPromptSeen,
+  rememberCloseAction,
+  rememberedCloseAction,
 } from '../setup-state';
 
 describe('setup state', () => {
@@ -95,5 +97,49 @@ describe('what the record survives', () => {
 
     expect(main).not.toContain('clearBrowserRestartPromptSeen');
     expect(store).not.toContain('clearBrowserRestartPromptSeen');
+  });
+});
+
+describe('remembered close action', () => {
+  let userDataDir: string;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-close-action-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('asks on a fresh install', () => {
+    expect(rememberedCloseAction(userDataDir)).toBeNull();
+  });
+
+  it('remembers the chosen action', () => {
+    rememberCloseAction(userDataDir, 'quit');
+
+    expect(rememberedCloseAction(userDataDir)).toBe('quit');
+  });
+
+  it('goes back to asking when cleared', () => {
+    rememberCloseAction(userDataDir, 'minimize');
+    rememberCloseAction(userDataDir, null);
+
+    expect(rememberedCloseAction(userDataDir)).toBeNull();
+  });
+
+  // Both live in one file, so neither write may drop the other.
+  it('keeps the browser-restart flag alongside it', () => {
+    markBrowserRestartPromptSeen(userDataDir);
+    rememberCloseAction(userDataDir, 'minimize');
+    rememberCloseAction(userDataDir, null);
+
+    expect(hasSeenBrowserRestartPrompt(userDataDir)).toBe(true);
+  });
+
+  it('asks rather than quitting silently on an unrecognised value', () => {
+    writeFileSync(join(userDataDir, 'setup-state.json'), JSON.stringify({ closeAction: 'explode' }));
+
+    expect(rememberedCloseAction(userDataDir)).toBeNull();
   });
 });

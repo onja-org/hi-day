@@ -167,6 +167,13 @@ declare global {
         setCompact: (compact: boolean) => Promise<void>;
         /** Fires when the window comes back from being closed to the tray. */
         onReopened: (listener: () => void) => void;
+        /** Main asks whether closing should minimise to the tray or quit. */
+        onCloseRequested: (listener: () => void) => void;
+        /** null cancels: the window stays as it is. */
+        answerClose: (
+          action: 'minimize' | 'quit' | null,
+          remember: boolean,
+        ) => Promise<void>;
       };
       setup: {
         browserRestartPrompt: () => Promise<BrowserRestartPrompt>;

@@ -50,7 +50,12 @@ import {
   browserRestartPrompt,
   browsersOrphanedBySweep,
 } from "./browser-restart-prompt";
-import { markBrowserRestartPromptSeen } from "./setup-state";
+import {
+  type CloseAction,
+  markBrowserRestartPromptSeen,
+  rememberCloseAction,
+  rememberedCloseAction,
+} from "./setup-state";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -419,7 +424,7 @@ function createWindow(): void {
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    mainWindow?.hide();
+    handleCloseRequest();
   });
   // Windows logoff/shutdown closes windows without a before-quit first;
   // hiding there would hold the session open.
@@ -452,6 +457,27 @@ function reopenMainWindow(): void {
   if (wasHidden) mainWindow?.webContents.send("window:reopened");
 }
 
+/**
+ * Closing the window either hides it to the tray, where tracking carries
+ * on, or quits — which stops the timer. The renderer asks which, in its own
+ * styled prompt, until the person ticks "Remember my choice"; the tray menu
+ * can undo that. Its answer comes back through `applyCloseAction`.
+ */
+function handleCloseRequest(): void {
+  if (!mainWindow) return;
+  const remembered = rememberedCloseAction(app.getPath("userData"));
+  if (remembered) {
+    applyCloseAction(remembered);
+    return;
+  }
+  mainWindow.webContents.send("window:closeRequested");
+}
+
+function applyCloseAction(action: CloseAction): void {
+  if (action === "quit") app.quit();
+  else mainWindow?.hide();
+}
+
 /** Swaps between the full window and the always-on-top compact bar. */
 function setCompactWindow(compact: boolean): void {
   if (!mainWindow) return;
@@ -476,14 +502,33 @@ function createTray(): void {
     .resize({ width: iconSize, height: iconSize });
   tray = new Tray(image);
   tray.setToolTip("Hi Day");
+  refreshTrayMenu();
+  tray.on("click", reopenMainWindow);
+}
+
+function refreshTrayMenu(): void {
+  if (!tray) return;
+  const remembered = rememberedCloseAction(app.getPath("userData")) !== null;
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Hi Day", click: reopenMainWindow },
+      // The only way back from a remembered close choice short of wiping
+      // the app's data — without it, a remembered "Quit" is permanent.
+      ...(remembered
+        ? [
+            {
+              label: "Ask Before Closing Again",
+              click: () => {
+                rememberCloseAction(app.getPath("userData"), null);
+                refreshTrayMenu();
+              },
+            },
+          ]
+        : []),
       { type: "separator" },
       { label: "Quit Hi Day", click: () => app.quit() },
     ]),
   );
-  tray.on("click", reopenMainWindow);
 }
 
 async function registerIpcHandlers(): Promise<void> {
@@ -800,7 +845,7 @@ async function registerIpcHandlers(): Promise<void> {
 
   // Remembering the Project on the way through means the renderer never has
   // to manage it: whatever the timer last actually started against is what a
-  // later auto-start or play resumes to.
+  // later play resumes to.
   ipcMain.handle(
     "tracking:start",
     async (_event, projectId: string, taskId: string | null) => {
@@ -1035,8 +1080,20 @@ async function registerIpcHandlers(): Promise<void> {
   });
 
   ipcMain.handle("window:close", (): void => {
-    mainWindow?.hide();
+    handleCloseRequest();
   });
+
+  ipcMain.handle(
+    "window:answerClose",
+    (_event, action: unknown, remember: unknown): void => {
+      if (action !== "minimize" && action !== "quit") return; // cancelled
+      if (remember === true) {
+        rememberCloseAction(app.getPath("userData"), action);
+        refreshTrayMenu();
+      }
+      applyCloseAction(action);
+    },
+  );
 
   ipcMain.handle("window:setCompact", (_event, compact: boolean): void => {
     setCompactWindow(compact);
