@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ExportButtons } from "@/components/ExportButtons";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { buildTimeActivityAttachment } from "@/lib/buildTimeActivityAttachment";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
@@ -64,6 +65,7 @@ export function TimeActivityReportActions({
 }: TimeActivityReportActionsProps) {
   // Set while the schedule modal is open, carrying the name already typed in the save modal.
   const [scheduleFor, setScheduleFor] = useState<{ name: string } | null>(null);
+  const weekStart = useOrganisationWeekStart();
 
   const filenameBase = reportFilenameBase("time-and-activity", range);
 
@@ -74,7 +76,7 @@ export function TimeActivityReportActions({
       filenameBase,
       isEmpty: !entries || entries.length === 0,
       buildContent: (fileType, title) =>
-        buildTimeActivityAttachment(fileType, { entries: entries ?? [], grouping, teamNames, idleMembers, zone, title }),
+        buildTimeActivityAttachment(fileType, { entries: entries ?? [], grouping, teamNames, idleMembers, zone, title, weekStart }),
     });
   }
 

@@ -5,6 +5,7 @@ import { CalendarBlankIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { addMonths, isBefore, startOfMonth, subMonths } from "date-fns";
 import { useDismissOnOutsideClick } from "@/hooks/useDismissOnOutsideClick";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { selectRangeDay } from "@/lib/selectRangeDay";
@@ -78,6 +79,7 @@ export function DateRangePicker({
     startOfMonth(asLocalDays(value, zone).from),
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  const weekStart = useOrganisationWeekStart();
 
   const appliedDays = asLocalDays(value, zone);
 
@@ -107,7 +109,7 @@ export function DateRangePicker({
   }
 
   function selectPreset(next: DateRangePreset) {
-    showRange(getTimesheetDateRange(next, new Date(), zone));
+    showRange(getTimesheetDateRange(next, new Date(), zone, weekStart));
     setDraftPreset(next);
   }
 
@@ -157,7 +159,12 @@ export function DateRangePicker({
             type="button"
             onClick={() =>
               onChange(
-                getTimesheetDateRange(defaultPreset, new Date(), zone),
+                getTimesheetDateRange(
+                  defaultPreset,
+                  new Date(),
+                  zone,
+                  weekStart,
+                ),
                 defaultPreset,
               )
             }

@@ -11,6 +11,7 @@ import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { AppEventItemDto } from '../dto/app-event-item.dto';
 
@@ -76,6 +77,7 @@ export class AppEventsService {
     @InjectRepository(Membership)
     private readonly memberships: Repository<Membership>,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly organisationsService: OrganisationsService,
   ) {}
 
   /**
@@ -91,13 +93,27 @@ export class AppEventsService {
   ): Promise<void> {
     const membership = await this.getActiveMembership(organisationId, userId);
 
+    // Mirrors the agent's own gates, so a client that ignores them (a stale
+    // build, or a queue drained from before the setting changed) can't
+    // record what the organisation has turned off. Dropped silently rather
+    // than rejected: the agent has nothing to fix by retrying.
+    const captureSettings = await this.organisationsService.getCaptureSettings(
+      organisationId,
+      userId,
+    );
+    if (captureSettings.appUrlTracking === 'off') {
+      return;
+    }
+    // "Window titles" strips the title, it does not drop the event.
+    const keepTitles = captureSettings.windowTrackingEnabled;
+
     const rows = events.map((event) =>
       this.appEvents.create({
         organisationId,
         membershipId: membership.id,
         deviceId,
         appName: event.appName,
-        title: event.title ?? null,
+        title: keepTitles ? (event.title ?? null) : null,
         titleUnavailableReason: event.titleUnavailableReason ?? null,
         sampledAt: new Date(event.sampledAt),
       }),

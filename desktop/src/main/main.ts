@@ -11,7 +11,12 @@ import {
   systemPreferences,
   Tray,
 } from "electron";
-import type { PairingPollResult, TimeEntry, TrackingResult } from "./api-client";
+import type {
+  AppUrlTracking,
+  PairingPollResult,
+  TimeEntry,
+  TrackingResult,
+} from "./api-client";
 import { ApiClient } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
@@ -346,11 +351,12 @@ function stopSync(): void {
   }
 }
 
-// macOS and Windows: a real resolver side-car feeds focus/URL events in.
-// Linux (Stage D) has no resolver yet, and resolverSpawnConfigForPlatform
-// returns null there — this degrades to the same timer/idle/lock/suspend-
-// only tracking as before on any unsupported platform, never throwing.
-function startUrlCapture(deviceId: string, upload: UploadFn): void {
+// macOS, Windows and Linux each have a resolver side-car feeding focus/URL
+// events in. On any other platform resolverSpawnConfigForPlatform returns
+// null and this degrades to timer/idle/lock/suspend-only tracking rather
+// than throwing. Started only by `recomputeSampling`, which owns the
+// lifecycle — see `syncUrlCapture`.
+function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService {
   urlCaptureService?.stop();
   resolverOrchestrator?.stop();
 
@@ -376,6 +382,8 @@ function startUrlCapture(deviceId: string, upload: UploadFn): void {
   } else {
     resolverOrchestrator = null;
   }
+
+  return urlCaptureService;
 }
 
 // Opt-in only (URL_TRACKING_CONTEXT.md's pinned rule: "never log a full
@@ -581,8 +589,17 @@ async function registerIpcHandlers(): Promise<void> {
       ? new GnomeIdleMonitor({ logger: (line) => console.log(line) })
       : null;
 
+  // Declared up here, not with the other capture state below, because the
+  // sink closes over it.
+  let windowTrackingEnabled = false;
+
   const windowSampler = new WindowSampler({
-    sink: appEventUploader.enqueue,
+    // "Window titles" decides only whether the title rides along; whether
+    // apps are sampled at all is `appUrlTracking`'s call.
+    sink: (sample) =>
+      appEventUploader.enqueue(
+        windowTrackingEnabled ? sample : { ...sample, title: null },
+      ),
     getX11Focus: () => x11WindowTracker?.getLastFocus() ?? null,
     getGnomeFocus: () => gnomeWindowFocusTracker?.getLastFocus() ?? null,
   });
@@ -629,12 +646,15 @@ async function registerIpcHandlers(): Promise<void> {
   // settings can change from the web console, and the timer can be
   // started/stopped from the web console or another device, see
   // docs/adr/0006-...), and any one flipping recomputes both.
-  let windowTrackingEnabled = false;
+  let appUrlTracking: AppUrlTracking = "off";
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
   function recomputeSampling(): void {
-    if (windowTrackingEnabled && timerRunning) {
+    // Apps are recorded whenever the org (or this member's override)
+    // allows it — "Window titles" only strips the title from each sample,
+    // it never stops the sampler.
+    if (appUrlTracking !== "off" && timerRunning) {
       windowSampler.start();
     } else {
       windowSampler.stop();
@@ -644,9 +664,10 @@ async function registerIpcHandlers(): Promise<void> {
       void appEventUploader.flush();
     }
 
-    // Activity rides the same gate as window tracking: it measures how
-    // busy *tracked* time was, so it has nothing to say while no timer runs.
-    if (windowTrackingEnabled && timerRunning) {
+    // Activity rides neither capture setting: it measures how busy tracked
+    // time was, which is neither an app, a URL nor a window title, so
+    // switching either off must not blank out everyone's percentage.
+    if (timerRunning) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
     } else if (activityTicker) {
       clearInterval(activityTicker);
@@ -662,6 +683,34 @@ async function registerIpcHandlers(): Promise<void> {
     } else {
       screenshotSampler.stop();
     }
+
+    syncUrlCapture();
+  }
+
+  /**
+   * URL capture's lifecycle is owned here rather than by the login
+   * handlers, so that flipping "Track apps & URLs" takes effect on the
+   * gate's next poll instead of only at the next sign-in. The service
+   * handles timer state itself (`setTimerRunning`), so this decides only
+   * whether it exists at all.
+   */
+  function syncUrlCapture(): void {
+    const session = authStore.load();
+    const wanted = appUrlTracking === "apps_urls" && session !== null;
+
+    if (!wanted) {
+      stopUrlCapture();
+      return;
+    }
+    if (urlCaptureService) return;
+
+    const service = startUrlCapture(
+      session.deviceId,
+      buildUrlSessionUploadFn(apiClient, authStore, session.deviceToken),
+    );
+    // Seeded, or a timer already running would go uncaptured until the
+    // renderer next pushed a state change.
+    service.setTimerRunning(timerRunning);
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
@@ -669,6 +718,7 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (settings) => {
       windowTrackingEnabled = settings.windowTrackingEnabled;
+      appUrlTracking = settings.appUrlTracking;
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       recomputeSampling();
@@ -743,16 +793,14 @@ async function registerIpcHandlers(): Promise<void> {
       });
       // Approval is the new "just logged in" moment — the password
       // handler these hung off no longer exists.
-      startUrlCapture(
-        result.deviceId,
-        buildUrlSessionUploadFn(apiClient, authStore, result.deviceToken),
-      );
       startHeartbeat(apiClient, result.deviceToken);
       startSync();
       // Re-check both gates immediately rather than waiting for their own
       // poll intervals — a device that was logged out (and therefore not
       // tracking) should pick this up as soon as it's logged back in,
       // including resuming a timer that was already running server-side.
+      // This also starts url-capture, which `recomputeSampling` owns now
+      // that it depends on a setting.
       void captureSettingsGate.pollOnce();
       void timerStatusGate.pollOnce();
     } else if (result.status === "expired") {
@@ -1030,18 +1078,11 @@ async function registerIpcHandlers(): Promise<void> {
   });
 
   // A returning, already-logged-in user skips the login form (see
-  // auth:status above) — start url-capture for them too, not just on a
-  // fresh login.
+  // auth:status above) — they need the heartbeat and sync loop too, not
+  // just a fresh login. Url-capture comes from the settings gate's own
+  // first poll, which `captureSettingsGate.start()` already fired.
   const existingSession = authStore.load();
   if (existingSession) {
-    startUrlCapture(
-      existingSession.deviceId,
-      buildUrlSessionUploadFn(
-        apiClient,
-        authStore,
-        existingSession.deviceToken,
-      ),
-    );
     startHeartbeat(apiClient, existingSession.deviceToken);
     startSync();
   }

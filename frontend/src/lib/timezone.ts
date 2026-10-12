@@ -1,3 +1,5 @@
+import type { WeekStart } from "@/types/organisation";
+
 /** Where a timezone came from, so the selector can label each option. */
 export type TimezoneSource = "member" | "viewer" | "organisation";
 
@@ -146,17 +148,25 @@ export function addDaysToKey(dateKey: string, days: number): string {
   return toKey(new Date(Date.UTC(year, month - 1, day + days)));
 }
 
-/** Monday-start, matching the date picker's calendar grid. */
-export function startOfWeekKey(dateKey: string): string {
+/** The first day of `dateKey`'s week. Monday by default, which is what
+ * every caller assumed before the setting existed. */
+export function startOfWeekKey(
+  dateKey: string,
+  weekStart: WeekStart = "monday",
+): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   const at = new Date(Date.UTC(year, month - 1, day));
   // getUTCDay is 0 for Sunday, which is 6 days into a Monday-start week.
-  const offset = (at.getUTCDay() + 6) % 7;
+  const offset =
+    weekStart === "sunday" ? at.getUTCDay() : (at.getUTCDay() + 6) % 7;
   return addDaysToKey(dateKey, -offset);
 }
 
-export function endOfWeekKey(dateKey: string): string {
-  return addDaysToKey(startOfWeekKey(dateKey), 6);
+export function endOfWeekKey(
+  dateKey: string,
+  weekStart: WeekStart = "monday",
+): string {
+  return addDaysToKey(startOfWeekKey(dateKey, weekStart), 6);
 }
 
 export function startOfMonthKey(dateKey: string): string {

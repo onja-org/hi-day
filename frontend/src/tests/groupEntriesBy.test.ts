@@ -42,6 +42,18 @@ describe("groupEntriesBy", () => {
     expect(groups.map((g) => g.entries.length)).toEqual([2, 1]);
   });
 
+  it("splits a Sunday-start week differently, with Oct 4 opening a week instead of closing one", () => {
+    const entries = [
+      entry({ id: "a", startedAt: "2026-09-28T09:00:00" }),
+      entry({ id: "b", startedAt: "2026-10-04T09:00:00" }),
+      entry({ id: "c", startedAt: "2026-10-05T09:00:00" }),
+    ];
+
+    expect(
+      groupEntriesBy(entries, "week", new Map(), "sunday").map((group) => group.entries.length),
+    ).toEqual([1, 2]);
+  });
+
   it("groups by project, alphabetically", () => {
     const groups = groupEntriesBy(
       [

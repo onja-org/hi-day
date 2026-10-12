@@ -17,14 +17,15 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
+import type { WeekStart } from '../../organisations/company-profile';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_DAYS = 7;
 
 export interface DashboardWeekDay {
-  /** YYYY-MM-DD, in the server's local timezone — matches the frontend's
-   * own Sunday-start week convention (`getTimesheetDateRange`). */
+  /** YYYY-MM-DD, in the server's local timezone — not the Organisation's,
+   * unlike the timesheet. A known divergence. */
   date: string;
   seconds: number;
 }
@@ -40,14 +41,15 @@ export interface DashboardSummary {
   workedTodaySeconds: number;
   /** vs. yesterday, same time-of-day — a fair "so far today" comparison. */
   workedTodayDeltaSeconds: number;
-  /** Week-to-date (Sunday through now), not a full 7-day total. */
+  /** Week-to-date from the Organisation's week-start day, not a full
+   * 7-day total. */
   workedThisWeekSeconds: number;
-  /** vs. last week, same elapsed span (Sunday through "now minus 7 days"). */
+  /** vs. last week, same elapsed span (week start through "now minus 7 days"). */
   workedThisWeekDeltaSeconds: number;
   projectsWorkedThisWeek: number;
   projectsWorkedDelta: number;
-  /** Always 7 entries, Sunday-Saturday, zero-filled for days with no
-   * entries (including days later this week, which naturally have none). */
+  /** Always 7 entries from the Organisation's week-start day, zero-filled
+   * for days with no entries (including days later this week). */
   thisWeekByDay: DashboardWeekDay[];
   /** Desc by seconds worked this week. */
   projectsThisWeek: DashboardProjectTime[];
@@ -83,7 +85,10 @@ export class DashboardService {
   ): Promise<DashboardSummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const now = new Date();
-    const weekStart = this.startOfWeek(now);
+    const weekStart = this.startOfWeek(
+      now,
+      await this.organisationsService.getWeekStart(organisationId),
+    );
 
     const [thisWeekEntries, yesterdaySameSpanEntries, lastWeekSameSpanEntries] =
       await Promise.all([
@@ -299,9 +304,12 @@ export class DashboardService {
     return start;
   }
 
-  private startOfWeek(date: Date): Date {
+  private startOfWeek(date: Date, weekStartsOn: WeekStart): Date {
     const start = this.startOfDay(date);
-    start.setDate(start.getDate() - start.getDay());
+    // getDay() is 0 for Sunday, which is six days into a Monday-start week.
+    const offset =
+      weekStartsOn === 'monday' ? (start.getDay() + 6) % 7 : start.getDay();
+    start.setDate(start.getDate() - offset);
     return start;
   }
 

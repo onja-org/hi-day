@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from './membership-role.enum';
@@ -55,6 +56,13 @@ export class Membership {
    */
   @Column({ type: 'character varying', nullable: true })
   appUrlTracking: AppUrlTracking | null;
+
+  /**
+   * Per-member override of the Organisation's "Allowed apps" default.
+   * `null` means inherit (see `Organisation.settings.allowedApps`).
+   */
+  @Column({ type: 'character varying', nullable: true })
+  allowedApps: AllowedApps | null;
 
   /**
    * Per-member override of the Organisation's "Modify time (manual time)"

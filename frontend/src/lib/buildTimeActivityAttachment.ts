@@ -3,6 +3,7 @@ import { buildTimeActivityRows } from "@/lib/buildTimeActivityRows";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { timeActivityColumns } from "@/lib/timeActivityReportConfig";
 import type { IdleMember } from "@/types/idleMember";
+import type { WeekStart } from "@/types/organisation";
 import type { SendReportFileType } from "@/types/sendReport";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -14,6 +15,8 @@ type AttachmentSource = {
   idleMembers: IdleMember[];
   zone: string;
   title: string;
+  /** So an exported file groups weeks as the screen does. */
+  weekStart: WeekStart;
 };
 
 /**
@@ -23,10 +26,15 @@ type AttachmentSource = {
  */
 export async function buildTimeActivityAttachment(
   fileType: SendReportFileType,
-  { entries, grouping, teamNames, idleMembers, zone, title }: AttachmentSource,
+  { entries, grouping, teamNames, idleMembers, zone, title, weekStart }: AttachmentSource,
 ): Promise<string> {
   if (fileType === "csv") return encodeCsvAttachment(entriesToCsv(entries, zone));
   const columns = timeActivityColumns(grouping);
-  const rows = buildTimeActivityRows(entries, grouping, { sumDates: false, teamNames, idleMembers });
+  const rows = buildTimeActivityRows(entries, grouping, {
+    sumDates: false,
+    teamNames,
+    idleMembers,
+    weekStart,
+  });
   return buildReportTableAttachment(fileType, columns, rows, title);
 }

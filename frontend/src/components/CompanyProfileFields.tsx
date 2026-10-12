@@ -1,3 +1,5 @@
+import { SelectField, TextField } from "@/components/ui/form";
+import { INDUSTRY_OPTIONS } from "@/lib/industryOptions";
 import type { OrganisationProfile } from "@/types/organisation";
 
 type CompanyProfileFieldsProps = {
@@ -11,43 +13,53 @@ export function CompanyProfileFields({
   return (
     <div className="@container flex flex-col gap-4 rounded-lg border border-input-border bg-white p-5">
       <div className="grid gap-4 @md:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-slate-900">
-            Company name
-          </span>
-          <input
-            name="name"
-            type="text"
-            defaultValue={organisation.name}
-            required
-            className="rounded-brand-sm border-2 border-ink bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TextField
+          label="Company name"
+          name="name"
+          type="text"
+          defaultValue={organisation.name}
+          required
+        />
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-slate-900">Address</span>
-          <input
-            name="address"
-            type="text"
-            defaultValue={organisation.address ?? ""}
-            required
-            className="rounded-brand-sm border-2 border-ink bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <SelectField
+          label="Industry · optional"
+          name="industry"
+          defaultValue={organisation.industry ?? ""}
+        >
+          <option value="">Not set</option>
+          {INDUSTRY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </SelectField>
       </div>
 
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-slate-900">
-          Website · optional
-        </span>
-        <input
+      <TextField
+        label="Address · optional"
+        name="address"
+        type="text"
+        defaultValue={organisation.address ?? ""}
+      />
+
+      <div className="grid gap-4 @md:grid-cols-2">
+        <TextField
+          label="Tax ID · optional"
+          name="taxId"
+          type="text"
+          defaultValue={organisation.taxId ?? ""}
+          maxLength={64}
+          hint="VAT, EIN, TIN — whatever your jurisdiction issues."
+        />
+
+        <TextField
+          label="Website · optional"
           name="website"
           type="text"
           defaultValue={organisation.website ?? ""}
           placeholder="https://example.com"
-          className="rounded-brand-sm border-2 border-ink bg-white px-3 h-11 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-      </label>
+      </div>
     </div>
   );
 }

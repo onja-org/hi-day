@@ -6,6 +6,7 @@ import { ProjectColour } from '../../../database/entities/project-colour.enum';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
+import type { WeekStart } from '../../../organisations/company-profile';
 import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { DashboardService } from '../dashboard.service';
 
@@ -61,9 +62,13 @@ describe('DashboardService', () => {
     } as unknown as Repository<Membership>;
   }
 
-  function makeOrganisationsService(hoursPerDay = 8): OrganisationsService {
+  function makeOrganisationsService(
+    hoursPerDay = 8,
+    weekStartsOn: WeekStart = 'monday',
+  ): OrganisationsService {
     return {
       getWorkingHoursPolicy: jest.fn().mockResolvedValue({ hoursPerDay }),
+      getWeekStart: jest.fn().mockResolvedValue(weekStartsOn),
     } as unknown as OrganisationsService;
   }
 
@@ -103,15 +108,44 @@ describe('DashboardService', () => {
 
     expect(summary.thisWeekByDay).toHaveLength(7);
     expect(summary.thisWeekByDay.map((day) => day.seconds)).toEqual([
-      0, // Sun
       1.5 * 3600, // Mon
       0, // Tue
       2 * 3600, // Wed (today)
       0, // Thu
       0, // Fri
       0, // Sat
+      0, // Sun
     ]);
-    expect(summary.thisWeekByDay[3].date).toBe('2026-01-07');
+    expect(summary.thisWeekByDay[2].date).toBe('2026-01-07');
+  });
+
+  it("starts the week on the Organisation's configured day", async () => {
+    const entries = [
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 5, 9, 0, 0), // Mon
+        endedAt: new Date(2026, 0, 5, 10, 30, 0), // 1.5h
+      }),
+    ];
+    const sundayService = new DashboardService(
+      makeTimeEntriesRepo(entries, [], []),
+      makePausesRepo(),
+      makeMembershipsRepo(),
+      makeOrganisationsService(8, 'sunday'),
+    );
+
+    const summary = await sundayService.getSummary('org-1', 'user-1');
+
+    expect(summary.thisWeekByDay[0].date).toBe('2026-01-04');
+    expect(summary.thisWeekByDay.map((day) => day.seconds)).toEqual([
+      0,
+      1.5 * 3600,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
   });
 
   it('computes week-over-week and day-over-day deltas from the same-span comparison periods', async () => {

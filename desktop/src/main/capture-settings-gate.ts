@@ -1,9 +1,12 @@
+import type { AppUrlTracking } from "./api-client";
+
 export interface CaptureSettingsSession {
   load(): { deviceToken: string } | null;
 }
 
 export interface CaptureSettingsValue {
   windowTrackingEnabled: boolean;
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
   screenshotFrequencySeconds: number;
@@ -17,6 +20,7 @@ export interface CaptureSettingsValue {
 // longer blocks anything, it just decides whether the banner renders.
 const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
+  appUrlTracking: "off",
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
   consent: { required: true },
@@ -88,6 +92,7 @@ export class CaptureSettingsGate {
   private applyIfChanged(settings: CaptureSettingsValue): void {
     if (
       settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
+      settings.appUrlTracking === this.lastSettings.appUrlTracking &&
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&

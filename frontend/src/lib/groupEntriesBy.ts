@@ -1,6 +1,8 @@
 import { endOfWeek, format, startOfWeek } from "date-fns";
 import { keyAsLocalDate } from "@/lib/timezone";
 import { formatReportDay } from "@/lib/formatReportDay";
+import { weekStartsOnIndex } from "@/lib/weekStartsOnIndex";
+import type { WeekStart } from "@/types/organisation";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -13,8 +15,6 @@ export type EntryGroup = {
 };
 
 type GroupDescriptor = Omit<EntryGroup, "entries">;
-
-const WEEK_OPTIONS = { weekStartsOn: 1 } as const;
 
 function dateKeyOf(entry: TimeEntryListItem): string {
   return format(new Date(entry.startedAt), "yyyy-MM-dd");
@@ -38,6 +38,7 @@ function describeGroups(
   entry: TimeEntryListItem,
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames,
+  weekStart: WeekStart,
 ): GroupDescriptor[] {
   switch (grouping) {
     case "day": {
@@ -45,8 +46,9 @@ function describeGroups(
       return [{ id: key, label: formatReportDay(key), sortKey: keyAsLocalDate(key).getTime() }];
     }
     case "week": {
-      const start = startOfWeek(new Date(entry.startedAt), WEEK_OPTIONS);
-      const end = endOfWeek(start, WEEK_OPTIONS);
+      const weekOptions = { weekStartsOn: weekStartsOnIndex(weekStart) };
+      const start = startOfWeek(new Date(entry.startedAt), weekOptions);
+      const end = endOfWeek(start, weekOptions);
       return [
         {
           id: format(start, "yyyy-MM-dd"),
@@ -75,10 +77,16 @@ export function groupEntriesBy(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames = new Map(),
+  weekStart: WeekStart = "monday",
 ): EntryGroup[] {
   const groups = new Map<string, EntryGroup>();
   for (const entry of entries) {
-    for (const described of describeGroups(entry, grouping, teamNames)) {
+    for (const described of describeGroups(
+      entry,
+      grouping,
+      teamNames,
+      weekStart,
+    )) {
       const existing = groups.get(described.id);
       if (existing) existing.entries.push(entry);
       else groups.set(described.id, { ...described, entries: [entry] });

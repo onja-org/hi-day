@@ -3,6 +3,7 @@ import { formatElapsed } from "@/lib/formatElapsed";
 import { entryDayLabel, groupEntriesBy, memberLabelOf } from "@/lib/groupEntriesBy";
 import { splitEntrySeconds } from "@/lib/splitEntrySeconds";
 import type { IdleMember } from "@/types/idleMember";
+import type { WeekStart } from "@/types/organisation";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -13,6 +14,8 @@ type RowOptions = {
   teamNames: MembershipTeamNames;
   /** Members to list under "Member" grouping even when they have no entries, as zero-hour rows. */
   idleMembers?: IdleMember[];
+  /** Only read by the "week" grouping. */
+  weekStart?: WeekStart;
 };
 
 function hours(seconds: number): string {
@@ -126,7 +129,7 @@ function leafRows(
 export function buildTimeActivityRows(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
-  { sumDates, teamNames, idleMembers = [] }: RowOptions,
+  { sumDates, teamNames, idleMembers = [], weekStart = "monday" }: RowOptions,
 ): ReportTableRow[] {
   if (grouping === "none") {
     return leafRows(entries, "", true, grouping, teamNames, undefined, true, true);
@@ -140,7 +143,7 @@ export function buildTimeActivityRows(
   // the rows apart. Other groupings still give each team its own row.
   const splitTeams = grouping !== "week" && grouping !== "day";
 
-  const rows = groupEntriesBy(entries, grouping, teamNames).map((group) => {
+  const rows = groupEntriesBy(entries, grouping, teamNames, weekStart).map((group) => {
     const onlyTeam = grouping === "team" ? group.label : undefined;
     const days = splitsByDay ? groupEntriesBy(group.entries, "day") : [];
     const count = splitsByDay

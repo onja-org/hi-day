@@ -3,8 +3,31 @@ import type { MembershipRole } from "./membership";
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
 
+/** Mirrors the backend's `INDUSTRY_VALUES`. */
+export type Industry =
+  | "software_it"
+  | "consulting"
+  | "marketing_advertising"
+  | "design"
+  | "finance"
+  | "healthcare"
+  | "education"
+  | "construction"
+  | "legal"
+  | "retail"
+  | "manufacturing"
+  | "non_profit"
+  | "government"
+  | "media"
+  | "other";
+
+export type WeekStart = "sunday" | "monday";
+
 /** The organisation's 3-way "Track apps & URLs" default. */
 export type AppUrlTracking = "off" | "apps" | "apps_urls";
+
+/** Which timer clients a member may track time from. */
+export type AllowedApps = "all" | "desktop_only" | "mobile_only";
 
 /**
  * Who may add manual time and edit previously-tracked time. Declared and
@@ -17,13 +40,19 @@ export type OrganisationProfile = {
   id: number;
   name: string;
   address: string | null;
+  industry: Industry | null;
+  taxId: string | null;
   website: string | null;
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
+  allowedApps: AllowedApps;
   timesheetModifyTime: TimesheetModifyTime;
+  /** Whether *you* may add manual time and edit tracked time — your role is
+   * admin, or your membership holds the Modify time exception. */
+  canModifyTime: boolean;
   timesheetRequireApproval: boolean;
   timesheetManagersApproveOwn: boolean;
   /** Whether the Reason field is compulsory when time is added, edited or deleted. */
@@ -35,6 +64,8 @@ export type OrganisationProfile = {
   workingHoursPerDay: number;
   /** The organisation's own IANA zone; 'UTC' until an admin changes it. */
   timezone: string;
+  /** 'monday' until an admin changes it. */
+  weekStartsOn: WeekStart;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -74,12 +105,18 @@ export type GetOrganisationResult =
  * section sends only its own. */
 export type UpdateOrganisationInput = {
   name?: string;
+  /** '' clears it, here and for `industry`, `taxId` and `website`. */
   address?: string;
+  industry?: Industry | "";
+  taxId?: string;
   website?: string;
+  weekStartsOn?: WeekStart;
+  timezone?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
+  allowedApps?: AllowedApps;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;

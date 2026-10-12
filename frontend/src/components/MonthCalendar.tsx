@@ -3,10 +3,12 @@
 import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { isAfter, isSameDay, isSameMonth, isWithinInterval } from "date-fns";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { buildMonthGrid } from "@/lib/buildMonthGrid";
 import type { DateRange } from "@/types/dateRange";
 
-const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const MONDAY_FIRST_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const SUNDAY_FIRST_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 type MonthCalendarProps = {
   month: Date;
@@ -21,10 +23,10 @@ type MonthCalendarProps = {
 };
 
 /** One month panel shared by `DateRangePicker` and `DatePicker`: header
- * with optional prev/next arrows, a Monday-first day grid highlighting the
- * selected range (a single day is a range with from = to), and an optional
- * footer date. Days outside the month or
- * after today aren't selectable — there's no tracked time in the future. */
+ * with optional prev/next arrows, a day grid starting on the organisation's
+ * week-start day and highlighting the selected range (a single day is a
+ * range with from = to), and an optional footer date. Days outside the month
+ * or after today aren't selectable — there's no tracked time in the future. */
 export function MonthCalendar({
   month,
   selection,
@@ -35,7 +37,10 @@ export function MonthCalendar({
   onNext,
   nextDisabled,
 }: MonthCalendarProps) {
+  const weekStart = useOrganisationWeekStart();
   const monthLabel = month.toLocaleDateString([], { month: "short", year: "numeric" });
+  const weekdayLabels =
+    weekStart === "sunday" ? SUNDAY_FIRST_LABELS : MONDAY_FIRST_LABELS;
 
   return (
     <section aria-label={monthLabel} className="flex w-72 flex-col">
@@ -69,7 +74,7 @@ export function MonthCalendar({
       </header>
 
       <div className="grid grid-cols-7 bg-primary/10 text-center text-sm font-medium text-primary">
-        {WEEKDAY_LABELS.map((label) => (
+        {weekdayLabels.map((label) => (
           <span key={label} className="py-2">
             {label}
           </span>
@@ -77,7 +82,7 @@ export function MonthCalendar({
       </div>
 
       <div className="grid grid-cols-7 gap-y-1 p-1 text-center text-sm">
-        {buildMonthGrid(month).map((day) => {
+        {buildMonthGrid(month, weekStart).map((day) => {
           const disabled = !isSameMonth(day, month) || isAfter(day, today);
           const isEndpoint = isSameDay(day, selection.from) || isSameDay(day, selection.to);
           const inRange = isWithinInterval(day, { start: selection.from, end: selection.to });

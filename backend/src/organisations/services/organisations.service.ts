@@ -10,8 +10,11 @@ import { OrganisationRegion } from '../../database/entities/organisation-region.
 import { Team } from '../../database/entities/team.entity';
 import { TimesheetReason } from '../../database/entities/timesheet-reason.entity';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
+import { AllowedApps, DEFAULT_ALLOWED_APPS } from '../allowed-apps';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
+import { DEFAULT_WEEK_START } from '../company-profile';
+import type { Industry, WeekStart } from '../company-profile';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import {
   DEFAULT_TIMESHEET_MANAGERS_APPROVE_OWN,
@@ -41,13 +44,24 @@ export interface OrganisationProfile {
   id: number;
   name: string;
   address: string | null;
+  industry: Industry | null;
+  taxId: string | null;
   website: string | null;
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
+  allowedApps: AllowedApps;
   timesheetModifyTime: TimesheetModifyTime;
+  /**
+   * Whether *the caller* may add manual time and edit tracked time — the
+   * Modify time setting, their own override over the Organisation's
+   * default. Resolved here so the UI doesn't combine the two itself. Gates
+   * every role, an admin included; role decides only whose time, not
+   * whether.
+   */
+  canModifyTime: boolean;
   timesheetRequireApproval: boolean;
   timesheetManagersApproveOwn: boolean;
   timesheetRequireReason: boolean;
@@ -57,6 +71,7 @@ export interface OrganisationProfile {
   workingHoursPerDay: number;
   /** Falls back to UTC, the value every Organisation was created with. */
   timezone: string;
+  weekStartsOn: WeekStart;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -68,11 +83,15 @@ export interface OrganisationProfile {
 
 interface OrganisationSettings {
   address?: string | null;
+  industry?: Industry | null;
+  taxId?: string | null;
   website?: string | null;
+  weekStartsOn?: WeekStart;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
+  allowedApps?: AllowedApps;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;
@@ -183,7 +202,12 @@ export class OrganisationsService {
       throw new NotFoundException('No organisation found for this user.');
     }
 
-    return this.toProfile(membership.organisation, membership.role, userId);
+    return this.toProfile(
+      membership.organisation,
+      membership.role,
+      userId,
+      membership.timesheetModifyTime,
+    );
   }
 
   /**
@@ -273,8 +297,19 @@ export class OrganisationsService {
     }
     organisation.settings = {
       ...organisation.settings,
-      ...(dto.address !== undefined ? { address: dto.address } : {}),
-      ...(dto.website !== undefined ? { website: dto.website } : {}),
+      // `||`, not `??`: '' means cleared, and storing it would read back
+      // as "set, but blank".
+      ...(dto.address !== undefined
+        ? { address: dto.address.trim() || null }
+        : {}),
+      ...(dto.industry !== undefined ? { industry: dto.industry || null } : {}),
+      ...(dto.taxId !== undefined ? { taxId: dto.taxId.trim() || null } : {}),
+      ...(dto.website !== undefined
+        ? { website: dto.website.trim() || null }
+        : {}),
+      ...(dto.weekStartsOn !== undefined
+        ? { weekStartsOn: dto.weekStartsOn }
+        : {}),
       ...(dto.idleHandling !== undefined
         ? { idleHandling: dto.idleHandling }
         : {}),
@@ -286,6 +321,9 @@ export class OrganisationsService {
         : {}),
       ...(dto.appUrlTracking !== undefined
         ? { appUrlTracking: dto.appUrlTracking }
+        : {}),
+      ...(dto.allowedApps !== undefined
+        ? { allowedApps: dto.allowedApps }
         : {}),
       ...(dto.timesheetModifyTime !== undefined
         ? { timesheetModifyTime: dto.timesheetModifyTime }
@@ -337,6 +375,17 @@ export class OrganisationsService {
     };
   }
 
+  /** Narrow, like `getIdlePolicy`: the dashboard services bucket time by
+   * week and need this without the whole `OrganisationProfile`. */
+  async getWeekStart(organisationId: string): Promise<WeekStart> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return settings.weekStartsOn ?? DEFAULT_WEEK_START;
+  }
+
   /**
    * Read by other services (e.g. the dashboard summary) that need the
    * daily-hours target without depending on the full `OrganisationProfile`
@@ -363,18 +412,37 @@ export class OrganisationsService {
    * own narrow method rather than making device routes depend on the full
    * `OrganisationProfile` shape (same rationale as `getIdlePolicy`).
    */
-  async getCaptureSettings(organisationId: string): Promise<CaptureSettings> {
+  /**
+   * `userId` resolves that person's `Membership.appUrlTracking` override;
+   * without it only the organisation default is returned, which is all a
+   * caller asking about the org as a whole (disclosure) needs.
+   */
+  async getCaptureSettings(
+    organisationId: string,
+    userId?: string,
+  ): Promise<CaptureSettings> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
     });
     const settings = organisation.settings as OrganisationSettings;
+    const membership = userId
+      ? await this.memberships.findOne({
+          where: {
+            userId,
+            organisationId,
+            status: MembershipStatus.ACTIVE,
+          },
+        })
+      : null;
 
     return {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
       appUrlTracking:
-        settings.appUrlTracking ?? DEFAULT_CAPTURE_SETTINGS.appUrlTracking,
+        membership?.appUrlTracking ??
+        settings.appUrlTracking ??
+        DEFAULT_CAPTURE_SETTINGS.appUrlTracking,
       screenshotsEnabled:
         settings.screenshotsEnabled ??
         DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
@@ -391,13 +459,19 @@ export class OrganisationsService {
     organisation: Organisation,
     role: MembershipRole,
     userId: string,
+    /** The caller's own override; `null`/omitted inherits the org default. */
+    membershipModifyTime: TimesheetModifyTime | null = null,
   ): OrganisationProfile {
     const settings = organisation.settings as OrganisationSettings;
+    const modifyTime =
+      settings.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
 
     return {
       id: organisation.publicId,
       name: organisation.name,
       address: settings.address ?? null,
+      industry: settings.industry ?? null,
+      taxId: settings.taxId ?? null,
       website: settings.website ?? null,
       role,
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
@@ -407,8 +481,9 @@ export class OrganisationsService {
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
-      timesheetModifyTime:
-        settings.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME,
+      allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
+      timesheetModifyTime: modifyTime,
+      canModifyTime: (membershipModifyTime ?? modifyTime) === 'add_edit',
       timesheetRequireApproval:
         settings.timesheetRequireApproval ?? DEFAULT_TIMESHEET_REQUIRE_APPROVAL,
       timesheetManagersApproveOwn:
@@ -428,6 +503,7 @@ export class OrganisationsService {
       workingHoursPerDay:
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       timezone: settings.timezone ?? DEFAULT_TIMEZONE,
+      weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
       userId,
       isOwner: organisation.ownerUserId === userId,
       deletionScheduledFor:

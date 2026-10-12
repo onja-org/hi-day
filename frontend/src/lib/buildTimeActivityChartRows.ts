@@ -1,5 +1,6 @@
 import { groupEntriesBy } from "@/lib/groupEntriesBy";
 import { splitEntrySeconds } from "@/lib/splitEntrySeconds";
+import type { WeekStart } from "@/types/organisation";
 import type { ReportChartRow } from "@/types/reportChart";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -9,9 +10,10 @@ export function buildTimeActivityChartRows(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames,
+  weekStart: WeekStart = "monday",
 ): ReportChartRow[] {
   if (grouping === "none") return [];
-  return groupEntriesBy(entries, grouping, teamNames).map((group) => ({
+  return groupEntriesBy(entries, grouping, teamNames, weekStart).map((group) => ({
     label: group.label,
     values: splitEntrySeconds(group.entries),
   }));

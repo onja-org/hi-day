@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarBlankIcon } from "@phosphor-icons/react";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { getWeekRange } from "@/lib/getWeekRange";
 import { Label } from "@/components/ui/form/Label";
 import { StepNavigator } from "@/components/StepNavigator";
@@ -25,7 +26,12 @@ export function WeekNavigator({
   label,
   zone,
 }: WeekNavigatorProps) {
-  const { start, end } = getWeekRange(new Date(), weekOffset, zone);
+  const { start, end } = getWeekRange(
+    new Date(),
+    weekOffset,
+    zone,
+    useOrganisationWeekStart(),
+  );
 
   return (
     <div className="flex flex-col gap-1">

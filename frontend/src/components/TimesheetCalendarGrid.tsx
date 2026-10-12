@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { format, getDay, setDefaultOptions, startOfWeek } from "date-fns";
+import { format, getDay, startOfWeek } from "date-fns";
 import { useMemo, useState } from "react";
 import {
   Calendar,
@@ -13,7 +13,9 @@ import {
   buildCalendarEvents,
   type CalendarEvent,
 } from "@/lib/buildCalendarEvents";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { asZonedWallClock } from "@/lib/timezone";
+import { weekStartsOnIndex } from "@/lib/weekStartsOnIndex";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import {
@@ -32,16 +34,7 @@ type TimesheetCalendarGridProps = {
   now: Date;
 };
 
-setDefaultOptions({ weekStartsOn: 1 });
-
 const GRID_START_TIME = new Date(1970, 0, 1, 6, 0, 0);
-
-const localizer = dateFnsLocalizer({
-  format,
-  getDay,
-  startOfWeek,
-  locales: {},
-});
 
 const formats: Formats = {
   timeGutterFormat: (date) => formatTimeOfDay(date),
@@ -74,6 +67,19 @@ export function TimesheetCalendarGrid({
   now,
 }: TimesheetCalendarGridProps) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const weekStartsOn = weekStartsOnIndex(useOrganisationWeekStart());
+  // Not at module scope: react-big-calendar takes the week's first day from
+  // the localizer, and the organisation can change it.
+  const localizer = useMemo(
+    () =>
+      dateFnsLocalizer({
+        format,
+        getDay,
+        startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn }),
+        locales: {},
+      }),
+    [weekStartsOn],
+  );
   const events = useMemo(
     () => buildCalendarEvents(entries, now, zone),
     [entries, now, zone],
