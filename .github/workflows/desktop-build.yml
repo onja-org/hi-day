@@ -82,6 +82,12 @@ jobs:
             desktop/release/latest*.yml
             desktop/release/*.blockmap
           if-no-files-found: error
+          # Only a hand-off to the publish job below (users download from the
+          # releases repo), so don't keep ~770MB per release around for the
+          # default 90 days — that filled the Actions storage quota and
+          # blocked the 0.3.2 release. A manual dispatch build has to be
+          # downloaded within a day.
+          retention-days: 1
 
   # Permanent (not workflow_dispatch-only) because Windows CI needs to
   # build whatever lives under native/win/resolver/ for every release, same
