@@ -99,12 +99,17 @@ mac:
       arch: [x64, arm64]
   category: public.app-category.productivity
   # Still no real Developer ID certificate (see README's "Known
-  # limitations") — identity: null means electron-builder skips proper
-  # signing, so hardenedRuntime/entitlements below are prepared but inert
-  # until Step 27's real signing/notarization setup lands. Left in now
-  # rather than later because they're specifically about what Stage F's
-  # permission model needs, not about signing itself.
-  identity: null
+  # limitations"), so "-" ad-hoc signs instead: a signature with no
+  # publisher behind it. `null` skipped signing entirely, and an unsigned
+  # build doesn't open at all on Apple Silicon — packaging edits the
+  # bundle, invalidating the signature Electron's binaries ship with, and
+  # macOS calls the app "damaged" with no way to open it anyway. Ad-hoc
+  # signed, it opens after the one-time Gatekeeper step in the README's
+  # "Opening a test build on macOS". Hardened runtime stays on: the
+  # entitlements' disable-library-validation is what lets an ad-hoc app
+  # load Electron's frameworks and the native addons. Swap this for the
+  # real identity when Step 27's signing/notarization lands.
+  identity: "-"
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist

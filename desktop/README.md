@@ -321,6 +321,31 @@ pnpm --filter desktop dist:win     # NSIS installer — build on Windows (or CI)
 pnpm --filter desktop dist:mac     # dmg + zip — must build on macOS (or CI); needs Xcode command line tools
 ```
 
+### Opening a test build on macOS
+
+Mac builds are ad-hoc signed — signed, but with no Apple-verified publisher
+(see **Unsigned** under **Known limitations**). macOS opens them once you
+let it:
+
+1. Open the `.dmg` and drag **Hi Day** into **Applications**. Use the
+   `arm64` build on Apple Silicon and `x64` on Intel.
+2. Open Hi Day. macOS refuses because the developer can't be verified —
+   click **Done** (or **OK**).
+3. Go to **System Settings → Privacy & Security**, scroll to **Security**,
+   and click **Open Anyway** next to the Hi Day message. Confirm with your
+   password. From then on it opens normally.
+
+If macOS instead says Hi Day "is damaged and can't be opened" (common with
+a build downloaded through a browser), clear the download quarantine flag
+and open it again:
+
+```bash
+xattr -cr "/Applications/Hi Day.app"
+```
+
+An ad-hoc signature changes on every build, so after installing a new test
+build macOS asks for Screen Recording, Accessibility and Automation again.
+
 `electron-builder` can only reliably produce a Windows or macOS installer
 on that OS (or in CI using the matching runner) — it isn't practical to
 cross-compile all three from one Linux machine. `.github/workflows/desktop-build.yml`
@@ -410,7 +435,8 @@ output — not just assumed from source-mode success):
   turned it on.
 - **Unsigned.** No Apple notarization or Windows Authenticode certificate
   yet, so macOS Gatekeeper and Windows SmartScreen will both warn on
-  install. Signing is deferred, matching the earlier device-management
+  install. Mac builds are ad-hoc signed so they can open at all — see
+  **Opening a test build on macOS**. Signing is deferred, matching the earlier device-management
   ticket's scope-down — see `docs/TECH_DESIGN.md` §5 for the eventual plan.
 - **Silent auto-update on Windows and Linux only.** `src/main/auto-updater.ts`
   wraps `electron-updater`, checking the same public releases repo every 4h
