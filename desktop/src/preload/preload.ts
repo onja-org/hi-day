@@ -96,6 +96,8 @@ export type TrackingResult<T> =
       message: string;
       runningEntry?: TimeEntry;
       unauthorized?: boolean;
+      /** HTTP status; absent when the server could not be reached. */
+      status?: number;
     };
 
 /**

@@ -3,6 +3,16 @@ import type { MembershipRole } from "./membership";
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
 
+/** The organisation's 3-way "Track apps & URLs" default. */
+export type AppUrlTracking = "off" | "apps" | "apps_urls";
+
+/**
+ * Who may add manual time and edit previously-tracked time. Declared and
+ * configurable, but not yet consulted when a Time entry is created or
+ * edited — see CONTEXT.md's Timesheets settings entry.
+ */
+export type TimesheetModifyTime = "off" | "add_edit";
+
 export type OrganisationProfile = {
   id: number;
   name: string;
@@ -12,6 +22,12 @@ export type OrganisationProfile = {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  appUrlTracking: AppUrlTracking;
+  timesheetModifyTime: TimesheetModifyTime;
+  timesheetRequireApproval: boolean;
+  timesheetManagersApproveOwn: boolean;
+  /** Whether the Reason field is compulsory when time is added, edited or deleted. */
+  timesheetRequireReason: boolean;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;
@@ -54,13 +70,20 @@ export type GetOrganisationResult =
   | { ok: true; organisation: OrganisationProfile }
   | { ok: false; message: string };
 
+/** Every field optional: the API merges what it is given, so a settings
+ * section sends only its own. */
 export type UpdateOrganisationInput = {
-  name: string;
-  address: string;
+  name?: string;
+  address?: string;
   website?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  appUrlTracking?: AppUrlTracking;
+  timesheetModifyTime?: TimesheetModifyTime;
+  timesheetRequireApproval?: boolean;
+  timesheetManagersApproveOwn?: boolean;
+  timesheetRequireReason?: boolean;
   screenshotsEnabled?: boolean;
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;

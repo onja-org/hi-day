@@ -84,6 +84,9 @@ export type TimeEntryFormInput = {
   /** Omit to log for yourself — logging for someone else requires the
    * caller to be an org admin/manager, or a project-level manager. */
   membershipId?: string;
+  /** Why the time was added by hand; kept in the audit log and the Manual
+   * time edits report, same as an edit's or a deletion's. */
+  reason?: string;
 };
 
 export type UpdateTimeEntryInput = {

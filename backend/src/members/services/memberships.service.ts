@@ -14,6 +14,8 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { User } from '../../database/entities/user.entity';
+import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 
 export interface ActiveMemberSummary {
@@ -28,6 +30,12 @@ export interface ActiveMemberSummary {
   disclosureRegion: string | null;
   /** Their own IANA zone; null until a client has reported one. */
   timezone: string | null;
+  /** `null` means inherit the Organisation's default. */
+  appUrlTracking: AppUrlTracking | null;
+  /** `null` means inherit the Organisation's Timesheets "Modify time" default. */
+  timesheetModifyTime: TimesheetModifyTime | null;
+  /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
+  timesheetRequireApproval: boolean | null;
 }
 
 /** A Members-page row — list-only, since `update()` doesn't load the
@@ -206,6 +214,18 @@ export class MembershipsService {
 
     if (dto.disclosureRegion !== undefined) {
       membership.disclosureRegion = dto.disclosureRegion;
+    }
+
+    if (dto.appUrlTracking !== undefined) {
+      membership.appUrlTracking = dto.appUrlTracking;
+    }
+
+    if (dto.timesheetModifyTime !== undefined) {
+      membership.timesheetModifyTime = dto.timesheetModifyTime;
+    }
+
+    if (dto.timesheetRequireApproval !== undefined) {
+      membership.timesheetRequireApproval = dto.timesheetRequireApproval;
     }
 
     const renames = dto.firstName !== undefined || dto.lastName !== undefined;
@@ -423,6 +443,77 @@ export class MembershipsService {
       status: membership.status,
       joinedAt: membership.createdAt,
       disclosureRegion: membership.disclosureRegion,
+      appUrlTracking: membership.appUrlTracking,
+      timesheetModifyTime: membership.timesheetModifyTime,
+      timesheetRequireApproval: membership.timesheetRequireApproval,
     };
+  }
+
+  /**
+   * Admin-only bulk-reset: clears every Membership's `appUrlTracking`
+   * override for this Organisation, so each one falls back to the org
+   * default. Backs the "Apply to all" button on the Track apps & URLs
+   * setting — one UPDATE rather than N PATCHes from the client.
+   */
+  async resetAllAppUrlTrackingOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ appUrlTracking: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('appUrlTracking IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.app_url_tracking_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { cleared },
+        }),
+      );
+    }
+
+    return { cleared };
+  }
+
+  /**
+   * Admin-only bulk-reset for Timesheets per-member overrides. Clears both
+   * `timesheetModifyTime` and `timesheetRequireApproval` for every member
+   * in this Organisation in one UPDATE — backs the "Apply to all" button
+   * on the Modify time (manual time) setting.
+   */
+  async resetAllTimesheetOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ timesheetModifyTime: null, timesheetRequireApproval: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere(
+        '(timesheetModifyTime IS NOT NULL OR timesheetRequireApproval IS NOT NULL)',
+      )
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.timesheet_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { cleared },
+        }),
+      );
+    }
+
+    return { cleared };
   }
 }

@@ -8,6 +8,8 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
+import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from './membership-role.enum';
 import { MembershipStatus } from './membership-status.enum';
 import { Organisation } from './organisation.entity';
@@ -45,6 +47,28 @@ export class Membership {
    */
   @Column({ type: 'character varying', nullable: true })
   disclosureRegion: string | null;
+
+  /**
+   * Per-member override of the Organisation's "Track apps & URLs" default.
+   * `null` means inherit the org default (see
+   * `Organisation.settings.appUrlTracking`).
+   */
+  @Column({ type: 'character varying', nullable: true })
+  appUrlTracking: AppUrlTracking | null;
+
+  /**
+   * Per-member override of the Organisation's "Modify time (manual time)"
+   * default. `null` inherits (see `Organisation.settings.timesheetModifyTime`).
+   */
+  @Column({ type: 'character varying', nullable: true })
+  timesheetModifyTime: TimesheetModifyTime | null;
+
+  /**
+   * Per-member override of whether manual entries/edits require approval.
+   * `null` inherits (see `Organisation.settings.timesheetRequireApproval`).
+   */
+  @Column({ type: 'boolean', nullable: true })
+  timesheetRequireApproval: boolean | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

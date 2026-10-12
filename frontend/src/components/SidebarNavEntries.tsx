@@ -26,7 +26,7 @@ export function SidebarNavEntries({ entries, pathname, variant, onNavigate }: Si
           <SidebarNavLink
             key={entry.href}
             link={entry}
-            active={isNavLinkActive(pathname, entry.href)}
+            active={isNavLinkActive(pathname, entry)}
             variant={variant}
             onNavigate={onNavigate}
           />

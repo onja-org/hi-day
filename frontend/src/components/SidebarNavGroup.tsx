@@ -18,7 +18,7 @@ type SidebarNavGroupProps = {
  * (until toggled). On the icon-only rail (below lg) there's no room for a header
  * or labels, so its children show as plain icon links instead. */
 export function SidebarNavGroup({ group, pathname, variant, onNavigate }: SidebarNavGroupProps) {
-  const hasActiveChild = group.children.some((child) => isNavLinkActive(pathname, child.href));
+  const hasActiveChild = group.children.some((child) => isNavLinkActive(pathname, child));
   // Follows the current page until the user toggles it themselves — not a
   // one-off initial value, since a role-gated child (e.g. Members) only
   // appears once the caller's role has loaded.
@@ -64,7 +64,7 @@ export function SidebarNavGroup({ group, pathname, variant, onNavigate }: Sideba
           <SidebarNavLink
             key={child.href}
             link={child}
-            active={isNavLinkActive(pathname, child.href)}
+            active={isNavLinkActive(pathname, child)}
             variant={variant}
             nested
             onNavigate={onNavigate}

@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { UserIcon } from "@phosphor-icons/react";
 import { useDeleteTimeEntry } from "@/hooks/useDeleteTimeEntry";
+import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
 import { formatClockTimeWithSeconds } from "@/lib/formatClockTimeWithSeconds";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { Modal } from "./Modal";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { Spinner } from "./Spinner";
+import { TimeEntryReasonField } from "./TimeEntryReasonField";
 
 type TimeEntryDeleteModalProps = {
   organisationId: string;
@@ -19,8 +21,9 @@ type TimeEntryDeleteModalProps = {
  * Confirms one deletion by laying out exactly what is about to go — whose
  * hours, which project, the span to the second — then asking why.
  *
- * The reason is required here though optional at the API (batch delete has
- * nowhere to ask per entry). A deleted row leaves nothing but its audit
+ * Whether the reason is compulsory is the organisation's Require reason
+ * setting; the API keeps it optional either way, since batch delete has
+ * nowhere to ask per entry. A deleted row leaves nothing but its audit
  * entry, so this is the only part of that record a human wrote.
  */
 export function TimeEntryDeleteModal({
@@ -30,6 +33,7 @@ export function TimeEntryDeleteModal({
 }: TimeEntryDeleteModalProps) {
   const [reason, setReason] = useState("");
   const deleteMutation = useDeleteTimeEntry(organisationId, entry.id, onClose);
+  const isReasonRequired = useRequireTimeEntryReason();
   const trimmedReason = reason.trim();
 
   const day = new Date(entry.startedAt).toLocaleDateString([], {
@@ -83,20 +87,11 @@ export function TimeEntryDeleteModal({
           </div>
         </div>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
-            Reason*
-          </span>
-          <textarea
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            rows={4}
-            maxLength={500}
-            required
-            placeholder="Why are you deleting this time entry? (ex: Forgot to stop timer)"
-            className="w-full rounded-brand-sm border-2 border-ink bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </label>
+        <TimeEntryReasonField
+          organisationId={organisationId}
+          value={reason}
+          onChange={setReason}
+        />
 
         <div className="flex justify-end gap-3">
           <button
@@ -108,8 +103,11 @@ export function TimeEntryDeleteModal({
           </button>
           <button
             type="button"
-            disabled={trimmedReason === "" || deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate(trimmedReason)}
+            disabled={
+              (isReasonRequired && trimmedReason === "") ||
+              deleteMutation.isPending
+            }
+            onClick={() => deleteMutation.mutate(trimmedReason || undefined)}
             className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-error px-4 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-error/90 disabled:cursor-not-allowed disabled:bg-error/40 border-2 border-ink"
           >
             {deleteMutation.isPending && <Spinner />}

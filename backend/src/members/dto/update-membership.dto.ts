@@ -6,9 +6,14 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { ASSIGNABLE_MEMBERSHIP_ROLES } from '../assignable-membership-roles';
+import { APP_URL_TRACKING_VALUES } from '../../organisations/app-url-tracking';
+import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import { TIMESHEET_MODIFY_TIME_VALUES } from '../../organisations/timesheet-settings';
+import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 
 export class UpdateMembershipDto {
   @IsOptional()
@@ -52,4 +57,32 @@ export class UpdateMembershipDto {
   @IsNotEmpty()
   @MaxLength(100)
   lastName?: string;
+
+  /**
+   * Per-member override of the Organisation's Track apps & URLs default.
+   * `null` clears the override so this Membership falls back to the org
+   * default. Omit entirely to leave it unchanged.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: AppUrlTracking | null) => value !== null)
+  @IsIn(APP_URL_TRACKING_VALUES)
+  appUrlTracking?: AppUrlTracking | null;
+
+  /**
+   * Per-member override of the Timesheets "Modify time" default. `null`
+   * clears the override. Same inherit-when-null semantics as above.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: TimesheetModifyTime | null) => value !== null)
+  @IsIn(TIMESHEET_MODIFY_TIME_VALUES)
+  timesheetModifyTime?: TimesheetModifyTime | null;
+
+  /**
+   * Per-member override of the Timesheets "Require approval" default.
+   * `null` clears the override.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  timesheetRequireApproval?: boolean | null;
 }

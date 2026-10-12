@@ -27,6 +27,7 @@ export const PURGED_TABLES_BY_ORGANISATION_ID = [
   'time_entries',
   'notes',
   'saved_reports',
+  'timesheet_reasons',
   'activities',
   'invitations',
   'invite_links',
@@ -181,6 +182,7 @@ export class OrganisationPurgeService {
     await byOrg('time_entries');
     await byOrg('notes');
     await byOrg('saved_reports');
+    await byOrg('timesheet_reasons');
     await byOrg('activities');
     await byOrg('invitations');
     await byOrg('invite_links');

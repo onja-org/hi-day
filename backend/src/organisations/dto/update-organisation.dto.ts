@@ -11,8 +11,12 @@ import {
   Validate,
 } from 'class-validator';
 import { IsIanaTimezone } from '../../auth/dto/is-iana-timezone.validator';
+import { APP_URL_TRACKING_VALUES } from '../app-url-tracking';
+import type { AppUrlTracking } from '../app-url-tracking';
 import { IDLE_HANDLING_VALUES } from '../idle-policy';
 import type { IdleHandling } from '../idle-policy';
+import { TIMESHEET_MODIFY_TIME_VALUES } from '../timesheet-settings';
+import type { TimesheetModifyTime } from '../timesheet-settings';
 
 export class UpdateOrganisationDto {
   @IsOptional()
@@ -41,6 +45,26 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsBoolean()
   windowTrackingEnabled?: boolean;
+
+  @IsOptional()
+  @IsIn(APP_URL_TRACKING_VALUES)
+  appUrlTracking?: AppUrlTracking;
+
+  @IsOptional()
+  @IsIn(TIMESHEET_MODIFY_TIME_VALUES)
+  timesheetModifyTime?: TimesheetModifyTime;
+
+  @IsOptional()
+  @IsBoolean()
+  timesheetRequireApproval?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  timesheetManagersApproveOwn?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  timesheetRequireReason?: boolean;
 
   @IsOptional()
   @IsBoolean()

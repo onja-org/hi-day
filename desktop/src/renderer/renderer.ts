@@ -1051,7 +1051,11 @@ async function loadTasks(projectId: string): Promise<void> {
   currentProjectTasks = [];
   selectedTaskId = null;
   if (!result.ok) {
-    handleTrackingFailure(result);
+    // Offline, tasks are optional and starting/switching still works (it is
+    // queued), so only a real rejection or a sign-out is worth a banner.
+    if (result.unauthorized || result.status !== undefined) {
+      handleTrackingFailure(result);
+    }
     updateCurrentTaskLabel();
     return;
   }
