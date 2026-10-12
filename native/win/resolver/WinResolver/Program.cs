@@ -110,6 +110,10 @@ async Task HandleResolveAsync(ResolveRequest request)
         return;
     }
 
+    // The title captured at focus time goes stale as soon as the person
+    // switches tabs, and would be reported against the new tab's URL.
+    focus = focus with { Title = FocusWatcher.ReadWindowTitle(new IntPtr(focus.Hwnd)) };
+
     if (IntegrityLevelChecker.IsElevatedRelativeToUs(request.Pid))
     {
         WriteLine(new ErrorResponse(request.Id, new ResolveFailure(

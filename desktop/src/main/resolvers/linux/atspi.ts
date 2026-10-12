@@ -594,6 +594,15 @@ export class AtspiClient {
     }
   }
 
+  /**
+   * The window's current title. Read on every resolve, not kept from
+   * activation: switching tabs retitles the window without activating it,
+   * so a title captured at focus time ends up paired with another tab's URL.
+   */
+  async readWindowTitle(bus: string, path: string): Promise<string> {
+    return await this.readName(bus, path);
+  }
+
   async readAddressBarText(bus: string, path: string): Promise<string> {
     const [text] = await this.call<[string]>(bus, path, TEXT_IFACE, 'GetText', 'ii', [0, -1]);
     return text;

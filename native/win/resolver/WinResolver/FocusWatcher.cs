@@ -141,7 +141,12 @@ public sealed class FocusWatcher : IDisposable
         FocusChanged?.Invoke(new FocusTarget((int)pid, hwnd.ToInt64(), appName, title));
     }
 
-    private static string ReadWindowTitle(IntPtr hwnd)
+    /// <summary>
+    /// Reads the caption Windows already holds for the window, so it can't
+    /// hang on an unresponsive browser. Also called on every resolve:
+    /// switching tabs retitles the window without a foreground event.
+    /// </summary>
+    public static string ReadWindowTitle(IntPtr hwnd)
     {
         var length = GetWindowTextLength(hwnd);
         if (length <= 0)

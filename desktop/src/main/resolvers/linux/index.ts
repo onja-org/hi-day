@@ -178,7 +178,11 @@ function startProtocolLoop(
         return;
       }
 
-      const url = await client.readAddressBarText(focus.bus, barPath);
+      // Read together so the title belongs to the same tab as the URL.
+      const [url, title] = await Promise.all([
+        client.readAddressBarText(focus.bus, barPath),
+        client.readWindowTitle(focus.bus, focus.path),
+      ]);
       if (url.trim().length === 0) {
         fail('[empty-address-bar] The address bar is empty.');
         return;
@@ -192,7 +196,7 @@ function startProtocolLoop(
         id: request.id,
         ok: true,
         url,
-        title: focus.title,
+        title,
         browser,
         private: null,
         source: 'atspi',
