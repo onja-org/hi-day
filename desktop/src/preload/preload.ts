@@ -247,6 +247,9 @@ const api = {
       ipcRenderer.invoke("window:close") as Promise<void>,
     setCompact: (compact: boolean): Promise<void> =>
       ipcRenderer.invoke("window:setCompact", compact) as Promise<void>,
+    onReopened: (listener: () => void): void => {
+      ipcRenderer.on("window:reopened", () => listener());
+    },
   },
   setup: {
     browserRestartPrompt: (): Promise<BrowserRestartPrompt> =>

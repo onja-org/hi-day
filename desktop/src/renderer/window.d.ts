@@ -165,6 +165,8 @@ declare global {
         show: () => Promise<void>;
         close: () => Promise<void>;
         setCompact: (compact: boolean) => Promise<void>;
+        /** Fires when the window comes back from being closed to the tray. */
+        onReopened: (listener: () => void) => void;
       };
       setup: {
         browserRestartPrompt: () => Promise<BrowserRestartPrompt>;

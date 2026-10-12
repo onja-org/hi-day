@@ -113,11 +113,12 @@ function showLoginView(errorMessage?: string): void {
   projects = [];
   projectsLoaded = false;
   idlePolicy = null;
-  todaySecondsByProject = new Map();
   lastTrackedProjectId = null;
   // Stops the clock, tells main to stop url-capture, and clears the row
   // highlight — otherwise the timer keeps counting behind the login screen.
   setRunning(null);
+  // After the stop, which folds the live entry into the totals.
+  todaySecondsByProject = new Map();
   clearTrackingError();
   timerDisplay.hidden = true;
   projectSearch.value = "";
@@ -465,6 +466,11 @@ let screenRecordingPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
 
 let serverOffsetMs = 0;
+/**
+ * The running entry's worked time as of `accountWorkedMsAt`, counted on
+ * this device's clock from there. Seeded from the server only when the app
+ * opens or something changed elsewhere — see refreshStatus.
+ */
 let accountWorkedMs = 0;
 let accountWorkedMsAt: number | null = null;
 /** The account total frozen at the instant this device paused. */
@@ -475,6 +481,8 @@ let projects: TrackedProject[] = [];
 let projectsLoaded = false;
 
 let todaySecondsByProject = new Map<string, number>();
+/** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
+let todaySecondsDayStart: number | null = null;
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
 // 24×24 icons. "Stop" rather than pause: pausing ends the entry.
@@ -630,6 +638,27 @@ let runningStateVersion = 0;
 
 function setRunning(entry: TimeEntry | null): void {
   runningStateVersion++;
+  const previous = runningEntry;
+  if ((entry?.id ?? null) !== (previous?.id ?? null)) {
+    // The ended entry's time stays as this device counted it, so stopping
+    // doesn't jump to whatever the server booked.
+    if (previous) {
+      todaySecondsByProject.set(
+        previous.projectId,
+        displayedSecondsFor(previous.projectId),
+      );
+    }
+    // A new entry counts from now, not from the last poll's baseline — that
+    // stale baseline is what made a restarted timer jump ahead, then back.
+    accountWorkedMs = 0;
+    accountWorkedMsAt = entry ? Date.now() : null;
+    pausedAtWorkedMs = 0;
+  } else if (entry && previous && entry.pausedAt && !previous.pausedAt) {
+    pausedAtWorkedMs = liveElapsedMs();
+  } else if (entry && previous && !entry.pausedAt && previous.pausedAt) {
+    accountWorkedMs = pausedAtWorkedMs;
+    accountWorkedMsAt = Date.now();
+  }
   if (entry) lastTrackedProjectId = entry.projectId;
   // "Accumulating", not just "an entry exists": a paused entry is still
   // non-null (endedAt stays null so the one-running-timer rule holds), so
@@ -803,16 +832,8 @@ function liveElapsedMs(): number {
   if (!runningEntry) return 0;
 
   if (runningEntry.pausedAt) return pausedAtWorkedMs;
-
-  if (accountWorkedMsAt === null) {
-    // Offline, or not polled yet: fall back to this device's own elapsed time
-    // so the timer stays useful, and let the next poll re-sync.
-    const startedAtMs = new Date(runningEntry.startedAt).getTime();
-    const pausedMs = runningEntry.pausedSeconds * 1000;
-    return Date.now() + serverOffsetMs - startedAtMs - pausedMs;
-  }
-
-  return accountWorkedMs + (Date.now() - accountWorkedMsAt);
+  // setRunning sets this whenever an entry starts running.
+  return accountWorkedMs + (Date.now() - (accountWorkedMsAt ?? Date.now()));
 }
 
 /** Re-reads today's per-Project totals from completed entries. */
@@ -833,6 +854,7 @@ async function refreshTodayTotals(): Promise<void> {
     );
   }
   todaySecondsByProject = totals;
+  todaySecondsDayStart = startOfToday();
 }
 
 function renderProjects(): void {
@@ -950,9 +972,6 @@ async function selectProject(projectId: string): Promise<void> {
     handleTrackingFailure(result);
     return;
   }
-  // The previous entry just ended, so its time moved from "live" into the
-  // recorded totals — re-read before rendering or its row briefly shows 0.
-  await refreshTodayTotals();
   setRunning(result.data);
 }
 
@@ -1167,18 +1186,29 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
     const result = await callTracking(() =>
       window.api.tracking.stop(entry.pausedAt!),
     );
-    if (result.ok) setRunning(null);
-    return result.ok;
+    if (!result.ok) return false;
+    setRunning(null);
+  } else {
+    const result = await callTracking(() =>
+      window.api.tracking.switchTo(entry.projectId, entry.taskId),
+    );
+    if (!result.ok) return false;
+    setRunning(result.data);
   }
-
-  const result = await callTracking(() =>
-    window.api.tracking.switchTo(entry.projectId, entry.taskId),
-  );
-  if (result.ok) setRunning(result.data);
-  return result.ok;
+  // A new day: yesterday's totals no longer apply.
+  await refreshTodayTotals();
+  tick();
+  return true;
 }
 
-async function refreshStatus(): Promise<void> {
+/**
+ * Polls the server for the running entry. The displayed time runs on this
+ * device's clock and is re-read from the server only when `resync` is set
+ * (the app opening or reopening), when the running entry was started or
+ * stopped somewhere else, or when the day rolls over — never just because
+ * the server's count differs from ours.
+ */
+async function refreshStatus(resync = false): Promise<void> {
   const versionAtStart = runningStateVersion;
   const result = await callTracking(() => window.api.tracking.status());
   if (!result.ok) {
@@ -1197,21 +1227,29 @@ async function refreshStatus(): Promise<void> {
   // for the whole session.
   if (!idlePolicy) void loadIdlePolicy();
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
-  accountWorkedMs = (result.data.workedSeconds ?? 0) * 1000;
-  accountWorkedMsAt = Date.now();
-  if (result.data.entry?.pausedAt) pausedAtWorkedMs = accountWorkedMs;
+  const workedMs = (result.data.workedSeconds ?? 0) * 1000;
+  const receivedAt = Date.now();
 
   const entry = result.data.entry;
   if (entry && (await reconcileDayBoundary(entry))) {
     return; // reconcile already applied the correct state
   }
-  // Re-read recorded totals on the same 15s cadence: an entry may have been
-  // ended elsewhere (the web console, a midnight split) and its time needs
-  // to move into the per-Project rows.
-  await refreshTodayTotals();
   // A click finished mid-poll; applying this snapshot would revert it.
   if (versionAtStart !== runningStateVersion) return;
+
+  const changedElsewhere = (entry?.id ?? null) !== (runningEntry?.id ?? null);
   setRunning(entry);
+  if (resync || changedElsewhere) {
+    accountWorkedMs = workedMs;
+    accountWorkedMsAt = receivedAt;
+    if (entry?.pausedAt) pausedAtWorkedMs = workedMs;
+    tick();
+  } else if (todaySecondsDayStart === startOfToday()) {
+    return;
+  }
+  // Also reached when the day rolled over, or the totals never loaded.
+  await refreshTodayTotals();
+  tick();
 }
 
 function startPolling(): void {
@@ -1315,7 +1353,6 @@ timerToggle.addEventListener("click", () => {
         : await window.api.tracking.pause();
       if (result.ok) {
         setRunning(result.data.endedAt ? null : result.data);
-        if (result.data.endedAt) await refreshTodayTotals();
       } else if (/no timer is currently running/i.test(result.message)) {
         // Already stopped server-side: resync instead of showing an error.
         await refreshStatus();
@@ -1343,6 +1380,10 @@ switchButton.addEventListener("click", () => {
     if (result.ok) {
       clearTrackingError();
       setRunning(result.data);
+      // That ended the entry running elsewhere, which this device never
+      // counted — only the server has its time.
+      await refreshTodayTotals();
+      tick();
     } else {
       handleTrackingFailure(result);
     }
@@ -1373,6 +1414,9 @@ async function discardIdleTimeAndResume(
     return;
   }
   setRunning(null);
+  // This device counted the idle stretch too; the server's total is the
+  // one with it taken out.
+  await refreshTodayTotals();
 
   const startResult = await callTracking(() =>
     window.api.tracking.start(resumeProjectId, taskId),
@@ -1452,7 +1496,7 @@ async function runInitTracking(): Promise<void> {
 
   await loadIdlePolicy();
 
-  await refreshStatus();
+  await refreshStatus(true);
 
   if (!runningEntry) {
     await startTracking();
@@ -1461,5 +1505,11 @@ async function runInitTracking(): Promise<void> {
   void refreshCapturePermissionBanner();
   startPolling();
 }
+
+// Closing the window only hides it to the tray, so reopening it doesn't rerun
+// setup — re-read the day's time from the server here instead.
+window.api.windowControls.onReopened(() => {
+  if (pollHandle) void refreshStatus(true);
+});
 
 void init();

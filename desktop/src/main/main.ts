@@ -441,6 +441,17 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+/**
+ * The person opening Hi Day again from the tray, the dock or a second
+ * launch. Closing only hides the window, so the renderer never reloads —
+ * this tells it to re-read the day's time from the server instead.
+ */
+function reopenMainWindow(): void {
+  const wasHidden = mainWindow !== null && !mainWindow.isVisible();
+  showMainWindow();
+  if (wasHidden) mainWindow?.webContents.send("window:reopened");
+}
+
 /** Swaps between the full window and the always-on-top compact bar. */
 function setCompactWindow(compact: boolean): void {
   if (!mainWindow) return;
@@ -467,12 +478,12 @@ function createTray(): void {
   tray.setToolTip("Hi Day");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open Hi Day", click: showMainWindow },
+      { label: "Open Hi Day", click: reopenMainWindow },
       { type: "separator" },
       { label: "Quit Hi Day", click: () => app.quit() },
     ]),
   );
-  tray.on("click", showMainWindow);
+  tray.on("click", reopenMainWindow);
 }
 
 async function registerIpcHandlers(): Promise<void> {
@@ -1140,7 +1151,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", showMainWindow);
+  app.on("second-instance", reopenMainWindow);
 
   void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
@@ -1150,7 +1161,7 @@ if (!gotSingleInstanceLock) {
     createTray();
     startAutoUpdater((line) => console.log(line));
 
-    app.on("activate", showMainWindow);
+    app.on("activate", reopenMainWindow);
   });
 
   app.on("window-all-closed", () => {

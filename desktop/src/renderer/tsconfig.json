@@ -1,0 +1,6 @@
+{
+  // Editors only auto-discover a project named `tsconfig.json`; without this,
+  // renderer files open without window.d.ts and every `window.api` errors.
+  // The build still uses tsconfig.renderer.json directly.
+  "extends": "../../tsconfig.renderer.json"
+}

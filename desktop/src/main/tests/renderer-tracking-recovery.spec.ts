@@ -64,11 +64,32 @@ interface Scenario {
   runningElsewhere?: boolean;
   /** Overrides the shrunk poll cadence — a long one means no retry fires on its own. */
   pollMs?: number;
+  /** How far the server's count of each entry falls short of this device's clock. */
+  serverShortfallSeconds?: number;
 }
 
 function launch(scenario: Scenario) {
   const dom = new JSDOM(rendererMarkup(), { runScripts: 'outside-only', pretendToBeVisual: true });
-  const window = dom.window as unknown as Window & { api: unknown; eval: (code: string) => void };
+  const window = dom.window as unknown as Window & {
+    api: unknown;
+    eval: (code: string) => void;
+    Date: DateConstructor;
+  };
+
+  // The renderer's clock, moved forward by `advanceClock` so a test can let
+  // minutes pass without waiting for them.
+  const clock = { offsetMs: 0 };
+  const now = () => Date.now() + clock.offsetMs;
+  const RealDate = window.Date;
+  window.Date = class extends RealDate {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) super(now());
+      else super(...(args as [string]));
+    }
+    static now() {
+      return now();
+    }
+  } as DateConstructor;
 
   const calls = { listProjects: 0, start: 0, status: 0, idlePolicy: 0 };
   const entry = {
@@ -81,6 +102,18 @@ function launch(scenario: Scenario) {
     pausedSeconds: 0,
   };
   let running: typeof entry | null = scenario.runningElsewhere ? entry : null;
+  let entrySeq = 1;
+  const reopenListeners: (() => void)[] = [];
+  const completed: { projectId: string; durationSeconds: number }[] = [];
+  /** Seconds the running entry has on the server's books. */
+  const serverWorkedSeconds = () =>
+    running
+      ? Math.max(
+          0,
+          Math.floor((now() - new Date(running.startedAt).getTime()) / 1000) -
+            (scenario.serverShortfallSeconds ?? 0),
+        )
+      : 0;
   /** Flip `revoked` mid-test to sign the device out server-side. */
   const server = { revoked: false };
   const ok = <T>(data: T) =>
@@ -105,23 +138,36 @@ function launch(scenario: Scenario) {
       listTasks: () => ok({ tasks: [] }),
       start: () => {
         calls.start += 1;
-        if (!server.revoked) running = entry;
-        return ok(entry);
+        const started = {
+          ...entry,
+          id: `e${++entrySeq}`,
+          startedAt: new Date(now()).toISOString(),
+        };
+        if (!server.revoked) running = started;
+        return ok(started);
       },
       switchTo: () => ok(entry),
       stop: () => ok(entry),
       status: () => {
         calls.status += 1;
-        return ok({ entry: running, now: new Date().toISOString(), workedSeconds: 0 });
+        return ok({
+          entry: running,
+          now: new Date(now()).toISOString(),
+          workedSeconds: serverWorkedSeconds(),
+        });
       },
       // Pausing ends the entry, as the backend does now.
       pause: () => {
-        if (!server.revoked) running = null;
-        return ok({ ...entry, endedAt: new Date().toISOString() });
+        const ended = { ...(running ?? entry), endedAt: new Date(now()).toISOString() };
+        if (!server.revoked && running) {
+          completed.push({ projectId: running.projectId, durationSeconds: serverWorkedSeconds() });
+          running = null;
+        }
+        return ok(ended);
       },
       resume: () => ok(entry),
       lastProject: () => Promise.resolve(null),
-      entriesBetween: () => ok([]),
+      entriesBetween: () => ok(completed),
       idlePolicy: () => {
         calls.idlePolicy += 1;
         if (!server.revoked && calls.idlePolicy <= (scenario.failingIdlePolicyLoads ?? 0)) {
@@ -149,6 +195,9 @@ function launch(scenario: Scenario) {
       show: async () => {},
       close: async () => {},
       setCompact: async () => {},
+      onReopened: (listener: () => void) => {
+        reopenListeners.push(listener);
+      },
     },
     setup: {
       browserRestartPrompt: () =>
@@ -165,9 +214,20 @@ function launch(scenario: Scenario) {
   window.eval(rendererScript(scenario.pollMs ?? FAST_POLL_MS));
 
   const document = dom.window.document;
+  /** "HH:MM:SS" on the main timer, as seconds. */
+  const timerSeconds = () => {
+    const [h, m, s] = document.getElementById('timer-display')!.textContent.split(':').map(Number);
+    return h * 3600 + m * 60 + s;
+  };
   return {
     calls,
     server,
+    timerSeconds,
+    advanceClock: (ms: number) => {
+      clock.offsetMs += ms;
+    },
+    /** Main's signal that the window came back from the tray. */
+    reopen: () => reopenListeners.forEach((listener) => listener()),
     isRunning: () => running !== null,
     projectCount: () => document.getElementById('project-count')!.textContent,
     trackingError: () => {
@@ -345,6 +405,77 @@ describe('renderer asks for login before the timer can start on an ended session
 
     expect(app.projectCount()).toBe('1');
     expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+});
+
+describe('renderer timer runs on the local clock', () => {
+  /** Lets a few status polls land, each of which could overwrite the display. */
+  const letPollsRun = async (app: ReturnType<typeof launch>) => {
+    const polls = app.calls.status;
+    await waitFor(() => app.calls.status >= polls + 3);
+  };
+
+  it('resumes from where it stopped instead of jumping to the server time', async () => {
+    const app = launch({ failingProjectLoads: 0, serverShortfallSeconds: 20 });
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    app.advanceClock(100_000);
+    await letPollsRun(app);
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(100);
+    expect(app.timerSeconds()).toBeLessThanOrEqual(101);
+
+    app.clickPlay(); // stop
+    await waitFor(() => !app.isRunning() && app.playReady());
+    const stoppedAt = app.timerSeconds();
+    expect(stoppedAt).toBeGreaterThanOrEqual(100);
+
+    // Stopped: neither the clock nor the server's shorter count moves it.
+    app.advanceClock(30_000);
+    await letPollsRun(app);
+    expect(app.timerSeconds()).toBe(stoppedAt);
+
+    app.clickPlay(); // start again
+    await waitFor(() => app.isRunning() && app.playReady());
+    expect(app.timerSeconds()).toBe(stoppedAt);
+
+    app.advanceClock(10_000);
+    await letPollsRun(app);
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(stoppedAt + 10);
+    expect(app.timerSeconds()).toBeLessThanOrEqual(stoppedAt + 11);
+    app.close();
+  });
+
+  it('does not count time spent stopped once the timer starts again', async () => {
+    // Long poll: no status poll lands between stop and start to hide a stale baseline.
+    const app = launch({ failingProjectLoads: 0, pollMs: 60_000 });
+    await waitFor(() => app.isRunning() && app.playReady());
+    app.advanceClock(100_000);
+    app.clickPlay(); // stop
+    await waitFor(() => !app.isRunning() && app.playReady());
+    const stoppedAt = app.timerSeconds();
+
+    app.advanceClock(30_000);
+    app.clickPlay(); // start again
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    expect(app.timerSeconds()).toBe(stoppedAt);
+    app.close();
+  });
+
+  it("re-reads the day's time from the server when the window is reopened", async () => {
+    const app = launch({ failingProjectLoads: 0, serverShortfallSeconds: 20 });
+    await waitFor(() => app.isRunning() && app.playReady());
+    app.advanceClock(100_000);
+    app.clickPlay(); // stop: the server books 80s, the device shows 100s
+    await waitFor(() => !app.isRunning() && app.playReady());
+    await letPollsRun(app);
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(100);
+
+    app.reopen();
+    await waitFor(() => app.timerSeconds() < 100);
+
+    expect(app.timerSeconds()).toBe(80);
     app.close();
   });
 });
