@@ -73,6 +73,35 @@ describe("createManualTimeEntry", () => {
     );
   });
 
+  it("sends the reason, so the Manual time edits report's add rows aren't blank", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ entry: { id: "te-1" }, message: "Time entry created" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createManualTimeEntry("org-1", {
+      projectId: "p-1",
+      startedAt: "2026-01-01T09:00",
+      endedAt: "2026-01-01T10:00",
+      reason: "Forgot to start timer",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/backend/organisations/org-1/projects/p-1/time-entries",
+      expect.objectContaining({
+        body: JSON.stringify({
+          taskId: undefined,
+          startedAt: new Date("2026-01-01T09:00").toISOString(),
+          endedAt: new Date("2026-01-01T10:00").toISOString(),
+          membershipId: undefined,
+          reason: "Forgot to start timer",
+        }),
+      }),
+    );
+  });
+
   it("surfaces the backend's error message on failure", async () => {
     vi.stubGlobal(
       "fetch",

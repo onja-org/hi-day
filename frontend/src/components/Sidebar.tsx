@@ -9,7 +9,9 @@ import {
   Desktop,
   FolderSimple,
   Gauge,
+  Buildings,
   Gear,
+  SquaresFour,
   ListChecks,
   Star,
   User,
@@ -18,11 +20,21 @@ import {
 } from "@phosphor-icons/react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { REPORTS } from "@/lib/reportCatalog";
+import type { Icon } from "@phosphor-icons/react";
 import type { NavEntry, NavLink } from "@/types/navigation";
+
+/** Keyed to match SettingsCards and SettingsHeader, so a group wears the
+ * same icon in the sidebar, on its card, and in its own header. */
+const SETTINGS_GROUP_ICONS: Record<string, Icon> = {
+  organization: Buildings,
+  members: Users,
+  tracking: ChartLineUp,
+};
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
 import { SidebarNavEntries } from "./SidebarNavEntries";
 
@@ -163,10 +175,37 @@ export function Sidebar({
     ...(isAdmin
       ? [
           {
-            kind: "link" as const,
+            kind: "group" as const,
             label: "Settings",
-            href: `/organisations/${organisationId}/settings`,
             icon: Gear,
+            children: [
+              // "All settings" first, so the card page listing every group
+              // is always one click away from inside a section. `exact`
+              // because its href is the parent of every section's — without
+              // it, it would light up on all of them instead of the group
+              // the section actually belongs to.
+              {
+                kind: "link" as const,
+                label: "All settings",
+                href: `/organisations/${organisationId}/settings`,
+                icon: SquaresFour,
+                exact: true,
+              },
+              ...SETTINGS_GROUPS.map((group) => ({
+                kind: "link" as const,
+                label: group.label,
+                href: settingsHref(
+                  organisationId,
+                  group.key,
+                  group.sections[0].key,
+                ),
+                // The link goes to the group's first section, but the group
+                // owns all of them — so every section in it keeps this entry
+                // highlighted, not just the one linked here.
+                activePrefix: `/organisations/${organisationId}/settings/${group.key}`,
+                icon: SETTINGS_GROUP_ICONS[group.key] ?? ChartLineUp,
+              })),
+            ],
           },
         ]
       : []),

@@ -992,6 +992,283 @@ describe('MembershipsService', () => {
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it('sets the per-member appUrlTracking override', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        appUrlTracking: null,
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource, save } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        appUrlTracking: 'apps_urls',
+      });
+
+      expect(result.appUrlTracking).toBe('apps_urls');
+      expect(save).toHaveBeenCalledWith(
+        Membership,
+        expect.objectContaining({ appUrlTracking: 'apps_urls' }),
+      );
+    });
+
+    it('clears the override when appUrlTracking is null', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        appUrlTracking: 'apps',
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource, save } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        appUrlTracking: null,
+      });
+
+      expect(result.appUrlTracking).toBeNull();
+      expect(save).toHaveBeenCalledWith(
+        Membership,
+        expect.objectContaining({ appUrlTracking: null }),
+      );
+    });
+  });
+
+  describe('resetAllAppUrlTrackingOverrides', () => {
+    function makeUpdateBuilder(affected: number) {
+      const qb = {
+        update: jest.fn(),
+        set: jest.fn(),
+        where: jest.fn(),
+        andWhere: jest.fn(),
+        execute: jest.fn().mockResolvedValue({ affected }),
+      };
+      qb.update.mockReturnValue(qb);
+      qb.set.mockReturnValue(qb);
+      qb.where.mockReturnValue(qb);
+      qb.andWhere.mockReturnValue(qb);
+      return qb;
+    }
+
+    it('clears every override for the organisation and records one audit entry', async () => {
+      const builder = makeUpdateBuilder(3);
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          createQueryBuilder: jest.fn().mockReturnValue(builder),
+        }),
+        auditLogService,
+      });
+
+      const result = await service.resetAllAppUrlTrackingOverrides(
+        'org-1',
+        'admin-1',
+      );
+
+      expect(result).toEqual({ cleared: 3 });
+      expect(builder.set).toHaveBeenCalledWith({ appUrlTracking: null });
+      expect(builder.where).toHaveBeenCalledWith(
+        'organisationId = :organisationId',
+        { organisationId: 'org-1' },
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'membership.app_url_tracking_overrides_reset',
+          organisationId: 'org-1',
+          actorUserId: 'admin-1',
+        }),
+      );
+    });
+
+    it('skips the audit entry when nothing was cleared', async () => {
+      const builder = makeUpdateBuilder(0);
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          createQueryBuilder: jest.fn().mockReturnValue(builder),
+        }),
+        auditLogService,
+      });
+
+      const result = await service.resetAllAppUrlTrackingOverrides(
+        'org-1',
+        'admin-1',
+      );
+
+      expect(result).toEqual({ cleared: 0 });
+      expect(record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetAllTimesheetOverrides', () => {
+    function makeUpdateBuilder(affected: number) {
+      const qb = {
+        update: jest.fn(),
+        set: jest.fn(),
+        where: jest.fn(),
+        andWhere: jest.fn(),
+        execute: jest.fn().mockResolvedValue({ affected }),
+      };
+      qb.update.mockReturnValue(qb);
+      qb.set.mockReturnValue(qb);
+      qb.where.mockReturnValue(qb);
+      qb.andWhere.mockReturnValue(qb);
+      return qb;
+    }
+
+    it('clears both timesheet overrides for the organisation and records one audit entry', async () => {
+      const builder = makeUpdateBuilder(4);
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          createQueryBuilder: jest.fn().mockReturnValue(builder),
+        }),
+        auditLogService,
+      });
+
+      const result = await service.resetAllTimesheetOverrides(
+        'org-1',
+        'admin-1',
+      );
+
+      expect(result).toEqual({ cleared: 4 });
+      expect(builder.set).toHaveBeenCalledWith({
+        timesheetModifyTime: null,
+        timesheetRequireApproval: null,
+      });
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'membership.timesheet_overrides_reset',
+          organisationId: 'org-1',
+          actorUserId: 'admin-1',
+        }),
+      );
+    });
+  });
+
+  describe('update — timesheet overrides', () => {
+    it('sets both timesheet overrides when provided', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        timesheetModifyTime: null,
+        timesheetRequireApproval: null,
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource, save } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        timesheetModifyTime: 'off',
+        timesheetRequireApproval: true,
+      });
+
+      expect(result.timesheetModifyTime).toBe('off');
+      expect(result.timesheetRequireApproval).toBe(true);
+      expect(save).toHaveBeenCalledWith(
+        Membership,
+        expect.objectContaining({
+          timesheetModifyTime: 'off',
+          timesheetRequireApproval: true,
+        }),
+      );
+    });
+
+    it('clears each override when passed null', async () => {
+      const caller = {
+        id: 'admin-membership',
+        userId: 'admin-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        timesheetModifyTime: 'off',
+        timesheetRequireApproval: true,
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update('org-1', 'membership-1', 'admin-1', {
+        timesheetModifyTime: null,
+        timesheetRequireApproval: null,
+      });
+
+      expect(result.timesheetModifyTime).toBeNull();
+      expect(result.timesheetRequireApproval).toBeNull();
+    });
   });
 
   describe('sendPasswordResets', () => {

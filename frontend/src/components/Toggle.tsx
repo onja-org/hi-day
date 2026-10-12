@@ -2,8 +2,11 @@ type ToggleProps = {
   name: string;
   label: string;
   description: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
+  /** Controlled use; omit both for an uncontrolled toggle that submits
+   * through the surrounding form. */
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  defaultChecked?: boolean;
 };
 
 /** A labeled on/off switch, styled as a real checkbox so it submits with the parent form. */
@@ -13,6 +16,7 @@ export function Toggle({
   description,
   checked,
   onCheckedChange,
+  defaultChecked,
 }: ToggleProps) {
   return (
     <label className="flex cursor-pointer items-start justify-between gap-4 py-3">
@@ -25,7 +29,12 @@ export function Toggle({
           type="checkbox"
           name={name}
           checked={checked}
-          onChange={(event) => onCheckedChange(event.target.checked)}
+          defaultChecked={checked === undefined ? defaultChecked : undefined}
+          onChange={
+            onCheckedChange
+              ? (event) => onCheckedChange(event.target.checked)
+              : undefined
+          }
           className="peer sr-only"
         />
         <span className="absolute inset-0 rounded-full bg-sidebar-active transition-colors duration-150 peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30" />

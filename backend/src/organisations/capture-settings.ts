@@ -1,5 +1,13 @@
+import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from './app-url-tracking';
+
 export interface CaptureSettings {
   windowTrackingEnabled: boolean;
+  /**
+   * 3-way organisation default for whether the agent records the app the user
+   * is in, and whether it also records the URL they're on inside a browser.
+   * Overridable per Membership (see `Membership.appUrlTracking`).
+   */
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   /** How often the desktop agent captures a screenshot, in seconds. */
   screenshotFrequencySeconds: number;
@@ -21,6 +29,7 @@ export const DEFAULT_SCREENSHOT_RETENTION_DAYS = 30;
  */
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   windowTrackingEnabled: true,
+  appUrlTracking: DEFAULT_APP_URL_TRACKING,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: DEFAULT_SCREENSHOT_FREQUENCY_SECONDS,
   screenshotRetentionDays: DEFAULT_SCREENSHOT_RETENTION_DAYS,

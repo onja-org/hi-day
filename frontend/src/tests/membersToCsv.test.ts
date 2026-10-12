@@ -14,6 +14,9 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
     joinedAt: "2026-02-19T10:00:00.000Z",
     disclosureRegion: null,
     timezone: null,
+    appUrlTracking: null,
+    timesheetModifyTime: null,
+    timesheetRequireApproval: null,
     projectIds: ["p-1", "p-2"],
     ...overrides,
   };

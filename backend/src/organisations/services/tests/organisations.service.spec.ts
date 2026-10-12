@@ -177,6 +177,11 @@ describe('OrganisationsService', () => {
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
         windowTrackingEnabled: true,
+        appUrlTracking: 'apps',
+        timesheetModifyTime: 'add_edit',
+        timesheetRequireApproval: false,
+        timesheetManagersApproveOwn: false,
+        timesheetRequireReason: true,
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
@@ -630,6 +635,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        appUrlTracking: 'apps',
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
@@ -656,6 +662,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        appUrlTracking: 'apps',
         screenshotsEnabled: true,
         screenshotFrequencySeconds: 120,
         screenshotRetentionDays: 7,

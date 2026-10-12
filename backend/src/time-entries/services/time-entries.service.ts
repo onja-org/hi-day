@@ -1090,6 +1090,9 @@ export class TimeEntriesService {
           taskId: task?.id ?? null,
           startedAt,
           endedAt,
+          // The report reads `metadata.reason` for every action; without
+          // this, every `add` row in it was permanently blank.
+          reason: dto.reason ?? null,
         },
       });
     });
