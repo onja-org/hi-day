@@ -19,10 +19,10 @@ const ok = { ok: true as const, data: entry };
 
 function client(overrides: Record<string, unknown> = {}) {
   return {
-    pauseTimer: vi.fn(async () => offline),
-    stopTimer: vi.fn(async () => offline),
-    startTimer: vi.fn(async () => offline),
-    switchTimer: vi.fn(async () => offline),
+    pauseTimer: vi.fn(() => Promise.resolve(offline)),
+    stopTimer: vi.fn(() => Promise.resolve(offline)),
+    startTimer: vi.fn(() => Promise.resolve(offline)),
+    switchTimer: vi.fn(() => Promise.resolve(offline)),
     ...overrides,
   } as never;
 }
@@ -42,7 +42,7 @@ describe('PendingTimerOps', () => {
 
     expect(result.ok && result.data.endedAt).toBeTruthy();
     expect(new PendingTimerOps(dir).load()).toEqual([
-      { type: 'stop', at: expect.any(String) },
+      { type: 'stop', at: expect.any(String) as string },
     ]);
   });
 
@@ -51,7 +51,7 @@ describe('PendingTimerOps', () => {
     ops.remember(entry);
     const rejected = { ...offline, status: 404 };
 
-    const result = await ops.pause('t', client({ pauseTimer: async () => rejected }));
+    const result = await ops.pause('t', client({ pauseTimer: () => Promise.resolve(rejected) }));
 
     expect(result.ok).toBe(false);
     expect(ops.load()).toEqual([]);
@@ -65,7 +65,7 @@ describe('PendingTimerOps', () => {
     const [op] = ops.load();
     expect(op).toMatchObject({ type: 'start', projectId: 'p2', taskId: 'task' });
 
-    const startTimer = vi.fn(async () => ok);
+    const startTimer = vi.fn(() => Promise.resolve(ok));
     expect(await ops.flush('t', client({ startTimer }))).toBe(true);
     expect(startTimer).toHaveBeenCalledWith('t', 'p2', 'task', (op as { at: string }).at);
     expect(ops.load()).toEqual([]);
@@ -101,7 +101,7 @@ describe('PendingTimerOps', () => {
     const rejected = { ...offline, status: 409 };
     const stopTimer = vi.fn();
     expect(
-      await ops.flush('t', client({ startTimer: async () => rejected, stopTimer })),
+      await ops.flush('t', client({ startTimer: () => Promise.resolve(rejected), stopTimer })),
     ).toBe(true);
     expect(stopTimer).not.toHaveBeenCalled();
   });
