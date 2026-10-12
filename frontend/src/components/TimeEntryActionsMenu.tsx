@@ -29,8 +29,8 @@ type MenuPosition = { top: number; left: number };
 
 /**
  * The row's Edit, Split and Delete actions behind one "Actions" control.
- * Edit and Split need `canEdit` (admin, or the Modify time exception, and
- * only on an entry whose owner you can see); Delete needs `canDelete`, which an
+ * Edit and Split need `canEdit` (the Modify time setting, and only on an
+ * entry whose owner you can see); Delete needs `canDelete`, which an
  * entry's own owner also has — so a row offering only Delete is normal.
  *
  * The panel is portalled to `document.body`: the table sits in an

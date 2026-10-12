@@ -1,10 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Per-member override of the Organisation's "Allowed apps" setting.
- * Nullable: `NULL` means inherit the org default. Hand-written, same
- * reasoning as `1790920000000-AddMembershipAppUrlTracking`.
- */
+/** Per-member override of "Allowed apps"; `NULL` inherits the org default. */
 export class AddMembershipAllowedApps1790950000000 implements MigrationInterface {
   name = 'AddMembershipAllowedApps1790950000000';
 

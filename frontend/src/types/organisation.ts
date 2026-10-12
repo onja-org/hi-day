@@ -50,8 +50,8 @@ export type OrganisationProfile = {
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   timesheetModifyTime: TimesheetModifyTime;
-  /** Whether *you* may add manual time and edit tracked time — your role is
-   * admin, or your membership holds the Modify time exception. */
+  /** Whether *you* may add manual time and edit tracked time. Gates every
+   * role, admins included; your role decides only whose time. */
   canModifyTime: boolean;
   timesheetRequireApproval: boolean;
   timesheetManagersApproveOwn: boolean;

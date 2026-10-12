@@ -104,11 +104,8 @@ export class UrlSessionsService {
   ): Promise<SyncResult> {
     const membership = await this.getActiveMembership(organisationId, userId);
 
-    // The agent is supposed to have stopped capturing already, so reaching
-    // here means it is out of date, offline-queued from before the setting
-    // changed, or not ours. Acked without being stored: an empty ack would
-    // leave the batch pending on the device and retried forever, where
-    // acking tells it to drop them for good.
+    // Acked without being stored: an empty ack would leave the batch
+    // pending on the device, retried forever.
     const { appUrlTracking } =
       await this.organisationsService.getCaptureSettings(
         organisationId,

@@ -95,8 +95,7 @@ export interface IdlePolicy {
 
 export interface CaptureSettings {
   windowTrackingEnabled: boolean;
-  /** Whether the agent records the app in use, and the URL inside a
-   * browser. The organisation default with this member's override applied. */
+  /** The organisation default with this member's override applied. */
   appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;

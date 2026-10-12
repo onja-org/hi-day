@@ -54,13 +54,8 @@ export interface OrganisationProfile {
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   timesheetModifyTime: TimesheetModifyTime;
-  /**
-   * Whether *the caller* may add manual time and edit tracked time — the
-   * Modify time setting, their own override over the Organisation's
-   * default. Resolved here so the UI doesn't combine the two itself. Gates
-   * every role, an admin included; role decides only whose time, not
-   * whether.
-   */
+  /** The Modify time setting resolved for the caller, so the UI doesn't
+   * combine override and default itself. Gates every role, admins too. */
   canModifyTime: boolean;
   timesheetRequireApproval: boolean;
   timesheetManagersApproveOwn: boolean;
@@ -412,11 +407,8 @@ export class OrganisationsService {
    * own narrow method rather than making device routes depend on the full
    * `OrganisationProfile` shape (same rationale as `getIdlePolicy`).
    */
-  /**
-   * `userId` resolves that person's `Membership.appUrlTracking` override;
-   * without it only the organisation default is returned, which is all a
-   * caller asking about the org as a whole (disclosure) needs.
-   */
+  /** Without `userId` only the organisation default is returned — all a
+   * caller asking about the org as a whole (disclosure) needs. */
   async getCaptureSettings(
     organisationId: string,
     userId?: string,

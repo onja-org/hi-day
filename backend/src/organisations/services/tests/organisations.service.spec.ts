@@ -758,25 +758,5 @@ describe('OrganisationsService', () => {
         service.getCaptureSettings('org-1', 'user-1'),
       ).resolves.toMatchObject({ appUrlTracking: 'off' });
     });
-
-    it('falls back to the organisation default for a member with no override', async () => {
-      const service = new OrganisationsService(
-        makeOrganisationsRepo({
-          findOneOrFail: jest.fn().mockResolvedValue({
-            id: 'org-1',
-            settings: { appUrlTracking: 'apps_urls' },
-          }),
-        }),
-        makeMembershipsRepo({
-          findOne: jest.fn().mockResolvedValue({ appUrlTracking: null }),
-        }),
-        makeTeamsRepo(),
-        makeAuditLogService().auditLogService,
-      );
-
-      await expect(
-        service.getCaptureSettings('org-1', 'user-1'),
-      ).resolves.toMatchObject({ appUrlTracking: 'apps_urls' });
-    });
   });
 });

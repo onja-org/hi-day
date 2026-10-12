@@ -352,10 +352,9 @@ function stopSync(): void {
 }
 
 // macOS, Windows and Linux each have a resolver side-car feeding focus/URL
-// events in. On any other platform resolverSpawnConfigForPlatform returns
-// null and this degrades to timer/idle/lock/suspend-only tracking rather
-// than throwing. Started only by `recomputeSampling`, which owns the
-// lifecycle — see `syncUrlCapture`.
+// events in; anywhere else resolverSpawnConfigForPlatform returns null and
+// this degrades to timer/idle-only tracking rather than throwing. Started
+// only by `syncUrlCapture`, which owns the lifecycle.
 function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService {
   urlCaptureService?.stop();
   resolverOrchestrator?.stop();
@@ -651,9 +650,6 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
   function recomputeSampling(): void {
-    // Apps are recorded whenever the org (or this member's override)
-    // allows it — "Window titles" only strips the title from each sample,
-    // it never stops the sampler.
     if (appUrlTracking !== "off" && timerRunning) {
       windowSampler.start();
     } else {
@@ -664,9 +660,8 @@ async function registerIpcHandlers(): Promise<void> {
       void appEventUploader.flush();
     }
 
-    // Activity rides neither capture setting: it measures how busy tracked
-    // time was, which is neither an app, a URL nor a window title, so
-    // switching either off must not blank out everyone's percentage.
+    // Rides neither capture setting: activity is not an app, a URL or a
+    // window title, so switching those off must not blank it out.
     if (timerRunning) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
     } else if (activityTicker) {

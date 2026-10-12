@@ -12,10 +12,9 @@ export const TIMESHEET_MODIFY_TIME_VALUES: readonly TimesheetModifyTime[] = [
 ];
 
 /**
- * `off`, because this setting is an *exception* mechanism: adding and
- * editing time is an admin's by default, and an admin opts specific people
- * into it per Membership. Defaulting to `add_edit` would hand the right to
- * everyone in every Organisation the moment it started being enforced.
+ * `off`: this is an opt-in grant, given per Membership. Defaulting to
+ * `add_edit` would hand the right to everyone in every Organisation the
+ * moment it started being enforced.
  */
 export const DEFAULT_TIMESHEET_MODIFY_TIME: TimesheetModifyTime = 'off';
 

@@ -54,9 +54,8 @@ type Props<K extends string> = {
   onApplyToAll: () => void;
   isResetting: boolean;
   secondary?: SecondaryToggleColumn<K>;
-  /** Rendered between the organisation default and the member table, for a
-   * further org-wide switch that belongs with the default rather than
-   * under the overrides (Timesheets' "Approval permission"). */
+  /** Rendered between the default and the member table, for an org-wide
+   * switch belonging with the default (Timesheets' "Approval permission"). */
   belowDefault?: ReactNode;
 };
 

@@ -93,10 +93,8 @@ export class AppEventsService {
   ): Promise<void> {
     const membership = await this.getActiveMembership(organisationId, userId);
 
-    // Mirrors the agent's own gates, so a client that ignores them (a stale
-    // build, or a queue drained from before the setting changed) can't
-    // record what the organisation has turned off. Dropped silently rather
-    // than rejected: the agent has nothing to fix by retrying.
+    // Dropped silently rather than rejected: an agent that ignored the
+    // setting has nothing to fix by retrying.
     const captureSettings = await this.organisationsService.getCaptureSettings(
       organisationId,
       userId,
@@ -104,7 +102,6 @@ export class AppEventsService {
     if (captureSettings.appUrlTracking === 'off') {
       return;
     }
-    // "Window titles" strips the title, it does not drop the event.
     const keepTitles = captureSettings.windowTrackingEnabled;
 
     const rows = events.map((event) =>

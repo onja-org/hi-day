@@ -15,7 +15,6 @@ type MemberOverrideRowProps<K extends string> = {
   row: OverrideRow<K>;
   title: string;
   options: OrgDefaultOption<K>[];
-  /** The organisation default this row falls back to while it has no override. */
   orgValue: K;
   isSaving: boolean;
   onMemberChange: (membershipId: string, next: K | null) => void;
@@ -36,10 +35,8 @@ export function MemberOverrideRow<K extends string>({
   const isOverridden =
     row.override !== null || (row.secondaryOverride ?? null) !== null;
 
-  // Sits in the row's last control cell rather than a column of its own —
-  // a whole column for an occasional icon left the table badly weighted.
-  // Not an ✕: the switch beside it already draws one in its knob while off,
-  // so two would read as the same control twice.
+  // In the last control cell, not a column of its own. Not an ✕ either —
+  // the switch beside it already draws one in its knob while off.
   const clearButton = isOverridden && (
     <button
       type="button"

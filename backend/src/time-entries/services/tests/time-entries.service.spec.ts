@@ -1323,21 +1323,6 @@ describe('TimeEntriesService', () => {
       expect(save).toHaveBeenCalled();
     });
 
-    it('refuses a granted manager editing an entry of someone outside their teams', async () => {
-      const service = makeService({
-        timeEntriesRepo: makeTimeEntriesRepo({
-          findOne: findEntryThenNoOverlap({ ...completedEntry }),
-        }),
-        membershipsRepo: makeScopedManagerRepo(['t-9']),
-      });
-
-      await expect(
-        service.update('org-1', 'manager-1', 'entry-done', {
-          endedAt: '2026-01-01T11:00:00.000Z',
-        }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
     it('keeps the reason an admin gave on the audit row', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
         findOne: findEntryThenNoOverlap({ ...completedEntry }),

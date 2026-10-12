@@ -57,10 +57,7 @@ export class Membership {
   @Column({ type: 'character varying', nullable: true })
   appUrlTracking: AppUrlTracking | null;
 
-  /**
-   * Per-member override of the Organisation's "Allowed apps" default.
-   * `null` means inherit (see `Organisation.settings.allowedApps`).
-   */
+  /** `null` inherits (see `Organisation.settings.allowedApps`). */
   @Column({ type: 'character varying', nullable: true })
   allowedApps: AllowedApps | null;
 

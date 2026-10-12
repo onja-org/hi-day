@@ -1779,10 +1779,8 @@ export class TimeEntriesService {
     targetMembershipId: string | undefined,
   ): Promise<ValidatedStart> {
     const caller = await this.getActiveMembership(organisationId, userId);
-    // Hand-authored hours are the ones nobody's timer witnessed, so writing
-    // them takes the same Modify time permission as rewriting them. An
-    // admin holds it by default; everyone else needs the exception, and
-    // without it logs time by running a timer.
+    // Hand-authored hours are the ones no timer witnessed, so writing them
+    // takes the same permission as rewriting them.
     if (!(await this.canModifyTime(caller, organisationId))) {
       throw new ForbiddenException(
         'You do not have permission to add a time entry manually.',
@@ -1871,11 +1869,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * Whose timesheet this caller may read — and therefore, combined with
-   * `canModifyTime`, whose they may write. Their own always; an admin
-   * everyone's; a manager only members sharing a team they manage
-   * (`getManagerScopeTeamIds`, the same rule the Members list and Activity
-   * use). A manager who manages no team sees no one but themselves.
+   * Whose timesheet this caller may read, and so — with `canModifyTime` —
+   * whose they may write. Their own always, an admin everyone's, a manager
+   * only members sharing a team they manage: the same rule the Members
+   * list and Activity use, so a manager of no team sees only themselves.
    */
   private async canSeeMembership(
     caller: Membership,
@@ -2131,13 +2128,8 @@ export class TimeEntriesService {
     };
   }
 
-  /**
-   * Whether this person may add or rewrite recorded hours at all. Nobody
-   * holds it by default, an admin included — the Modify time setting gates
-   * every role, and only *whose* time you may touch varies by role (see
-   * `canSeeMembership`). An admin can of course grant it to themselves,
-   * but the switch still means what it says.
-   */
+  /** Whether this person may add or rewrite hours at all. Gates every
+   * role, an admin included; *whose* hours is `canSeeMembership`. */
   private async canModifyTime(
     membership: Membership,
     organisationId: string,
@@ -2148,14 +2140,8 @@ export class TimeEntriesService {
     return effective === 'add_edit';
   }
 
-  /**
-   * Whether this person may edit or split *this* entry: they hold Modify
-   * time at all, and they can see whose entry it is (`canSeeMembership`).
-   * So a granted member reaches only their own, and a granted manager only
-   * their teams' — the grant never widens who you can see.
-   *
-   * *Deleting* is a separate, wider rule — see `canDeleteEntry`.
-   */
+  /** Modify time, bounded by whose timesheet you can see — the grant never
+   * widens that. *Deleting* is wider still; see `canDeleteEntry`. */
   private async canEditEntry(
     viewerMembership: Membership,
     organisationId: string,
@@ -2171,19 +2157,14 @@ export class TimeEntriesService {
     );
   }
 
-  /**
-   * Refuses a timer started from a client the Organisation (or this
-   * member's override) does not allow. Checked on `start` only: a timer
-   * already running when the setting changed is left alone rather than
-   * killed out from under whoever is using it.
-   */
+  /** Checked on `start` only: a timer already running when the setting
+   * changed is left alone, not killed under whoever is using it. */
   private async assertAppAllowed(
     membership: Membership,
     organisationId: string,
     source: TimeEntrySource,
   ): Promise<void> {
-    // A manual entry is typed into the web console, not tracked by a timer
-    // app, so this never applies to one.
+    // Typed, not tracked by a timer app.
     if (source === TimeEntrySource.MANUAL) return;
 
     const allowed =

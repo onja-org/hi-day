@@ -11,7 +11,6 @@ import type {
 } from "./OrgDefaultWithOverrides";
 
 type IndividualOverridesSectionProps<K extends string> = {
-  /** Names the main column, as it does the organisation default above. */
   title: string;
   options: OrgDefaultOption<K>[];
   orgValue: K;
