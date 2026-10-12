@@ -20,21 +20,14 @@ import type {
 } from "@/types/membership";
 import type { AppUrlTracking } from "@/types/organisation";
 import { ErrorMessage } from "@/components/ErrorMessage";
-import { SettingsEmptySection } from "@/components/settings/SettingsEmptySection";
 import { Spinner } from "@/components/Spinner";
 import { Toggle } from "@/components/Toggle";
 import { OrgDefaultWithOverrides } from "./OrgDefaultWithOverrides";
 
-type SubNavKey =
-  | "track-apps-urls"
-  | "data-privacy"
-  | "remote-vs-in-office"
-  | "record-activity";
+type SubNavKey = "track-apps-urls" | "record-activity";
 
 const SUB_NAV: { key: SubNavKey; label: string }[] = [
   { key: "track-apps-urls", label: "Track apps & URLs" },
-  { key: "data-privacy", label: "Data privacy" },
-  { key: "remote-vs-in-office", label: "Remote vs in-office" },
   { key: "record-activity", label: "Record activity" },
 ];
 
@@ -76,18 +69,6 @@ export function ActivitySettings() {
       <div className="min-w-0">
         {active === "track-apps-urls" && <TrackAppsUrlsPanel />}
         {active === "record-activity" && <RecordActivityPanel />}
-        {active === "data-privacy" && (
-          <SettingsEmptySection
-            title="Data privacy"
-            description="Who may view each kind of captured data, and for how long it's kept. Nothing to configure yet."
-          />
-        )}
-        {active === "remote-vs-in-office" && (
-          <SettingsEmptySection
-            title="Remote vs in-office"
-            description="How the agent classifies work as remote or in-office — typically from the network a device joins. Nothing to configure yet."
-          />
-        )}
       </div>
     </div>
   );
