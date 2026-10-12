@@ -111,6 +111,8 @@ function showLoginView(errorMessage?: string): void {
   // Signing out is more than a view swap. Cleared first so the re-render
   // below empties the list rather than redrawing the old user's projects.
   projects = [];
+  projectsLoaded = false;
+  idlePolicy = null;
   todaySecondsByProject = new Map();
   lastTrackedProjectId = null;
   // Stops the clock, tells main to stop url-capture, and clears the row
@@ -131,6 +133,7 @@ function showLoginView(errorMessage?: string): void {
   show("login-view");
   stopPolling();
   stopPairingPoll();
+  cancelTrackingRetry();
 }
 
 const AUTO_UPDATE_POLL_INTERVAL_MS = 10_000;
@@ -468,6 +471,8 @@ let accountWorkedMsAt: number | null = null;
 let pausedAtWorkedMs = 0;
 let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
 let projects: TrackedProject[] = [];
+/** False until a project list has actually come back — an empty `projects` alone can't tell "none" from "not loaded". */
+let projectsLoaded = false;
 
 let todaySecondsByProject = new Map<string, number>();
 let currentProjectTasks: TrackedTask[] = [];
@@ -1011,22 +1016,27 @@ accessibilitySettingsButton.addEventListener("click", () => {
   void window.api.tracking.openPrivacySettings("accessibility");
 });
 
-/** Returns false when the session turned out to be signed out — callers chaining further tracking setup should stop rather than continue. */
-async function loadProjects(): Promise<boolean> {
+/**
+ * "signedOut" means the login screen is already showing; "failed" means the
+ * request didn't get through (the real error is on screen) and the list is
+ * still empty — callers chaining further tracking setup should stop either way.
+ */
+async function loadProjects(): Promise<"ok" | "failed" | "signedOut"> {
   const result = await window.api.tracking.listProjects();
   if (!result.ok) {
     handleTrackingFailure(result);
-    return !result.unauthorized;
+    return result.unauthorized ? "signedOut" : "failed";
   }
 
   projects = result.data;
+  projectsLoaded = true;
   await refreshTodayTotals();
   renderProjects();
 
   if (projects.length > 0) {
     await loadTasks(projects[0].id);
   }
-  return true;
+  return "ok";
 }
 
 function updateCurrentTaskLabel(): void {
@@ -1150,14 +1160,15 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
   if (new Date(entry.startedAt).getTime() >= startOfToday()) return false;
 
   if (entry.pausedAt) {
-    const result = await window.api.tracking.stop(entry.pausedAt);
+    const result = await callTracking(() =>
+      window.api.tracking.stop(entry.pausedAt!),
+    );
     if (result.ok) setRunning(null);
     return result.ok;
   }
 
-  const result = await window.api.tracking.switchTo(
-    entry.projectId,
-    entry.taskId,
+  const result = await callTracking(() =>
+    window.api.tracking.switchTo(entry.projectId, entry.taskId),
   );
   if (result.ok) setRunning(result.data);
   return result.ok;
@@ -1178,6 +1189,9 @@ async function refreshStatus(): Promise<void> {
   }
   syncFailing = false;
   lastSyncedAt = Date.now();
+  // Fetched once at setup; if that missed, idle detection would stay off
+  // for the whole session.
+  if (!idlePolicy) void loadIdlePolicy();
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   accountWorkedMs = (result.data.workedSeconds ?? 0) * 1000;
   accountWorkedMsAt = Date.now();
@@ -1242,6 +1256,13 @@ async function resolveProjectToTrack(): Promise<{
 
 /** Starts a new entry against the resolved Project. Shared by auto-start and play. */
 async function startTracking(): Promise<void> {
+  if (!projectsLoaded) {
+    // Setup is still waiting on its retry. Retrying now reaches the server,
+    // so an ended session lands on the login screen instead of "No projects".
+    // It starts the timer itself once projects load.
+    await initTracking();
+    return;
+  }
   clearTrackingError();
   const target = await resolveProjectToTrack();
   if (!target) {
@@ -1387,15 +1408,45 @@ idleAssignToggle.addEventListener("click", () => {
   }
 });
 
-async function initTracking(): Promise<void> {
-  clearTrackingError();
-  const stillSignedIn = await loadProjects();
-  if (!stillSignedIn) return; // loadProjects already switched to the login screen
+async function loadIdlePolicy(): Promise<void> {
+  const result = await callTracking(() => window.api.tracking.idlePolicy());
+  if (result.ok) idlePolicy = result.data;
+}
 
-  const idlePolicyResult = await callTracking(() =>
-    window.api.tracking.idlePolicy(),
-  );
-  idlePolicy = idlePolicyResult.ok ? idlePolicyResult.data : null;
+let trackingRetryHandle: ReturnType<typeof setTimeout> | null = null;
+
+function cancelTrackingRetry(): void {
+  if (trackingRetryHandle) clearTimeout(trackingRetryHandle);
+  trackingRetryHandle = null;
+}
+
+let initTrackingRun: Promise<void> | null = null;
+
+/** Joins a setup already in flight — a play click and a scheduled retry must not both start a timer. */
+function initTracking(): Promise<void> {
+  initTrackingRun ??= runInitTracking().finally(() => {
+    initTrackingRun = null;
+  });
+  return initTrackingRun;
+}
+
+async function runInitTracking(): Promise<void> {
+  cancelTrackingRetry();
+  clearTrackingError();
+  const projectsResult = await loadProjects();
+  if (projectsResult === "signedOut") return; // already on the login screen
+  if (projectsResult === "failed") {
+    // Autostart at OS login often runs before the network is up. Without a
+    // retry the list stays empty for the whole session — only logging out
+    // and back in (which reruns this) used to recover it.
+    trackingRetryHandle = setTimeout(
+      () => void initTracking(),
+      STATUS_POLL_INTERVAL_MS,
+    );
+    return;
+  }
+
+  await loadIdlePolicy();
 
   await refreshStatus();
 
