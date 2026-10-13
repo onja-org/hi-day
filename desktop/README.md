@@ -163,18 +163,19 @@ using a UUID generated on first run and persisted under Electron's
    dev` — it should skip straight to the logged-in screen instead of
    showing the login view again.
 
-8. **Test time tracking**: once logged in, pick a Project (and optionally
-   a Task) from the dropdowns and click **Start timer** — the elapsed time
-   should start ticking, polling `GET /device/time-entries/current` every
-   15s to stay in sync with whatever's actually running server-side.
-   **Pause** stops it from accumulating without ending it — the display
-   freezes and a **Resume** button takes its place; **Stop timer** ends it
-   from either state. Starting a *second* timer while one is already
+8. **Test time tracking**: once logged in, press play — or click a
+   Project in the list, and optionally pick a Task with the Task button —
+   and the elapsed time should start ticking, polling
+   `GET /device/time-entries/current` every 15s to stay in sync with
+   whatever's actually running server-side. The one play/stop button ends
+   the entry when pressed again (pausing *is* stopping now — see
+   `pending-timer-ops.ts`); clicking a different Project switches to it.
+   Starting a *second* timer while one is already
    running (e.g. from the web console's own start action, on the
    `organisations/:id/projects/:projectId/time-entries/start` route) shows
    the conflict and a **Stop the other timer and start this one** button
    instead of silently switching — see `docs/adr/0006-...` for why. The
-   project dropdown only lists Projects this account can log time against
+   project list only shows Projects this account can log time against
    (`GET /device/projects` — org admin/manager sees every active Project;
    anyone else needs their own Project membership).
 
@@ -489,19 +490,10 @@ output — not just assumed from source-mode success):
 - **`package.json`'s `author`/`homepage` are placeholders** (electron-builder
   requires both to produce a `.deb`). Replace with a real product contact
   before shipping this outside the team.
-- **No app icon yet.** Installers ship with Electron's default icon until
-  brand assets are provided.
 - **Session storage falls back to plaintext** if the OS has no available
   keyring (e.g. a Linux box with no `gnome-keyring`/`kwallet` running) —
   `safeStorage.isEncryptionAvailable()` covers the common case but isn't
   guaranteed everywhere.
-- **No background heartbeat.** The app doesn't yet poll `/devices/heartbeat`,
-  so a device stays "active" (per `computeDeviceStatus`) only as long as
-  something else updates `lastSeenAt` — starting/stopping a timer doesn't
-  touch it either; this is still open.
-- **No offline queue.** Timer start/stop calls hit the backend directly and
-  fail (with an on-screen error) if it's unreachable — the SQLite-backed
-  offline queue described in `docs/TECH_DESIGN.md` isn't built yet.
 - **`better-sqlite3` (used by url-capture's local store) is a native addon,
   and `pnpm test` and `pnpm dev`/packaging need it built for two *different*
   Node ABIs** — plain Node for vitest, Electron's own bundled Node for the
@@ -512,13 +504,6 @@ output — not just assumed from source-mode success):
   `NODE_MODULE_VERSION` mismatch, run `pnpm --filter desktop rebuild:node`
   to flip it back. `dist:*` isn't affected — electron-builder rebuilds
   native deps for Electron itself as part of packaging.
-- **Timer start/stop calls still aren't queued offline.** They hit the
-  backend directly and fail (with an on-screen error) if it's unreachable —
-  only captured *data* (app-events, screenshots) goes through the offline
-  queue described above; a live user action like starting/stopping a timer
-  needs the backend's immediate answer (e.g. whether a conflicting timer is
-  already running elsewhere) rather than a best-effort retry, so it was left
-  out of this pass's scope.
 - **The offline queue's delivery is at-least-once, not exactly-once** — see
   the "offline queue" paragraph above and the doc comment atop
   `offline-queue.ts` for the narrow crash window this leaves open, and why
