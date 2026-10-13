@@ -2,7 +2,9 @@ import type { TimeEntryListItem } from "@/types/timeEntry";
 
 type Gateable = Pick<TimeEntryListItem, "canEdit" | "endedAt" | "pausedAt">;
 
-const ADMIN_ONLY = "Only an admin can edit or split a time entry.";
+// Admins can always edit; for anyone else it's the Modify time setting.
+const NO_MODIFY_TIME =
+  "You can't change recorded time — ask an admin to turn on Modify time for you.";
 
 /**
  * Why Edit is unavailable on an entry, or undefined when it isn't.
@@ -14,7 +16,7 @@ const ADMIN_ONLY = "Only an admin can edit or split a time entry.";
  */
 export function entryEditBlockedReason(entry: Gateable): string | undefined {
   if (!entry.canEdit) {
-    return ADMIN_ONLY;
+    return NO_MODIFY_TIME;
   }
   if (entry.endedAt === null && !entry.pausedAt) {
     return "Pause or stop the timer first to edit this entry.";
@@ -29,7 +31,7 @@ export function entryEditBlockedReason(entry: Gateable): string | undefined {
  */
 export function entrySplitBlockedReason(entry: Gateable): string | undefined {
   if (!entry.canEdit) {
-    return ADMIN_ONLY;
+    return NO_MODIFY_TIME;
   }
   if (entry.endedAt === null) {
     return "Stop the timer first to split this entry.";

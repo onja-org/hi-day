@@ -1077,10 +1077,9 @@ export class TimeEntriesService {
 
   /**
    * Directly logs a completed span with an explicit start/end rather than
-   * running a live timer. Admin-only — everyone else logs time by running a
-   * timer, not by typing hours in (the gate lives in
-   * `resolveManualEntryTarget`). `dto.membershipId` puts the span on someone
-   * else's timesheet.
+   * running a live timer. Needs Modify time (always true for an admin; the
+   * gate lives in `resolveManualEntryTarget`). `dto.membershipId` puts the
+   * span on someone else's timesheet.
    */
   async createManual(
     organisationId: string,
@@ -1147,8 +1146,8 @@ export class TimeEntriesService {
   }
 
   /**
-   * Edits a Time entry. Admin-only, anyone's including their own — see
-   * `canEditEntry`.
+   * Edits a Time entry: needs Modify time, and only on a timesheet the
+   * editor can see — see `canEditEntry`.
    *
    * An unstopped entry (`endedAt IS NULL`, which a *paused* one also is)
    * can still have its Project, Task and start corrected. Only `endedAt` is
@@ -1339,7 +1338,7 @@ export class TimeEntriesService {
    * `endedAt` moved back. The second half is a new row inheriting Project,
    * Task, source and Device.
    *
-   * Admin-only (`canEditEntry`). An unstopped entry can't be split: with no
+   * Same permission as editing (`canEditEntry`). An unstopped entry can't be split: with no
    * end, the second half would have no span.
    */
   async split(
