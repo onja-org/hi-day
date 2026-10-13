@@ -117,7 +117,7 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
       )}
 
       <ReportStatus isLoading={isLoading || organisationQuery.isLoading} error={error} />
-      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} teamNames={teamNames} idleMembers={idleMembers} />}
+      {entries && <TimeActivityReportBody entries={entries} grouping={grouping} teamNames={teamNames} idleMembers={idleMembers} zone={zone} />}
     </div>
   );
 }

@@ -30,6 +30,14 @@ function entry(overrides: Partial<TimeEntryListItem>): TimeEntryListItem {
 }
 
 describe("groupEntriesBy", () => {
+  it("reads days and weeks in the given zone", () => {
+    // 22:30 UTC on Sunday 27 Sep is Monday 28 Sep in Nairobi.
+    const late = entry({ startedAt: "2026-09-27T22:30:00Z" });
+    expect(groupEntriesBy([late], "day", new Map(), "monday", "Africa/Nairobi")[0].id).toBe("2026-09-28");
+    expect(groupEntriesBy([late], "week", new Map(), "monday", "Africa/Nairobi")[0].id).toBe("2026-09-28");
+    expect(groupEntriesBy([late], "week", new Map(), "monday", "UTC")[0].id).toBe("2026-09-21");
+  });
+
   it("puts entries from the same Monday–Sunday week in one group", () => {
     const groups = groupEntriesBy(
       [

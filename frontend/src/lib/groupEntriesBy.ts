@@ -1,7 +1,6 @@
-import { endOfWeek, format, startOfWeek } from "date-fns";
-import { keyAsLocalDate } from "@/lib/timezone";
+import { format } from "date-fns";
+import { addDaysToKey, dateKeyInZone, keyAsLocalDate, startOfWeekKey } from "@/lib/timezone";
 import { formatReportDay } from "@/lib/formatReportDay";
-import { weekStartsOnIndex } from "@/lib/weekStartsOnIndex";
 import type { WeekStart } from "@/types/organisation";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -16,13 +15,17 @@ export type EntryGroup = {
 
 type GroupDescriptor = Omit<EntryGroup, "entries">;
 
-function dateKeyOf(entry: TimeEntryListItem): string {
-  return format(new Date(entry.startedAt), "yyyy-MM-dd");
+/** The day an entry started — in `zone` when given (a report reads in the
+ * organisation's), otherwise the browser's own. */
+function dateKeyOf(entry: TimeEntryListItem, zone?: string): string {
+  return zone
+    ? dateKeyInZone(entry.startedAt, zone)
+    : format(new Date(entry.startedAt), "yyyy-MM-dd");
 }
 
-/** "Mon, Sep 28, 2026" — the local day an entry started. */
-export function entryDayLabel(entry: TimeEntryListItem): string {
-  return formatReportDay(dateKeyOf(entry));
+/** "Mon, Sep 28, 2026" — the day an entry started, in `zone` when given. */
+export function entryDayLabel(entry: TimeEntryListItem, zone?: string): string {
+  return formatReportDay(dateKeyOf(entry, zone));
 }
 
 export function memberLabelOf(entry: TimeEntryListItem): string {
@@ -39,21 +42,20 @@ function describeGroups(
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames,
   weekStart: WeekStart,
+  zone: string | undefined,
 ): GroupDescriptor[] {
   switch (grouping) {
     case "day": {
-      const key = dateKeyOf(entry);
+      const key = dateKeyOf(entry, zone);
       return [{ id: key, label: formatReportDay(key), sortKey: keyAsLocalDate(key).getTime() }];
     }
     case "week": {
-      const weekOptions = { weekStartsOn: weekStartsOnIndex(weekStart) };
-      const start = startOfWeek(new Date(entry.startedAt), weekOptions);
-      const end = endOfWeek(start, weekOptions);
+      const start = startOfWeekKey(dateKeyOf(entry, zone), weekStart);
       return [
         {
-          id: format(start, "yyyy-MM-dd"),
-          label: `${formatReportDay(format(start, "yyyy-MM-dd"))} - ${formatReportDay(format(end, "yyyy-MM-dd"))}`,
-          sortKey: start.getTime(),
+          id: start,
+          label: `${formatReportDay(start)} - ${formatReportDay(addDaysToKey(start, 6))}`,
+          sortKey: keyAsLocalDate(start).getTime(),
         },
       ];
     }
@@ -78,6 +80,8 @@ export function groupEntriesBy(
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames = new Map(),
   weekStart: WeekStart = "monday",
+  /** The zone days and weeks are read in; the browser's when omitted. */
+  zone?: string,
 ): EntryGroup[] {
   const groups = new Map<string, EntryGroup>();
   for (const entry of entries) {
@@ -86,6 +90,7 @@ export function groupEntriesBy(
       grouping,
       teamNames,
       weekStart,
+      zone,
     )) {
       const existing = groups.get(described.id);
       if (existing) existing.entries.push(entry);

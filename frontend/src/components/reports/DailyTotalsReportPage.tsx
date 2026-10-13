@@ -39,7 +39,7 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
     useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const { canViewOthers, showsEveryone, activeFilters, members, teams, projectOptions, entries, isLoading, error } =
     useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
-  const report = entries ? buildDailyTotalsReport(entries, range) : undefined;
+  const report = entries ? buildDailyTotalsReport(entries, range, zone) : undefined;
   const table = report ? dailyTotalsTable(report) : undefined;
   const filenameBase = reportFilenameBase("daily-totals", range);
 

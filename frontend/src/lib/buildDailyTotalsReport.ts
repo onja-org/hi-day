@@ -27,8 +27,13 @@ function cellsFor(days: { dateKey: string; seconds: number }[], total: number): 
 }
 
 /** The Daily totals table: a project per row and a day per column, plus a total row. */
-export function buildDailyTotalsReport(entries: TimeEntryListItem[], range: DateRange): DailyTotalsReport {
-  const days = buildDailyTotals(entries, range.from, range.to);
+export function buildDailyTotalsReport(
+  entries: TimeEntryListItem[],
+  range: DateRange,
+  /** The zone the range's days are cut in — the report's own. */
+  zone?: string,
+): DailyTotalsReport {
+  const days = buildDailyTotals(entries, range.from, range.to, null, zone);
 
   const projects = new Map<string, TimeEntryListItem[]>();
   for (const entry of entries) {
@@ -37,7 +42,7 @@ export function buildDailyTotalsReport(entries: TimeEntryListItem[], range: Date
 
   const rows: ReportTableRow[] = [...projects.entries()]
     .map(([projectId, projectEntries]) => {
-      const projectDays = buildDailyTotals(projectEntries, range.from, range.to);
+      const projectDays = buildDailyTotals(projectEntries, range.from, range.to, null, zone);
       const total = projectDays.reduce((sum, day) => sum + day.seconds, 0);
       return {
         total,
