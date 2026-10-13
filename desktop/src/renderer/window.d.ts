@@ -139,7 +139,11 @@ declare global {
       tracking: {
         listProjects: () => Promise<TrackingResult<TrackedProject[]>>;
         listTasks: (projectId: string) => Promise<TrackingResult<{ tasks: TrackedTask[] }>>;
-        start: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
+        start: (
+          projectId: string,
+          taskId: string | null,
+          startedAt?: string,
+        ) => Promise<TrackingResult<TimeEntry>>;
         switchTo: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
         status: () => Promise<TrackingResult<CurrentTimer>>;

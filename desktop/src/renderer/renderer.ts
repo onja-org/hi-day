@@ -1437,13 +1437,17 @@ idleKeepButton.addEventListener("click", () => {
   idleHandled = false;
 });
 
-/** Ends the entry at when idleness started, then starts a fresh one on `resumeProjectId`. */
-async function discardIdleTimeAndResume(
-  resumeProjectId: string,
-): Promise<void> {
-  if (!pendingIdleDiscardAt) return;
+/**
+ * Ends the entry at when idleness started, then starts a fresh one on the
+ * same Project and Task — either now, dropping the idle stretch, or back at
+ * idle start onto `assignTo`, moving the stretch to that Project instead.
+ */
+async function resolveIdleTime(assignTo?: string): Promise<void> {
+  if (!pendingIdleDiscardAt || !runningEntry) return;
   const discardAt = pendingIdleDiscardAt;
-  const taskId = runningEntry?.taskId ?? null;
+  const projectId = assignTo ?? runningEntry.projectId;
+  // A Task belongs to one Project, so it can't follow the time elsewhere.
+  const taskId = assignTo ? null : runningEntry.taskId;
   hideIdleBanner();
 
   const stopResult = await callTracking(() =>
@@ -1454,13 +1458,13 @@ async function discardIdleTimeAndResume(
     return;
   }
   setRunning(null);
-  // This device counted the idle stretch too; the server's total is the
-  // one with it taken out.
-  await refreshTodayTotals();
 
   const startResult = await callTracking(() =>
-    window.api.tracking.start(resumeProjectId, taskId),
+    window.api.tracking.start(projectId, taskId, assignTo ? discardAt : undefined),
   );
+  // This device counted the idle stretch on the old Project; the server's
+  // totals have it dropped or moved.
+  await refreshTodayTotals();
   if (startResult.ok) {
     setRunning(startResult.data);
   } else {
@@ -1469,8 +1473,7 @@ async function discardIdleTimeAndResume(
 }
 
 idleDiscardButton.addEventListener("click", () => {
-  if (!runningEntry) return;
-  void discardIdleTimeAndResume(runningEntry.projectId);
+  void resolveIdleTime();
 });
 
 idleAssignToggle.addEventListener("click", () => {
@@ -1487,7 +1490,7 @@ idleAssignToggle.addEventListener("click", () => {
     button.textContent = project.name;
     button.addEventListener(
       "click",
-      () => void discardIdleTimeAndResume(project.id),
+      () => void resolveIdleTime(project.id),
     );
 
     const item = document.createElement("li");

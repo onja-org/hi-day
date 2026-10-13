@@ -848,9 +848,14 @@ async function registerIpcHandlers(): Promise<void> {
   // later play resumes to.
   ipcMain.handle(
     "tracking:start",
-    async (_event, projectId: string, taskId: string | null) => {
+    async (
+      _event,
+      projectId: string,
+      taskId: string | null,
+      startedAt?: string,
+    ) => {
       const result = await callDeviceApi((token) =>
-        pendingOps.start(token, projectId, taskId, apiClient),
+        pendingOps.start(token, projectId, taskId, apiClient, startedAt),
       );
       if (result.ok) authStore.rememberProject(projectId, taskId);
       // Instant local feedback for window tracking rather than waiting on

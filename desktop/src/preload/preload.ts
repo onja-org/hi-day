@@ -173,8 +173,9 @@ const api = {
     start: (
       projectId: string,
       taskId: string | null,
+      startedAt?: string,
     ): Promise<TrackingResult<TimeEntry>> =>
-      ipcRenderer.invoke("tracking:start", projectId, taskId) as Promise<
+      ipcRenderer.invoke("tracking:start", projectId, taskId, startedAt) as Promise<
         TrackingResult<TimeEntry>
       >,
     switchTo: (

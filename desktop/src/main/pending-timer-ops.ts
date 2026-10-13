@@ -137,12 +137,13 @@ export class PendingTimerOps {
     projectId: string,
     taskId: string | null,
     client: PendingTimerClient,
+    startedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
-    const at = new Date().toISOString();
+    const at = startedAt ?? new Date().toISOString();
     if (this.hasPending() && !(await this.flush(deviceToken, client))) {
       return this.queueStart(projectId, taskId, at);
     }
-    const result = await client.startTimer(deviceToken, projectId, taskId);
+    const result = await client.startTimer(deviceToken, projectId, taskId, startedAt);
     return isOffline(result) ? this.queueStart(projectId, taskId, at) : result;
   }
 
