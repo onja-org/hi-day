@@ -52,7 +52,9 @@ import {
 } from "./browser-restart-prompt";
 import {
   type CloseAction,
+  hasWaylandScreenshotGrant,
   markBrowserRestartPromptSeen,
+  markWaylandScreenshotGranted,
   rememberCloseAction,
   rememberedCloseAction,
 } from "./setup-state";
@@ -533,6 +535,9 @@ function refreshTrayMenu(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
+  const isWaylandScreenshotGranted = (): boolean =>
+    hasWaylandScreenshotGrant(app.getPath("userData")) ||
+    authStore.load()?.waylandScreenshotGranted === true;
   const pendingOps = new PendingTimerOps(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
@@ -616,8 +621,7 @@ async function registerIpcHandlers(): Promise<void> {
   offlineQueue.registerSender(screenshotUploader);
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
-    isWaylandScreenshotGranted: () =>
-      authStore.load()?.waylandScreenshotGranted ?? false,
+    isWaylandScreenshotGranted,
   });
 
   offlineQueue.start();
@@ -950,14 +954,14 @@ async function registerIpcHandlers(): Promise<void> {
           // only ever fire from an explicit "Grant Access" click below).
           // macOS reads the real OS permission; Linux/Wayland reads our own
           // record of the one-time portal grant (see
-          // AuthStore.rememberWaylandScreenshotGranted) since the portal
+          // setup-state's markWaylandScreenshotGranted) since the portal
           // itself has no query-only "check without asking" API the way
           // macOS's getMediaAccessStatus does.
           screenRecordingGranted:
             platform === "macos"
               ? systemPreferences.getMediaAccessStatus("screen") === "granted"
               : platform === "linux" && isWaylandSession()
-                ? (session.waylandScreenshotGranted ?? false)
+                ? isWaylandScreenshotGranted()
                 : true,
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
@@ -989,7 +993,7 @@ async function registerIpcHandlers(): Promise<void> {
       if (process.platform === "linux" && isWaylandSession()) {
         const buffer = await captureScreenViaPortal(true);
         if (!buffer) return;
-        authStore.rememberWaylandScreenshotGranted();
+        markWaylandScreenshotGranted(app.getPath("userData"));
         // The grant call itself already captured a real screenshot —
         // upload it instead of discarding it, same shape as any other
         // tick's sample.

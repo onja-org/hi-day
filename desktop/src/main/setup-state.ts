@@ -10,6 +10,7 @@ export type CloseAction = 'minimize' | 'quit';
 interface SetupState {
   browserRestartPromptSeen?: boolean;
   closeAction?: CloseAction;
+  waylandScreenshotGranted?: boolean;
 }
 
 /**
@@ -49,6 +50,20 @@ export function hasSeenBrowserRestartPrompt(userDataDir: string): boolean {
  */
 export function markBrowserRestartPromptSeen(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), browserRestartPromptSeen: true });
+}
+
+/**
+ * Whether the one-time Linux/Wayland "Grant Access" portal call (see
+ * screenshot-portal.ts) has been approved on this machine. The portal has
+ * no query-only API, so this is our own record — kept here rather than in
+ * the session because the grant belongs to the machine, not the login.
+ */
+export function hasWaylandScreenshotGrant(userDataDir: string): boolean {
+  return read(userDataDir).waylandScreenshotGranted === true;
+}
+
+export function markWaylandScreenshotGranted(userDataDir: string): void {
+  write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
 }
 
 function write(userDataDir: string, state: SetupState): void {

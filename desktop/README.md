@@ -543,8 +543,9 @@ output — not just assumed from source-mode success):
   single request/response with no live stream to cancel out from under, so
   it doesn't share that crash. It only ever captures silently
   (`interactive: false`) once a person has clicked **Grant Access** in the
-  capture-permission banner at least once (`AuthStore`'s
-  `waylandScreenshotGranted`, mirroring the macOS Screen Recording flow) —
+  capture-permission banner at least once (`setup-state.json`'s
+  `waylandScreenshotGranted`, kept across sign-out, mirroring the macOS
+  Screen Recording flow) —
   verified live against a real GNOME/Wayland session: one approved
   `interactive: true` call was enough for every later `interactive: false`
   call to keep capturing with no repeat dialog. KDE's portal backend is

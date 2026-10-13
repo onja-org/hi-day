@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   hasSeenBrowserRestartPrompt,
+  hasWaylandScreenshotGrant,
   markBrowserRestartPromptSeen,
+  markWaylandScreenshotGranted,
   rememberCloseAction,
   rememberedCloseAction,
 } from '../setup-state';
@@ -18,6 +20,16 @@ describe('setup state', () => {
 
   afterEach(() => {
     rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('remembers the Wayland screenshot grant alongside other answers', () => {
+    expect(hasWaylandScreenshotGrant(userDataDir)).toBe(false);
+    markBrowserRestartPromptSeen(userDataDir);
+
+    markWaylandScreenshotGranted(userDataDir);
+
+    expect(hasWaylandScreenshotGrant(userDataDir)).toBe(true);
+    expect(hasSeenBrowserRestartPrompt(userDataDir)).toBe(true);
   });
 
   it('has seen nothing on a fresh install', () => {
