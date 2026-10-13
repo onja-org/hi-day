@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -81,7 +82,7 @@ export class TimeEntriesController {
 
   @Patch(':timeEntryId')
   async update(
-    @Param('timeEntryId') timeEntryId: string,
+    @Param('timeEntryId', ParseUUIDPipe) timeEntryId: string,
     @Body() dto: UpdateTimeEntryDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<{ entry: TimeEntrySummary; message: string }> {
@@ -96,7 +97,7 @@ export class TimeEntriesController {
 
   @Post(':timeEntryId/split')
   async split(
-    @Param('timeEntryId') timeEntryId: string,
+    @Param('timeEntryId', ParseUUIDPipe) timeEntryId: string,
     @Body() dto: SplitTimeEntryDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<{
@@ -115,7 +116,7 @@ export class TimeEntriesController {
 
   @Delete(':timeEntryId')
   async remove(
-    @Param('timeEntryId') timeEntryId: string,
+    @Param('timeEntryId', ParseUUIDPipe) timeEntryId: string,
     @Body() dto: DeleteTimeEntryDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<{ message: string }> {
