@@ -26,9 +26,10 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
   // Fetches every status at once so both tabs can show their counts.
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const organisationQuery = useCurrentOrganisation();
-  const canManage =
+  const canManageAll =
     organisationQuery.data?.role === "admin" ||
     organisationQuery.data?.role === "manager";
+  const callerUserId = organisationQuery.data?.userId;
 
   if (projectsQuery.isLoading) {
     return (
@@ -64,7 +65,7 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
   // Only rows on screen count, so a search can't hide a ticked project
   // that a batch action would still touch.
   const selected = projects.filter((project) => selectedIds.has(project.id));
-  const columnCount = canManage ? 6 : 5;
+  const columnCount = canManageAll ? 6 : 5;
 
   function toggleSelected(projectId: string) {
     const next = new Set(selectedIds);
@@ -94,7 +95,7 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
         {actions}
       </div>
 
-      {canManage && (
+      {canManageAll && (
         <ProjectBatchActions
           organisationId={organisationId}
           status={statusTab}
@@ -109,7 +110,7 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-input-border text-primary-dark">
-            {canManage && (
+            {canManageAll && (
               <th className="w-10 py-3 pl-4">
                 <SelectAllCheckbox
                   label="Select all projects"
@@ -142,7 +143,13 @@ export function ProjectsTable({ organisationId, actions }: ProjectsTableProps) {
               key={project.id}
               organisationId={organisationId}
               project={project}
-              canManage={canManage}
+              canSelect={canManageAll}
+              canManage={
+                canManageAll ||
+                project.members.some(
+                  (member) => member.userId === callerUserId && member.role === "manager",
+                )
+              }
               columnCount={columnCount}
               selected={selectedIds.has(project.id)}
               onToggleSelected={() => toggleSelected(project.id)}
