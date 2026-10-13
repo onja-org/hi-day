@@ -63,6 +63,7 @@ import {
   ACCESSIBILITY_COPY,
   SETTINGS_DEEP_LINKS,
 } from "./resolvers/darwin/permission-copy";
+import { InstalledBrowserDetector } from "./resolvers/darwin/installed-browsers";
 import type { SettingsPane } from "./resolvers/darwin/permission-copy";
 import {
   DebugHarness,
@@ -535,6 +536,13 @@ function refreshTrayMenu(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
+  // Looked up once per launch: Spotlight is a few hundred ms, and the
+  // permission banner asks every 15s.
+  let firefoxInstalled: Promise<boolean> | null = null;
+  const isFirefoxInstalled = (): Promise<boolean> =>
+    (firefoxInstalled ??= new InstalledBrowserDetector().isInstalled(
+      "org.mozilla.firefox",
+    ));
   const isWaylandScreenshotGranted = (): boolean =>
     hasWaylandScreenshotGrant(app.getPath("userData")) ||
     authStore.load()?.waylandScreenshotGranted === true;
@@ -933,7 +941,7 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle(
     "tracking:permissionStatus",
-    (): TrackingResult<CapturePermissionStatus> => {
+    async (): Promise<TrackingResult<CapturePermissionStatus>> => {
       const session = authStore.load();
       if (!session) return NOT_LOGGED_IN;
 
@@ -965,10 +973,12 @@ async function registerIpcHandlers(): Promise<void> {
                 : true,
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
-          // "ask the user".
+          // "ask the user". Only Firefox needs Accessibility, so without it
+          // installed there's nothing to ask for.
           accessibilityGranted:
             platform === "macos"
-              ? systemPreferences.isTrustedAccessibilityClient(false)
+              ? systemPreferences.isTrustedAccessibilityClient(false) ||
+                !(await isFirefoxInstalled())
               : true,
           accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
         },
