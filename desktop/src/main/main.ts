@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   powerMonitor,
   shell,
   systemPreferences,
@@ -712,17 +713,40 @@ async function registerIpcHandlers(): Promise<void> {
   }
 
   /**
-   * Tells the renderer when an admin restricts tracking to another client,
-   * and pulls the window forward so it isn't missed — the server has
-   * already ended the running entry by this point, and someone left looking
-   * at a stopped timer behind other windows would carry on working
-   * believing it was still running.
+   * Tells the renderer when an admin restricts tracking to another client.
+   * The server has already ended the running entry by this point, so
+   * someone left looking at a stopped timer behind other windows would
+   * carry on working believing it was still running — hence the push to
+   * the front as well as the banner.
    */
   function announceAllowedApps(next: AllowedApps): void {
     if (next === allowedApps) return;
     const notice = allowedAppsNotice(next);
     mainWindow?.webContents.send("tracking:notice", notice);
-    if (notice) showMainWindow();
+    if (notice) alertTrackingStopped(notice);
+  }
+
+  /**
+   * Three escalating attempts, because a window manager is free to refuse
+   * any of them: a desktop notification, which survives even when the app
+   * may not take focus (the normal case on Linux, where focus-stealing
+   * prevention ignores `focus()` from a background process); a brief
+   * always-on-top pass, which is what actually raises the window when a
+   * plain `show()` is ignored; and a flashing taskbar entry as the last
+   * resort, cleared once the window is actually looked at.
+   */
+  function alertTrackingStopped(body: string): void {
+    if (Notification.isSupported()) {
+      new Notification({ title: "Time tracking stopped", body }).show();
+    }
+
+    showMainWindow();
+    if (!mainWindow) return;
+
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.flashFrame(true);
+    mainWindow.once("focus", () => mainWindow?.flashFrame(false));
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
