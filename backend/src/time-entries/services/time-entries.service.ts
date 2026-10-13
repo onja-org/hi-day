@@ -785,8 +785,12 @@ export class TimeEntriesService {
       take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
     });
 
+    const zonesThisBatch = new Map<string, string>();
     for (const entry of running) {
-      const zone = await this.organisationTimezone(entry.organisationId);
+      const zone = await this.organisationTimezone(
+        entry.organisationId,
+        zonesThisBatch,
+      );
       await this.splitAcrossDayBoundaries(
         entry.id,
         this.startOfDayInZone(now, zone),
@@ -906,11 +910,17 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run: a batch is usually one or two Organisations. */
-  private readonly timezoneByOrganisation = new Map<string, string>();
-
-  private async organisationTimezone(organisationId: string): Promise<string> {
-    const cached = this.timezoneByOrganisation.get(organisationId);
+  /**
+   * `seen` memoises within one batch — a job usually touches one or two
+   * Organisations. Passed in rather than held on the service, which is a
+   * singleton: a Map here would outlive every request and keep serving a
+   * zone an admin had already changed.
+   */
+  private async organisationTimezone(
+    organisationId: string,
+    seen: Map<string, string>,
+  ): Promise<string> {
+    const cached = seen.get(organisationId);
     if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
@@ -920,7 +930,7 @@ export class TimeEntriesService {
     // UTC is the value every Organisation was created with, and the right
     // answer when the row has gone.
     const zone = settings?.timezone ?? 'UTC';
-    this.timezoneByOrganisation.set(organisationId, zone);
+    seen.set(organisationId, zone);
     return zone;
   }
 
@@ -2180,44 +2190,26 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly allowedAppsByOrganisation = new Map<string, AllowedApps>();
-
   private async organisationAllowedApps(
     organisationId: string,
   ): Promise<AllowedApps> {
-    const cached = this.allowedAppsByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { allowedApps?: AllowedApps } | undefined;
-    const value = settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
-    this.allowedAppsByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
   }
-
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly modifyTimeByOrganisation = new Map<
-    string,
-    TimesheetModifyTime
-  >();
 
   private async organisationModifyTime(
     organisationId: string,
   ): Promise<TimesheetModifyTime> {
-    const cached = this.modifyTimeByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { timesheetModifyTime?: TimesheetModifyTime } | undefined;
-    const value =
-      settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
-    this.modifyTimeByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
   }
 
   /**

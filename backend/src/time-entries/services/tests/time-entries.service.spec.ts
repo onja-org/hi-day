@@ -756,6 +756,34 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    it('re-reads the organisation setting on every start, never a cached one', async () => {
+      let allowedApps = 'mobile_only';
+      const service = makeService({
+        organisationsRepo: {
+          findOne: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve({ settings: { timezone: 'UTC', allowedApps } }),
+            ),
+        } as unknown as Repository<Organisation>,
+      });
+      const startWeb = () =>
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        );
+
+      await expect(startWeb()).rejects.toBeInstanceOf(ForbiddenException);
+
+      allowedApps = 'all';
+
+      await expect(startWeb()).resolves.toBeDefined();
+    });
+
     it('allows the desktop agent under the same restriction', async () => {
       const save = jest.fn((entry: unknown) => Promise.resolve(entry));
       const service = makeService({
