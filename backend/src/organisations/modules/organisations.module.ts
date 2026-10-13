@@ -11,6 +11,7 @@ import { TimesheetReason } from '../../database/entities/timesheet-reason.entity
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { ScreenshotStorageModule } from '../../screenshots/modules/screenshot-storage.module';
+import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { OrganisationDeletionController } from '../controllers/organisation-deletion.controller';
 import { OrganisationsController } from '../controllers/organisations.controller';
 import { TimesheetReasonsController } from '../controllers/timesheet-reasons.controller';
@@ -33,6 +34,7 @@ import { TimesheetReasonsService } from '../services/timesheet-reasons.service';
     JwtAuthModule,
     EmailModule,
     ScreenshotStorageModule,
+    TimeEntriesModule,
   ],
   controllers: [
     OrganisationsController,

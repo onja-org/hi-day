@@ -29,7 +29,10 @@ import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
-import { DEFAULT_ALLOWED_APPS } from '../../organisations/allowed-apps';
+import {
+  DEFAULT_ALLOWED_APPS,
+  isTimerSourceAllowed,
+} from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { DEFAULT_TIMESHEET_MODIFY_TIME } from '../../organisations/timesheet-settings';
@@ -2180,14 +2183,66 @@ export class TimeEntriesService {
     const allowed =
       membership.allowedApps ??
       (await this.organisationAllowedApps(organisationId));
-    if (allowed === 'all') return;
-    if (allowed === 'desktop_only' && source === TimeEntrySource.AGENT) return;
+    if (isTimerSourceAllowed(source, allowed)) return;
 
     throw new ForbiddenException(
       allowed === 'desktop_only'
         ? 'Your organisation only allows time tracked from the desktop app.'
         : 'Your organisation only allows time tracked from the mobile app.',
     );
+  }
+
+  /**
+   * Ends every running entry whose client the Allowed apps setting no
+   * longer permits — called after the setting is saved, so a change takes
+   * effect at once rather than at the next `start`. Time already tracked
+   * is kept: the entry simply ends where the policy changed.
+   *
+   * Pass `membershipId` when one person's override changed; omit it when
+   * the organisation default did, which affects everyone inheriting it.
+   */
+  async stopEntriesDisallowedByApps(
+    organisationId: string,
+    membershipId?: string,
+  ): Promise<number> {
+    const running = await this.timeEntries.find({
+      where: {
+        organisationId,
+        endedAt: IsNull(),
+        ...(membershipId ? { membershipId } : {}),
+      },
+      relations: { membership: true },
+    });
+    if (running.length === 0) return 0;
+
+    const orgDefault = await this.organisationAllowedApps(organisationId);
+    const disallowed = running.filter(
+      (entry) =>
+        !isTimerSourceAllowed(
+          entry.source,
+          entry.membership?.allowedApps ?? orgDefault,
+        ),
+    );
+    if (disallowed.length === 0) return 0;
+
+    const now = new Date();
+    const ids = disallowed.map((entry) => entry.id);
+    await this.dataSource.transaction(async (manager) => {
+      // Pauses first, as suspending an Organisation does: an entry must
+      // never end with one of its pauses still open.
+      await manager.update(
+        TimeEntryPause,
+        { timeEntryId: In(ids), resumedAt: IsNull() },
+        { resumedAt: now },
+      );
+      await manager.update(TimeEntry, { id: In(ids) }, { endedAt: now });
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.stopped_by_allowed_apps',
+        organisationId,
+        metadata: { timeEntryIds: ids },
+      });
+    });
+    return disallowed.length;
   }
 
   private async organisationAllowedApps(

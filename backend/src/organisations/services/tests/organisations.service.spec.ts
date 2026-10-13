@@ -1,3 +1,4 @@
+import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
@@ -47,6 +48,12 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Membership>;
   }
 
+  function makeTimeEntriesService(): TimeEntriesService {
+    return {
+      stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
+    } as unknown as TimeEntriesService;
+  }
+
   function makeTeamsRepo(overrides: Partial<Repository<Team>> = {}) {
     return {
       find: jest.fn().mockResolvedValue([]),
@@ -72,6 +79,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         auditLogService,
+        makeTimeEntriesService(),
       );
 
       const organisation = await service.createForUser(manager, 'user-1', {
@@ -130,6 +138,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await service.createForUser(manager, 'user-1', { name: 'Acme Inc' });
@@ -164,6 +173,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.findCurrentForUser('user-1');
@@ -207,6 +217,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.findCurrentForUser('user-1')).rejects.toBeInstanceOf(
@@ -221,6 +232,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await service.findCurrentForUser('user-1').catch(() => undefined);
@@ -250,6 +262,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const teams = await service.listTeams('org-1', 'admin-1');
@@ -293,6 +306,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const teams = await service.listTeams('org-1', 'admin-1');
@@ -328,6 +342,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const teams = await service.listTeams('org-1', 'manager-1');
@@ -355,6 +370,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const teams = await service.listTeams('org-1', 'member-1');
@@ -380,6 +396,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const teams = await service.listTeams('org-1', 'member-1');
@@ -397,6 +414,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo({ findOne }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(
@@ -420,6 +438,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -457,6 +476,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -492,6 +512,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -522,6 +543,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -549,6 +571,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -573,6 +596,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -601,6 +625,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -623,6 +648,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
@@ -641,6 +667,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
@@ -661,6 +688,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
@@ -680,6 +708,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
@@ -701,6 +730,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
@@ -728,6 +758,7 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
@@ -752,6 +783,7 @@ describe('OrganisationsService', () => {
         }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
       );
 
       await expect(

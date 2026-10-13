@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { allowedAppsNotice } from "@/lib/allowedAppsNotice";
 import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
 import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
 import { startTimeEntry } from "@/lib/startTimeEntry";
@@ -8,6 +9,7 @@ import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
 import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboardSummary";
+import { useCurrentOrganisation } from "./useCurrentOrganisation";
 import { useMyProjects } from "./useMyProjects";
 import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 
@@ -27,6 +29,10 @@ export function useRunningTimer(organisationId: string) {
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  // Shown instead of offering a Start button the server would refuse.
+  const trackingNotice = allowedAppsNotice(
+    useCurrentOrganisation().data?.allowedApps ?? "all",
+  );
   const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
   // The web's own timer only — a device's is never displayed here. It does
@@ -179,6 +185,7 @@ export function useRunningTimer(organisationId: string) {
     // total before the person even presses Start.
     projectSecondsToday,
     conflictMessage,
+    trackingNotice,
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,

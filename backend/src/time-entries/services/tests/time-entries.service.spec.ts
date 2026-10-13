@@ -116,7 +116,9 @@ describe('TimeEntriesService', () => {
     };
     const remove = jest.fn().mockResolvedValue({ affected: 1 });
     const find = jest.fn().mockResolvedValue([]);
+    const update = jest.fn().mockResolvedValue({ affected: 1 });
     const manager = {
+      update,
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
       ),
@@ -135,6 +137,7 @@ describe('TimeEntriesService', () => {
       save,
       remove,
       find,
+      update,
       manager,
     };
   }
@@ -782,6 +785,59 @@ describe('TimeEntriesService', () => {
       allowedApps = 'all';
 
       await expect(startWeb()).resolves.toBeDefined();
+    });
+
+    it('stops a running web timer when the setting no longer permits it', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              source: TimeEntrySource.WEB,
+              membership: { allowedApps: null },
+            },
+          ]),
+        }),
+        organisationsRepo: {
+          findOne: jest.fn().mockResolvedValue({
+            settings: { allowedApps: 'desktop_only' },
+          }),
+        } as unknown as Repository<Organisation>,
+        dataSource,
+      });
+
+      await expect(service.stopEntriesDisallowedByApps('org-1')).resolves.toBe(
+        1,
+      );
+      // Open pauses closed, then the entries ended.
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+
+    it('leaves a running agent timer alone under the same setting', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              source: TimeEntrySource.AGENT,
+              membership: { allowedApps: null },
+            },
+          ]),
+        }),
+        organisationsRepo: {
+          findOne: jest.fn().mockResolvedValue({
+            settings: { allowedApps: 'desktop_only' },
+          }),
+        } as unknown as Repository<Organisation>,
+        dataSource,
+      });
+
+      await expect(service.stopEntriesDisallowedByApps('org-1')).resolves.toBe(
+        0,
+      );
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('allows the desktop agent under the same restriction', async () => {

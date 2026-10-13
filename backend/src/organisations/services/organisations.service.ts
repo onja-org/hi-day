@@ -9,6 +9,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationRegion } from '../../database/entities/organisation-region.enum';
 import { Team } from '../../database/entities/team.entity';
 import { TimesheetReason } from '../../database/entities/timesheet-reason.entity';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
 import { AllowedApps, DEFAULT_ALLOWED_APPS } from '../allowed-apps';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
@@ -123,6 +124,7 @@ export class OrganisationsService {
     @InjectRepository(Team)
     private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   async createForUser(
@@ -348,6 +350,10 @@ export class OrganisationsService {
     };
 
     await this.organisations.save(organisation);
+
+    if (dto.allowedApps !== undefined) {
+      await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);
+    }
 
     return this.toProfile(organisation, MembershipRole.ADMIN, userId);
   }
