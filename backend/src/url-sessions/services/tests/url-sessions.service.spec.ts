@@ -155,6 +155,28 @@ describe('UrlSessionsService', () => {
       );
     });
 
+    it('drops page titles while window titles are off', async () => {
+      const upsert = jest.fn().mockResolvedValue(undefined);
+      const service = makeService({
+        urlSessionsRepo: makeUrlSessionsRepo({ upsert }),
+        organisationsService: makeOrganisationsService({
+          windowTrackingEnabled: false,
+        }),
+      });
+
+      await service.sync('org-1', 'user-1', 'device-real', [makeEntry()]);
+
+      expect(upsert).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            url: 'https://example.com/page',
+            title: null,
+          }),
+        ],
+        ['id'],
+      );
+    });
+
     it('acks without storing when URL tracking is not enabled for this member', async () => {
       const upsert = jest.fn().mockResolvedValue(undefined);
       const service = makeService({

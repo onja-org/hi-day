@@ -306,9 +306,14 @@ function buildUrlSessionUploadFn(
   apiClient: ApiClient,
   authStore: AuthStore,
   deviceToken: string,
+  /** "Window titles" — off, page names are left out too, as it promises. */
+  keepTitles: () => boolean,
 ): UploadFn {
   return async (batch) => {
-    const result = await apiClient.syncUrlSessions(deviceToken, batch);
+    const result = await apiClient.syncUrlSessions(
+      deviceToken,
+      keepTitles() ? batch : batch.map((session) => ({ ...session, title: null })),
+    );
     if (result.ok) {
       return result.data;
     }
@@ -734,7 +739,12 @@ async function registerIpcHandlers(): Promise<void> {
 
     const service = startUrlCapture(
       session.deviceId,
-      buildUrlSessionUploadFn(apiClient, authStore, session.deviceToken),
+      buildUrlSessionUploadFn(
+        apiClient,
+        authStore,
+        session.deviceToken,
+        () => windowTrackingEnabled,
+      ),
     );
     // Seeded, or a timer already running would go uncaptured until the
     // renderer next pushed a state change.
