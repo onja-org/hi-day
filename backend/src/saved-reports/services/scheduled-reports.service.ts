@@ -158,6 +158,8 @@ export class ScheduledReportsService {
         schedule.dateRange as ReportDatePreset,
         now,
         zone,
+        // The same week the report shows on screen.
+        organisation.settings?.weekStartsOn === 'sunday' ? 'sunday' : 'monday',
       );
       const fromKey = dayKey(range.from, zone);
       const toKey = dayKey(range.to, zone);

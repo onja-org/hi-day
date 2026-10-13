@@ -87,7 +87,7 @@ export function weekdayOfKey(dateKey: string): number {
   return new Date(keyToUtcMs(dateKey)).getUTCDay();
 }
 
-/** The Monday of the week `dateKey` falls in — weeks start on Monday, as in the app's date picker. */
+/** The Monday of the week `dateKey` falls in. */
 export function mondayOfKey(dateKey: string): string {
   return addDaysToKey(dateKey, -((weekdayOfKey(dateKey) + 6) % 7));
 }

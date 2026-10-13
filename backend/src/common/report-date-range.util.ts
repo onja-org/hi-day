@@ -1,8 +1,10 @@
+import type { WeekStart } from '../organisations/company-profile';
 import {
   addDaysToKey,
   endOfDayInZone,
   mondayOfKey,
   startOfDayInZone,
+  weekdayOfKey,
   zonedParts,
 } from './zoned-time.util';
 
@@ -22,15 +24,25 @@ function firstOfMonth(dateKey: string): string {
   return `${dateKey.slice(0, 8)}01`;
 }
 
+/** The first day of the week `dateKey` falls in. */
+function weekStartOfKey(dateKey: string, weekStartsOn: WeekStart): string {
+  return weekStartsOn === 'sunday'
+    ? addDaysToKey(dateKey, -weekdayOfKey(dateKey))
+    : mondayOfKey(dateKey);
+}
+
 /**
  * The calendar days a preset covers, as of `now` in `zone` — the same
- * meanings the app's date picker gives them (weeks run Monday–Sunday;
- * "last week" and "last month" are whole periods before the current one).
+ * meanings the app's date picker gives them (weeks start on the
+ * organisation's chosen day; "last week" and "last month" are whole periods
+ * before the current one).
  */
 function presetDays(
   preset: ReportDatePreset,
   today: string,
+  weekStartsOn: WeekStart,
 ): { from: string; to: string } {
+  const weekStart = (key: string) => weekStartOfKey(key, weekStartsOn);
   switch (preset) {
     case 'today':
       return { from: today, to: today };
@@ -41,13 +53,13 @@ function presetDays(
     case 'last_7_days':
       return { from: addDaysToKey(today, -6), to: today };
     case 'last_week': {
-      const monday = mondayOfKey(addDaysToKey(today, -7));
-      return { from: monday, to: addDaysToKey(monday, 6) };
+      const first = weekStart(addDaysToKey(today, -7));
+      return { from: first, to: addDaysToKey(first, 6) };
     }
     case 'last_2_weeks':
       return {
-        from: mondayOfKey(addDaysToKey(today, -14)),
-        to: addDaysToKey(mondayOfKey(addDaysToKey(today, -7)), 6),
+        from: weekStart(addDaysToKey(today, -14)),
+        to: addDaysToKey(weekStart(addDaysToKey(today, -7)), 6),
       };
     case 'this_month':
       return { from: firstOfMonth(today), to: today };
@@ -63,8 +75,9 @@ export function resolveReportDateRange(
   preset: ReportDatePreset,
   now: Date,
   zone: string,
+  weekStartsOn: WeekStart = 'monday',
 ): { from: Date; to: Date } {
-  const days = presetDays(preset, zonedParts(now, zone).dateKey);
+  const days = presetDays(preset, zonedParts(now, zone).dateKey, weekStartsOn);
   return {
     from: startOfDayInZone(days.from, zone),
     to: endOfDayInZone(days.to, zone),
