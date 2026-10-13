@@ -1214,6 +1214,25 @@ export class TimeEntriesService {
         nextTaskId ?? undefined,
       );
     }
+    // The entry stays on its owner's timesheet, so the Project it moves to
+    // must be one *they* can log time against, not just the editor — the
+    // same rule as directing a manual entry at someone.
+    if (projectChanged && entry.membershipId !== membership.id) {
+      const owner = await this.memberships.findOne({
+        where: { id: entry.membershipId, organisationId },
+      });
+      if (!owner) {
+        throw new NotFoundException('Member not found.');
+      }
+      try {
+        await this.assertProjectAccess(owner, nextProjectId);
+      } catch (error) {
+        if (!(error instanceof ForbiddenException)) throw error;
+        throw new ForbiddenException(
+          "This member can't log time on that project, so their entry can't move there.",
+        );
+      }
+    }
 
     const nextStartedAt = dto.startedAt
       ? new Date(dto.startedAt)

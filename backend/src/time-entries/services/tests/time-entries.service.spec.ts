@@ -1478,6 +1478,32 @@ describe('TimeEntriesService', () => {
       expect(call[1].metadata.changed).toHaveProperty('endedAt');
     });
 
+    it("refuses moving someone's entry to a project they can't log time on", async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: findEntryThenNoOverlap({ ...completedEntry }),
+        }),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn((query: { where: { userId?: string } }) =>
+            Promise.resolve(
+              query.where.userId
+                ? { id: 'm-admin', role: MembershipRole.ADMIN }
+                : { id: 'm-other', role: MembershipRole.MEMBER },
+            ),
+          ),
+        }),
+        projectMembershipsRepo: makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.update('org-1', 'admin-1', 'entry-done', {
+          projectId: 'project-2',
+        }),
+      ).rejects.toThrow("This member can't log time on that project");
+    });
+
     it('lets an admin edit their own entry', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
         findOne: findEntryThenNoOverlap({
