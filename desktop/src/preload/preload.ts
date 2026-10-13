@@ -80,6 +80,8 @@ export type DesktopDevicePlatformName = "windows" | "macos" | "linux";
 
 export interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  /** What "Track apps & URLs" resolves to for this person. */
+  appUrlTracking: "off" | "apps" | "apps_urls";
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;

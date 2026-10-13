@@ -27,8 +27,14 @@ export class InstalledBrowserDetector {
   }
 
   async isInstalled(bundleId: string): Promise<boolean> {
+    return (await this.lookup(bundleId)) === true;
+  }
+
+  /** Like `isInstalled`, but `null` when Spotlight gave no answer (it
+   * failed, or timed out) — distinct from a definite "not installed". */
+  async lookup(bundleId: string): Promise<boolean | null> {
     const result = await spawnWithTimeout(this.command, [`kMDItemCFBundleIdentifier == '${bundleId}'`], this.timeoutMs);
-    if (result.spawnError || result.timedOut || result.exitCode !== 0) return false;
+    if (result.spawnError || result.timedOut || result.exitCode !== 0) return null;
     return result.stdout.trim().length > 0;
   }
 

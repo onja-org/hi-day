@@ -171,6 +171,9 @@ interface LastProject {
 
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  /** What "Track apps & URLs" resolves to — the banners ask only for
+   * permissions something will actually use. */
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
@@ -547,13 +550,19 @@ function refreshTrayMenu(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
-  // Looked up once per launch: Spotlight is a few hundred ms, and the
-  // permission banner asks every 15s.
-  let firefoxInstalled: Promise<boolean> | null = null;
-  const isFirefoxInstalled = (): Promise<boolean> =>
-    (firefoxInstalled ??= new InstalledBrowserDetector().isInstalled(
-      "org.mozilla.firefox",
-    ));
+  // Remembered once Spotlight gives an answer (it takes a few hundred ms,
+  // and the banner asks every 15s). A lookup that fails — Spotlight busy at
+  // login, or indexing off — isn't remembered, and counts as installed, so
+  // the banner errs towards asking rather than hiding.
+  let firefoxInstalled: boolean | null = null;
+  const isFirefoxInstalled = async (): Promise<boolean> => {
+    if (firefoxInstalled === null) {
+      firefoxInstalled = await new InstalledBrowserDetector().lookup(
+        "org.mozilla.firefox",
+      );
+    }
+    return firefoxInstalled ?? true;
+  };
   const isWaylandScreenshotGranted = (): boolean =>
     hasWaylandScreenshotGrant(app.getPath("userData")) ||
     authStore.load()?.waylandScreenshotGranted === true;
@@ -1005,6 +1014,7 @@ async function registerIpcHandlers(): Promise<void> {
         ok: true,
         data: {
           windowTrackingEnabled,
+          appUrlTracking,
           screenshotsEnabled,
           platform,
           // Non-prompting status check — never triggers a native prompt on

@@ -1033,9 +1033,12 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   if (!result.ok) return null;
   const status = result.data;
 
+  // Screen Recording is what window titles and screenshots need — titles
+  // only matter while apps are tracked at all.
   const isMacCaptureGate =
     status.platform === "macos" &&
-    (status.windowTrackingEnabled || status.screenshotsEnabled);
+    ((status.appUrlTracking !== "off" && status.windowTrackingEnabled) ||
+      status.screenshotsEnabled);
   const isWaylandScreenshotGate =
     status.platform === "linux" &&
     status.waylandUnsupported &&
@@ -1050,8 +1053,12 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
+  // Accessibility serves Firefox's URLs only, so it's asked for only while
+  // URLs are tracked.
   accessibilityBanner.hidden = !(
-    status.platform === "macos" && !status.accessibilityGranted
+    status.platform === "macos" &&
+    status.appUrlTracking === "apps_urls" &&
+    !status.accessibilityGranted
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
 

@@ -20,6 +20,16 @@ describe('InstalledBrowserDetector', () => {
     expect(await detector.isInstalled('com.example.NotInstalled')).toBe(false);
   });
 
+  it('gives no answer (null) when Spotlight itself fails, rather than "not installed"', async () => {
+    const detector = new InstalledBrowserDetector({ command: '/nonexistent/mdfind' });
+    expect(await detector.lookup('org.mozilla.firefox')).toBeNull();
+    expect(await detector.isInstalled('org.mozilla.firefox')).toBe(false);
+  });
+
+  it('answers definitely when Spotlight ran', async () => {
+    expect(await makeDetector().lookup('com.example.NotInstalled')).toBe(false);
+  });
+
   it('detectInstalled checks every registry entry with a darwin bundle id, returning only installed keys', async () => {
     const detector = makeDetector();
     const registry = loadBrowserRegistry();
