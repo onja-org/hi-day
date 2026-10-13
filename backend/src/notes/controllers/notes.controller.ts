@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -44,12 +45,15 @@ export class NotesController {
   @Get('mine')
   listMine(
     @Query('date') date: string | undefined,
+    @Query('projectId', new ParseUUIDPipe({ optional: true }))
+    projectId: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<NoteEntry[]> {
     return this.notesService.listMineForDay(
       request.organisationId!,
       request.userId,
       date,
+      projectId,
     );
   }
 
