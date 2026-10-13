@@ -8,6 +8,7 @@ import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { ProjectListItem } from "@/types/project";
 import { ErrorMessage } from "@/components/ErrorMessage";
+import { InfoMessage } from "@/components/InfoMessage";
 import { SelectField } from "@/components/ui/form/SelectField";
 
 type TimerPickerProps = {
@@ -17,6 +18,8 @@ type TimerPickerProps = {
   taskId: string;
   projectSecondsToday: Map<string, number>;
   conflictMessage: string | null;
+  /** Set when this organisation tracks from another client; blocks Start. */
+  trackingNotice: string | null;
   /** The only startable Project; the rest are shown disabled, so a narrowed
    * list never reads as projects having gone missing. */
   requiredProjectId: string | null;
@@ -36,6 +39,7 @@ export function TimerPicker({
   taskId,
   projectSecondsToday,
   conflictMessage,
+  trackingNotice,
   requiredProjectId,
   isStarting,
   isSwitching,
@@ -81,6 +85,8 @@ export function TimerPicker({
 
   return (
     <div className="flex flex-col gap-3">
+      {trackingNotice && <InfoMessage message={trackingNotice} />}
+
       {conflictMessage && (
         <div className="flex flex-col gap-2">
           <ErrorMessage message={conflictMessage} />
@@ -148,7 +154,7 @@ export function TimerPicker({
         <button
           type="button"
           onClick={onStart}
-          disabled={!projectId || isStarting}
+          disabled={!projectId || isStarting || trackingNotice !== null}
           className={clsx(
             "flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-5 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold",
             layout === "stacked" && "w-full",

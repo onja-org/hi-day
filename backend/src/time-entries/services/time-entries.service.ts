@@ -29,7 +29,10 @@ import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
-import { DEFAULT_ALLOWED_APPS } from '../../organisations/allowed-apps';
+import {
+  DEFAULT_ALLOWED_APPS,
+  isTimerSourceAllowed,
+} from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { DEFAULT_TIMESHEET_MODIFY_TIME } from '../../organisations/timesheet-settings';
@@ -786,8 +789,12 @@ export class TimeEntriesService {
       take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
     });
 
+    const zonesThisBatch = new Map<string, string>();
     for (const entry of running) {
-      const zone = await this.organisationTimezone(entry.organisationId);
+      const zone = await this.organisationTimezone(
+        entry.organisationId,
+        zonesThisBatch,
+      );
       await this.splitAcrossDayBoundaries(
         entry.id,
         this.startOfDayInZone(now, zone),
@@ -907,11 +914,16 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run: a batch is usually one or two Organisations. */
-  private readonly timezoneByOrganisation = new Map<string, string>();
-
-  private async organisationTimezone(organisationId: string): Promise<string> {
-    const cached = this.timezoneByOrganisation.get(organisationId);
+  /**
+   * `seen` memoises within one batch. Passed in rather than held on the
+   * service, which is a singleton: a Map here would outlive every request
+   * and keep serving a zone an admin had already changed.
+   */
+  private async organisationTimezone(
+    organisationId: string,
+    seen: Map<string, string>,
+  ): Promise<string> {
+    const cached = seen.get(organisationId);
     if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
@@ -921,7 +933,7 @@ export class TimeEntriesService {
     // UTC is the value every Organisation was created with, and the right
     // answer when the row has gone.
     const zone = settings?.timezone ?? 'UTC';
-    this.timezoneByOrganisation.set(organisationId, zone);
+    seen.set(organisationId, zone);
     return zone;
   }
 
@@ -2171,8 +2183,7 @@ export class TimeEntriesService {
     const allowed =
       membership.allowedApps ??
       (await this.organisationAllowedApps(organisationId));
-    if (allowed === 'all') return;
-    if (allowed === 'desktop_only' && source === TimeEntrySource.AGENT) return;
+    if (isTimerSourceAllowed(source, allowed)) return;
 
     throw new ForbiddenException(
       allowed === 'desktop_only'
@@ -2181,44 +2192,76 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly allowedAppsByOrganisation = new Map<string, AllowedApps>();
+  /**
+   * Ends every running entry whose client Allowed apps no longer permits,
+   * so a change takes effect at once rather than at the next `start`. The
+   * hours already tracked are kept. Pass `membershipId` when one person's
+   * override changed; omit it when the organisation default did.
+   */
+  async stopEntriesDisallowedByApps(
+    organisationId: string,
+    membershipId?: string,
+  ): Promise<number> {
+    const running = await this.timeEntries.find({
+      where: {
+        organisationId,
+        endedAt: IsNull(),
+        ...(membershipId ? { membershipId } : {}),
+      },
+      relations: { membership: true },
+    });
+    if (running.length === 0) return 0;
+
+    const orgDefault = await this.organisationAllowedApps(organisationId);
+    const disallowed = running.filter(
+      (entry) =>
+        !isTimerSourceAllowed(
+          entry.source,
+          entry.membership?.allowedApps ?? orgDefault,
+        ),
+    );
+    if (disallowed.length === 0) return 0;
+
+    const now = new Date();
+    const ids = disallowed.map((entry) => entry.id);
+    await this.dataSource.transaction(async (manager) => {
+      // Pauses first, as suspending an Organisation does: an entry must
+      // never end with one of its pauses still open.
+      await manager.update(
+        TimeEntryPause,
+        { timeEntryId: In(ids), resumedAt: IsNull() },
+        { resumedAt: now },
+      );
+      await manager.update(TimeEntry, { id: In(ids) }, { endedAt: now });
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.stopped_by_allowed_apps',
+        organisationId,
+        metadata: { timeEntryIds: ids },
+      });
+    });
+    return disallowed.length;
+  }
 
   private async organisationAllowedApps(
     organisationId: string,
   ): Promise<AllowedApps> {
-    const cached = this.allowedAppsByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { allowedApps?: AllowedApps } | undefined;
-    const value = settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
-    this.allowedAppsByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
   }
-
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly modifyTimeByOrganisation = new Map<
-    string,
-    TimesheetModifyTime
-  >();
 
   private async organisationModifyTime(
     organisationId: string,
   ): Promise<TimesheetModifyTime> {
-    const cached = this.modifyTimeByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { timesheetModifyTime?: TimesheetModifyTime } | undefined;
-    const value =
-      settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
-    this.modifyTimeByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
   }
 
   /**

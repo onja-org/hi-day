@@ -95,6 +95,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
               taskId={timer.taskId}
               projectSecondsToday={timer.projectSecondsToday}
               conflictMessage={timer.conflictMessage}
+          trackingNotice={timer.trackingNotice}
           requiredProjectId={timer.requiredProjectId}
               isStarting={timer.isStarting}
               isSwitching={timer.isSwitching}

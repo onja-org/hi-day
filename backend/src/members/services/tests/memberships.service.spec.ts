@@ -1,3 +1,4 @@
+import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import {
   ConflictException,
   ForbiddenException,
@@ -90,6 +91,7 @@ describe('MembershipsService', () => {
       auditLogService?: AuditLogService;
       devicesService?: DevicesService;
       authService?: AuthService;
+      timeEntriesService?: TimeEntriesService;
     } = {},
   ) {
     return new MembershipsService(
@@ -98,6 +100,10 @@ describe('MembershipsService', () => {
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
       overrides.devicesService ?? makeDevicesService().devicesService,
       overrides.authService ?? makeAuthService().authService,
+      overrides.timeEntriesService ??
+        ({
+          stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
+        } as unknown as TimeEntriesService),
     );
   }
 
