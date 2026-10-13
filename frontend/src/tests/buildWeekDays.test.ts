@@ -12,7 +12,7 @@ const WEEK = [
 ];
 
 describe("buildWeekDays", () => {
-  it("labels each day by its Sunday-first position and carries its seconds through", () => {
+  it("labels each day by its date and carries its seconds through", () => {
     const result = buildWeekDays(WEEK, new Date(2026, 0, 7, 15, 0, 0));
 
     expect(result.map((day) => day.label)).toEqual([
@@ -26,6 +26,19 @@ describe("buildWeekDays", () => {
     ]);
     expect(result.map((day) => day.seconds)).toEqual([
       0, 5400, 0, 7200, 0, 0, 0,
+    ]);
+  });
+
+  it("labels a Monday-first week correctly", () => {
+    const mondayFirst = [...WEEK.slice(1), { date: "2026-01-11", seconds: 0 }];
+    expect(buildWeekDays(mondayFirst, new Date(2026, 0, 7)).map((day) => day.label)).toEqual([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
     ]);
   });
 
