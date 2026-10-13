@@ -42,6 +42,8 @@ export interface ActiveMemberSummary {
   expectedWeeklyHours: number | null;
   weeklyLimitHours: number | null;
   dailyLimitHours: number | null;
+  /** `null` inherits the Organisation's; `0` is "None". */
+  screenshotFrequencySeconds: number | null;
   /** `null` means inherit the Organisation's Timesheets "Modify time" default. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
@@ -257,6 +259,9 @@ export class MembershipsService {
     }
     if (dto.dailyLimitHours !== undefined) {
       membership.dailyLimitHours = toNumericColumn(dto.dailyLimitHours);
+    }
+    if (dto.screenshotFrequencySeconds !== undefined) {
+      membership.screenshotFrequencySeconds = dto.screenshotFrequencySeconds;
     }
 
     if (dto.timesheetModifyTime !== undefined) {
@@ -519,6 +524,7 @@ export class MembershipsService {
       expectedWeeklyHours: fromNumericColumn(membership.expectedWeeklyHours),
       weeklyLimitHours: fromNumericColumn(membership.weeklyLimitHours),
       dailyLimitHours: fromNumericColumn(membership.dailyLimitHours),
+      screenshotFrequencySeconds: membership.screenshotFrequencySeconds,
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
     };
@@ -530,6 +536,32 @@ export class MembershipsService {
    * default. Backs the "Apply to all" button on the Track apps & URLs
    * setting — one UPDATE rather than N PATCHes from the client.
    */
+  /** "Apply to all" for screenshot frequency. */
+  async resetAllScreenshotFrequencyOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ screenshotFrequencySeconds: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"screenshotFrequencySeconds" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.screenshot_frequency_overrides_reset',
+          organisationId,
+          actorUserId,
+        }),
+      );
+    }
+    return { cleared };
+  }
+
   /** "Apply to all" for Allowed apps — one UPDATE, as the app/URL reset. */
   async resetAllAllowedAppsOverrides(
     organisationId: string,

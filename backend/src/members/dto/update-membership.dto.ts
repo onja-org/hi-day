@@ -4,13 +4,13 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
-  IsNumber,
-  Max,
-  Min,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -123,6 +123,14 @@ export class UpdateMembershipDto {
   @Min(MIN_LIMIT_HOURS)
   @Max(24)
   dailyLimitHours?: number | null;
+  /** `null` inherits; `0` is "None". Hence `@Min(0)`, where the
+   * organisation's own field floors at 30 — it has no "None", that being
+   * what `screenshotsEnabled` is for. */
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsInt()
+  @Min(0)
+  screenshotFrequencySeconds?: number | null;
 
   /**
    * Per-member override of the Timesheets "Modify time" default. `null`

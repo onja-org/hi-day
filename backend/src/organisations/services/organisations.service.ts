@@ -502,6 +502,18 @@ export class OrganisationsService {
         })
       : null;
 
+    // One number carries both questions for screenshots: `0` is "None",
+    // which is how a member is switched off while the organisation is on.
+    // The organisation has no "None" of its own — `screenshotsEnabled` is
+    // its off switch — so it collapses to 0 here.
+    const organisationFrequency =
+      (settings.screenshotsEnabled ?? false)
+        ? (settings.screenshotFrequencySeconds ??
+          DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds)
+        : 0;
+    const frequencySeconds =
+      membership?.screenshotFrequencySeconds ?? organisationFrequency;
+
     return {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
@@ -514,12 +526,13 @@ export class OrganisationsService {
         membership?.allowedApps ??
         settings.allowedApps ??
         DEFAULT_CAPTURE_SETTINGS.allowedApps,
-      screenshotsEnabled:
-        settings.screenshotsEnabled ??
-        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotsEnabled: frequencySeconds > 0,
+      // Kept sane even while disabled: the agent feeds this straight to
+      // `setIntervalMs`, which has no meaning for 0.
       screenshotFrequencySeconds:
-        settings.screenshotFrequencySeconds ??
-        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+        frequencySeconds > 0
+          ? frequencySeconds
+          : DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
       screenshotRetentionDays:
         settings.screenshotRetentionDays ??
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,

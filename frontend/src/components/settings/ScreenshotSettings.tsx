@@ -4,45 +4,16 @@ import { useState } from "react";
 import { NumberFieldWithUnit } from "@/components/NumberFieldWithUnit";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SettingsSectionRow } from "@/components/SettingsSectionRow";
-import { Toggle } from "@/components/Toggle";
-import type { OrganisationProfile } from "@/types/organisation";
+import { ScreenshotFrequencyPanel } from "./ScreenshotFrequencyPanel";
+import { SettingsSubNav } from "./SettingsSubNav";
+import type { SettingsSubNavItem } from "./SettingsSubNav";
 
-const MINUTES_PER_WORKING_DAY = 8 * 60;
+type SubNavKey = "frequency" | "retention";
 
-function ScreenshotFields({ organisation }: { organisation: OrganisationProfile }) {
-  const [frequencyMinutes, setFrequencyMinutes] = useState(
-    Math.round(organisation.screenshotFrequencySeconds / 60),
-  );
-
-  return (
-    <div className="@container flex flex-col gap-5 rounded-lg border border-input-border bg-white p-5">
-      <Toggle
-        name="screenshotsEnabled"
-        label="Screenshots"
-        description="Periodic screen captures at the interval set below."
-        defaultChecked={organisation.screenshotsEnabled}
-      />
-
-      <div className="grid gap-4 border-t border-input-border pt-5 @md:grid-cols-2">
-        <NumberFieldWithUnit
-          name="screenshotFrequencyMinutes"
-          label="Capture every"
-          unit="min"
-          value={frequencyMinutes}
-          onChange={setFrequencyMinutes}
-          hint={`= ${Math.round(MINUTES_PER_WORKING_DAY / frequencyMinutes)} captures per 8-hour day`}
-        />
-        <NumberFieldWithUnit
-          name="screenshotRetentionDays"
-          label="Delete screenshots after"
-          unit="days"
-          defaultValue={organisation.screenshotRetentionDays}
-          hint="Older screenshots are removed permanently."
-        />
-      </div>
-    </div>
-  );
-}
+const SUB_NAV: SettingsSubNavItem<SubNavKey>[] = [
+  { key: "frequency", label: "Screenshot frequency" },
+  { key: "retention", label: "Delete screenshots" },
+];
 
 function toNumber(value: FormDataEntryValue | null): number | undefined {
   const parsed = Number(value);
@@ -50,23 +21,53 @@ function toNumber(value: FormDataEntryValue | null): number | undefined {
 }
 
 export function ScreenshotSettings() {
+  const [active, setActive] = useState<SubNavKey>("frequency");
+
+  return (
+    <div className="grid gap-6 py-6 md:grid-cols-[14rem_1fr] md:gap-8">
+      <SettingsSubNav
+        label="Screenshots sub-sections"
+        items={SUB_NAV}
+        active={active}
+        onSelect={setActive}
+      />
+
+      <div className="min-w-0">
+        {active === "frequency" && <ScreenshotFrequencyPanel />}
+        {active === "retention" && <RetentionPanel />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Whether screenshots are taken, and how often, belongs to the frequency
+ * panel now — "None" is the off switch. This keeps only how long they
+ * are kept.
+ */
+function RetentionPanel() {
   return (
     <SettingsPanel
-      buildInput={(formData) => {
-        const minutes = toNumber(formData.get("screenshotFrequencyMinutes"));
-        return {
-          screenshotsEnabled: formData.get("screenshotsEnabled") !== null,
-          screenshotFrequencySeconds: minutes === undefined ? undefined : minutes * 60,
-          screenshotRetentionDays: toNumber(formData.get("screenshotRetentionDays")),
-        };
-      }}
+      buildInput={(formData) => ({
+        screenshotRetentionDays: toNumber(
+          formData.get("screenshotRetentionDays"),
+        ),
+      })}
     >
       {(organisation) => (
         <SettingsSectionRow
-          title="Screenshots"
-          description="Whether screens are captured, how often, and how long they are kept."
+          title="Delete screenshots"
+          description="How long a screenshot is kept before it is removed permanently."
         >
-          <ScreenshotFields organisation={organisation} />
+          <div className="rounded-lg border border-input-border bg-white p-5">
+            <NumberFieldWithUnit
+              name="screenshotRetentionDays"
+              label="Delete screenshots after"
+              unit="days"
+              defaultValue={organisation.screenshotRetentionDays}
+              hint="Older screenshots are removed permanently."
+            />
+          </div>
         </SettingsSectionRow>
       )}
     </SettingsPanel>
