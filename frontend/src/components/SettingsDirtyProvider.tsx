@@ -6,11 +6,15 @@ import type { ReactNode } from "react";
 type SettingsDirtyValue = {
   isDirty: boolean;
   setDirty: (dirty: boolean) => void;
+  /** True to go ahead — asks first when there is unsaved work. For moves
+   * that aren't links, like switching a section's sub-panel. */
+  confirmLeave: () => boolean;
 };
 
 const SettingsDirtyContext = createContext<SettingsDirtyValue>({
   isDirty: false,
   setDirty: () => {},
+  confirmLeave: () => true,
 });
 
 const LEAVE_MESSAGE = "Leave without saving? Your changes will be lost.";
@@ -21,8 +25,8 @@ export function useSettingsDirty(): SettingsDirtyValue {
 
 /**
  * Tracks whether the section on screen has unsaved edits, so moving between
- * sections can ask first. Each section is its own route now, so navigating
- * away discards whatever was typed with nothing to show for it.
+ * sections can ask first. Leaving a section, or switching one of its
+ * sub-panels, discards whatever was typed with nothing to show for it.
  */
 export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
   const [isDirty, setDirty] = useState(false);
@@ -35,9 +39,24 @@ export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
     // the section tabs, the sidebar, the header. Caught in the capture phase
     // so it runs before the link's own navigation.
     const askOnLinkClick = (event: MouseEvent) => {
+      // A modified click opens a new tab or window and leaves this page as
+      // it is — nothing to lose.
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
       const link =
         event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (!(link instanceof HTMLAnchorElement) || link.target === "_blank") {
+      if (
+        !(link instanceof HTMLAnchorElement) ||
+        link.target === "_blank" ||
+        link.hasAttribute("download")
+      ) {
         return;
       }
       const url = new URL(link.href);
@@ -57,7 +76,13 @@ export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
   }, [isDirty]);
 
   return (
-    <SettingsDirtyContext value={{ isDirty, setDirty }}>
+    <SettingsDirtyContext
+      value={{
+        isDirty,
+        setDirty,
+        confirmLeave: () => !isDirty || window.confirm(LEAVE_MESSAGE),
+      }}
+    >
       {children}
     </SettingsDirtyContext>
   );
