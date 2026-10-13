@@ -1069,6 +1069,19 @@ input::placeholder {
   box-shadow: 0 6px 0 var(--ink);
 }
 
+/* Centred like the quit prompt, but a single acknowledgement rather than
+   a choice — so the card is narrower and its one action sits centred. */
+.timer-blocked-card {
+  max-width: 300px;
+  align-items: center;
+  text-align: center;
+}
+
+.timer-blocked-mark {
+  width: 44px;
+  height: 44px;
+}
+
 .close-prompt-title {
   margin: 0;
   font-family: var(--font-display);

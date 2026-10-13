@@ -574,13 +574,44 @@ async function callTracking<T>(
 function handleTrackingFailure(result: {
   message: string;
   unauthorized?: boolean;
+  status?: number;
 }): void {
   if (result.unauthorized) {
     showLoginView(result.message);
     return;
   }
+  // 403 is the organisation refusing this — a work time limit, a day
+  // tracking is off on, an app it doesn't allow. That is a rule, not a
+  // fault, so it gets a dialog rather than the red line above the timer,
+  // which was easy to miss while looking at the Play button.
+  if (result.status === 403) {
+    showTimerBlocked(result.message);
+    return;
+  }
   showTrackingError(result.message);
 }
+
+const timerBlocked = document.getElementById("timer-blocked")!;
+const timerBlockedMessage = document.getElementById("timer-blocked-message")!;
+const timerBlockedDismiss = document.getElementById(
+  "timer-blocked-dismiss",
+) as HTMLButtonElement;
+
+/**
+ * A refusal to start — a work time limit reached, a day tracking is off
+ * on — shown as a dialog rather than the red line above the timer. It is
+ * a rule the organisation set, not a fault, and the inline text was easy
+ * to miss while looking at the Play button.
+ */
+function showTimerBlocked(message: string): void {
+  timerBlockedMessage.textContent = message;
+  timerBlocked.hidden = false;
+  timerBlockedDismiss.focus();
+}
+
+timerBlockedDismiss.addEventListener("click", () => {
+  timerBlocked.hidden = true;
+});
 
 function clearTrackingError(): void {
   trackingError.hidden = true;
