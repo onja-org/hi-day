@@ -21,6 +21,8 @@ describe('ManualTimeEditsService', () => {
   function setup(
     options: {
       role?: MembershipRole;
+      callerTeams?: { teamId: string; isManager: boolean }[];
+      otherTeams?: { teamId: string; isManager: boolean }[];
       logs?: ReturnType<typeof log>[];
       liveEntries?: Record<string, unknown>[];
     } = {},
@@ -28,10 +30,19 @@ describe('ManualTimeEditsService', () => {
     const caller = {
       id: 'caller',
       role: options.role ?? MembershipRole.ADMIN,
+      teamMemberships: options.callerTeams ?? [],
     } as Membership;
     const members = [
-      { id: 'caller', user: { name: 'Caller', email: 'c@example.com' } },
-      { id: 'other', user: { name: 'Other', email: 'o@example.com' } },
+      {
+        id: 'caller',
+        user: { name: 'Caller', email: 'c@example.com' },
+        teamMemberships: options.callerTeams ?? [],
+      },
+      {
+        id: 'other',
+        user: { name: 'Other', email: 'o@example.com' },
+        teamMemberships: options.otherTeams ?? [],
+      },
     ];
     const getMany = jest.fn().mockResolvedValue([]);
     const builder = {
@@ -148,6 +159,36 @@ describe('ManualTimeEditsService', () => {
     const rows = await service.list('org', 'user', 'me', from, to);
 
     expect(rows.map((row) => row.id)).toEqual(['mine']);
+  });
+
+  it('limits a manager\'s "all" to people on the teams they manage', async () => {
+    const outsider = log(
+      'time_entry.created_manually',
+      { ...added.metadata, membershipId: 'stranger' },
+      'outsider',
+    );
+    const { service } = setup({
+      role: MembershipRole.MANAGER,
+      callerTeams: [{ teamId: 'team-a', isManager: true }],
+      otherTeams: [{ teamId: 'team-a', isManager: false }],
+      logs: [added, outsider],
+    });
+
+    const rows = await service.list('org', 'user', 'all', from, to);
+
+    expect(rows.map((row) => row.id)).toEqual([added.id]);
+  });
+
+  it('shows a manager with no team nobody else on "all"', async () => {
+    const { service } = setup({
+      role: MembershipRole.MANAGER,
+      otherTeams: [{ teamId: 'team-a', isManager: false }],
+      logs: [added],
+    });
+
+    const rows = await service.list('org', 'user', 'all', from, to);
+
+    expect(rows).toEqual([]);
   });
 
   it('refuses a plain member the organisation-wide view', async () => {
