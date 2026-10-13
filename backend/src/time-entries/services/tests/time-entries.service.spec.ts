@@ -984,8 +984,8 @@ describe('TimeEntriesService', () => {
       } as unknown as Repository<Organisation>;
     }
 
-    /** The running-entry lookups filter on `endedAt`; the limit's own
-     * lookup filters on `startedAt`. Only the latter sees `worked`. */
+    /** Only the limit's own lookup filters `startedAt`, so only it sees
+     * `worked`. */
     function makeEntriesRepoFor(worked: Partial<TimeEntry>[]) {
       const save = jest.fn((entry: unknown) => Promise.resolve(entry));
       const repo = makeTimeEntriesRepo({

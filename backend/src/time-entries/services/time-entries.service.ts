@@ -177,11 +177,7 @@ export interface CurrentTimeEntry {
    * surfaces disagree about how long a timer has been running.
    */
   now: Date;
-  /**
-   * Set for one read only, on the poll that notices a limit was crossed
-   * and ends the timer — the clients turn it into a modal. Absent
-   * afterwards, so the modal isn't shown again on the next poll.
-   */
+  /** Set on the one read that ends the timer, so the modal shows once. */
   limitReached?: WorkTimeLimitReached;
   /**
    * The person's worked seconds across every Device currently tracking,
@@ -693,8 +689,7 @@ export class TimeEntriesService {
     ]);
 
     // The agent polls this as the web polls `currentForAccount`, so a
-    // limit has to bite here too — otherwise a desktop timer sails past
-    // one the web would have stopped.
+    // limit has to bite here too.
     const limitReached = await this.stopIfOverWorkTimeLimit(
       membership,
       organisationId,
@@ -988,14 +983,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * Refuses a timer the Organisation's work time limits don't allow: a day
-   * tracking is switched off on, or a daily/weekly ceiling already
-   * reached. Expected hours are deliberately not consulted — they are a
-   * target for reports, never a cap.
-   *
-   * Day boundaries and the weekly reset are read in the Organisation's own
-   * timezone and from its week-start day, so a limit means the same thing
-   * to everyone in it.
+   * Refuses a timer on a day tracking is off, or past a ceiling. Expected
+   * hours are deliberately not consulted — a target, never a cap. Days and
+   * the weekly reset follow the Organisation's timezone and week start, so
+   * a limit means the same thing to everyone in it.
    */
   private async assertWithinWorkTimeLimits(
     membership: Membership,
@@ -1047,13 +1038,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * Ends a running timer that has crossed a daily or weekly ceiling, and
-   * says which — the clients poll `current` constantly, so this is where
-   * a limit actually bites rather than waiting for the next start.
-   *
-   * Returns `undefined` when nothing was stopped, including when the
-   * person was already over before this read: only the poll that does the
-   * stopping reports it, so the modal shows once.
+   * Ends a running timer that has crossed a ceiling, and says which. The
+   * clients poll constantly, so this is where a limit bites rather than at
+   * the next start. `undefined` when nothing was stopped — only the poll
+   * that does the stopping reports it, so the modal shows once.
    */
   private async stopIfOverWorkTimeLimit(
     membership: Membership,

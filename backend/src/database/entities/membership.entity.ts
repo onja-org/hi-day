@@ -61,12 +61,8 @@ export class Membership {
   @Column({ type: 'character varying', nullable: true })
   allowedApps: AllowedApps | null;
 
-  /**
-   * Per-member work time limits. Each inherits the Organisation's when
-   * null, independently of the others — a member may override only their
-   * daily limit. The hour columns are `numeric`, which pg returns as a
-   * string, so reads go through `toHours`.
-   */
+  /** Per-member work time limits; each inherits the Organisation's when
+   * null, independently of the others. */
   @Column({ type: 'jsonb', nullable: true })
   expectedWorkDays: number[] | null;
 

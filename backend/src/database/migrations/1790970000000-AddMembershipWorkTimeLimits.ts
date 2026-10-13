@@ -1,11 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Per-member overrides of the Organisation's work time limits. Every
- * column is nullable and inherits when null, independently of the others:
- * a member may override only their daily limit and take the rest from the
- * Organisation.
- */
+/** Per-member overrides of the work time limits; each `NULL` inherits. */
 export class AddMembershipWorkTimeLimits1790970000000 implements MigrationInterface {
   name = 'AddMembershipWorkTimeLimits1790970000000';
 

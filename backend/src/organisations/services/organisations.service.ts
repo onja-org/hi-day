@@ -404,11 +404,8 @@ export class OrganisationsService {
     };
   }
 
-  /**
-   * The work time limits in force for one member: each field is their own
-   * override when set, the Organisation's otherwise. Resolved here so
-   * enforcement and the agent can never disagree about whose number wins.
-   */
+  /** The limits in force for one member: their own override where set,
+   * the Organisation's otherwise. */
   async getWorkTimeLimits(
     organisationId: string,
     userId: string,
@@ -421,8 +418,6 @@ export class OrganisationsService {
       where: { userId, organisationId, status: MembershipStatus.ACTIVE },
     });
 
-    // pg returns `numeric` as a string; null stays null, since for these
-    // three it means "removed" or "no limit" rather than zero.
     const toHours = (value: string | null | undefined): number | null =>
       value === null || value === undefined ? null : Number(value);
 

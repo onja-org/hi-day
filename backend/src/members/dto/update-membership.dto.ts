@@ -85,8 +85,7 @@ export class UpdateMembershipDto {
   @IsIn(ALLOWED_APPS_VALUES)
   allowedApps?: AllowedApps | null;
 
-  /** Work time limit overrides. Every one takes `null` to clear it and
-   * inherit the Organisation's again, independently of the others. */
+  /** Work time limit overrides; `null` clears one and inherits again. */
   @IsOptional()
   @ValidateIf((_, value: number[] | null) => value !== null)
   @IsArray()
@@ -110,9 +109,7 @@ export class UpdateMembershipDto {
   @Max(168)
   expectedWeeklyHours?: number | null;
 
-  /** `null` is "no limit"; a *number* is a real ceiling, so it has to be
-   * worth having. The columns are `numeric(5,2)`, so anything under 0.01
-   * would round to zero and silently forbid tracking outright. */
+  /** `null` is "no limit"; a number is a real ceiling — see `MIN_LIMIT_HOURS`. */
   @IsOptional()
   @ValidateIf((_, value: number | null) => value !== null)
   @IsNumber()

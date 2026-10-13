@@ -63,8 +63,8 @@ export interface PasswordResetResult {
   message?: string;
 }
 
-/** `numeric` columns cross the driver as strings; null stays null, which
- * for every work time limit means "inherit" rather than zero. */
+/** `numeric` crosses the driver as a string; null stays null, meaning
+ * "inherit" rather than zero. */
 function toNumericColumn(value: number | null): string | null {
   return value === null ? null : String(value);
 }
@@ -249,7 +249,6 @@ export class MembershipsService {
     if (dto.trackingDisabledDays !== undefined) {
       membership.trackingDisabledDays = dto.trackingDisabledDays;
     }
-    // Stored as `numeric`, which TypeORM wants as a string.
     if (dto.expectedWeeklyHours !== undefined) {
       membership.expectedWeeklyHours = toNumericColumn(dto.expectedWeeklyHours);
     }

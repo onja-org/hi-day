@@ -856,11 +856,8 @@ async function registerIpcHandlers(): Promise<void> {
   // back for tracking calls.
   let pendingPairingCode: string | null = null;
 
-  /**
-   * The renderer asking for attention: its timer was stopped for it, and
-   * a dialog behind other windows is one nobody reads. Same escalation as
-   * `alertTrackingStopped`, which this now shares.
-   */
+  /** The renderer asking for attention: a dialog behind other windows is
+   * one nobody reads. Same escalation as the capture-settings alert. */
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
   });
