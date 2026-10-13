@@ -3,10 +3,10 @@ export {};
 const STATUS_POLL_INTERVAL_MS = 15_000;
 /**
  * How often the day's totals are reconciled against the server, to catch
- * time added elsewhere. Longer than the status poll: it is a second
- * request, and manual time is not something anyone adds by the second.
+ * time added elsewhere. Below the status poll, so in practice every poll
+ * reconciles and added time lands within one.
  */
-const TODAY_MERGE_INTERVAL_MS = 30_000;
+const TODAY_MERGE_INTERVAL_MS = 5_000;
 const IDLE_POLL_INTERVAL_MS = 10_000;
 const IDLE_POLICY_REFRESH_MS = 60_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
