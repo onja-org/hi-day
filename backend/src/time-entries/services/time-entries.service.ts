@@ -159,6 +159,13 @@ export interface TimeEntryListItem extends TimeEntrySummary {
 type OverlapScope = 'tracked' | 'manual';
 
 /** Why a timer was ended for someone rather than by them. */
+/**
+ * How long after a limit stop the clients are still told about it. The
+ * web and the agent poll independently, so the one that does the stopping
+ * is not necessarily the one the person is looking at.
+ */
+const LIMIT_NOTICE_WINDOW_MS = 2 * 60 * 1000;
+
 export interface WorkTimeLimitReached {
   kind: 'daily' | 'weekly';
   limitHours: number;
@@ -1048,8 +1055,6 @@ export class TimeEntriesService {
     organisationId: string,
     running: TimeEntry[],
   ): Promise<WorkTimeLimitReached | undefined> {
-    if (running.length === 0) return undefined;
-
     const limits = await this.workTimeLimitsFor(organisationId, membership);
     if (limits.dailyLimitHours === null && limits.weeklyLimitHours === null) {
       return undefined;
@@ -1078,6 +1083,20 @@ export class TimeEntriesService {
       reached = { kind: 'weekly', limitHours: limits.weeklyLimitHours! };
     }
     if (!reached) return undefined;
+
+    // Nothing of ours to stop. Another client's poll got there first, so
+    // report it anyway for a short while: the signal has to reach every
+    // client, not just whichever one happened to poll first.
+    if (running.length === 0) {
+      const lastEnded = await this.timeEntries.findOne({
+        where: { membershipId: membership.id },
+        order: { endedAt: 'DESC' },
+      });
+      const endedAt = lastEnded?.endedAt?.getTime() ?? 0;
+      return now.getTime() - endedAt <= LIMIT_NOTICE_WINDOW_MS
+        ? reached
+        : undefined;
+    }
 
     const ids = running.map((entry) => entry.id);
     await this.dataSource.transaction(async (manager) => {

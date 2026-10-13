@@ -535,6 +535,8 @@ let todaySecondsDayStart: number | null = null;
 /** Completed entries already folded into the totals, so a later read adds
  * only what is genuinely new. */
 let countedEntryIds = new Set<string>();
+/** The limit stop already shown, so a repeated report doesn't reopen it. */
+let shownLimitKey: string | null = null;
 /** When the totals were last reconciled against the server. */
 let todaySecondsReconciledAt = 0;
 let currentProjectTasks: TrackedTask[] = [];
@@ -1452,9 +1454,16 @@ async function refreshStatus(resync = false): Promise<void> {
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
 
-  // Reported on one poll only, by the read that ended the timer.
-  if (result.data.limitReached) {
-    showTimerStoppedByLimit(result.data.limitReached);
+  // Reported for a couple of minutes after the stop, so it reaches this
+  // client even when another one's poll did the stopping — hence shown
+  // once per stop here rather than once per report.
+  const limit = result.data.limitReached;
+  const limitKey = limit ? `${limit.kind}:${limit.limitHours}` : null;
+  if (limitKey && limitKey !== shownLimitKey) {
+    shownLimitKey = limitKey;
+    showTimerStoppedByLimit(limit!);
+  } else if (!limitKey) {
+    shownLimitKey = null;
   }
 
   const entry = result.data.entry;
