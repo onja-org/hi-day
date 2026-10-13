@@ -37,6 +37,7 @@ export class UrlCaptureService {
   private readonly powerAdapter: PowerAdapter;
   private readonly syncQueue: SyncQueue;
   private readonly logger: (line: string) => void;
+  private dayBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: UrlCaptureServiceOptions) {
     this.logger = options.logger ?? ((): void => undefined);
@@ -58,11 +59,28 @@ export class UrlCaptureService {
 
   start(): void {
     this.powerAdapter.start();
+    this.scheduleDayBoundary();
   }
 
   stop(): void {
     this.powerAdapter.stop();
+    if (this.dayBoundaryTimer) clearTimeout(this.dayBoundaryTimer);
+    this.dayBoundaryTimer = null;
     this.store.close();
+  }
+
+  /**
+   * Cuts any open session at local midnight, so no session spans two days
+   * (docs/url-tracking-plan.md) — the timer itself keeps running across it.
+   */
+  private scheduleDayBoundary(): void {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    this.dayBoundaryTimer = setTimeout(() => {
+      this.reportEvent({ type: 'dayBoundaryCrossed', ...realClock() });
+      this.scheduleDayBoundary();
+    }, midnight.getTime() - now.getTime());
   }
 
   /** The one signal this service can't get from powerMonitor — pushed by the renderer. */

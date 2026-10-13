@@ -114,6 +114,47 @@ describe('UrlCaptureService', () => {
     store.close();
   });
 
+  it('cuts an open session at local midnight while the timer keeps running', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      vi.setSystemTime(new Date(2026, 9, 12, 23, 59, 50));
+      service.start();
+      service.setTimerRunning(true);
+      const startedAt = performance.now() - 5_000;
+      service.reportEvent({
+        type: 'focusChanged',
+        monotonicMs: startedAt,
+        wallClockMs: Date.now(),
+        tzOffsetMin: 0,
+        target: { browser: 'chrome', pid: 1, hwnd: 1 },
+      });
+      service.reportEvent({
+        type: 'urlResolved',
+        monotonicMs: startedAt,
+        wallClockMs: Date.now(),
+        tzOffsetMin: 0,
+        pid: 1,
+        hwnd: 1,
+        url: 'example.com/a',
+        host: 'example.com',
+        path: '/a',
+        title: 'A',
+        browser: 'chrome',
+        private: false,
+        source: 'uia',
+        confidence: 'displayed',
+      });
+
+      vi.advanceTimersByTime(11_000);
+
+      const store = new UrlSessionStore(join(dir, 'url-sessions.sqlite'));
+      expect(store.getPendingSync(10)).toHaveLength(1);
+      store.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('runSync uploads pending sessions through the injected upload fn and marks them synced', async () => {
     const syncDir = mkdtempSync(join(tmpdir(), 'url-capture-service-sync-'));
     const acked: string[] = [];
