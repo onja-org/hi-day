@@ -29,19 +29,18 @@ export function WorkTimeLimitsMemberRow({
   onChange,
 }: WorkTimeLimitsMemberRowProps) {
   const who = member.name ?? member.email;
-  // Typed-but-not-yet-saved values. Shown in preference to the server's,
-  // so the field doesn't snap back between keystroke and response.
-  const [pending, setPending] = useState<Partial<WorkTimeLimits>>({});
-  const save = useDebouncedCallback((patch: Partial<WorkTimeLimits>) => {
-    onChange(patch);
-    setPending({});
-  }, SAVE_DELAY_MS);
+  // What was typed here, shown in preference to the server's value.
+  // Deliberately never cleared: clearing on *fire* reverted the field to
+  // the stale value for the length of the round trip, which is the jump.
+  // Once the response lands the two agree, so it stops mattering.
+  const [typed, setTyped] = useState<Partial<WorkTimeLimits>>({});
+  const save = useDebouncedCallback(onChange, SAVE_DELAY_MS);
 
   const edit = (patch: Partial<WorkTimeLimits>) => {
-    setPending((previous) => ({ ...previous, ...patch }));
+    setTyped((previous) => ({ ...previous, ...patch }));
     save(patch);
   };
-  const shown = { ...member, ...pending };
+  const shown = { ...member, ...typed };
   const workDays = member.expectedWorkDays ?? organisationDefaults.expectedWorkDays;
   const disabledDays =
     member.trackingDisabledDays ?? organisationDefaults.trackingDisabledDays;
