@@ -441,6 +441,10 @@ export class OrganisationsService {
         membership?.appUrlTracking ??
         settings.appUrlTracking ??
         DEFAULT_CAPTURE_SETTINGS.appUrlTracking,
+      allowedApps:
+        membership?.allowedApps ??
+        settings.allowedApps ??
+        DEFAULT_CAPTURE_SETTINGS.allowedApps,
       screenshotsEnabled:
         settings.screenshotsEnabled ??
         DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,

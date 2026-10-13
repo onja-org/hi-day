@@ -736,6 +736,7 @@ describe('OrganisationsService', () => {
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
         appUrlTracking: 'apps',
+        allowedApps: 'all',
         screenshotsEnabled: false,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
@@ -764,10 +765,32 @@ describe('OrganisationsService', () => {
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
         appUrlTracking: 'apps',
+        allowedApps: 'all',
         screenshotsEnabled: true,
         screenshotFrequencySeconds: 120,
         screenshotRetentionDays: 7,
       });
+    });
+
+    it('sends allowedApps to the agent, with the member override applied', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { allowedApps: 'desktop_only' },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ allowedApps: 'mobile_only' }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ allowedApps: 'mobile_only' });
     });
 
     it("applies the member's own appUrlTracking override over the organisation default", async () => {

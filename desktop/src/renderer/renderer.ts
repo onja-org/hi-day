@@ -1567,8 +1567,10 @@ async function runInitTracking(): Promise<void> {
  */
 window.api.windowControls.onTrackingNotice((notice) => {
   trackingNotice.textContent = notice ?? "";
-  trackingNotice.hidden = notice === null;
-  trackingToggleBlocked = notice !== null;
+  // Truthiness, not `!== null`: an older main process sends `undefined`,
+  // which must not show an empty banner and disable the toggle.
+  trackingNotice.hidden = !notice;
+  trackingToggleBlocked = Boolean(notice);
   timerToggle.disabled = trackingToggleBlocked;
   compactTimerToggle.disabled = trackingToggleBlocked;
   if (notice) void refreshStatus(true);
