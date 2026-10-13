@@ -1,5 +1,9 @@
 import type { ApiResult } from "./api";
-import type { AppUrlTracking, TimesheetModifyTime } from "./organisation";
+import type {
+  AllowedApps,
+  AppUrlTracking,
+  TimesheetModifyTime,
+} from "./organisation";
 
 export type MembershipRole = "admin" | "manager" | "member" | "finance";
 
@@ -20,6 +24,8 @@ export type ActiveMember = {
   timezone: string | null;
   /** Per-member override of the org's Track apps & URLs default; `null` inherits. */
   appUrlTracking: AppUrlTracking | null;
+  /** `null` means inherit the organisation's Allowed apps default. */
+  allowedApps: AllowedApps | null;
   /** Per-member override of the org's Timesheets "Modify time" default; `null` inherits. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** Per-member override of the org's Timesheets "Require approval" default; `null` inherits. */
@@ -53,6 +59,7 @@ export type UpdateMembershipInput = {
   lastName?: string;
   /** `null` clears the override; omit to leave the override as-is. */
   appUrlTracking?: AppUrlTracking | null;
+  allowedApps?: AllowedApps | null;
   /** `null` clears the override; omit to leave the override as-is. */
   timesheetModifyTime?: TimesheetModifyTime | null;
   /** `null` clears the override; omit to leave the override as-is. */

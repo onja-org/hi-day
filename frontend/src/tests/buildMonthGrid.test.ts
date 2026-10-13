@@ -26,4 +26,11 @@ describe("buildMonthGrid", () => {
     expect(grid[0]).toEqual(new Date(2026, 9, 26));
     expect(grid[6]).toEqual(new Date(2026, 10, 1));
   });
+
+  it("starts the grid on Sunday for an organisation whose weeks do", () => {
+    const grid = buildMonthGrid(new Date(2026, 8, 15), "sunday");
+
+    expect(grid[0]).toEqual(new Date(2026, 7, 30));
+    expect(grid[2]).toEqual(new Date(2026, 8, 1));
+  });
 });

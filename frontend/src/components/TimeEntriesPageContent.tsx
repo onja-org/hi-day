@@ -24,6 +24,7 @@ import {
 import type { TimesheetFilters } from "@/lib/timesheetFilters";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { getWeekRange } from "@/lib/getWeekRange";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import type { DateRangePreset } from "@/types/dateRange";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { ExportButtons } from "@/components/ExportButtons";
@@ -81,7 +82,7 @@ export function TimeEntriesPageContent({
   const organisationQuery = useCurrentOrganisation();
   const canViewOthers =
     organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
-  const isAdmin = organisationQuery.data?.role === "admin";
+  const canModifyTime = organisationQuery.data?.canModifyTime ?? false;
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();
   useReportTimezone(profileQuery.data?.timezone);
@@ -127,8 +128,14 @@ export function TimeEntriesPageContent({
     timezoneOptions.find((option) => option.source === activeSource)?.zone ??
     "UTC";
 
+  const organisationWeekStart = useOrganisationWeekStart();
   const dailyRange = datePreset
-    ? getTimesheetDateRange(datePreset, new Date(), activeZone)
+    ? getTimesheetDateRange(
+        datePreset,
+        new Date(),
+        activeZone,
+        organisationWeekStart,
+      )
     : getCustomDateRange(customDays.from, customDays.to, activeZone);
   const dailyEntriesQuery = useTimeEntries(
     organisationId,
@@ -141,6 +148,7 @@ export function TimeEntriesPageContent({
     now,
     weekOffset,
     activeZone,
+    organisationWeekStart,
   );
   const weekEntriesQuery = useTimeEntries(
     organisationId,
@@ -221,7 +229,7 @@ export function TimeEntriesPageContent({
               noMatchesLabel="No members match"
             />
           )}
-          {isAdmin && (
+          {canModifyTime && (
             <button
               type="button"
               onClick={() => setAddingTime(true)}

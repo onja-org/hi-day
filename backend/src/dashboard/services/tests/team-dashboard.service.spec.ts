@@ -11,6 +11,8 @@ import { TimeEntrySource } from '../../../database/entities/time-entry-source.en
 import { UrlSession } from '../../../database/entities/url-session.entity';
 import type { ActiveMemberSummary } from '../../../members/services/memberships.service';
 import { MembershipsService } from '../../../members/services/memberships.service';
+import type { WeekStart } from '../../../organisations/company-profile';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { ScreenshotsService } from '../../../screenshots/services/screenshots.service';
 import { TeamDashboardService } from '../team-dashboard.service';
 
@@ -106,6 +108,14 @@ describe('TeamDashboardService', () => {
     } as unknown as MembershipsService;
   }
 
+  function makeOrganisationsService(
+    weekStartsOn: WeekStart = 'monday',
+  ): OrganisationsService {
+    return {
+      getWeekStart: jest.fn().mockResolvedValue(weekStartsOn),
+    } as unknown as OrganisationsService;
+  }
+
   function makeScreenshotsService(
     byMembershipId: Record<string, unknown[]> = {},
   ): ScreenshotsService {
@@ -172,6 +182,7 @@ describe('TeamDashboardService', () => {
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService([]),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -209,6 +220,7 @@ describe('TeamDashboardService', () => {
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -245,6 +257,7 @@ describe('TeamDashboardService', () => {
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -273,6 +286,7 @@ describe('TeamDashboardService', () => {
       makeAppEventsRepo(),
       makeUrlSessionsRepo(),
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService({ 'm-busy': [{ id: 's-1' }, { id: 's-2' }] }),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -299,6 +313,7 @@ describe('TeamDashboardService', () => {
         { host: 'docs.google.com', totalActiveMs: '20000' },
       ]),
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -322,6 +337,7 @@ describe('TeamDashboardService', () => {
       makeAppEventsRepo([]),
       urlSessionsRepo,
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -346,6 +362,7 @@ describe('TeamDashboardService', () => {
       appEventsRepo,
       makeUrlSessionsRepo([]),
       makeMembershipsService(members),
+      makeOrganisationsService(),
       makeScreenshotsService(),
       makeTeamsRepo(),
       makeCallerRepo(),
@@ -392,6 +409,7 @@ describe('TeamDashboardService', () => {
         makeAppEventsRepo(),
         makeUrlSessionsRepo(),
         makeMembershipsService(members),
+        makeOrganisationsService(),
         makeScreenshotsService(),
         makeTeamsRepo(teams),
         makeCallerRepo(caller),

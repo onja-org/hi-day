@@ -1,3 +1,5 @@
+import type { CaptureSettings } from '../../../organisations/capture-settings';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -75,6 +77,21 @@ describe('UrlSessionsService', () => {
     } as unknown as TimeEntriesService;
   }
 
+  function makeOrganisationsService(
+    overrides: Partial<CaptureSettings> = {},
+  ): OrganisationsService {
+    return {
+      getCaptureSettings: jest.fn().mockResolvedValue({
+        windowTrackingEnabled: true,
+        appUrlTracking: 'apps_urls',
+        screenshotsEnabled: false,
+        screenshotFrequencySeconds: 600,
+        screenshotRetentionDays: 30,
+        ...overrides,
+      }),
+    } as unknown as OrganisationsService;
+  }
+
   function makeService(
     overrides: {
       urlSessionsRepo?: Repository<UrlSession>;
@@ -82,6 +99,7 @@ describe('UrlSessionsService', () => {
       dataSource?: unknown;
       auditLogService?: AuditLogService;
       timeEntriesService?: TimeEntriesService;
+      organisationsService?: OrganisationsService;
     } = {},
   ) {
     return new UrlSessionsService(
@@ -90,6 +108,7 @@ describe('UrlSessionsService', () => {
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
       overrides.timeEntriesService ?? makeTimeEntriesService(),
+      overrides.organisationsService ?? makeOrganisationsService(),
     );
   }
 
@@ -134,6 +153,24 @@ describe('UrlSessionsService', () => {
         ],
         ['id'],
       );
+    });
+
+    it('acks without storing when URL tracking is not enabled for this member', async () => {
+      const upsert = jest.fn().mockResolvedValue(undefined);
+      const service = makeService({
+        urlSessionsRepo: makeUrlSessionsRepo({ upsert }),
+        organisationsService: makeOrganisationsService({
+          appUrlTracking: 'apps',
+        }),
+      });
+
+      const result = await service.sync('org-1', 'user-1', 'device-1', [
+        makeEntry({ id: 'session-1' }),
+      ]);
+
+      // Acked so the agent drops them, rather than retrying the batch forever.
+      expect(result.acked).toEqual(['session-1']);
+      expect(upsert).not.toHaveBeenCalled();
     });
 
     it('rejects a caller with no active organisation membership', async () => {

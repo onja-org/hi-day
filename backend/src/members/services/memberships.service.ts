@@ -14,6 +14,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { User } from '../../database/entities/user.entity';
+import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
@@ -32,6 +33,8 @@ export interface ActiveMemberSummary {
   timezone: string | null;
   /** `null` means inherit the Organisation's default. */
   appUrlTracking: AppUrlTracking | null;
+  /** `null` means inherit the Organisation's "Allowed apps" default. */
+  allowedApps: AllowedApps | null;
   /** `null` means inherit the Organisation's Timesheets "Modify time" default. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
@@ -218,6 +221,9 @@ export class MembershipsService {
 
     if (dto.appUrlTracking !== undefined) {
       membership.appUrlTracking = dto.appUrlTracking;
+    }
+    if (dto.allowedApps !== undefined) {
+      membership.allowedApps = dto.allowedApps;
     }
 
     if (dto.timesheetModifyTime !== undefined) {
@@ -444,6 +450,7 @@ export class MembershipsService {
       joinedAt: membership.createdAt,
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
+      allowedApps: membership.allowedApps,
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
     };
@@ -455,6 +462,32 @@ export class MembershipsService {
    * default. Backs the "Apply to all" button on the Track apps & URLs
    * setting — one UPDATE rather than N PATCHes from the client.
    */
+  /** "Apply to all" for Allowed apps — one UPDATE, as the app/URL reset. */
+  async resetAllAllowedAppsOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ allowedApps: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('allowedApps IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.allowed_apps_overrides_reset',
+          organisationId,
+          actorUserId,
+        }),
+      );
+    }
+    return { cleared };
+  }
+
   async resetAllAppUrlTrackingOverrides(
     organisationId: string,
     actorUserId: string,

@@ -1,4 +1,5 @@
 import type { DateRange, DateRangePreset } from "@/types/dateRange";
+import type { WeekStart } from "@/types/organisation";
 import {
   addDaysToKey,
   dateKeyInZone,
@@ -13,7 +14,11 @@ import {
 } from "./timezone";
 
 /** The calendar days a preset covers. Zone-free — a preset names days. */
-function keysFor(preset: DateRangePreset, todayKey: string): [string, string] {
+function keysFor(
+  preset: DateRangePreset,
+  todayKey: string,
+  weekStart: WeekStart,
+): [string, string] {
   switch (preset) {
     case "today":
       return [todayKey, todayKey];
@@ -25,12 +30,15 @@ function keysFor(preset: DateRangePreset, todayKey: string): [string, string] {
       return [addDaysToKey(todayKey, -6), todayKey];
     case "last_week": {
       const inLastWeek = addDaysToKey(todayKey, -7);
-      return [startOfWeekKey(inLastWeek), endOfWeekKey(inLastWeek)];
+      return [
+        startOfWeekKey(inLastWeek, weekStart),
+        endOfWeekKey(inLastWeek, weekStart),
+      ];
     }
     case "last_2_weeks":
       return [
-        startOfWeekKey(addDaysToKey(todayKey, -14)),
-        endOfWeekKey(addDaysToKey(todayKey, -7)),
+        startOfWeekKey(addDaysToKey(todayKey, -14), weekStart),
+        endOfWeekKey(addDaysToKey(todayKey, -7), weekStart),
       ];
     case "this_month":
       return [startOfMonthKey(todayKey), todayKey];
@@ -52,8 +60,9 @@ export function getTimesheetDateRange(
   preset: DateRangePreset,
   now: Date = new Date(),
   zone: string = detectTimezone(),
+  weekStart: WeekStart = "monday",
 ): DateRange {
-  const [fromKey, toKey] = keysFor(preset, dateKeyInZone(now, zone));
+  const [fromKey, toKey] = keysFor(preset, dateKeyInZone(now, zone), weekStart);
   return {
     from: startOfDayInZone(fromKey, zone),
     // Inclusive: the backend filters with `Between`, so the next day's

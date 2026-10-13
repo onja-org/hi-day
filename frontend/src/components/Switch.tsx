@@ -1,3 +1,4 @@
+import { XIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 
 type SwitchProps = {
@@ -10,8 +11,9 @@ type SwitchProps = {
 
 /**
  * A bare on/off switch for a table cell or a control row, where `Toggle`'s
- * label-and-description layout would not fit. Same visual recipe as
- * `Toggle`, so the two read as one control in the same page.
+ * label-and-description layout would not fit. `Toggle`'s visual recipe plus
+ * an ✕ in the knob while off, which `Toggle` does not draw — the two are
+ * never used beside each other.
  */
 export function Switch({
   label,
@@ -39,6 +41,12 @@ export function Switch({
       />
       <span className="absolute inset-0 rounded-full bg-sidebar-active transition-colors duration-150 peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30" />
       <span className="absolute left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-150 peer-checked:translate-x-5" />
+      {/* A sibling of the input rather than a child of the knob, because
+          `peer-checked:` only reaches siblings — so it repeats the knob's
+          transform and rides along with it. */}
+      <span className="pointer-events-none absolute left-0.5 flex h-5 w-5 items-center justify-center text-icon transition-all duration-150 peer-checked:translate-x-5 peer-checked:opacity-0">
+        <XIcon size={10} weight="bold" aria-hidden="true" />
+      </span>
     </label>
   );
 }

@@ -14,7 +14,8 @@ import type {
 import { CaptureSettingsFields } from "./CaptureSettingsFields";
 import { CompanyProfileFields } from "./CompanyProfileFields";
 import { ErrorMessage } from "./ErrorMessage";
-import { IdleTimeFields } from "./IdleTimeFields";
+import { IdleHandlingFields } from "./IdleHandlingFields";
+import { IdleTimeoutField } from "./IdleTimeoutField";
 import { SettingsSaveBar } from "./SettingsSaveBar";
 import { SettingsSectionRow } from "./SettingsSectionRow";
 import { WorkingHoursField } from "./WorkingHoursField";
@@ -97,7 +98,10 @@ export function OrganisationSettingsFields({
           title="Idle time"
           description="What happens when nobody touches the keyboard or mouse for a while."
         >
-          <IdleTimeFields organisation={organisation} />
+          <div className="flex flex-col gap-4">
+            <IdleTimeoutField organisation={organisation} />
+            <IdleHandlingFields organisation={organisation} />
+          </div>
         </SettingsSectionRow>
 
         <SettingsSectionRow

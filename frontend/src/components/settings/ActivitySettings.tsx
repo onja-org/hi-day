@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import clsx from "clsx";
 import {
   ACTIVE_MEMBERS_QUERY_KEY,
   useActiveMembers,
@@ -23,10 +22,12 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { Spinner } from "@/components/Spinner";
 import { Toggle } from "@/components/Toggle";
 import { OrgDefaultWithOverrides } from "./OrgDefaultWithOverrides";
+import { SettingsSubNav } from "./SettingsSubNav";
+import type { SettingsSubNavItem } from "./SettingsSubNav";
 
 type SubNavKey = "track-apps-urls" | "record-activity";
 
-const SUB_NAV: { key: SubNavKey; label: string }[] = [
+const SUB_NAV: SettingsSubNavItem<SubNavKey>[] = [
   { key: "track-apps-urls", label: "Track apps & URLs" },
   { key: "record-activity", label: "Record activity" },
 ];
@@ -42,29 +43,12 @@ export function ActivitySettings() {
 
   return (
     <div className="grid gap-6 py-6 md:grid-cols-[14rem_1fr] md:gap-8">
-      <nav aria-label="Activity sub-sections">
-        <ul className="flex flex-col gap-0.5">
-          {SUB_NAV.map((item) => {
-            const isActive = item.key === active;
-            return (
-              <li key={item.key}>
-                <button
-                  type="button"
-                  onClick={() => setActive(item.key)}
-                  aria-current={isActive ? "page" : undefined}
-                  className={clsx(
-                    "block w-full rounded-brand-sm px-3 py-2 text-left text-sm font-semibold transition-colors duration-150",
-                    isActive && "bg-cream text-primary",
-                    !isActive && "text-slate-900 hover:bg-cream/50",
-                  )}
-                >
-                  {item.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <SettingsSubNav
+        label="Activity sub-sections"
+        items={SUB_NAV}
+        active={active}
+        onSelect={setActive}
+      />
 
       <div className="min-w-0">
         {active === "track-apps-urls" && <TrackAppsUrlsPanel />}
@@ -263,7 +247,7 @@ function RecordActivityPanel() {
         <Toggle
           name="windowTrackingEnabled"
           label="Window titles"
-          description="Records the title of the active window, such as the document or page name."
+          description="Includes the title of the active window — the document or page name — alongside the app. Which apps are recorded at all is Track apps \u0026 URLs; with this off, the app is still recorded, just without its title."
           checked={organisation.windowTrackingEnabled}
           onCheckedChange={(next) => mutation.mutate(next)}
         />

@@ -172,13 +172,17 @@ describe('OrganisationsService', () => {
         id: 100000,
         name: 'Acme Inc',
         address: '1 Main St',
+        industry: null,
+        taxId: null,
         website: 'https://acme.test',
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
         windowTrackingEnabled: true,
         appUrlTracking: 'apps',
-        timesheetModifyTime: 'add_edit',
+        allowedApps: 'all',
+        timesheetModifyTime: 'off',
+        canModifyTime: false,
         timesheetRequireApproval: false,
         timesheetManagersApproveOwn: false,
         timesheetRequireReason: true,
@@ -187,6 +191,7 @@ describe('OrganisationsService', () => {
         screenshotRetentionDays: 30,
         workingHoursPerDay: 8,
         timezone: 'UTC',
+        weekStartsOn: 'monday',
         userId: 'user-1',
         isOwner: false,
         deletionScheduledFor: null,
@@ -437,6 +442,71 @@ describe('OrganisationsService', () => {
       );
     });
 
+    it('stores the company-profile fields', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        industry: 'software_it',
+        taxId: '  GB123456789  ',
+        weekStartsOn: 'sunday',
+        timezone: 'Africa/Nairobi',
+      });
+
+      expect(profile.industry).toBe('software_it');
+      expect(profile.taxId).toBe('GB123456789');
+      expect(profile.weekStartsOn).toBe('sunday');
+      expect(profile.timezone).toBe('Africa/Nairobi');
+    });
+
+    it('clears an optional profile field when sent an empty value', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {
+          industry: 'finance',
+          taxId: 'GB123456789',
+          address: '1 Main St',
+          website: 'https://acme.test',
+        },
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        industry: '',
+        taxId: '',
+        address: '   ',
+        website: '',
+      });
+
+      expect(profile.industry).toBeNull();
+      expect(profile.taxId).toBeNull();
+      expect(profile.address).toBeNull();
+      expect(profile.website).toBeNull();
+    });
+
     it('updates the idle policy fields', async () => {
       const organisation = {
         id: 'org-1',
@@ -667,6 +737,26 @@ describe('OrganisationsService', () => {
         screenshotFrequencySeconds: 120,
         screenshotRetentionDays: 7,
       });
+    });
+
+    it("applies the member's own appUrlTracking override over the organisation default", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { appUrlTracking: 'apps_urls' },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ appUrlTracking: 'off' }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ appUrlTracking: 'off' });
     });
   });
 });
