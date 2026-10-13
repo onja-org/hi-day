@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -35,7 +36,10 @@ import {
 } from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import { Organisation } from '../../database/entities/organisation.entity';
-import { DEFAULT_TIMESHEET_MODIFY_TIME } from '../../organisations/timesheet-settings';
+import {
+  DEFAULT_TIMESHEET_MODIFY_TIME,
+  DEFAULT_TIMESHEET_REQUIRE_REASON,
+} from '../../organisations/timesheet-settings';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -433,27 +437,7 @@ export class TimeEntriesService {
       });
     }
 
-    // The web may track alongside a Device, but only the same Project:
-    // "laptop says X, browser says Y" is a split the person cannot see,
-    // unlike two machines they picked up one at a time. Devices keep their
-    // freedom to differ from each other (ADR-0022).
-    const deviceProjectIds = new Set(
-      elsewhere
-        .filter((entry) => entry.deviceId !== null)
-        .map((entry) => entry.projectId),
-    );
-    if (
-      deviceId === null &&
-      deviceProjectIds.size > 0 &&
-      !deviceProjectIds.has(projectId)
-    ) {
-      const mismatch = elsewhere.find((entry) => entry.deviceId !== null)!;
-      throw new ConflictException({
-        message:
-          'Your device is tracking a different project. Start that same project here, or stop it there first.',
-        runningEntry: await this.toSummary(mismatch),
-      });
-    }
+    await this.assertWebMatchesDevices(elsewhere, deviceId, projectId);
 
     const startedAt = await this.resolveStartedAt(
       membership.id,
@@ -545,10 +529,40 @@ export class TimeEntriesService {
   }
 
   /**
+   * The web may track alongside a Device, but only the same Project:
+   * "laptop says X, browser says Y" is a split the person cannot see,
+   * unlike two machines they picked up one at a time. Devices keep their
+   * freedom to differ from each other (ADR-0022).
+   */
+  private async assertWebMatchesDevices(
+    running: TimeEntry[],
+    deviceId: string | null,
+    projectId: string,
+  ): Promise<void> {
+    if (deviceId !== null) return;
+    const onDevices = running.filter((entry) => entry.deviceId !== null);
+    if (
+      onDevices.length === 0 ||
+      onDevices.some((entry) => entry.projectId === projectId)
+    ) {
+      return;
+    }
+    throw new ConflictException({
+      message:
+        'Your device is tracking a different project. Start that same project here, or stop it there first.',
+      runningEntry: await this.toSummary(onDevices[0]),
+    });
+  }
+
+  /**
    * Atomically stops whatever's currently running (if anything) and starts
    * a new timer, in one transaction — the explicit alternative to the 409
    * `start` throws, so there's no client-side gap between the stop and the
    * next start.
+   *
+   * It starts a timer either way, so it answers to Allowed apps just as
+   * `start` does — a running timer the setting disallows was already ended
+   * when the setting changed (`stopEntriesDisallowedByApps`).
    */
   async switchTo(
     organisationId: string,
@@ -564,6 +578,11 @@ export class TimeEntriesService {
       projectId,
       taskId,
     );
+    const running = await this.timeEntries.find({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    await this.assertAppAllowed(membership, organisationId, source);
+    await this.assertWebMatchesDevices(running, deviceId, projectId);
 
     const saved = await this.dataSource.transaction(async (manager) => {
       // Scoped to this Device: switching on one machine stops that machine's
@@ -1070,10 +1089,9 @@ export class TimeEntriesService {
 
   /**
    * Directly logs a completed span with an explicit start/end rather than
-   * running a live timer. Admin-only — everyone else logs time by running a
-   * timer, not by typing hours in (the gate lives in
-   * `resolveManualEntryTarget`). `dto.membershipId` puts the span on someone
-   * else's timesheet.
+   * running a live timer. Needs Modify time (always true for an admin; the
+   * gate lives in `resolveManualEntryTarget`). `dto.membershipId` puts the
+   * span on someone else's timesheet.
    */
   async createManual(
     organisationId: string,
@@ -1088,6 +1106,7 @@ export class TimeEntriesService {
       dto.taskId,
       dto.membershipId,
     );
+    await this.assertReasonGiven(organisationId, dto.reason);
 
     const startedAt = new Date(dto.startedAt);
     const endedAt = new Date(dto.endedAt);
@@ -1139,8 +1158,8 @@ export class TimeEntriesService {
   }
 
   /**
-   * Edits a Time entry. Admin-only, anyone's including their own — see
-   * `canEditEntry`.
+   * Edits a Time entry: needs Modify time, and only on a timesheet the
+   * editor can see — see `canEditEntry`.
    *
    * An unstopped entry (`endedAt IS NULL`, which a *paused* one also is)
    * can still have its Project, Task and start corrected. Only `endedAt` is
@@ -1176,6 +1195,7 @@ export class TimeEntriesService {
         'You do not have permission to edit this time entry.',
       );
     }
+    await this.assertReasonGiven(organisationId, dto.reason);
     // A paused entry isn't accruing, so giving it an end just closes it where
     // it already left off — allowed, and handled as a stop below. A *ticking*
     // one still refuses: ending a live timer here would leave no record of
@@ -1210,6 +1230,25 @@ export class TimeEntriesService {
         nextProjectId,
         nextTaskId ?? undefined,
       );
+    }
+    // The entry stays on its owner's timesheet, so the Project it moves to
+    // must be one *they* can log time against, not just the editor — the
+    // same rule as directing a manual entry at someone.
+    if (projectChanged && entry.membershipId !== membership.id) {
+      const owner = await this.memberships.findOne({
+        where: { id: entry.membershipId, organisationId },
+      });
+      if (!owner) {
+        throw new NotFoundException('Member not found.');
+      }
+      try {
+        await this.assertProjectAccess(owner, nextProjectId);
+      } catch (error) {
+        if (!(error instanceof ForbiddenException)) throw error;
+        throw new ForbiddenException(
+          "This member can't log time on that project, so their entry can't move there.",
+        );
+      }
     }
 
     const nextStartedAt = dto.startedAt
@@ -1311,7 +1350,7 @@ export class TimeEntriesService {
    * `endedAt` moved back. The second half is a new row inheriting Project,
    * Task, source and Device.
    *
-   * Admin-only (`canEditEntry`). An unstopped entry can't be split: with no
+   * Same permission as editing (`canEditEntry`). An unstopped entry can't be split: with no
    * end, the second half would have no span.
    */
   async split(
@@ -1482,6 +1521,7 @@ export class TimeEntriesService {
         "You can only delete your own time entries — an admin can delete anyone's.",
       );
     }
+    await this.assertReasonGiven(organisationId, dto.reason);
     const span = { from: entry.startedAt, to: entry.endedAt ?? new Date() };
 
     // Snapshot, delete and prune in one transaction so a deleted entry can
@@ -1803,7 +1843,7 @@ export class TimeEntriesService {
 
     let membership = caller;
     if (targetMembershipId && targetMembershipId !== caller.id) {
-      await this.assertCanLogTimeForOthers(caller, projectId);
+      const reach = await this.assertCanLogTimeForOthers(caller, projectId);
       const target = await this.memberships.findOne({
         where: {
           id: targetMembershipId,
@@ -1814,9 +1854,14 @@ export class TimeEntriesService {
       if (!target) {
         throw new NotFoundException('Membership not found.');
       }
-      // Same bound as editing: writing to someone's timesheet is never
-      // wider than being able to read it.
-      if (!(await this.canSeeMembership(caller, organisationId, target.id))) {
+      // A project manager reaches everyone on their Project — the target's
+      // own access is checked just below. Otherwise it's the same bound as
+      // editing: writing to someone's timesheet is never wider than being
+      // able to read it.
+      if (
+        reach === 'team' &&
+        !(await this.canSeeMembership(caller, organisationId, target.id))
+      ) {
         throw new ForbiddenException(
           "You do not have access to this member's timesheet.",
         );
@@ -1855,25 +1900,25 @@ export class TimeEntriesService {
 
   /**
    * Whether `caller` may attribute a manual entry to someone else on this
-   * Project — an org admin/manager, or a direct `manager`-tier
-   * ProjectMembership (see ProjectRoleGuard's own comment: a project role
-   * only ever *adds* access, never restricts an org admin/manager).
-   * Team-derived project access carries no role tier of its own, so it
-   * doesn't unlock this — only a direct ProjectMembership does.
+   * Project, and whom: a direct `manager`-tier ProjectMembership reaches
+   * everyone on the Project (`'project'`); otherwise an org admin/manager
+   * reaches whoever they can see (`'team'` — see `canSeeMembership`). A
+   * project role only ever *adds* access (see ProjectRoleGuard). Team-derived
+   * project access carries no role tier of its own, so it doesn't unlock
+   * this — only a direct ProjectMembership does.
    */
   private async assertCanLogTimeForOthers(
     caller: Membership,
     projectId: string,
-  ): Promise<void> {
-    if (ORG_WIDE_ROLES.includes(caller.role)) {
-      return;
-    }
-
+  ): Promise<'project' | 'team'> {
     const callerProjectMembership = await this.projectMemberships.findOne({
       where: { projectId, membershipId: caller.id },
     });
     if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
-      return;
+      return 'project';
+    }
+    if (ORG_WIDE_ROLES.includes(caller.role)) {
+      return 'team';
     }
 
     throw new ForbiddenException(
@@ -2141,12 +2186,14 @@ export class TimeEntriesService {
     };
   }
 
-  /** Whether this person may add or rewrite hours at all. Gates every
-   * role, an admin included; *whose* hours is `canSeeMembership`. */
+  /** Whether this person may add or rewrite hours at all. An admin always
+   * may; for everyone else it's the Modify time setting. *Whose* hours is
+   * `canSeeMembership`. */
   private async canModifyTime(
     membership: Membership,
     organisationId: string,
   ): Promise<boolean> {
+    if (membership.role === MembershipRole.ADMIN) return true;
     const effective =
       membership.timesheetModifyTime ??
       (await this.organisationModifyTime(organisationId));
@@ -2170,8 +2217,9 @@ export class TimeEntriesService {
     );
   }
 
-  /** Checked on `start` only: a timer already running when the setting
-   * changed is left alone, not killed under whoever is using it. */
+  /** Checked whenever a timer starts — `start` and `switchTo`. Timers
+   * already running when the setting changes are ended by
+   * `stopEntriesDisallowedByApps`. */
   private async assertAppAllowed(
     membership: Membership,
     organisationId: string,
@@ -2253,6 +2301,24 @@ export class TimeEntriesService {
     return settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
   }
 
+  /** The organisation's Require reason setting, held at the API so no
+   * client can skip it; a batch delete sends its one reason with each. */
+  private async assertReasonGiven(
+    organisationId: string,
+    reason: string | undefined,
+  ): Promise<void> {
+    if (reason?.trim()) return;
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = organisation?.settings as
+      { timesheetRequireReason?: boolean } | undefined;
+    if (settings?.timesheetRequireReason ?? DEFAULT_TIMESHEET_REQUIRE_REASON) {
+      throw new BadRequestException('Give a reason for this change.');
+    }
+  }
+
+  /** Read fresh, like `organisationAllowedApps`. */
   private async organisationModifyTime(
     organisationId: string,
   ): Promise<TimesheetModifyTime> {

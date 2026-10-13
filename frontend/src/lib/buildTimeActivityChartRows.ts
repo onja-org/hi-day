@@ -11,9 +11,10 @@ export function buildTimeActivityChartRows(
   grouping: TimeActivityGrouping,
   teamNames: MembershipTeamNames,
   weekStart: WeekStart = "monday",
+  zone?: string,
 ): ReportChartRow[] {
   if (grouping === "none") return [];
-  return groupEntriesBy(entries, grouping, teamNames, weekStart).map((group) => ({
+  return groupEntriesBy(entries, grouping, teamNames, weekStart, zone).map((group) => ({
     label: group.label,
     values: splitEntrySeconds(group.entries),
   }));

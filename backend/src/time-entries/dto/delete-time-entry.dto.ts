@@ -1,9 +1,10 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class DeleteTimeEntryDto {
-  /** Kept on the `time_entry.deleted` audit row. Optional here because
-   * batch delete removes many at once with nowhere to ask per entry; the
-   * single-entry dialog insists on one. */
+  /** Kept on the `time_entry.deleted` audit row. Optional in shape;
+   * required by the service whenever the organisation's
+   * `timesheetRequireReason` is on — a batch delete sends its one reason
+   * with every entry. */
   @IsOptional()
   @IsString()
   @MaxLength(500)

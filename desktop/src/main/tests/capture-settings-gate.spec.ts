@@ -214,16 +214,32 @@ describe('CaptureSettingsGate', () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
-  it('treats a failed request as all-off', async () => {
+  it('keeps the last known settings through a failed request', async () => {
     const onChange = vi.fn();
-    const gate = new CaptureSettingsGate(
-      makeSession('token-1'),
-      makeClient({ ok: false }),
-      onChange,
-    );
-
+    const client = makeClient({ ok: true, data: settings({ windowTrackingEnabled: true, appUrlTracking: 'apps_urls' }) });
+    const gate = new CaptureSettingsGate(makeSession('token-1'), client, onChange);
     await gate.pollOnce();
 
-    expect(onChange).not.toHaveBeenCalled(); // starts all-off; a failed poll stays all-off
+    (client.getCaptureSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false });
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenCalledTimes(1); // only the first, enabling poll
+  });
+
+  it('treats a signed-out device (401) as all-off', async () => {
+    const onChange = vi.fn();
+    const client = makeClient({ ok: true, data: settings({ windowTrackingEnabled: true, appUrlTracking: 'apps' }) });
+    const gate = new CaptureSettingsGate(makeSession('token-1'), client, onChange);
+    await gate.pollOnce();
+
+    (client.getCaptureSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      unauthorized: true,
+    });
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ appUrlTracking: 'off', windowTrackingEnabled: false }),
+    );
   });
 });

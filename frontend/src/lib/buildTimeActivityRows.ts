@@ -16,6 +16,8 @@ type RowOptions = {
   idleMembers?: IdleMember[];
   /** Only read by the "week" grouping. */
   weekStart?: WeekStart;
+  /** The zone days are read in; the browser's when omitted. */
+  zone?: string;
 };
 
 function hours(seconds: number): string {
@@ -66,13 +68,14 @@ function mergeEntries(
   teamNames: MembershipTeamNames,
   onlyTeam?: string,
   splitTeams = true,
+  zone?: string,
 ): MergedRow[] {
   const merged = new Map<string, MergedRow>();
   for (const entry of entries) {
     const names = teamNames.get(entry.membershipId) ?? [];
     if (!splitTeams) {
       // One row per member and project whatever their teams; the Team cell lists them all.
-      const key = [perDay ? entryDayLabel(entry) : "", entry.membershipId, entry.projectId, entry.taskId ?? ""].join("|");
+      const key = [perDay ? entryDayLabel(entry, zone) : "", entry.membershipId, entry.projectId, entry.taskId ?? ""].join("|");
       const existing = merged.get(key);
       if (existing) existing.entries.push(entry);
       else merged.set(key, { key, entries: [entry], team: names.join(", ") || null });
@@ -84,7 +87,7 @@ function mergeEntries(
         ? names
         : [null];
     for (const team of teams) {
-      const key = [perDay ? entryDayLabel(entry) : "", entry.membershipId, entry.projectId, entry.taskId ?? "", team ?? ""].join("|");
+      const key = [perDay ? entryDayLabel(entry, zone) : "", entry.membershipId, entry.projectId, entry.taskId ?? "", team ?? ""].join("|");
       const existing = merged.get(key);
       if (existing) existing.entries.push(entry);
       else merged.set(key, { key, entries: [entry], team });
@@ -103,15 +106,16 @@ function leafRows(
   onlyTeam: string | undefined,
   isTopLevel: boolean,
   splitTeams: boolean,
+  zone?: string,
 ): ReportTableRow[] {
-  return mergeEntries(entries, perDay, teamNames, onlyTeam, splitTeams).map(({ key, entries: merged, team }) => {
+  return mergeEntries(entries, perDay, teamNames, onlyTeam, splitTeams, zone).map(({ key, entries: merged, team }) => {
     const [first] = merged;
     return {
       id: path ? `${path}|${key}` : key,
       sortKey: Math.min(...merged.map((entry) => new Date(entry.startedAt).getTime())),
       cells: {
         date: grouping === "member" ? first.projectName : memberLabelOf(first),
-        when: entryDayLabel(first),
+        when: entryDayLabel(first, zone),
         ...entryCells(merged),
         ...(isTopLevel ? {} : { team: team ?? "-" }),
       },
@@ -129,10 +133,10 @@ function leafRows(
 export function buildTimeActivityRows(
   entries: TimeEntryListItem[],
   grouping: TimeActivityGrouping,
-  { sumDates, teamNames, idleMembers = [], weekStart = "monday" }: RowOptions,
+  { sumDates, teamNames, idleMembers = [], weekStart = "monday", zone }: RowOptions,
 ): ReportTableRow[] {
   if (grouping === "none") {
-    return leafRows(entries, "", true, grouping, teamNames, undefined, true, true);
+    return leafRows(entries, "", true, grouping, teamNames, undefined, true, true, zone);
   }
 
   const splitsByDay = grouping !== "day" && grouping !== "week" && !sumDates;
@@ -143,12 +147,12 @@ export function buildTimeActivityRows(
   // the rows apart. Other groupings still give each team its own row.
   const splitTeams = grouping !== "week" && grouping !== "day";
 
-  const rows = groupEntriesBy(entries, grouping, teamNames, weekStart).map((group) => {
+  const rows = groupEntriesBy(entries, grouping, teamNames, weekStart, zone).map((group) => {
     const onlyTeam = grouping === "team" ? group.label : undefined;
-    const days = splitsByDay ? groupEntriesBy(group.entries, "day") : [];
+    const days = splitsByDay ? groupEntriesBy(group.entries, "day", teamNames, weekStart, zone) : [];
     const count = splitsByDay
-      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams).length, 0)
-      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam, splitTeams).length;
+      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams, zone).length, 0)
+      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam, splitTeams, zone).length;
     return {
       id: group.id,
       sortKey: group.sortKey,
@@ -159,13 +163,13 @@ export function buildTimeActivityRows(
             id: `${group.id}|${day.id}`,
             sortKey: day.sortKey,
             cells: {
-              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams).length})`,
+              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams, zone).length})`,
               ...entryCells(day.entries),
               team: teamsOf(day.entries, teamNames).join(", ") || "-",
             },
-            subRows: leafRows(day.entries, `${group.id}|${day.id}`, false, grouping, teamNames, onlyTeam, false, splitTeams),
+            subRows: leafRows(day.entries, `${group.id}|${day.id}`, false, grouping, teamNames, onlyTeam, false, splitTeams, zone),
           }))
-        : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false, splitTeams),
+        : leafRows(group.entries, group.id, leavesPerDay, grouping, teamNames, onlyTeam, false, splitTeams, zone),
     };
   });
 

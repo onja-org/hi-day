@@ -49,6 +49,9 @@ type Props<K extends string> = {
   isSavingOrg: boolean;
   rows: OverrideRow<K>[];
   onMemberChange: (membershipId: string, next: K | null) => void;
+  /** Clears one member's overrides in a single request; without it, the
+   * row's reset calls `onMemberChange` (and the secondary's) with null. */
+  onMemberReset?: (membershipId: string) => void;
   savingMemberIds: ReadonlySet<string>;
   /** Clears every per-member override at once ("Apply to all"). */
   onApplyToAll: () => void;
@@ -72,6 +75,7 @@ export function OrgDefaultWithOverrides<K extends string>({
   isSavingOrg,
   rows,
   onMemberChange,
+  onMemberReset,
   savingMemberIds,
   onApplyToAll,
   isResetting,
@@ -149,6 +153,7 @@ export function OrgDefaultWithOverrides<K extends string>({
         orgValue={orgValue}
         rows={rows}
         onMemberChange={onMemberChange}
+        onMemberReset={onMemberReset}
         savingMemberIds={savingMemberIds}
         secondary={secondary}
       />

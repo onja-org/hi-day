@@ -81,8 +81,8 @@ export function TimeEntryActionsMenu({
     });
   }
 
-  // Someone viewing another person's timesheet without being an admin has
-  // no action at all on these rows.
+  // Someone who may neither edit (no Modify time) nor delete (not theirs,
+  // and not an admin) has no action at all on these rows.
   if (!entry.canEdit && !entry.canDelete) {
     return null;
   }

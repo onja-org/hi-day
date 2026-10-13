@@ -117,13 +117,17 @@ export function TimesheetModifyTimePanel() {
 
   const rows = useMemo(
     () =>
-      (membersQuery.data ?? []).map((member) => ({
-        membershipId: member.id,
-        name: member.name,
-        email: member.email,
-        override: member.timesheetModifyTime,
-        secondaryOverride: member.timesheetRequireApproval,
-      })),
+      (membersQuery.data ?? [])
+        // Admins can always modify time, so the setting has nothing to say
+        // about them.
+        .filter((member) => member.role !== "admin")
+        .map((member) => ({
+          membershipId: member.id,
+          name: member.name,
+          email: member.email,
+          override: member.timesheetModifyTime,
+          secondaryOverride: member.timesheetRequireApproval,
+        })),
     [membersQuery.data],
   );
 
@@ -163,7 +167,7 @@ export function TimesheetModifyTimePanel() {
 
       <OrgDefaultWithOverrides<TimesheetModifyTime>
         title="Modify time (manual time)"
-        description="Your team's ability to modify time — adding manual time and editing previously tracked time. Leave it Off to allow none. It applies to every role, admins included; what varies is whose time you can change: an admin anyone's, a manager their teams', a member their own. Members can always delete their own time."
+        description="Your team's ability to modify time — adding manual time and editing previously tracked time. Leave it Off to allow none. Admins can always modify anyone's time, so they aren't listed; for everyone else what varies is whose time: a manager their teams', a member their own. Members can always delete their own time."
         options={MODIFY_TIME_OPTIONS}
         orgValue={organisation.timesheetModifyTime}
         onOrgChange={(next) =>
@@ -177,11 +181,20 @@ export function TimesheetModifyTimePanel() {
             input: { timesheetModifyTime: next },
           })
         }
+        onMemberReset={(membershipId) =>
+          memberMutation.mutate({
+            membershipId,
+            input: {
+              timesheetModifyTime: null,
+              timesheetRequireApproval: null,
+            },
+          })
+        }
         savingMemberIds={savingMemberIds}
         onApplyToAll={() => resetMutation.mutate()}
         isResetting={resetMutation.isPending}
         secondary={{
-          label: "Require approval",
+          label: "Require approval (coming soon)",
           orgValue: organisation.timesheetRequireApproval,
           onOrgChange: (next) =>
             orgMutation.mutate({ timesheetRequireApproval: next }),
@@ -190,10 +203,9 @@ export function TimesheetModifyTimePanel() {
               membershipId,
               input: { timesheetRequireApproval: next },
             }),
-          // Approval is meaningless for someone who cannot modify time at
-          // all — greyed out, but the stored value is kept for when the
-          // control comes back on.
-          disabledWhen: (effective) => effective === "off",
+          // Approvals aren't built yet — no entry has an approval state —
+          // so the control stays greyed out, keeping any stored value.
+          disabledWhen: () => true,
         }}
         belowDefault={
           <div className="flex flex-col gap-3">
@@ -203,8 +215,9 @@ export function TimesheetModifyTimePanel() {
             <Toggle
               name="timesheetManagersApproveOwn"
               label="Allow managers to approve or deny their own manual time"
-              description="With this off, a manager's own manual time waits for someone else to approve it."
+              description="Coming soon — approvals aren't built yet, so this has no effect for now."
               checked={organisation.timesheetManagersApproveOwn}
+              disabled
               onCheckedChange={(next) =>
                 orgMutation.mutate({ timesheetManagersApproveOwn: next })
               }

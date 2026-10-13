@@ -27,8 +27,8 @@ export class UpdateTimeEntryDto {
   endedAt?: string;
 
   /** Kept on the `time_entry.updated` audit row and shown in the Manual
-   * time edits report. Optional here so other callers aren't broken; the
-   * timesheet's edit form insists on one. */
+   * time edits report. Optional in shape; required by the service whenever
+   * the organisation's `timesheetRequireReason` is on. */
   @IsOptional()
   @IsString()
   @MaxLength(500)

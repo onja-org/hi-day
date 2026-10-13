@@ -33,6 +33,8 @@ const OFF_SETTINGS: CaptureSettingsValue = {
 export interface CaptureSettingsResult {
   ok: boolean;
   data?: CaptureSettingsValue;
+  /** The device was signed out — an answer, unlike a request that failed. */
+  unauthorized?: boolean;
 }
 
 export interface CaptureSettingsClient {
@@ -85,14 +87,22 @@ export class CaptureSettingsGate {
     const settings = session
       ? await this.currentSettings(session.deviceToken)
       : OFF_SETTINGS;
-    this.applyIfChanged(settings);
+    if (settings) this.applyIfChanged(settings);
   }
 
+  /**
+   * `null` when the request didn't get an answer (offline, a server error,
+   * a deploy): the last known settings stand, rather than one missed poll
+   * switching capture off — and URL capture with it, losing its open
+   * session. A sign-out is an answer, and it means off.
+   */
   private async currentSettings(
     deviceToken: string,
-  ): Promise<CaptureSettingsValue> {
+  ): Promise<CaptureSettingsValue | null> {
     const result = await this.apiClient.getCaptureSettings(deviceToken);
-    return result.ok && result.data ? result.data : OFF_SETTINGS;
+    if (result.ok && result.data) return result.data;
+    if (result.unauthorized) return OFF_SETTINGS;
+    return null;
   }
 
   private applyIfChanged(settings: CaptureSettingsValue): void {

@@ -26,6 +26,8 @@ type TimeActivityReportBodyProps = {
   grouping: TimeActivityGrouping;
   teamNames: MembershipTeamNames;
   idleMembers: IdleMember[];
+  /** The zone the report reads days and weeks in. */
+  zone: string;
 };
 
 /** Avatars on a top-level row; nested rows carry their team names as plain text. */
@@ -39,7 +41,7 @@ function renderTeamCell(row: ReportTableRow) {
   );
 }
 
-export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembers }: TimeActivityReportBodyProps) {
+export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembers, zone }: TimeActivityReportBodyProps) {
   const [sumDates, setSumDates] = useState(false);
   const weekStart = useOrganisationWeekStart();
 
@@ -70,7 +72,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
           </summary>
           <div className="p-4 pt-0">
             <ReportsBarChart
-              rows={buildTimeActivityChartRows(entries, grouping, teamNames, weekStart)}
+              rows={buildTimeActivityChartRows(entries, grouping, teamNames, weekStart, zone)}
               series={TIME_ACTIVITY_CHART_SERIES}
             />
           </div>
@@ -87,6 +89,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
           teamNames,
           idleMembers,
           weekStart,
+          zone,
         })}
         toolbarExtra={
           canSumDates(grouping) && (

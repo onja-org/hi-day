@@ -16,6 +16,7 @@ type IndividualOverridesSectionProps<K extends string> = {
   orgValue: K;
   rows: OverrideRow<K>[];
   onMemberChange: (membershipId: string, next: K | null) => void;
+  onMemberReset?: (membershipId: string) => void;
   savingMemberIds: ReadonlySet<string>;
   secondary?: SecondaryToggleColumn<K>;
 };
@@ -27,6 +28,7 @@ export function IndividualOverridesSection<K extends string>({
   orgValue,
   rows,
   onMemberChange,
+  onMemberReset,
   savingMemberIds,
   secondary,
 }: IndividualOverridesSectionProps<K>) {
@@ -98,6 +100,7 @@ export function IndividualOverridesSection<K extends string>({
                 orgValue={orgValue}
                 isSaving={savingMemberIds.has(row.membershipId)}
                 onMemberChange={onMemberChange}
+                onMemberReset={onMemberReset}
                 secondary={secondary}
               />
             ))}

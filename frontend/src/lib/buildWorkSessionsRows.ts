@@ -12,7 +12,7 @@ function sessionRow(entry: TimeEntryListItem, zone: string): ReportTableRow {
     id: entry.id,
     sortKey: new Date(entry.startedAt).getTime(),
     cells: {
-      day: entryDayLabel(entry),
+      day: entryDayLabel(entry, zone),
       member: memberLabelOf(entry),
       project: entry.projectName,
       task: entry.taskName ?? "-",
@@ -35,7 +35,7 @@ export function buildWorkSessionsRows(
   zone: string,
   weekStart: WeekStart = "monday",
 ): ReportTableRow[] {
-  return groupEntriesBy(entries, grouping, new Map(), weekStart).map((group) => ({
+  return groupEntriesBy(entries, grouping, new Map(), weekStart, zone).map((group) => ({
     id: group.id,
     sortKey: group.sortKey,
     cells: {

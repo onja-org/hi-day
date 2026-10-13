@@ -26,10 +26,12 @@ type WorkSessionsReportBodyProps = {
   grouping: WorkSessionsGrouping;
   onGroupingChange: (grouping: WorkSessionsGrouping) => void;
   range: DateRange;
+  /** The zone the report reads days in. */
+  zone: string;
   actions: ReactNode;
 };
 
-export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChange, range, actions }: WorkSessionsReportBodyProps) {
+export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChange, range, zone, actions }: WorkSessionsReportBodyProps) {
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -39,7 +41,7 @@ export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChan
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-primary-dark">Total hours worked per day</h2>
         <ReportsBarChart
-          rows={buildDailyTotalsReport(entries, range).days.map(({ dateKey, seconds }) => ({
+          rows={buildDailyTotalsReport(entries, range, zone).days.map(({ dateKey, seconds }) => ({
             label: formatReportDay(dateKey),
             values: { worked: seconds },
           }))}

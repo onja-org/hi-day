@@ -119,6 +119,7 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
       {entries && rows && (
         <WorkSessionsReportBody
           entries={entries}
+          zone={zone}
           rows={rows}
           grouping={grouping}
           onGroupingChange={setGrouping}

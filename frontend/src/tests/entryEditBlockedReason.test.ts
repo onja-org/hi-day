@@ -14,7 +14,7 @@ describe("entryEditBlockedReason", () => {
   });
 
   it("blocks a viewer who cannot edit", () => {
-    expect(entryEditBlockedReason({ ...FINISHED, canEdit: false })).toContain("admin");
+    expect(entryEditBlockedReason({ ...FINISHED, canEdit: false })).toContain("Modify time");
   });
 
   it("blocks an entry whose timer is still ticking", () => {
@@ -28,7 +28,7 @@ describe("entryEditBlockedReason", () => {
   });
 
   it("reports the permission first when both block it", () => {
-    expect(entryEditBlockedReason({ ...RUNNING, canEdit: false })).toContain("admin");
+    expect(entryEditBlockedReason({ ...RUNNING, canEdit: false })).toContain("Modify time");
   });
 });
 
@@ -45,6 +45,6 @@ describe("entrySplitBlockedReason", () => {
   });
 
   it("blocks a viewer who cannot edit", () => {
-    expect(entrySplitBlockedReason({ ...FINISHED, canEdit: false })).toContain("admin");
+    expect(entrySplitBlockedReason({ ...FINISHED, canEdit: false })).toContain("Modify time");
   });
 });

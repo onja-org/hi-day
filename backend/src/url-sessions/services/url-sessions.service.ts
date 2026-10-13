@@ -106,7 +106,7 @@ export class UrlSessionsService {
 
     // Acked without being stored: an empty ack would leave the batch
     // pending on the device, retried forever.
-    const { appUrlTracking } =
+    const { appUrlTracking, windowTrackingEnabled } =
       await this.organisationsService.getCaptureSettings(
         organisationId,
         userId,
@@ -127,7 +127,9 @@ export class UrlSessionsService {
       url: session.url,
       host: session.host,
       path: session.path ?? null,
-      title: session.title ?? null,
+      // "Window titles" off leaves out page names too, as it promises —
+      // stripped here as well as on the device, for agents in the wild.
+      title: windowTrackingEnabled ? (session.title ?? null) : null,
       browser: session.browser,
       private: session.private ?? null,
       startedAt: new Date(session.startedAt),

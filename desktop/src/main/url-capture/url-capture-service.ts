@@ -53,7 +53,15 @@ export class UrlCaptureService {
       idleThresholdMs: options.idleThresholdMs,
       idlePollIntervalMs: options.idlePollIntervalMs,
       clock: realClock,
-      onEvent: (event) => this.reportEvent(event),
+      onEvent: (event) => {
+        // Timers don't run while the machine sleeps, so after a wake the
+        // pending one would cut the session late — measure again.
+        if (event.type === 'powerStateChanged' && event.awake && this.dayBoundaryTimer) {
+          clearTimeout(this.dayBoundaryTimer);
+          this.scheduleDayBoundary();
+        }
+        this.reportEvent(event);
+      },
     });
   }
 
@@ -63,6 +71,9 @@ export class UrlCaptureService {
   }
 
   stop(): void {
+    // Closes any open session first, so its stretch since the last
+    // checkpoint is kept rather than left open in a store about to close.
+    this.reportEvent({ type: 'timerStateChanged', running: false, ...realClock() });
     this.powerAdapter.stop();
     if (this.dayBoundaryTimer) clearTimeout(this.dayBoundaryTimer);
     this.dayBoundaryTimer = null;

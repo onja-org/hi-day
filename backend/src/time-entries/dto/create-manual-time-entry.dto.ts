@@ -26,9 +26,8 @@ export class CreateManualTimeEntryDto {
   membershipId?: string;
 
   /** Kept on the `time_entry.created_manually` audit row and shown in the
-   * Manual time edits report, matching what edit and delete already record.
-   * Optional here so other callers aren't broken; whether the form insists
-   * on one is the organisation's `timesheetRequireReason` setting. */
+   * Manual time edits report. Optional in shape; required by the service
+   * whenever the organisation's `timesheetRequireReason` is on. */
   @IsOptional()
   @IsString()
   @MaxLength(500)

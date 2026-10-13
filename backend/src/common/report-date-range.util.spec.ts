@@ -29,6 +29,20 @@ describe('resolveReportDateRange', () => {
     expect(days('this_month')).toEqual(['2026-10-01', '2026-10-01']);
   });
 
+  it('starts last week on Sunday for an organisation whose weeks do', () => {
+    // NOW is Thu 1 Oct 2026: last week ran Sun 20 – Sat 26 Sep.
+    const { from, to } = resolveReportDateRange(
+      'last_week',
+      NOW,
+      'UTC',
+      'sunday',
+    );
+    expect([from, to].map((d) => d.toISOString().slice(0, 10))).toEqual([
+      '2026-09-20',
+      '2026-09-26',
+    ]);
+  });
+
   it('last month is the whole previous month', () => {
     expect(days('last_month')).toEqual(['2026-09-01', '2026-09-30']);
   });

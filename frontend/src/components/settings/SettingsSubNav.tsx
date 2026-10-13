@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { useSettingsDirty } from "@/components/SettingsDirtyProvider";
 
 export type SettingsSubNavItem<K extends string> = {
   key: K;
@@ -22,6 +23,10 @@ export function SettingsSubNav<K extends string>({
   active,
   onSelect,
 }: SettingsSubNavProps<K>) {
+  // Switching panels unmounts the one on screen, so unsaved edits there
+  // would vanish without a word.
+  const { confirmLeave } = useSettingsDirty();
+
   return (
     <nav aria-label={label}>
       <ul className="flex flex-col gap-0.5">
@@ -31,7 +36,9 @@ export function SettingsSubNav<K extends string>({
             <li key={item.key}>
               <button
                 type="button"
-                onClick={() => onSelect(item.key)}
+                onClick={() => {
+                  if (isActive || confirmLeave()) onSelect(item.key);
+                }}
                 aria-current={isActive ? "page" : undefined}
                 className={clsx(
                   "block w-full cursor-pointer rounded-brand-sm px-3 py-2 text-left text-sm font-semibold transition-colors duration-150",

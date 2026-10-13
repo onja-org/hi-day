@@ -18,6 +18,8 @@ type TimerPickerProps = {
   taskId: string;
   projectSecondsToday: Map<string, number>;
   conflictMessage: string | null;
+  /** Whether the conflict is one switching can resolve (a web timer elsewhere). */
+  canSwitch: boolean;
   /** Set when this organisation tracks from another client; blocks Start. */
   trackingNotice: string | null;
   /** The only startable Project; the rest are shown disabled, so a narrowed
@@ -39,6 +41,7 @@ export function TimerPicker({
   taskId,
   projectSecondsToday,
   conflictMessage,
+  canSwitch,
   trackingNotice,
   requiredProjectId,
   isStarting,
@@ -90,15 +93,17 @@ export function TimerPicker({
       {conflictMessage && (
         <div className="flex flex-col gap-2">
           <ErrorMessage message={conflictMessage} />
-          <button
-            type="button"
-            onClick={onSwitch}
-            disabled={isSwitching}
-            className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-brand-sm border-2 border-ink bg-secondary px-4 h-11 text-white transition-colors duration-150 hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50 font-bold"
-          >
-            <ArrowsClockwiseIcon size={16} aria-hidden="true" />
-            Stop the other timer and start this one
-          </button>
+          {canSwitch && (
+            <button
+              type="button"
+              onClick={onSwitch}
+              disabled={isSwitching}
+              className="flex cursor-pointer items-center justify-center gap-2 self-start rounded-brand-sm border-2 border-ink bg-secondary px-4 h-11 text-white transition-colors duration-150 hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50 font-bold"
+            >
+              <ArrowsClockwiseIcon size={16} aria-hidden="true" />
+              Stop the other timer and start this one
+            </button>
+          )}
         </div>
       )}
 

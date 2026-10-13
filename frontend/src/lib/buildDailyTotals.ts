@@ -1,5 +1,5 @@
 import { entrySeconds } from "./entrySeconds";
-import { keyAsLocalDate, localDateToKey } from "./timezone";
+import { addDaysToKey, dateKeyInZone, keyAsLocalDate, localDateToKey } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 export type DailyTotal = {
@@ -24,17 +24,18 @@ export function buildDailyTotals(
   from: Date,
   to: Date,
   elapsedNow: Date | null = null,
+  /** The zone the days are cut in; the browser's when omitted. */
+  zone?: string,
 ): DailyTotal[] {
+  const keyOf = (at: Date) => (zone ? dateKeyInZone(at, zone) : localDateToKey(at));
   const totals = new Map<string, number>();
-  let cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate());
-  while (cursor.getTime() <= end.getTime()) {
-    totals.set(localDateToKey(cursor), 0);
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+  const lastKey = keyOf(to);
+  for (let key = keyOf(from); key <= lastKey; key = addDaysToKey(key, 1)) {
+    totals.set(key, 0);
   }
 
   for (const entry of entries) {
-    const key = localDateToKey(new Date(entry.startedAt));
+    const key = keyOf(new Date(entry.startedAt));
     if (totals.has(key)) {
       totals.set(key, totals.get(key)! + entrySeconds(entry, elapsedNow));
     }

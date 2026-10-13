@@ -22,9 +22,8 @@ type TimeEntryDeleteModalProps = {
  * hours, which project, the span to the second — then asking why.
  *
  * Whether the reason is compulsory is the organisation's Require reason
- * setting; the API keeps it optional either way, since batch delete has
- * nowhere to ask per entry. A deleted row leaves nothing but its audit
- * entry, so this is the only part of that record a human wrote.
+ * setting, which the API enforces too. A deleted row leaves nothing but
+ * its audit entry, so this is the only part of that record a human wrote.
  */
 export function TimeEntryDeleteModal({
   organisationId,

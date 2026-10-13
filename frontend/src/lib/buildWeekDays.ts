@@ -8,6 +8,11 @@ export type DisplayWeekDay = {
   isToday: boolean;
 };
 
+function weekdayOfKey(dateKey: string): number {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
 function localDateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -16,19 +21,19 @@ function localDateKey(date: Date): string {
 }
 
 /**
- * Maps the backend's Sunday-Saturday `thisWeekByDay` into display-ready
- * rows. Weekday labels come from array position (the backend guarantees
- * Sunday-first order), not by parsing `date` — a bare "YYYY-MM-DD" string
- * parses as UTC midnight, which can land on the wrong local weekday near a
- * timezone boundary.
+ * Maps the backend's `thisWeekByDay` into display-ready rows. The week
+ * starts on the organisation's chosen day, so each label comes from the
+ * day's own date — read through UTC getters, since a bare "YYYY-MM-DD"
+ * parsed with local ones can land on the wrong weekday near a timezone
+ * boundary.
  */
 export function buildWeekDays(
   thisWeekByDay: DashboardWeekDay[],
   now: Date = new Date(),
 ): DisplayWeekDay[] {
   const todayKey = localDateKey(now);
-  return thisWeekByDay.map((day, index) => ({
-    label: WEEKDAY_LABELS[index] ?? "",
+  return thisWeekByDay.map((day) => ({
+    label: WEEKDAY_LABELS[weekdayOfKey(day.date)] ?? "",
     seconds: day.seconds,
     isToday: day.date === todayKey,
   }));

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -184,11 +185,13 @@ describe('TimeEntriesService', () => {
   function makeOrganisationsRepo(
     timezone = 'UTC',
     timesheetModifyTime: 'off' | 'add_edit' = 'off',
+    // Off unless a test is about it, so the rest needn't invent reasons.
+    timesheetRequireReason = false,
   ) {
     return {
-      findOne: jest
-        .fn()
-        .mockResolvedValue({ settings: { timezone, timesheetModifyTime } }),
+      findOne: jest.fn().mockResolvedValue({
+        settings: { timezone, timesheetModifyTime, timesheetRequireReason },
+      }),
     } as unknown as Repository<Organisation>;
   }
 
@@ -735,6 +738,61 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  describe('require reason', () => {
+    const adminRepo = () =>
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'm-1',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+
+    it('refuses a manual entry without a reason while the setting is on', async () => {
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses deleting an entry without a reason while the setting is on', async () => {
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+        }),
+      });
+
+      await expect(
+        service.remove('org-1', 'user-1', 'entry-running', { reason: '  ' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts a manual entry with a reason', async () => {
+      const save = jest.fn((entry: unknown) => Promise.resolve(entry));
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+        timeEntriesRepo: makeTimeEntriesRepo({ save }),
+      });
+
+      await service.createManual('org-1', 'user-1', 'project-1', {
+        startedAt: '2026-01-01T09:00:00.000Z',
+        endedAt: '2026-01-01T10:00:00.000Z',
+        reason: 'Forgot to start the timer',
+      });
+
+      expect(save).toHaveBeenCalled();
+    });
+  });
+
   describe('allowed apps', () => {
     it('refuses a web timer when the member is restricted to the desktop app', async () => {
       const service = makeService({
@@ -838,6 +896,54 @@ describe('TimeEntriesService', () => {
         0,
       );
       expect(update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a switch the member may not run, as a start would be', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-1',
+            role: MembershipRole.MEMBER,
+            allowedApps: 'mobile_only',
+          }),
+        }),
+      });
+
+      await expect(
+        service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses a web switch onto a different project than a running device', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              ...runningEntry,
+              deviceId: 'device-1',
+              projectId: 'project-other',
+            },
+          ]),
+        }),
+      });
+
+      await expect(
+        service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('allows the desktop agent under the same restriction', async () => {
@@ -1119,10 +1225,9 @@ describe('TimeEntriesService', () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
       });
 
-      // Project-manager tier used to be enough to log for a teammate. The
-      // org-admin gate now sits in front of it, so this path is closed to
-      // anyone who isn't an org admin, however senior on the project.
-      it('rejects a project-manager-tier caller logging time for a teammate', async () => {
+      // Project-manager tier lets you log for teammates, but only once Modify
+      // time lets you add time at all.
+      it('rejects a project manager without Modify time logging time for a teammate', async () => {
         const membershipsRepo = makeMembershipsRepoFor(
           { id: 'm-1', role: MembershipRole.MEMBER },
           { id: 'm-2' },
@@ -1142,6 +1247,37 @@ describe('TimeEntriesService', () => {
             endedAt: '2026-01-01T10:00:00.000Z',
           }),
         ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('lets a project manager with Modify time log time for anyone on their project', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          {
+            id: 'm-1',
+            role: MembershipRole.MEMBER,
+            timesheetModifyTime: 'add_edit',
+          },
+          { id: 'm-2', role: MembershipRole.MEMBER },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'user-1',
+          'project-1',
+          {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-2');
       });
 
       // How an admin fills an untracked gap on a member's timesheet: the
@@ -1453,6 +1589,32 @@ describe('TimeEntriesService', () => {
       ];
       expect(call[1].action).toBe('time_entry.updated');
       expect(call[1].metadata.changed).toHaveProperty('endedAt');
+    });
+
+    it("refuses moving someone's entry to a project they can't log time on", async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: findEntryThenNoOverlap({ ...completedEntry }),
+        }),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn((query: { where: { userId?: string } }) =>
+            Promise.resolve(
+              query.where.userId
+                ? { id: 'm-admin', role: MembershipRole.ADMIN }
+                : { id: 'm-other', role: MembershipRole.MEMBER },
+            ),
+          ),
+        }),
+        projectMembershipsRepo: makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.update('org-1', 'admin-1', 'entry-done', {
+          projectId: 'project-2',
+        }),
+      ).rejects.toThrow("This member can't log time on that project");
     });
 
     it('lets an admin edit their own entry', async () => {
@@ -2734,7 +2896,7 @@ describe('TimeEntriesService', () => {
       expect(result[0].canEdit).toBe(true);
     });
 
-    it('marks canEdit false for an admin without it — the setting gates every role', async () => {
+    it('marks canEdit true for an admin even with Modify time off — it governs everyone else', async () => {
       const service = makeService({
         timeEntriesRepo: makeTimeEntriesRepo({
           find: jest.fn().mockResolvedValue([
@@ -2763,7 +2925,39 @@ describe('TimeEntriesService', () => {
 
       const result = await service.list('org-1', 'admin-1');
 
-      expect(result[0].canEdit).toBe(false);
+      expect(result[0].canEdit).toBe(true);
+    });
+
+    it('reads the org Modify time fresh, so a change applies without a restart', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce({ settings: { timesheetModifyTime: 'off' } })
+        .mockResolvedValue({ settings: { timesheetModifyTime: 'add_edit' } });
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              membershipId: 'm-1',
+              projectId: 'project-1',
+              taskId: null,
+              startedAt: new Date('2026-01-01T09:00:00Z'),
+              endedAt: new Date('2026-01-01T10:00:00Z'),
+              source: TimeEntrySource.WEB,
+              deviceId: null,
+              project: { name: 'Website', colour: 'blue' },
+              task: null,
+            },
+          ]),
+        }),
+        organisationsRepo: { findOne } as unknown as Repository<Organisation>,
+      });
+
+      const before = await service.list('org-1', 'user-1');
+      const after = await service.list('org-1', 'user-1');
+
+      expect(before[0].canEdit).toBe(false);
+      expect(after[0].canEdit).toBe(true);
     });
 
     it('marks canEdit true for a member granted the Modify time exception', async () => {

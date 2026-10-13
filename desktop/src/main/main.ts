@@ -174,6 +174,9 @@ interface LastProject {
 
 interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
+  /** What "Track apps & URLs" resolves to — the banners ask only for
+   * permissions something will actually use. */
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
@@ -310,9 +313,14 @@ function buildUrlSessionUploadFn(
   apiClient: ApiClient,
   authStore: AuthStore,
   deviceToken: string,
+  /** "Window titles" — off, page names are left out too, as it promises. */
+  keepTitles: () => boolean,
 ): UploadFn {
   return async (batch) => {
-    const result = await apiClient.syncUrlSessions(deviceToken, batch);
+    const result = await apiClient.syncUrlSessions(
+      deviceToken,
+      keepTitles() ? batch : batch.map((session) => ({ ...session, title: null })),
+    );
     if (result.ok) {
       return result.data;
     }
@@ -350,7 +358,11 @@ function buildUrlSessionUploadFn(
 function startSync(): void {
   stopSync();
   syncTimer = setInterval(() => {
-    void urlCaptureService?.runSync();
+    urlCaptureService?.runSync().catch((error: unknown) => {
+      // A failed sync is retried next tick; it must never reach the
+      // unhandled-rejection handler, which relaunches the app.
+      console.error("[url-capture] sync failed:", error);
+    });
   }, SYNC_INTERVAL_MS);
 }
 
@@ -550,16 +562,30 @@ function refreshTrayMenu(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
-  // Looked up once per launch: Spotlight is a few hundred ms, and the
-  // permission banner asks every 15s.
-  let firefoxInstalled: Promise<boolean> | null = null;
-  const isFirefoxInstalled = (): Promise<boolean> =>
-    (firefoxInstalled ??= new InstalledBrowserDetector().isInstalled(
-      "org.mozilla.firefox",
-    ));
-  const isWaylandScreenshotGranted = (): boolean =>
-    hasWaylandScreenshotGrant(app.getPath("userData")) ||
-    authStore.load()?.waylandScreenshotGranted === true;
+  // Remembered once Spotlight gives an answer (it takes a few hundred ms,
+  // and the banner asks every 15s). A lookup that fails — Spotlight busy at
+  // login, or indexing off — isn't remembered, and counts as installed, so
+  // the banner errs towards asking rather than hiding.
+  let firefoxInstalled: boolean | null = null;
+  const isFirefoxInstalled = async (): Promise<boolean> => {
+    if (firefoxInstalled === null) {
+      firefoxInstalled = await new InstalledBrowserDetector().lookup(
+        "org.mozilla.firefox",
+      );
+    }
+    return firefoxInstalled ?? true;
+  };
+  const isWaylandScreenshotGranted = (): boolean => {
+    const userDataDir = app.getPath("userData");
+    if (hasWaylandScreenshotGrant(userDataDir)) return true;
+    // A grant an older version kept in the session moves to setup-state the
+    // first time it's seen, so the next sign-out doesn't take it along.
+    if (authStore.load()?.waylandScreenshotGranted === true) {
+      markWaylandScreenshotGranted(userDataDir);
+      return true;
+    }
+    return false;
+  };
   const pendingOps = new PendingTimerOps(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
@@ -724,7 +750,12 @@ async function registerIpcHandlers(): Promise<void> {
 
     const service = startUrlCapture(
       session.deviceId,
-      buildUrlSessionUploadFn(apiClient, authStore, session.deviceToken),
+      buildUrlSessionUploadFn(
+        apiClient,
+        authStore,
+        session.deviceToken,
+        () => windowTrackingEnabled,
+      ),
     );
     // Seeded, or a timer already running would go uncaptured until the
     // renderer next pushed a state change.
@@ -809,6 +840,10 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      // URL capture's own copy too: a service created while the server was
+      // unreachable started out "stopped", and the renderer only pushes on
+      // a change it saw itself — so this is what brings it back.
+      urlCaptureService?.setTimerRunning(running);
       recomputeSampling();
     },
   );
@@ -1070,6 +1105,7 @@ async function registerIpcHandlers(): Promise<void> {
         ok: true,
         data: {
           windowTrackingEnabled,
+          appUrlTracking,
           screenshotsEnabled,
           platform,
           // Non-prompting status check — never triggers a native prompt on

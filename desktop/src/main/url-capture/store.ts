@@ -84,7 +84,18 @@ export class UrlSessionStore {
     }
   }
 
+  /**
+   * Whether the database is still usable. URL capture can be switched off
+   * (closing this) while a sync is still awaiting its upload; what lands
+   * afterwards is dropped rather than thrown — an unacked session is simply
+   * sent again next time, and the server's upsert absorbs the repeat.
+   */
+  private get isOpen(): boolean {
+    return this.db.open;
+  }
+
   upsert(session: UrlSession): void {
+    if (!this.isOpen) return;
     this.assertPrivacyInvariant(session);
     this.db
       .prepare(
@@ -128,6 +139,7 @@ export class UrlSessionStore {
   }
 
   getPendingSync(limit: number): UrlSessionRow[] {
+    if (!this.isOpen) return [];
     const rows = this.db
       .prepare(
         `SELECT * FROM url_sessions
@@ -140,7 +152,7 @@ export class UrlSessionStore {
   }
 
   markSynced(ids: string[], syncedAtMs: number): void {
-    if (ids.length === 0) return;
+    if (ids.length === 0 || !this.isOpen) return;
     const placeholders = ids.map(() => '?').join(', ');
     this.db
       .prepare(`UPDATE url_sessions SET synced_at = ? WHERE id IN (${placeholders})`)
@@ -163,6 +175,6 @@ export class UrlSessionStore {
   }
 
   close(): void {
-    this.db.close();
+    if (this.isOpen) this.db.close();
   }
 }

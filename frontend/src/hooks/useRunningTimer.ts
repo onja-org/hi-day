@@ -29,6 +29,10 @@ export function useRunningTimer(organisationId: string) {
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  // Switching only ever stops the web's own timer, so it's offered only
+  // when that's what's in the way — never a device's, which the web can't
+  // stop.
+  const [canSwitch, setCanSwitch] = useState(false);
   // Shown instead of offering a Start button the server would refuse.
   const trackingNotice = allowedAppsNotice(
     useCurrentOrganisation().data?.allowedApps ?? "all",
@@ -89,6 +93,7 @@ export function useRunningTimer(organisationId: string) {
         invalidate();
       } else {
         setConflictMessage(result.runningEntry ? result.message : null);
+        setCanSwitch(result.runningEntry?.deviceId === null);
       }
     },
   });
@@ -185,6 +190,7 @@ export function useRunningTimer(organisationId: string) {
     // total before the person even presses Start.
     projectSecondsToday,
     conflictMessage,
+    canSwitch,
     trackingNotice,
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
