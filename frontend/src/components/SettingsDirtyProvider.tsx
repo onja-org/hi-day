@@ -6,15 +6,14 @@ import type { ReactNode } from "react";
 type SettingsDirtyValue = {
   isDirty: boolean;
   setDirty: (dirty: boolean) => void;
-  /** True to go ahead — asks first when there is unsaved work. */
-  confirmLeave: () => boolean;
 };
 
 const SettingsDirtyContext = createContext<SettingsDirtyValue>({
   isDirty: false,
   setDirty: () => {},
-  confirmLeave: () => true,
 });
+
+const LEAVE_MESSAGE = "Leave without saving? Your changes will be lost.";
 
 export function useSettingsDirty(): SettingsDirtyValue {
   return useContext(SettingsDirtyContext);
@@ -30,23 +29,35 @@ export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isDirty) return;
-    // Covers reloads and closing the tab; the in-app links ask through
-    // `confirmLeave`, which the browser does not get a say in.
+    // Covers reloads and closing the tab.
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    // In-app links navigate client-side, which `beforeunload` never sees —
+    // the section tabs, the sidebar, the header. Caught in the capture phase
+    // so it runs before the link's own navigation.
+    const askOnLinkClick = (event: MouseEvent) => {
+      const link =
+        event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(link instanceof HTMLAnchorElement) || link.target === "_blank") {
+        return;
+      }
+      const url = new URL(link.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname) return;
+      if (!window.confirm(LEAVE_MESSAGE)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    document.addEventListener("click", askOnLinkClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", askOnLinkClick, true);
+    };
   }, [isDirty]);
 
   return (
-    <SettingsDirtyContext
-      value={{
-        isDirty,
-        setDirty,
-        confirmLeave: () =>
-          !isDirty ||
-          window.confirm("Leave without saving? Your changes will be lost."),
-      }}
-    >
+    <SettingsDirtyContext value={{ isDirty, setDirty }}>
       {children}
     </SettingsDirtyContext>
   );

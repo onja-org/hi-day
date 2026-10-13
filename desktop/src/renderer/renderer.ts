@@ -2,6 +2,7 @@ export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
 const IDLE_POLL_INTERVAL_MS = 10_000;
+const IDLE_POLICY_REFRESH_MS = 60_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 210;
 const DEFAULT_PAIRING_MESSAGE =
@@ -154,6 +155,7 @@ function showLoginView(errorMessage?: string): void {
   projectsLoaded = false;
   idlePolicy = null;
   lastTrackedProjectId = null;
+  pendingTaskChoice = null;
   // Stops the clock, tells main to stop url-capture, and clears the row
   // highlight — otherwise the timer keeps counting behind the login screen.
   setRunning(null);
@@ -525,6 +527,11 @@ let todaySecondsByProject = new Map<string, number>();
 let todaySecondsDayStart: number | null = null;
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
+// The Project `currentProjectTasks` was loaded for.
+let tasksProjectId: string | null = null;
+// A Task picked while stopped, which the next play starts on.
+let pendingTaskChoice: { projectId: string; taskId: string | null } | null =
+  null;
 // 24×24 icons. "Stop" rather than pause: pausing ends the entry.
 const PLAY_PATH =
   "M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z";
@@ -539,6 +546,7 @@ let syncFailing = false;
 const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
+let idlePolicyLoadedAt = 0;
 let lastIdleSeconds = 0;
 let idleHandled = false;
 let pendingIdleDiscardAt: string | null = null;
@@ -763,7 +771,9 @@ function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
     : "";
   idleBannerMessage.append(projectNameStrong);
   idleBannerMessage.append(
-    document.createTextNode(". Tracking paused automatically."),
+    document.createTextNode(
+      ". The timer is still running — choose what to do with the idle time.",
+    ),
   );
 }
 
@@ -1001,6 +1011,7 @@ async function selectProject(projectId: string): Promise<void> {
     return;
   }
 
+  pendingTaskChoice = null;
   await loadTasks(projectId);
   const taskId = selectedTaskId;
 
@@ -1109,6 +1120,7 @@ async function loadTasks(projectId: string): Promise<void> {
   );
   currentProjectTasks = [];
   selectedTaskId = null;
+  tasksProjectId = projectId;
   if (!result.ok) {
     // Offline, tasks are optional and starting/switching still works (it is
     // queued), so only a real rejection or a sign-out is worth a banner.
@@ -1147,11 +1159,7 @@ function renderTaskPanelList(): void {
   noTaskButton.type = "button";
   noTaskButton.textContent = "No task";
   noTaskButton.classList.toggle("is-selected", selectedTaskId === null);
-  noTaskButton.addEventListener("click", () => {
-    selectedTaskId = null;
-    updateCurrentTaskLabel();
-    closeTaskPanel();
-  });
+  noTaskButton.addEventListener("click", () => void chooseTask(null));
   const noTaskItem = document.createElement("li");
   noTaskItem.appendChild(noTaskButton);
   taskPanelList.appendChild(noTaskItem);
@@ -1178,11 +1186,7 @@ function renderTaskPanelList(): void {
     dates.textContent = `Created ${formatTaskDate(task.createdAt)} · Updated ${formatTaskDate(task.updatedAt)}`;
     button.appendChild(dates);
 
-    button.addEventListener("click", () => {
-      selectedTaskId = task.id;
-      updateCurrentTaskLabel();
-      closeTaskPanel();
-    });
+    button.addEventListener("click", () => void chooseTask(task.id));
 
     const item = document.createElement("li");
     item.appendChild(button);
@@ -1192,11 +1196,27 @@ function renderTaskPanelList(): void {
   taskPanelEmpty.hidden = matches.length > 0;
 }
 
+/** The Task the timer is on — or, when stopped, the one play would start on. */
+async function currentTaskFor(projectId: string): Promise<string | null> {
+  if (runningEntry?.projectId === projectId) return runningEntry.taskId;
+  if (pendingTaskChoice?.projectId === projectId) {
+    return pendingTaskChoice.taskId;
+  }
+  const remembered = await window.api.tracking.lastProject();
+  return remembered?.projectId === projectId ? remembered.taskId : null;
+}
+
 async function openTaskPanel(): Promise<void> {
-  const projectId = runningEntry?.projectId ?? projects[0]?.id;
+  const projectId =
+    runningEntry?.projectId ?? lastTrackedProjectId ?? projects[0]?.id;
   if (!projectId) return;
 
+  const taskId = await currentTaskFor(projectId);
   await loadTasks(projectId);
+  if (currentProjectTasks.some((task) => task.id === taskId)) {
+    selectedTaskId = taskId;
+    updateCurrentTaskLabel();
+  }
   taskPanelProject.textContent = projectNameFor(projectId);
   taskSearch.value = "";
   renderTaskPanelList();
@@ -1206,6 +1226,33 @@ async function openTaskPanel(): Promise<void> {
 
 function closeTaskPanel(): void {
   taskPanel.hidden = true;
+}
+
+/**
+ * Puts the timer on a Task. Running, that's a switch — the time so far stays
+ * on the old Task; stopped, the next play starts on it.
+ */
+async function chooseTask(taskId: string | null): Promise<void> {
+  selectedTaskId = taskId;
+  updateCurrentTaskLabel();
+  closeTaskPanel();
+  const projectId = tasksProjectId;
+  if (!projectId) return;
+
+  if (!runningEntry || runningEntry.pausedAt) {
+    pendingTaskChoice = { projectId, taskId };
+    return;
+  }
+  if (runningEntry.projectId !== projectId || runningEntry.taskId === taskId) {
+    return;
+  }
+
+  clearTrackingError();
+  const result = await callTracking(() =>
+    window.api.tracking.switchTo(projectId, taskId),
+  );
+  if (result.ok) setRunning(result.data);
+  else handleTrackingFailure(result);
 }
 
 taskTrigger.addEventListener("click", () => void openTaskPanel());
@@ -1263,9 +1310,11 @@ async function refreshStatus(resync = false): Promise<void> {
   }
   syncFailing = false;
   lastSyncedAt = Date.now();
-  // Fetched once at setup; if that missed, idle detection would stay off
-  // for the whole session.
-  if (!idlePolicy) void loadIdlePolicy();
+  // Re-read now and then, so an admin's change to idle handling reaches a
+  // signed-in desktop — and a missed first fetch doesn't leave it off.
+  if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
+    void loadIdlePolicy();
+  }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
@@ -1346,11 +1395,16 @@ async function startTracking(): Promise<void> {
     if (!projectsLoaded || runningEntry) return;
   }
   clearTrackingError();
-  const target = await resolveProjectToTrack();
-  if (!target) {
+  const resolved = await resolveProjectToTrack();
+  if (!resolved) {
     showTrackingError("No projects are available to track time against.");
     return;
   }
+  const target =
+    pendingTaskChoice?.projectId === resolved.projectId
+      ? pendingTaskChoice
+      : resolved;
+  pendingTaskChoice = null;
 
   void loadTasks(target.projectId).then(() => {
     if (target.taskId) {
@@ -1437,13 +1491,17 @@ idleKeepButton.addEventListener("click", () => {
   idleHandled = false;
 });
 
-/** Ends the entry at when idleness started, then starts a fresh one on `resumeProjectId`. */
-async function discardIdleTimeAndResume(
-  resumeProjectId: string,
-): Promise<void> {
-  if (!pendingIdleDiscardAt) return;
+/**
+ * Ends the entry at when idleness started, then starts a fresh one on the
+ * same Project and Task — either now, dropping the idle stretch, or back at
+ * idle start onto `assignTo`, moving the stretch to that Project instead.
+ */
+async function resolveIdleTime(assignTo?: string): Promise<void> {
+  if (!pendingIdleDiscardAt || !runningEntry) return;
   const discardAt = pendingIdleDiscardAt;
-  const taskId = runningEntry?.taskId ?? null;
+  const projectId = assignTo ?? runningEntry.projectId;
+  // A Task belongs to one Project, so it can't follow the time elsewhere.
+  const taskId = assignTo ? null : runningEntry.taskId;
   hideIdleBanner();
 
   const stopResult = await callTracking(() =>
@@ -1454,13 +1512,13 @@ async function discardIdleTimeAndResume(
     return;
   }
   setRunning(null);
-  // This device counted the idle stretch too; the server's total is the
-  // one with it taken out.
-  await refreshTodayTotals();
 
   const startResult = await callTracking(() =>
-    window.api.tracking.start(resumeProjectId, taskId),
+    window.api.tracking.start(projectId, taskId, assignTo ? discardAt : undefined),
   );
+  // This device counted the idle stretch on the old Project; the server's
+  // totals have it dropped or moved.
+  await refreshTodayTotals();
   if (startResult.ok) {
     setRunning(startResult.data);
   } else {
@@ -1469,8 +1527,7 @@ async function discardIdleTimeAndResume(
 }
 
 idleDiscardButton.addEventListener("click", () => {
-  if (!runningEntry) return;
-  void discardIdleTimeAndResume(runningEntry.projectId);
+  void resolveIdleTime();
 });
 
 idleAssignToggle.addEventListener("click", () => {
@@ -1487,7 +1544,7 @@ idleAssignToggle.addEventListener("click", () => {
     button.textContent = project.name;
     button.addEventListener(
       "click",
-      () => void discardIdleTimeAndResume(project.id),
+      () => void resolveIdleTime(project.id),
     );
 
     const item = document.createElement("li");
@@ -1498,7 +1555,10 @@ idleAssignToggle.addEventListener("click", () => {
 
 async function loadIdlePolicy(): Promise<void> {
   const result = await callTracking(() => window.api.tracking.idlePolicy());
-  if (result.ok) idlePolicy = result.data;
+  if (result.ok) {
+    idlePolicy = result.data;
+    idlePolicyLoadedAt = Date.now();
+  }
 }
 
 let trackingRetryHandle: ReturnType<typeof setTimeout> | null = null;

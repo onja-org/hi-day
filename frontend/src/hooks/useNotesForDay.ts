@@ -5,7 +5,13 @@ import type { GetNotesForDayFilter } from "@/lib/getNotesForDay";
 export const NOTES_FOR_DAY_QUERY_KEY = (
   organisationId: string,
   filter: GetNotesForDayFilter = {},
-) => ["notes", organisationId, filter.membershipId ?? "self", filter.date ?? null];
+) => [
+  "notes",
+  organisationId,
+  filter.membershipId ?? "self",
+  filter.date ?? null,
+  filter.projectId ?? null,
+];
 
 export function useNotesForDay(
   organisationId: string,

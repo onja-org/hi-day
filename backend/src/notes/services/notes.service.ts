@@ -73,12 +73,14 @@ export class NotesService {
     organisationId: string,
     userId: string,
     date: string | undefined,
+    projectId?: string,
   ): Promise<NoteEntry[]> {
     const membership = await this.getActiveMembership(organisationId, userId);
     return this.listForMembershipId(
       organisationId,
       membership.id,
       this.resolveDate(date),
+      projectId,
     );
   }
 
@@ -92,6 +94,7 @@ export class NotesService {
     callerUserId: string,
     targetMembershipId: string,
     date: string | undefined,
+    projectId?: string,
   ): Promise<NoteEntry[]> {
     const [caller, target] = await Promise.all([
       this.memberships.findOne({
@@ -120,6 +123,7 @@ export class NotesService {
       organisationId,
       target.id,
       this.resolveDate(date),
+      projectId,
     );
   }
 
@@ -160,9 +164,16 @@ export class NotesService {
     organisationId: string,
     membershipId: string,
     date: string,
+    /** undefined = every note; a string = only notes tagged with that project. */
+    projectId?: string,
   ): Promise<NoteEntry[]> {
     const entries = await this.notes.find({
-      where: { organisationId, membershipId, noteDate: date },
+      where: {
+        organisationId,
+        membershipId,
+        noteDate: date,
+        ...(projectId ? { projectId } : {}),
+      },
       order: { createdAt: 'DESC' },
     });
     return entries.map((entry) => this.toEntry(entry));

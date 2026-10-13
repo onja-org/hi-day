@@ -1,10 +1,12 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Device } from '../../../database/entities/device.entity';
 import { DevicePlatform } from '../../../database/entities/device-platform.enum';
 import { DeviceSession } from '../../../database/entities/device-session.entity';
+import { Membership } from '../../../database/entities/membership.entity';
+import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { DevicesService } from '../devices.service';
 
 describe('DevicesService', () => {
@@ -23,6 +25,36 @@ describe('DevicesService', () => {
       find: jest.fn().mockResolvedValue([]),
       ...overrides,
     } as unknown as Repository<DeviceSession>;
+  }
+
+  const adminCaller = {
+    id: 'membership-admin',
+    userId: 'admin-1',
+    role: MembershipRole.ADMIN,
+    teamMemberships: [],
+  };
+
+  const managerCaller = {
+    id: 'membership-manager',
+    userId: 'manager-1',
+    role: MembershipRole.MANAGER,
+    teamMemberships: [{ teamId: 'team-a', isManager: true }],
+  };
+
+  function makeMembershipsRepo(
+    caller: object = adminCaller,
+    others: object[] = [],
+  ) {
+    return {
+      findOne: jest.fn(({ where }: { where: { userId: string } }) =>
+        Promise.resolve(
+          [caller, ...others].find(
+            (m) => (m as { userId: string }).userId === where.userId,
+          ) ?? null,
+        ),
+      ),
+      find: jest.fn().mockResolvedValue(others),
+    } as unknown as Repository<Membership>;
   }
 
   type TransactionFn = (manager: EntityManager) => Promise<unknown>;
@@ -59,6 +91,7 @@ describe('DevicesService', () => {
     overrides: {
       devicesRepo?: Repository<Device>;
       deviceSessionsRepo?: Repository<DeviceSession>;
+      membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       configService?: ConfigService;
       auditLogService?: AuditLogService;
@@ -67,6 +100,7 @@ describe('DevicesService', () => {
     return new DevicesService(
       overrides.devicesRepo ?? makeDevicesRepo(),
       overrides.deviceSessionsRepo ?? makeDeviceSessionsRepo(),
+      overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.configService ?? makeConfigService(),
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
@@ -96,7 +130,7 @@ describe('DevicesService', () => {
       });
       const service = makeService({ devicesRepo, deviceSessionsRepo });
 
-      const summaries = await service.listForOrganisation('org-1');
+      const summaries = await service.listForOrganisation('org-1', 'admin-1');
 
       expect(summaries[0].status).toBe('signed_out');
     });
@@ -112,7 +146,7 @@ describe('DevicesService', () => {
       });
       const service = makeService({ devicesRepo, deviceSessionsRepo });
 
-      const summaries = await service.listForOrganisation('org-1');
+      const summaries = await service.listForOrganisation('org-1', 'admin-1');
 
       expect(summaries[0].status).toBe('active');
     });
@@ -122,13 +156,125 @@ describe('DevicesService', () => {
       const devicesRepo = makeDevicesRepo({ find });
       const service = makeService({ devicesRepo });
 
-      await service.listForOrganisation('org-1', 'user-2');
+      await service.listForOrganisation('org-1', 'admin-1', 'user-2');
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { organisationId: 'org-1', userId: 'user-2' },
         }),
       );
+    });
+  });
+
+  describe('listForOrganisation as a manager', () => {
+    const teamMember = {
+      id: 'membership-1',
+      userId: 'user-1',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [{ teamId: 'team-a', isManager: false }],
+    };
+    const outsider = {
+      id: 'membership-2',
+      userId: 'user-2',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [{ teamId: 'team-b', isManager: false }],
+    };
+
+    it("only returns devices of people on the manager's teams", async () => {
+      const devicesRepo = makeDevicesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            baseDevice,
+            { ...baseDevice, id: 'device-2', userId: 'user-2' },
+          ]),
+      });
+      const service = makeService({
+        devicesRepo,
+        membershipsRepo: makeMembershipsRepo(managerCaller, [
+          teamMember,
+          outsider,
+        ]),
+      });
+
+      const summaries = await service.listForOrganisation('org-1', 'manager-1');
+
+      expect(summaries.map((s) => s.id)).toEqual(['device-1']);
+    });
+
+    it('returns only their own devices when they manage no team', async () => {
+      const devicesRepo = makeDevicesRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            baseDevice,
+            { ...baseDevice, id: 'device-own', userId: 'manager-1' },
+          ]),
+      });
+      const teamless = { ...managerCaller, teamMemberships: [] };
+      const service = makeService({
+        devicesRepo,
+        membershipsRepo: makeMembershipsRepo(teamless, [teamMember, teamless]),
+      });
+
+      const summaries = await service.listForOrganisation('org-1', 'manager-1');
+
+      expect(summaries.map((s) => s.id)).toEqual(['device-own']);
+    });
+  });
+
+  describe('signOutAsAdmin as a manager', () => {
+    function serviceWithOwner(owner: object) {
+      const devicesRepo = makeDevicesRepo({
+        findOne: jest.fn().mockResolvedValue(baseDevice),
+      });
+      return makeService({
+        devicesRepo,
+        membershipsRepo: makeMembershipsRepo(managerCaller, [owner]),
+      });
+    }
+
+    it("signs out a device of someone on the manager's team", async () => {
+      const service = serviceWithOwner({
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-a', isManager: false }],
+      });
+
+      const result = await service.signOutAsAdmin(
+        'org-1',
+        'device-1',
+        'manager-1',
+      );
+
+      expect(result.status).toBe('signed_out');
+    });
+
+    it("treats a device outside the manager's teams as not found", async () => {
+      const service = serviceWithOwner({
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-b', isManager: false }],
+      });
+
+      await expect(
+        service.signOutAsAdmin('org-1', 'device-1', 'manager-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("refuses to sign out an admin's device, even on their team", async () => {
+      const service = serviceWithOwner({
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [{ teamId: 'team-a', isManager: false }],
+      });
+
+      await expect(
+        service.signOutAsAdmin('org-1', 'device-1', 'manager-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

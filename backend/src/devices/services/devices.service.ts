@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
+import { canViewMembership } from '../../common/membership-visibility.util';
 import { Device } from '../../database/entities/device.entity';
 import { DevicePlatform } from '../../database/entities/device-platform.enum';
 import { DeviceSession } from '../../database/entities/device-session.entity';
+import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import {
   computeDeviceStatus,
   DEFAULT_DEVICE_HEARTBEAT_WINDOW_MINUTES,
@@ -34,18 +42,22 @@ export class DevicesService {
     private readonly devices: Repository<Device>,
     @InjectRepository(DeviceSession)
     private readonly deviceSessions: Repository<DeviceSession>,
+    @InjectRepository(Membership)
+    private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
   /**
-   * Authorization is enforced upstream by RoleGuard/@RequireRole on the
-   * route — reaching this method already implies the caller is an
-   * admin/manager of this Organisation.
+   * RoleGuard/@RequireRole on the route already limits this to admins and
+   * managers; here an admin sees every Device, while a manager sees only
+   * the Devices of people they can view (see canViewMembership) — a
+   * manager who manages no team sees only their own.
    */
   async listForOrganisation(
     organisationId: string,
+    callerUserId: string,
     userId?: string,
   ): Promise<DeviceSummary[]> {
     const devices = await this.devices.find({
@@ -54,7 +66,27 @@ export class DevicesService {
       order: { createdAt: 'DESC' },
     });
 
-    return this.toSummaries(devices);
+    const caller = await this.getCallerMembership(organisationId, callerUserId);
+    if (caller.role === MembershipRole.ADMIN || devices.length === 0) {
+      return this.toSummaries(devices);
+    }
+
+    const owners = await this.memberships.find({
+      where: {
+        organisationId,
+        userId: In([...new Set(devices.map((device) => device.userId))]),
+      },
+      relations: { teamMemberships: true },
+    });
+    const visibleUserIds = new Set(
+      owners
+        .filter((owner) => canViewMembership(caller, owner))
+        .map((owner) => owner.userId),
+    );
+
+    return this.toSummaries(
+      devices.filter((device) => visibleUserIds.has(device.userId)),
+    );
   }
 
   async listForUser(userId: string): Promise<DeviceSummary[]> {
@@ -67,6 +99,11 @@ export class DevicesService {
     return this.toSummaries(devices);
   }
 
+  /**
+   * An admin can sign out any Device in the Organisation. A manager only
+   * those they can see in the list, and never an admin's — admin access is
+   * off-limits to managers (see CONTEXT.md's Role entry).
+   */
   async signOutAsAdmin(
     organisationId: string,
     deviceId: string,
@@ -79,6 +116,24 @@ export class DevicesService {
 
     if (!device) {
       throw new NotFoundException('Device not found.');
+    }
+
+    const caller = await this.getCallerMembership(organisationId, actorUserId);
+    if (caller.role !== MembershipRole.ADMIN) {
+      const owner = await this.memberships.findOne({
+        where: { organisationId, userId: device.userId },
+        relations: { teamMemberships: true },
+      });
+
+      if (!owner || !canViewMembership(caller, owner)) {
+        throw new NotFoundException('Device not found.');
+      }
+
+      if (owner.role === MembershipRole.ADMIN) {
+        throw new ForbiddenException(
+          "Only an admin can sign out an admin's device.",
+        );
+      }
     }
 
     return this.signOut(device, actorUserId);
@@ -133,6 +188,22 @@ export class DevicesService {
         organisationId,
       });
     }
+  }
+
+  private async getCallerMembership(
+    organisationId: string,
+    userId: string,
+  ): Promise<Membership> {
+    const caller = await this.memberships.findOne({
+      where: { organisationId, userId, status: MembershipStatus.ACTIVE },
+      relations: { teamMemberships: true },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    return caller;
   }
 
   private async signOut(

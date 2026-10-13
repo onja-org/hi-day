@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
+import { canViewMembership } from '../../common/membership-visibility.util';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -93,8 +94,9 @@ export class ManualTimeEditsService {
   /**
    * Every manual add, edit and delete of a Time entry in `[from, to]`, read
    * back from the AuditLog. "me" is the edits that landed on the caller's own
-   * timesheet; "all" is open to an admin or manager only, the same
-   * org-wide timesheet visibility they already have.
+   * timesheet; "all" is open to an admin or manager only — every member's
+   * for an admin, and for a manager those of people they can view (see
+   * canViewMembership), as on every other report.
    *
    * An edit's audit row names only the entry and what changed, so who it
    * belongs to comes from the entry itself — or, if it has since been
@@ -109,6 +111,7 @@ export class ManualTimeEditsService {
   ): Promise<ManualTimeEditRow[]> {
     const caller = await this.memberships.findOne({
       where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+      relations: { teamMemberships: true },
     });
     if (!caller) {
       throw new ForbiddenException(
@@ -134,22 +137,30 @@ export class ManualTimeEditsService {
 
     const facts = await this.entryFactsFor(organisationId, logs);
     const rows = logs.map((log) => this.toFacts(log, facts));
-    const visible = rows.filter(
-      ({ entry }) => scope === 'all' || entry.membershipId === caller.id,
-    );
 
-    const [members, projects, tasks] = await Promise.all([
-      this.memberships.find({
-        where: {
-          organisationId,
-          id: In(
-            visible
-              .map(({ entry }) => entry.membershipId)
-              .filter((id): id is string => !!id),
-          ),
-        },
-        relations: { user: true },
-      }),
+    const members = await this.memberships.find({
+      where: {
+        organisationId,
+        id: In(
+          rows
+            .map(({ entry }) => entry.membershipId)
+            .filter((id): id is string => !!id),
+        ),
+      },
+      relations: { user: true, teamMemberships: true },
+    });
+    const memberById = new Map(members.map((member) => [member.id, member]));
+
+    const visible = rows.filter(({ entry }) => {
+      if (scope === 'me') return entry.membershipId === caller.id;
+      if (caller.role === MembershipRole.ADMIN) return true;
+      const member = entry.membershipId
+        ? memberById.get(entry.membershipId)
+        : undefined;
+      return !!member && canViewMembership(caller, member);
+    });
+
+    const [projects, tasks] = await Promise.all([
       this.projects.find({
         where: {
           organisationId,
@@ -170,7 +181,6 @@ export class ManualTimeEditsService {
         },
       }),
     ]);
-    const memberById = new Map(members.map((member) => [member.id, member]));
     const projectById = new Map(
       projects.map((project) => [project.id, project]),
     );

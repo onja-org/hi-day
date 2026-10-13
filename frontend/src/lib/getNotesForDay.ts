@@ -6,6 +6,7 @@ const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 export type GetNotesForDayFilter = {
   date?: string;
   membershipId?: string;
+  projectId?: string;
 };
 
 export async function getNotesForDay(
@@ -14,6 +15,7 @@ export async function getNotesForDay(
 ): Promise<ListNotesResult> {
   const params = new URLSearchParams();
   if (filter.date) params.set("date", filter.date);
+  if (filter.projectId) params.set("projectId", filter.projectId);
   const query = params.toString();
 
   const path = filter.membershipId

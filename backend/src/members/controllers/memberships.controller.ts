@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -244,6 +245,8 @@ export class MembershipsController {
   getNotes(
     @Param('membershipId') membershipId: string,
     @Query('date') date: string | undefined,
+    @Query('projectId', new ParseUUIDPipe({ optional: true }))
+    projectId: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<NoteEntry[]> {
     return this.notesService.listForMembership(
@@ -251,6 +254,7 @@ export class MembershipsController {
       request.userId,
       membershipId,
       date,
+      projectId,
     );
   }
 }

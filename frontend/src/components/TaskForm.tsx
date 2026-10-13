@@ -77,9 +77,9 @@ export function TaskForm({
     } else {
       mutation.mutate({
         name,
-        description: description || undefined,
-        estimate: estimate || undefined,
-        dueDate: dueDate || undefined,
+        description: description || null,
+        estimate: estimate || null,
+        dueDate: dueDate || null,
         assigneeProjectMembershipId: assignee || null,
       } satisfies UpdateTaskInput);
     }

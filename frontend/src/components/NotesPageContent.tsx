@@ -14,10 +14,10 @@ type NotesPageContentProps = {
 /** The Activities page's "Notes" tab: per-day (optionally per-project)
  * notes, replacing the old freeform, day-agnostic post feed. */
 export function NotesPageContent({ organisationId }: NotesPageContentProps) {
-  const { date, membershipId, canViewOthers } = useActivityDayFilters();
+  const { date, membershipId, projectId, canViewOthers } = useActivityDayFilters();
   const isOwnNotes = !membershipId;
 
-  const notesQuery = useNotesForDay(organisationId, { date, membershipId });
+  const notesQuery = useNotesForDay(organisationId, { date, membershipId, projectId });
 
   return (
     <div className="flex flex-col gap-4">

@@ -648,9 +648,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * A timesheet: the caller's entries, or another member's for an
-   * admin/manager, most recent first with Project/Task names resolved.
-   * Viewing uses the same role gate as editing (`canEditEntry`).
+   * A timesheet: the caller's entries, or another member's for an admin
+   * (anyone) or a manager (people on teams they manage — see
+   * canSeeMembership), most recent first with
+   * Project/Task names resolved.
    *
    * `from`/`to` filter `startedAt` inclusively. The frontend resolves what
    * "today" means in the viewer's timezone, so this stays timezone-naive.

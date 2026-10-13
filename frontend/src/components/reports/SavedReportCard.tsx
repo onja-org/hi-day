@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ClockIcon, StarIcon, TrashIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { describeSchedule } from "@/lib/describeSchedule";
+import { savedReportTypeTitle } from "@/lib/savedReportTypeTitle";
 import type { SavedReport } from "@/types/savedReport";
 
 type SavedReportCardProps = {
@@ -49,7 +50,9 @@ export function SavedReportCard({ report, href, isFavourite, onToggleFavourite, 
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <span className="rounded-md bg-primary-dark/5 px-2 py-1 text-xs text-slate-900">Time &amp; activity</span>
+        <span className="rounded-md bg-primary-dark/5 px-2 py-1 text-xs text-slate-900">
+          {savedReportTypeTitle(report.reportType)}
+        </span>
         {report.schedule && (
           <span
             title={describeSchedule(report.schedule)}

@@ -29,6 +29,7 @@ export class DevicesController {
   ): Promise<DeviceSummary[]> {
     return this.devicesService.listForOrganisation(
       request.organisationId!,
+      request.userId,
       query.userId,
     );
   }

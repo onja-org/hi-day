@@ -52,9 +52,14 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
   const [scheduling, setScheduling] = useState(false);
   const [action, setAction] = useState<ManualTimeEditAction | "all">("all");
   const { scope, setScope, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
-    useTimeActivityReportControls(savedReport?.settings);
+    useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const showsEveryone = canViewOthers && scope === "all";
-  const editsQuery = useManualTimeEdits(organisationId, showsEveryone ? "all" : "me", range);
+  const editsQuery = useManualTimeEdits(
+    organisationId,
+    showsEveryone ? "all" : "me",
+    range,
+    !organisationQuery.isLoading,
+  );
   const membersQuery = useActiveMembers(organisationId, { enabled: showsEveryone });
   const myProjectsQuery = useMyProjects(organisationId);
 
@@ -152,7 +157,7 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
         />
       )}
 
-      <ReportStatus isLoading={editsQuery.isLoading} error={editsQuery.error} />
+      <ReportStatus isLoading={editsQuery.isLoading || organisationQuery.isLoading} error={editsQuery.error} />
       {rows && (
         <>
           <div className="flex flex-wrap items-center justify-end gap-3">

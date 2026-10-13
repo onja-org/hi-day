@@ -71,6 +71,18 @@ describe('PendingTimerOps', () => {
     expect(ops.load()).toEqual([]);
   });
 
+  it('passes a backdated start to the server and queues it with that time offline', async () => {
+    const startTimer = vi.fn(() => Promise.resolve(ok));
+    await new PendingTimerOps(dir).start('t', 'p2', null, client({ startTimer }), '2026-10-09T09:00:00.000Z');
+    expect(startTimer).toHaveBeenCalledWith('t', 'p2', null, '2026-10-09T09:00:00.000Z');
+
+    const ops = new PendingTimerOps(dir);
+    await ops.start('t', 'p2', null, client(), '2026-10-09T09:00:00.000Z');
+    expect(ops.load()).toEqual([
+      { type: 'start', at: '2026-10-09T09:00:00.000Z', projectId: 'p2', taskId: null },
+    ]);
+  });
+
   it('queues a pause pressed after an offline start behind it, in order', async () => {
     const ops = new PendingTimerOps(dir);
     await ops.start('t', 'p2', null, client());

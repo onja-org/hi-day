@@ -16,6 +16,9 @@ import { ProjectTasksSection } from "./ProjectTasksSection";
 type ProjectRowProps = {
   organisationId: string;
   project: ProjectOverviewItem;
+  /** Org admin/manager: may tick the row for batch actions. */
+  canSelect: boolean;
+  /** May change this project — an org admin/manager or its project manager. */
   canManage: boolean;
   /** Including the selection checkbox column, when shown. */
   columnCount: number;
@@ -26,6 +29,7 @@ type ProjectRowProps = {
 export function ProjectRow({
   organisationId,
   project,
+  canSelect,
   canManage,
   columnCount,
   selected,
@@ -38,7 +42,7 @@ export function ProjectRow({
   return (
     <>
       <tr className="group border-b border-input-border last:border-b-0 hover:bg-cream/30">
-        {canManage && (
+        {canSelect && (
           <td className="w-10 py-3 pl-4">
             <input
               type="checkbox"

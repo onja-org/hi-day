@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { ORGANISATION_TEAMS_QUERY_KEY } from "@/hooks/useOrganisationTeams";
@@ -26,12 +26,17 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
     new Map(),
   );
 
+  // Set once the team exists, so a failure adding its members still closes
+  // the form — resubmitting would only try to create the team a second time.
+  const createdTeam = useRef<OrganisationTeam | null>(null);
+
   const mutation = useMutation({
     mutationFn: async (name: string): Promise<CreateTeamResult> => {
       const result = await createTeam(organisationId, name);
       if (!result.ok) {
         return result;
       }
+      createdTeam.current = result.team;
 
       queryClient.invalidateQueries({
         queryKey: ORGANISATION_TEAMS_QUERY_KEY(organisationId),
@@ -56,7 +61,7 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
             memberResult.failed.length === 1 ? "" : "s"
           } couldn't be added: ${memberResult.failed
             .map((failure) => failure.message)
-            .join(", ")}`,
+            .join(", ")}. Add them from the team's members.`,
         };
       }
 
@@ -65,6 +70,8 @@ export function TeamForm({ organisationId, onSaved }: TeamFormProps) {
     onSuccess: (result) => {
       if (result.ok) {
         onSaved(result.team);
+      } else if (createdTeam.current) {
+        onSaved(createdTeam.current);
       }
     },
   });

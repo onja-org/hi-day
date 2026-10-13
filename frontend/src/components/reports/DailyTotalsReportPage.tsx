@@ -36,13 +36,9 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
   const organisationQuery = useCurrentOrganisation();
   const [scheduling, setScheduling] = useState(false);
   const { scope, setScope, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
-    useTimeActivityReportControls(savedReport?.settings);
-  const { canViewOthers, activeFilters, projectOptions, entries, isLoading, error } = useTimeActivityReportData(
-    organisationId,
-    scope,
-    range,
-    filters,
-  );
+    useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
+  const { canViewOthers, showsEveryone, activeFilters, members, teams, projectOptions, entries, isLoading, error } =
+    useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
   const report = entries ? buildDailyTotalsReport(entries, range) : undefined;
   const table = report ? dailyTotalsTable(report) : undefined;
   const filenameBase = reportFilenameBase("daily-totals", range);
@@ -92,7 +88,17 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
           setCustomDays={setCustomDays}
           setPreset={setPreset}
         />
-        <TimeActivityFilter filters={activeFilters} onChange={setFilters} projectOptions={projectOptions} />
+        <TimeActivityFilter
+          filters={activeFilters}
+          onChange={setFilters}
+          projectOptions={projectOptions}
+          memberOptions={
+            showsEveryone
+              ? (members ?? []).map((member) => ({ id: member.id, name: member.name ?? member.email }))
+              : undefined
+          }
+          teamOptions={teams}
+        />
       </div>
 
       {scheduling && (
@@ -104,7 +110,7 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
         />
       )}
 
-      <ReportStatus isLoading={isLoading} error={error} />
+      <ReportStatus isLoading={isLoading || organisationQuery.isLoading} error={error} />
       {entries && report && table && (
         <DailyTotalsReportBody
           report={report}

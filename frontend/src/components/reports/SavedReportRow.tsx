@@ -8,6 +8,7 @@ import { ActionsMenu } from "@/components/ActionsMenu";
 import { TableCell } from "@/components/ui/table/TableCell";
 import { TableRow } from "@/components/ui/table/TableRow";
 import { nextScheduledRun } from "@/lib/nextScheduledRun";
+import { savedReportTypeTitle } from "@/lib/savedReportTypeTitle";
 import { summariseSchedule } from "@/lib/summariseSchedule";
 import type { ReportSchedule } from "@/types/reportSchedule";
 import type { SavedReport } from "@/types/savedReport";
@@ -76,7 +77,7 @@ export function SavedReportRow({
           </Link>
         </div>
       </TableCell>
-      <TableCell>Time &amp; activity</TableCell>
+      <TableCell>{savedReportTypeTitle(report.reportType)}</TableCell>
       <TableCell>{new Date(report.modifiedAt).toLocaleString()}</TableCell>
       <TableCell>
         {schedule ? (

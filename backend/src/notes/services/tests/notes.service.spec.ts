@@ -134,6 +134,28 @@ describe('NotesService', () => {
       );
     });
 
+    it('narrows to one project when given', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        notesRepo: makeNotesRepo({ find }),
+      });
+
+      await service.listMineForDay(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        'project-1',
+      );
+
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ projectId: 'project-1' }) as unknown,
+        }),
+      );
+    });
+
     it('defaults to today when no date is given', async () => {
       const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
       const find = jest.fn().mockResolvedValue([]);

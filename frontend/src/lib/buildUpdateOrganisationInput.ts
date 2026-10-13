@@ -23,7 +23,8 @@ export function buildUpdateOrganisationInput(
   return {
     name: String(formData.get("name") ?? ""),
     address: String(formData.get("address") ?? ""),
-    website: website ? String(website) : undefined,
+    // Empty clears a saved website; only a form without the field leaves it alone.
+    website: website === null ? undefined : String(website).trim(),
     idleHandling: formData.get("idleHandling") as IdleHandling,
     idleThresholdMinutes: Number.isFinite(idleThresholdMinutes)
       ? idleThresholdMinutes

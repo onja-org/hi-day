@@ -57,7 +57,9 @@ import {
 } from "./browser-restart-prompt";
 import {
   type CloseAction,
+  hasWaylandScreenshotGrant,
   markBrowserRestartPromptSeen,
+  markWaylandScreenshotGranted,
   rememberCloseAction,
   rememberedCloseAction,
 } from "./setup-state";
@@ -66,6 +68,7 @@ import {
   ACCESSIBILITY_COPY,
   SETTINGS_DEEP_LINKS,
 } from "./resolvers/darwin/permission-copy";
+import { InstalledBrowserDetector } from "./resolvers/darwin/installed-browsers";
 import type { SettingsPane } from "./resolvers/darwin/permission-copy";
 import {
   DebugHarness,
@@ -540,6 +543,16 @@ function refreshTrayMenu(): void {
 
 async function registerIpcHandlers(): Promise<void> {
   const authStore = new AuthStore(app.getPath("userData"));
+  // Looked up once per launch: Spotlight is a few hundred ms, and the
+  // permission banner asks every 15s.
+  let firefoxInstalled: Promise<boolean> | null = null;
+  const isFirefoxInstalled = (): Promise<boolean> =>
+    (firefoxInstalled ??= new InstalledBrowserDetector().isInstalled(
+      "org.mozilla.firefox",
+    ));
+  const isWaylandScreenshotGranted = (): boolean =>
+    hasWaylandScreenshotGrant(app.getPath("userData")) ||
+    authStore.load()?.waylandScreenshotGranted === true;
   const pendingOps = new PendingTimerOps(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
@@ -632,8 +645,7 @@ async function registerIpcHandlers(): Promise<void> {
   offlineQueue.registerSender(screenshotUploader);
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
-    isWaylandScreenshotGranted: () =>
-      authStore.load()?.waylandScreenshotGranted ?? false,
+    isWaylandScreenshotGranted,
   });
 
   offlineQueue.start();
@@ -891,9 +903,14 @@ async function registerIpcHandlers(): Promise<void> {
   // later play resumes to.
   ipcMain.handle(
     "tracking:start",
-    async (_event, projectId: string, taskId: string | null) => {
+    async (
+      _event,
+      projectId: string,
+      taskId: string | null,
+      startedAt?: string,
+    ) => {
       const result = await callDeviceApi((token) =>
-        pendingOps.start(token, projectId, taskId, apiClient),
+        pendingOps.start(token, projectId, taskId, apiClient, startedAt),
       );
       if (result.ok) authStore.rememberProject(projectId, taskId);
       // Instant local feedback for window tracking rather than waiting on
@@ -967,7 +984,7 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle(
     "tracking:permissionStatus",
-    (): TrackingResult<CapturePermissionStatus> => {
+    async (): Promise<TrackingResult<CapturePermissionStatus>> => {
       const session = authStore.load();
       if (!session) return NOT_LOGGED_IN;
 
@@ -988,21 +1005,23 @@ async function registerIpcHandlers(): Promise<void> {
           // only ever fire from an explicit "Grant Access" click below).
           // macOS reads the real OS permission; Linux/Wayland reads our own
           // record of the one-time portal grant (see
-          // AuthStore.rememberWaylandScreenshotGranted) since the portal
+          // setup-state's markWaylandScreenshotGranted) since the portal
           // itself has no query-only "check without asking" API the way
           // macOS's getMediaAccessStatus does.
           screenRecordingGranted:
             platform === "macos"
               ? systemPreferences.getMediaAccessStatus("screen") === "granted"
               : platform === "linux" && isWaylandSession()
-                ? (session.waylandScreenshotGranted ?? false)
+                ? isWaylandScreenshotGranted()
                 : true,
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
-          // "ask the user".
+          // "ask the user". Only Firefox needs Accessibility, so without it
+          // installed there's nothing to ask for.
           accessibilityGranted:
             platform === "macos"
-              ? systemPreferences.isTrustedAccessibilityClient(false)
+              ? systemPreferences.isTrustedAccessibilityClient(false) ||
+                !(await isFirefoxInstalled())
               : true,
           accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
         },
@@ -1027,7 +1046,7 @@ async function registerIpcHandlers(): Promise<void> {
       if (process.platform === "linux" && isWaylandSession()) {
         const buffer = await captureScreenViaPortal(true);
         if (!buffer) return;
-        authStore.rememberWaylandScreenshotGranted();
+        markWaylandScreenshotGranted(app.getPath("userData"));
         // The grant call itself already captured a real screenshot —
         // upload it instead of discarding it, same shape as any other
         // tick's sample.

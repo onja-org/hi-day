@@ -256,6 +256,34 @@ describe('TasksService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('clears description, estimate and due date when set to null', async () => {
+      const tasksRepo = makeTasksRepo({
+        findOne: jest.fn().mockResolvedValue({
+          ...baseTask,
+          description: 'Old',
+          estimate: '2',
+          dueDate: '2026-10-20',
+        }),
+      });
+      const service = makeService({ tasksRepo });
+
+      const result = await service.update(
+        'org-1',
+        'project-1',
+        'task-1',
+        'admin-1',
+        { description: null, estimate: null, dueDate: null },
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          description: null,
+          estimate: null,
+          dueDate: null,
+        }),
+      );
+    });
+
     it('clears the assignee when explicitly set to null', async () => {
       const tasksRepo = makeTasksRepo({
         findOne: jest.fn().mockResolvedValue({
