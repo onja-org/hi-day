@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -181,11 +182,13 @@ describe('TimeEntriesService', () => {
   function makeOrganisationsRepo(
     timezone = 'UTC',
     timesheetModifyTime: 'off' | 'add_edit' = 'off',
+    // Off unless a test is about it, so the rest needn't invent reasons.
+    timesheetRequireReason = false,
   ) {
     return {
-      findOne: jest
-        .fn()
-        .mockResolvedValue({ settings: { timezone, timesheetModifyTime } }),
+      findOne: jest.fn().mockResolvedValue({
+        settings: { timezone, timesheetModifyTime, timesheetRequireReason },
+      }),
     } as unknown as Repository<Organisation>;
   }
 
@@ -729,6 +732,61 @@ describe('TimeEntriesService', () => {
       await expect(
         service.stop('org-1', 'user-1', null, new Date(Date.now() + 60_000)),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('require reason', () => {
+    const adminRepo = () =>
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'm-1',
+          role: MembershipRole.ADMIN,
+        }),
+      });
+
+    it('refuses a manual entry without a reason while the setting is on', async () => {
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+      });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          startedAt: '2026-01-01T09:00:00.000Z',
+          endedAt: '2026-01-01T10:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses deleting an entry without a reason while the setting is on', async () => {
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
+        }),
+      });
+
+      await expect(
+        service.remove('org-1', 'user-1', 'entry-running', { reason: '  ' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts a manual entry with a reason', async () => {
+      const save = jest.fn((entry: unknown) => Promise.resolve(entry));
+      const service = makeService({
+        membershipsRepo: adminRepo(),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', true),
+        timeEntriesRepo: makeTimeEntriesRepo({ save }),
+      });
+
+      await service.createManual('org-1', 'user-1', 'project-1', {
+        startedAt: '2026-01-01T09:00:00.000Z',
+        endedAt: '2026-01-01T10:00:00.000Z',
+        reason: 'Forgot to start the timer',
+      });
+
+      expect(save).toHaveBeenCalled();
     });
   });
 

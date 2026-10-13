@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -32,7 +33,10 @@ import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { DEFAULT_ALLOWED_APPS } from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import { Organisation } from '../../database/entities/organisation.entity';
-import { DEFAULT_TIMESHEET_MODIFY_TIME } from '../../organisations/timesheet-settings';
+import {
+  DEFAULT_TIMESHEET_MODIFY_TIME,
+  DEFAULT_TIMESHEET_REQUIRE_REASON,
+} from '../../organisations/timesheet-settings';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -1091,6 +1095,7 @@ export class TimeEntriesService {
       dto.taskId,
       dto.membershipId,
     );
+    await this.assertReasonGiven(organisationId, dto.reason);
 
     const startedAt = new Date(dto.startedAt);
     const endedAt = new Date(dto.endedAt);
@@ -1179,6 +1184,7 @@ export class TimeEntriesService {
         'You do not have permission to edit this time entry.',
       );
     }
+    await this.assertReasonGiven(organisationId, dto.reason);
     // A paused entry isn't accruing, so giving it an end just closes it where
     // it already left off — allowed, and handled as a stop below. A *ticking*
     // one still refuses: ending a live timer here would leave no record of
@@ -1504,6 +1510,7 @@ export class TimeEntriesService {
         "You can only delete your own time entries — an admin can delete anyone's.",
       );
     }
+    await this.assertReasonGiven(organisationId, dto.reason);
     const span = { from: entry.startedAt, to: entry.endedAt ?? new Date() };
 
     // Snapshot, delete and prune in one transaction so a deleted entry can
@@ -2234,6 +2241,23 @@ export class TimeEntriesService {
     const settings = organisation?.settings as
       { allowedApps?: AllowedApps } | undefined;
     return settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
+  }
+
+  /** The organisation's Require reason setting, held at the API so no
+   * client can skip it; a batch delete sends its one reason with each. */
+  private async assertReasonGiven(
+    organisationId: string,
+    reason: string | undefined,
+  ): Promise<void> {
+    if (reason?.trim()) return;
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = organisation?.settings as
+      { timesheetRequireReason?: boolean } | undefined;
+    if (settings?.timesheetRequireReason ?? DEFAULT_TIMESHEET_REQUIRE_REASON) {
+      throw new BadRequestException('Give a reason for this change.');
+    }
   }
 
   /** Read fresh, like `organisationAllowedApps`. */

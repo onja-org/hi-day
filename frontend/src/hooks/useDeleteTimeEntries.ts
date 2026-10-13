@@ -40,9 +40,16 @@ export function useDeleteTimeEntries(
   const invalidate = useInvalidateTimeEntryViews(organisationId);
 
   return useMutation({
-    mutationFn: async (timeEntryIds: string[]): Promise<BatchDeleteResult> => {
+    mutationFn: async ({
+      timeEntryIds,
+      reason,
+    }: {
+      timeEntryIds: string[];
+      /** One reason for the whole batch, recorded on every entry. */
+      reason?: string;
+    }): Promise<BatchDeleteResult> => {
       const results = await Promise.all(
-        timeEntryIds.map((id) => deleteTimeEntry(organisationId, id)),
+        timeEntryIds.map((id) => deleteTimeEntry(organisationId, id, reason)),
       );
       const failures = results.filter((result) => !result.ok);
       return summarise(results.length - failures.length, failures[0]?.message ?? null);

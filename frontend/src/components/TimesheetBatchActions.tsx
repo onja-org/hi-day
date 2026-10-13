@@ -5,7 +5,7 @@ import { CaretDownIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useDeleteTimeEntries } from "@/hooks/useDeleteTimeEntries";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { TimesheetBatchDeleteDialog } from "./TimesheetBatchDeleteDialog";
 
 type TimesheetBatchActionsProps = {
   organisationId: string;
@@ -43,7 +43,6 @@ export function TimesheetBatchActions({
   useDismissOnOutside(isOpen, [containerRef], () => setIsOpen(false));
 
   const count = selectedIds.length;
-  const noun = count === 1 ? "time entry" : "time entries";
   const isEmpty = count === 0;
 
   return (
@@ -85,13 +84,13 @@ export function TimesheetBatchActions({
       )}
 
       {isConfirming && (
-        <ConfirmDialog
-          title={`Delete ${count} ${noun}?`}
-          message={`This removes ${count === 1 ? "it" : "them"} from the day and week totals. It cannot be undone.`}
-          confirmLabel={`Delete ${count} ${noun}`}
-          isDangerous
+        <TimesheetBatchDeleteDialog
+          organisationId={organisationId}
+          count={count}
           isPending={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(selectedIds)}
+          onConfirm={(reason) =>
+            deleteMutation.mutate({ timeEntryIds: selectedIds, reason })
+          }
           onClose={() => setIsConfirming(false)}
         />
       )}
