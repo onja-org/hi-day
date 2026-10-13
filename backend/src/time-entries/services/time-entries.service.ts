@@ -35,6 +35,11 @@ import {
   isTimerSourceAllowed,
 } from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
+import {
+  DAY_LABELS,
+  DEFAULT_WORK_TIME_LIMITS,
+} from '../../organisations/work-time-limits';
+import type { WorkTimeLimits } from '../../organisations/work-time-limits';
 import { Organisation } from '../../database/entities/organisation.entity';
 import {
   DEFAULT_TIMESHEET_MODIFY_TIME,
@@ -408,6 +413,11 @@ export class TimeEntriesService {
       taskId,
     );
     await this.assertAppAllowed(membership, organisationId, source);
+    await this.assertWithinWorkTimeLimits(
+      membership,
+      organisationId,
+      requestedStartedAt ?? new Date(),
+    );
 
     // Another Device may be tracking anything, the same Project or a
     // different one. Only the Project totals made a different one a problem,
@@ -931,6 +941,135 @@ export class TimeEntriesService {
       `[abandoned] entry=${entry.id} removed — it began ${entry.startedAt.toISOString()}, ` +
         `after its device was last seen ${deviceLastSeenAt.toISOString()}, so it holds no worked time`,
     );
+  }
+
+  /**
+   * Refuses a timer the Organisation's work time limits don't allow: a day
+   * tracking is switched off on, or a daily/weekly ceiling already
+   * reached. Expected hours are deliberately not consulted — they are a
+   * target for reports, never a cap.
+   *
+   * Day boundaries and the weekly reset are read in the Organisation's own
+   * timezone and from its week-start day, so a limit means the same thing
+   * to everyone in it.
+   */
+  private async assertWithinWorkTimeLimits(
+    membership: Membership,
+    organisationId: string,
+    now: Date,
+  ): Promise<void> {
+    const limits = await this.workTimeLimitsFor(organisationId, membership);
+    const zone = await this.organisationTimezone(organisationId, new Map());
+
+    // Read in the Organisation's zone, not the server's: near midnight the
+    // two disagree, and a disabled day has to mean the member's day.
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      weekday: 'short',
+    }).format(now) as (typeof DAY_LABELS)[number];
+    const day = DAY_LABELS.indexOf(weekday);
+
+    if (limits.trackingDisabledDays.includes(day)) {
+      throw new ForbiddenException(
+        `Your organisation has time tracking switched off on ${DAY_LABELS[day]}.`,
+      );
+    }
+
+    if (limits.dailyLimitHours !== null) {
+      const workedToday = await this.workedSecondsSince(
+        organisationId,
+        membership.id,
+        this.startOfDayInZone(now, zone),
+      );
+      if (workedToday >= limits.dailyLimitHours * 3600) {
+        throw new ForbiddenException(
+          `You have reached your daily limit of ${limits.dailyLimitHours} hours.`,
+        );
+      }
+    }
+
+    if (limits.weeklyLimitHours !== null) {
+      const workedThisWeek = await this.workedSecondsSince(
+        organisationId,
+        membership.id,
+        await this.startOfWeekInZone(organisationId, now, zone),
+      );
+      if (workedThisWeek >= limits.weeklyLimitHours * 3600) {
+        throw new ForbiddenException(
+          `You have reached your weekly limit of ${limits.weeklyLimitHours} hours.`,
+        );
+      }
+    }
+  }
+
+  /** Each field is the member's own when set, the Organisation's otherwise. */
+  private async workTimeLimitsFor(
+    organisationId: string,
+    membership: Membership,
+  ): Promise<WorkTimeLimits> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = (organisation?.settings ?? {}) as Partial<WorkTimeLimits>;
+    // pg hands `numeric` back as a string. `undefined` has to collapse to
+    // null too: `Number(undefined)` is NaN, and a NaN limit compares false
+    // against everything, silently switching the limit off.
+    const own = (value: string | null | undefined): number | null =>
+      value === null || value === undefined ? null : Number(value);
+
+    return {
+      expectedWorkDays:
+        membership.expectedWorkDays ??
+        settings.expectedWorkDays ??
+        DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
+      trackingDisabledDays:
+        membership.trackingDisabledDays ??
+        settings.trackingDisabledDays ??
+        DEFAULT_WORK_TIME_LIMITS.trackingDisabledDays,
+      expectedWeeklyHours:
+        own(membership.expectedWeeklyHours) ??
+        settings.expectedWeeklyHours ??
+        null,
+      weeklyLimitHours:
+        own(membership.weeklyLimitHours) ?? settings.weeklyLimitHours ?? null,
+      dailyLimitHours:
+        own(membership.dailyLimitHours) ?? settings.dailyLimitHours ?? null,
+    };
+  }
+
+  /** Union, not sum: two Devices running at once are one stretch of work. */
+  private async workedSecondsSince(
+    organisationId: string,
+    membershipId: string,
+    from: Date,
+  ): Promise<number> {
+    const entries = await this.timeEntries.find({
+      where: {
+        organisationId,
+        membershipId,
+        startedAt: MoreThanOrEqual(from),
+      },
+    });
+    return this.unionWorkedSeconds(entries);
+  }
+
+  private async startOfWeekInZone(
+    organisationId: string,
+    now: Date,
+    zone: string,
+  ): Promise<Date> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const weekStartsOn =
+      (organisation?.settings as { weekStartsOn?: string } | undefined)
+        ?.weekStartsOn === 'sunday'
+        ? 0
+        : 1;
+    const start = this.startOfDayInZone(now, zone);
+    const day = start.getDay();
+    const offset = (day - weekStartsOn + 7) % 7;
+    return new Date(start.getTime() - offset * 24 * 60 * 60 * 1000);
   }
 
   /**

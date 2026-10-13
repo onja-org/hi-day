@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -10,6 +11,7 @@ import {
   Min,
   MinLength,
   Validate,
+  ValidateIf,
 } from 'class-validator';
 import { IsIanaTimezone } from '../../auth/dto/is-iana-timezone.validator';
 import { ALLOWED_APPS_VALUES } from '../allowed-apps';
@@ -76,6 +78,42 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsIn(ALLOWED_APPS_VALUES)
   allowedApps?: AllowedApps;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  expectedWorkDays?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  trackingDisabledDays?: number[];
+
+  /** `null` removes the target; the limits take `null` as "no limit". */
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(168)
+  expectedWeeklyHours?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(168)
+  weeklyLimitHours?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(24)
+  dailyLimitHours?: number | null;
 
   @IsOptional()
   @IsIn(TIMESHEET_MODIFY_TIME_VALUES)

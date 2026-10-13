@@ -12,6 +12,8 @@ import { TimesheetReason } from '../../database/entities/timesheet-reason.entity
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateOrganisationDto } from '../dto/update-organisation.dto';
 import { AllowedApps, DEFAULT_ALLOWED_APPS } from '../allowed-apps';
+import { DEFAULT_WORK_TIME_LIMITS } from '../work-time-limits';
+import type { WorkTimeLimits } from '../work-time-limits';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
@@ -54,6 +56,7 @@ export interface OrganisationProfile {
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
+  workTimeLimits: WorkTimeLimits;
   timesheetModifyTime: TimesheetModifyTime;
   /** The Modify time setting resolved for the caller, so the UI doesn't
    * combine override and default itself. Gates every role, admins too. */
@@ -88,6 +91,11 @@ interface OrganisationSettings {
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
+  expectedWorkDays?: number[];
+  trackingDisabledDays?: number[];
+  expectedWeeklyHours?: number | null;
+  weeklyLimitHours?: number | null;
+  dailyLimitHours?: number | null;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;
@@ -325,6 +333,23 @@ export class OrganisationsService {
       ...(dto.allowedApps !== undefined
         ? { allowedApps: dto.allowedApps }
         : {}),
+      ...(dto.expectedWorkDays !== undefined
+        ? { expectedWorkDays: dto.expectedWorkDays }
+        : {}),
+      ...(dto.trackingDisabledDays !== undefined
+        ? { trackingDisabledDays: dto.trackingDisabledDays }
+        : {}),
+      // `null` is meaningful for all three — "removed" for the target,
+      // "no limit" for the two ceilings — so they are stored as given.
+      ...(dto.expectedWeeklyHours !== undefined
+        ? { expectedWeeklyHours: dto.expectedWeeklyHours }
+        : {}),
+      ...(dto.weeklyLimitHours !== undefined
+        ? { weeklyLimitHours: dto.weeklyLimitHours }
+        : {}),
+      ...(dto.dailyLimitHours !== undefined
+        ? { dailyLimitHours: dto.dailyLimitHours }
+        : {}),
       ...(dto.timesheetModifyTime !== undefined
         ? { timesheetModifyTime: dto.timesheetModifyTime }
         : {}),
@@ -376,6 +401,52 @@ export class OrganisationsService {
       handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       thresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+    };
+  }
+
+  /**
+   * The work time limits in force for one member: each field is their own
+   * override when set, the Organisation's otherwise. Resolved here so
+   * enforcement and the agent can never disagree about whose number wins.
+   */
+  async getWorkTimeLimits(
+    organisationId: string,
+    userId: string,
+  ): Promise<WorkTimeLimits> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+    const membership = await this.memberships.findOne({
+      where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+    });
+
+    // pg returns `numeric` as a string; null stays null, since for these
+    // three it means "removed" or "no limit" rather than zero.
+    const toHours = (value: string | null | undefined): number | null =>
+      value === null || value === undefined ? null : Number(value);
+
+    return {
+      expectedWorkDays:
+        membership?.expectedWorkDays ??
+        settings.expectedWorkDays ??
+        DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
+      trackingDisabledDays:
+        membership?.trackingDisabledDays ??
+        settings.trackingDisabledDays ??
+        DEFAULT_WORK_TIME_LIMITS.trackingDisabledDays,
+      expectedWeeklyHours:
+        toHours(membership?.expectedWeeklyHours) ??
+        settings.expectedWeeklyHours ??
+        null,
+      weeklyLimitHours:
+        toHours(membership?.weeklyLimitHours) ??
+        settings.weeklyLimitHours ??
+        null,
+      dailyLimitHours:
+        toHours(membership?.dailyLimitHours) ??
+        settings.dailyLimitHours ??
+        null,
     };
   }
 
@@ -487,6 +558,17 @@ export class OrganisationsService {
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
       allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
+      workTimeLimits: {
+        expectedWorkDays:
+          settings.expectedWorkDays ??
+          DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
+        trackingDisabledDays:
+          settings.trackingDisabledDays ??
+          DEFAULT_WORK_TIME_LIMITS.trackingDisabledDays,
+        expectedWeeklyHours: settings.expectedWeeklyHours ?? null,
+        weeklyLimitHours: settings.weeklyLimitHours ?? null,
+        dailyLimitHours: settings.dailyLimitHours ?? null,
+      },
       timesheetModifyTime: modifyTime,
       // An admin always may; Modify time governs everyone else.
       canModifyTime:
