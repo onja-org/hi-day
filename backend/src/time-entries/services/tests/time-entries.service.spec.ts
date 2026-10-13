@@ -999,6 +999,29 @@ describe('TimeEntriesService', () => {
       return { repo, save };
     }
 
+    const runningNow = {
+      id: 'running-1',
+      membershipId: 'm-1',
+      deviceId: null,
+      projectId: 'project-1',
+      startedAt: new Date(Date.now() - 60 * 1000),
+      endedAt: null,
+      project: { name: 'Website', colour: 'blue' },
+    } as unknown as TimeEntry;
+
+    /** The running lookup filters `endedAt`; the limit's filters `startedAt`. */
+    function makePollRepo(worked: TimeEntry[]) {
+      return makeTimeEntriesRepo({
+        find: jest.fn((options: { where?: Record<string, unknown> }) =>
+          Promise.resolve(
+            options.where && 'startedAt' in options.where
+              ? worked
+              : [runningNow],
+          ),
+        ),
+      });
+    }
+
     const twoHoursToday = [
       {
         id: 'worked-1',
@@ -1036,6 +1059,35 @@ describe('TimeEntriesService', () => {
       await start(service);
 
       expect(save).toHaveBeenCalled();
+    });
+
+    it('ends a running timer on the poll that notices the limit', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ dailyLimitHours: 1 }),
+        timeEntriesRepo: makePollRepo(twoHoursToday),
+        dataSource,
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.limitReached).toEqual({ kind: 'daily', limitHours: 1 });
+      // Open pauses closed, then the entries ended.
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports nothing while the limit is not reached', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ dailyLimitHours: 8 }),
+        timeEntriesRepo: makePollRepo(twoHoursToday),
+        dataSource,
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.limitReached).toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('refuses once the daily limit is already reached', async () => {

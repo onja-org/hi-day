@@ -158,6 +158,12 @@ export interface TimeEntryListItem extends TimeEntrySummary {
  */
 type OverlapScope = 'tracked' | 'manual';
 
+/** Why a timer was ended for someone rather than by them. */
+export interface WorkTimeLimitReached {
+  kind: 'daily' | 'weekly';
+  limitHours: number;
+}
+
 export interface CurrentTimeEntry {
   /** The web's own entry, never a Device's — what its controls act on. */
   entry: TimeEntrySummary | null;
@@ -171,6 +177,12 @@ export interface CurrentTimeEntry {
    * surfaces disagree about how long a timer has been running.
    */
   now: Date;
+  /**
+   * Set for one read only, on the poll that notices a limit was crossed
+   * and ends the timer — the clients turn it into a modal. Absent
+   * afterwards, so the modal isn't shown again on the next poll.
+   */
+  limitReached?: WorkTimeLimitReached;
   /**
    * The person's worked seconds across every Device currently tracking,
    * counting shared wall-clock time once. Clients display this rather than
@@ -319,14 +331,29 @@ export class TimeEntriesService {
       where: { membershipId: membership.id, endedAt: IsNull() },
       order: { startedAt: 'ASC' },
     });
-    const own = running.find((entry) => entry.deviceId === null) ?? null;
-    const onADevice = running.find((entry) => entry.deviceId !== null) ?? null;
+    const limitReached = await this.stopIfOverWorkTimeLimit(
+      membership,
+      organisationId,
+      running,
+    );
+    // Re-read after a stop, or the response would still show the timer
+    // this very call just ended.
+    const live = limitReached
+      ? await this.timeEntries.find({
+          where: { membershipId: membership.id, endedAt: IsNull() },
+          order: { startedAt: 'ASC' },
+        })
+      : running;
+
+    const own = live.find((entry) => entry.deviceId === null) ?? null;
+    const onADevice = live.find((entry) => entry.deviceId !== null) ?? null;
 
     return {
       entry: own ? await this.toSummary(own) : null,
       elsewhere: onADevice ? await this.toSummary(onADevice) : null,
       now: new Date(),
-      workedSeconds: await this.unionWorkedSeconds(running),
+      workedSeconds: await this.unionWorkedSeconds(live),
+      ...(limitReached ? { limitReached } : {}),
     };
   }
 
@@ -1000,6 +1027,70 @@ export class TimeEntriesService {
         );
       }
     }
+  }
+
+  /**
+   * Ends a running timer that has crossed a daily or weekly ceiling, and
+   * says which — the clients poll `current` constantly, so this is where
+   * a limit actually bites rather than waiting for the next start.
+   *
+   * Returns `undefined` when nothing was stopped, including when the
+   * person was already over before this read: only the poll that does the
+   * stopping reports it, so the modal shows once.
+   */
+  private async stopIfOverWorkTimeLimit(
+    membership: Membership,
+    organisationId: string,
+    running: TimeEntry[],
+  ): Promise<WorkTimeLimitReached | undefined> {
+    if (running.length === 0) return undefined;
+
+    const limits = await this.workTimeLimitsFor(organisationId, membership);
+    if (limits.dailyLimitHours === null && limits.weeklyLimitHours === null) {
+      return undefined;
+    }
+
+    const now = new Date();
+    const zone = await this.organisationTimezone(organisationId, new Map());
+
+    const over = async (
+      limitHours: number | null,
+      from: Date,
+    ): Promise<boolean> =>
+      limitHours !== null &&
+      (await this.workedSecondsSince(organisationId, membership.id, from)) >=
+        limitHours * 3600;
+
+    let reached: WorkTimeLimitReached | undefined;
+    if (await over(limits.dailyLimitHours, this.startOfDayInZone(now, zone))) {
+      reached = { kind: 'daily', limitHours: limits.dailyLimitHours! };
+    } else if (
+      await over(
+        limits.weeklyLimitHours,
+        await this.startOfWeekInZone(organisationId, now, zone),
+      )
+    ) {
+      reached = { kind: 'weekly', limitHours: limits.weeklyLimitHours! };
+    }
+    if (!reached) return undefined;
+
+    const ids = running.map((entry) => entry.id);
+    await this.dataSource.transaction(async (manager) => {
+      // Pauses first, as suspending an Organisation does: an entry must
+      // never end with one of its pauses still open.
+      await manager.update(
+        TimeEntryPause,
+        { timeEntryId: In(ids), resumedAt: IsNull() },
+        { resumedAt: now },
+      );
+      await manager.update(TimeEntry, { id: In(ids) }, { endedAt: now });
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.stopped_by_work_time_limit',
+        organisationId,
+        metadata: { timeEntryIds: ids, ...reached },
+      });
+    });
+    return reached;
   }
 
   /** Each field is the member's own when set, the Organisation's otherwise. */

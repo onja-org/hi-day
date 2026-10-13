@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { useRunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
+import { WorkTimeLimitReachedModal } from "./WorkTimeLimitReachedModal";
 import { ProjectColourBadge } from "./ProjectColourBadge";
 import { Spinner } from "./Spinner";
 import { TimerPicker } from "./TimerPicker";
@@ -31,6 +32,13 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
 
   return (
     <div className="rounded-lg border border-input-border bg-cream/40 p-4 sm:p-5">
+      {timer.limitReached && (
+        <WorkTimeLimitReachedModal
+          kind={timer.limitReached.kind}
+          limitHours={timer.limitReached.limitHours}
+          onClose={timer.dismissLimitReached}
+        />
+      )}
       {timer.entry ? (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">

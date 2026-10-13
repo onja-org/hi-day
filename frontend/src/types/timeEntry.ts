@@ -64,6 +64,8 @@ export type CurrentTimeEntry = {
    * web may start; never controlled from here. */
   elsewhere: TimeEntry | null;
   now: string;
+  /** Present on the one poll that ends a timer for crossing a limit. */
+  limitReached?: { kind: "daily" | "weekly"; limitHours: number };
 };
 
 export type GetCurrentTimeEntryResult =
