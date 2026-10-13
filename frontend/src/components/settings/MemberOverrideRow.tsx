@@ -18,6 +18,7 @@ type MemberOverrideRowProps<K extends string> = {
   orgValue: K;
   isSaving: boolean;
   onMemberChange: (membershipId: string, next: K | null) => void;
+  onMemberReset?: (membershipId: string) => void;
   secondary?: SecondaryToggleColumn<K>;
 };
 
@@ -28,6 +29,7 @@ export function MemberOverrideRow<K extends string>({
   orgValue,
   isSaving,
   onMemberChange,
+  onMemberReset,
   secondary,
 }: MemberOverrideRowProps<K>) {
   const who = row.name ?? row.email;
@@ -43,9 +45,14 @@ export function MemberOverrideRow<K extends string>({
       title={`Reset ${who} to the organisation default`}
       aria-label={`Reset ${who} to the organisation default`}
       onClick={() => {
-        onMemberChange(row.membershipId, null);
         // Both columns go together, matching "Apply to all": a cleared row
-        // inherits the org default outright.
+        // inherits the org default outright. One request when the caller
+        // offers it — two would race, each writing the whole membership.
+        if (onMemberReset) {
+          onMemberReset(row.membershipId);
+          return;
+        }
+        onMemberChange(row.membershipId, null);
         secondary?.onMemberChange(row.membershipId, null);
       }}
       className="cursor-pointer rounded-brand-sm p-1 text-slate-900/60 hover:bg-cream hover:text-primary-dark"

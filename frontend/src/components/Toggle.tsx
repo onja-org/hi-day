@@ -1,3 +1,5 @@
+import clsx from "clsx";
+
 type ToggleProps = {
   name: string;
   label: string;
@@ -7,6 +9,7 @@ type ToggleProps = {
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
   defaultChecked?: boolean;
+  disabled?: boolean;
 };
 
 /** A labeled on/off switch, styled as a real checkbox so it submits with the parent form. */
@@ -17,9 +20,16 @@ export function Toggle({
   checked,
   onCheckedChange,
   defaultChecked,
+  disabled,
 }: ToggleProps) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 py-3">
+    <label
+      className={clsx(
+        "flex items-start justify-between gap-4 py-3",
+        disabled && "cursor-not-allowed opacity-60",
+        !disabled && "cursor-pointer",
+      )}
+    >
       <span className="flex flex-col gap-0.5">
         <span className="font-medium text-slate-900">{label}</span>
         <span className="text-sm text-slate-900/60">{description}</span>
@@ -35,6 +45,7 @@ export function Toggle({
               ? (event) => onCheckedChange(event.target.checked)
               : undefined
           }
+          disabled={disabled}
           className="peer sr-only"
         />
         <span className="absolute inset-0 rounded-full bg-sidebar-active transition-colors duration-150 peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30" />
