@@ -786,6 +786,39 @@ describe('MembershipsService', () => {
       expect(result.status).toBe(MembershipStatus.DEACTIVATED);
     });
 
+    it.each([
+      { timesheetModifyTime: 'add_edit' },
+      { timesheetRequireApproval: false },
+      { appUrlTracking: 'off' },
+      { allowedApps: 'all' },
+    ] as const)(
+      "rejects a manager changing a team member's setting override %p",
+      async (dto) => {
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'manager-membership',
+            role: MembershipRole.MANAGER,
+            teamMemberships: [{ teamId: 'team-1', isManager: true }],
+          })
+          .mockResolvedValueOnce({
+            id: 'membership-1',
+            userId: 'user-1',
+            role: MembershipRole.MEMBER,
+            teamMemberships: [{ teamId: 'team-1', isManager: false }],
+            status: MembershipStatus.ACTIVE,
+            user: { email: 'a@b.test', name: 'A B' },
+          });
+        const service = makeService({
+          membershipsRepo: makeMembershipsRepo({ findOne }),
+        });
+
+        await expect(
+          service.update('org-1', 'membership-1', 'manager-1', dto),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      },
+    );
+
     it('allows a manager to modify a member who is also on another team the manager does not manage', async () => {
       const caller = {
         id: 'manager-membership',

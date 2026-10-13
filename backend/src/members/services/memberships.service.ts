@@ -400,6 +400,20 @@ export class MembershipsService {
       );
     }
 
+    // The per-member overrides of organisation settings are the admin-only
+    // Settings screens' to change — a manager granting one would undo what
+    // the admin chose for the whole organisation.
+    if (
+      dto.appUrlTracking !== undefined ||
+      dto.allowedApps !== undefined ||
+      dto.timesheetModifyTime !== undefined ||
+      dto.timesheetRequireApproval !== undefined
+    ) {
+      throw new ForbiddenException(
+        "Only an admin can change a member's tracking or timesheet settings.",
+      );
+    }
+
     const scopeTeamIds = getManagerScopeTeamIds(caller);
     const targetTeamIds = (target.teamMemberships ?? []).map(
       (teamMembership) => teamMembership.teamId,
