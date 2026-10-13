@@ -196,6 +196,7 @@ function launch(scenario: Scenario) {
       show: async () => {},
       close: async () => {},
       setCompact: async () => {},
+      onTrackingNotice: () => {},
       onReopened: (listener: () => void) => {
         reopenListeners.push(listener);
       },

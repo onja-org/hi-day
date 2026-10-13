@@ -250,6 +250,11 @@ const api = {
       ipcRenderer.invoke("window:close") as Promise<void>,
     setCompact: (compact: boolean): Promise<void> =>
       ipcRenderer.invoke("window:setCompact", compact) as Promise<void>,
+    onTrackingNotice: (listener: (notice: string | null) => void): void => {
+      ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
+        listener(notice),
+      );
+    },
     onReopened: (listener: () => void): void => {
       ipcRenderer.on("window:reopened", () => listener());
     },

@@ -88,6 +88,8 @@ export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
 
 export type AppUrlTracking = "off" | "apps" | "apps_urls";
 
+export type AllowedApps = "all" | "desktop_only" | "mobile_only";
+
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
@@ -97,6 +99,8 @@ export interface CaptureSettings {
   windowTrackingEnabled: boolean;
   /** The organisation default with this member's override applied. */
   appUrlTracking: AppUrlTracking;
+  /** Likewise resolved. */
+  allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;

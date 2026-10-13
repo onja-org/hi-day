@@ -102,6 +102,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
           projectSecondsToday={timer.projectSecondsToday}
           conflictMessage={timer.conflictMessage}
           canSwitch={timer.canSwitch}
+          trackingNotice={timer.trackingNotice}
           requiredProjectId={timer.requiredProjectId}
           isStarting={timer.isStarting}
           isSwitching={timer.isSwitching}

@@ -438,6 +438,7 @@ const compactTimerTogglePath = document.getElementById(
 const currentTaskLabelEl = document.getElementById("current-task-label")!;
 const timerDisplay = document.getElementById("timer-display")!;
 const trackingError = document.getElementById("tracking-error")!;
+const trackingNotice = document.getElementById("tracking-notice")!;
 const timerToggle = document.getElementById(
   "timer-toggle",
 ) as HTMLButtonElement;
@@ -940,6 +941,9 @@ function renderProjects(): void {
       `${isRunningHere ? "Stop tracking" : "Track"} ${project.name}`,
     );
     button.classList.toggle("is-running", isRunningHere);
+    // Each row starts a timer, so none can work while tracking is blocked.
+    // The banner above already says why; a red error repeating it is noise.
+    button.disabled = trackingToggleBlocked;
 
     const iconWrapper = document.createElement("span");
     iconWrapper.className = "project-icon";
@@ -999,6 +1003,7 @@ function renderProjects(): void {
  * moment is double-counted or lost between the two.
  */
 async function selectProject(projectId: string): Promise<void> {
+  if (trackingToggleBlocked) return;
   clearTrackingError();
 
   // Clicking the row that is currently running pauses it — the row shows a
@@ -1443,6 +1448,9 @@ async function startTracking(): Promise<void> {
   }
 }
 
+/** Set while the organisation tracks from another client. */
+let trackingToggleBlocked = false;
+
 timerToggle.addEventListener("click", () => {
   void (async () => {
     timerToggle.disabled = true;
@@ -1468,7 +1476,7 @@ timerToggle.addEventListener("click", () => {
         handleTrackingFailure(result);
       }
     } finally {
-      timerToggle.disabled = false;
+      timerToggle.disabled = trackingToggleBlocked;
     }
   })();
 });
@@ -1627,6 +1635,23 @@ async function runInitTracking(): Promise<void> {
   void refreshCapturePermissionBanner();
   startPolling();
 }
+
+/**
+ * An admin restricting tracking to another client. The server has already
+ * ended any running entry, so this only says so and stops offering
+ * buttons that would be refused. Neutral styling, not `error-text`.
+ */
+window.api.windowControls.onTrackingNotice((notice) => {
+  trackingNotice.textContent = notice ?? "";
+  // Truthiness, not `!== null`: an older main process sends `undefined`,
+  // which must not show an empty banner and disable the toggle.
+  trackingNotice.hidden = !notice;
+  trackingToggleBlocked = Boolean(notice);
+  timerToggle.disabled = trackingToggleBlocked;
+  compactTimerToggle.disabled = trackingToggleBlocked;
+  renderProjects();
+  if (notice) void refreshStatus(true);
+});
 
 // Closing the window only hides it to the tray, so reopening it doesn't rerun
 // setup — re-read the day's time from the server here instead.

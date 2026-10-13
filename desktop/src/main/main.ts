@@ -6,12 +6,14 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   powerMonitor,
   shell,
   systemPreferences,
   Tray,
 } from "electron";
 import type {
+  AllowedApps,
   AppUrlTracking,
   PairingPollResult,
   TimeEntry,
@@ -24,6 +26,7 @@ import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { X11WindowTracker } from "./x11-window-tracker";
@@ -270,6 +273,10 @@ process.on("unhandledRejection", (reason) =>
 // jitter or one missed beat never flips a genuinely-running device to
 // "offline" on the Devices page.
 const HEARTBEAT_INTERVAL_MS = 60_000;
+
+/** How long the "tracking stopped" popup is left alone before focusing the
+ * window counts as having read it. */
+const TRACKING_ALERT_DWELL_MS = 5_000;
 
 // Refreshes Device.lastSeenAt, which is otherwise set once at login — every
 // device would flip to "offline" five minutes later while still running.
@@ -684,6 +691,10 @@ async function registerIpcHandlers(): Promise<void> {
   // started/stopped from the web console or another device, see
   // docs/adr/0006-...), and any one flipping recomputes both.
   let appUrlTracking: AppUrlTracking = "off";
+  let allowedApps: AllowedApps = "all";
+  /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
+  let trackingNotification: Notification | null = null;
+  let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -751,12 +762,74 @@ async function registerIpcHandlers(): Promise<void> {
     service.setTimerRunning(timerRunning);
   }
 
+  /**
+   * The server has already ended the running entry by this point, so
+   * someone left looking at a stopped timer behind other windows would
+   * carry on working believing it still ran — hence the push to the front
+   * as well as the banner.
+   */
+  function announceAllowedApps(next: AllowedApps): void {
+    if (next === allowedApps) return;
+    const notice = allowedAppsNotice(next);
+    mainWindow?.webContents.send("tracking:notice", notice);
+    if (notice) alertTrackingStopped(notice);
+    else dismissTrackingAlert();
+  }
+
+  /** The desktop's notification shelf is what carries the unread badge on
+   * our icon, so a read alert has to be taken back out of it. */
+  function dismissTrackingAlert(): void {
+    if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
+    trackingAlertDwell = null;
+    mainWindow?.flashFrame(false);
+    trackingNotification?.close();
+    trackingNotification = null;
+  }
+
+  /**
+   * Three escalating attempts, because a window manager is free to refuse
+   * any of them: a desktop notification, which survives even when the app
+   * may not take focus (the normal case on Linux, where focus-stealing
+   * prevention ignores `focus()` from a background process); a brief
+   * always-on-top pass, which is what actually raises the window when a
+   * plain `show()` is ignored; and a flashing taskbar entry as the last
+   * resort, cleared once the window is actually looked at.
+   */
+  function alertTrackingStopped(body: string): void {
+    if (Notification.isSupported()) {
+      // Replaces rather than stacks: two of these say the same thing.
+      trackingNotification?.close();
+      trackingNotification = new Notification({
+        title: "Time tracking stopped",
+        body,
+      });
+      trackingNotification.show();
+    }
+
+    showMainWindow();
+    if (!mainWindow) return;
+
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.flashFrame(true);
+
+    // Deferred: raising the window above fires `focus` itself, and
+    // dismissing in the same tick made the popup flash and vanish.
+    if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
+    trackingAlertDwell = setTimeout(() => {
+      trackingAlertDwell = null;
+      mainWindow?.once("focus", dismissTrackingAlert);
+    }, TRACKING_ALERT_DWELL_MS);
+  }
+
   const captureSettingsGate = new CaptureSettingsGate(
     authStore,
     apiClient,
     (settings) => {
       windowTrackingEnabled = settings.windowTrackingEnabled;
       appUrlTracking = settings.appUrlTracking;
+      announceAllowedApps(settings.allowedApps);
+      allowedApps = settings.allowedApps;
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       recomputeSampling();

@@ -17,6 +17,7 @@ import { User } from '../../database/entities/user.entity';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
+import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 
 export interface ActiveMemberSummary {
@@ -65,6 +66,7 @@ export class MembershipsService {
     private readonly auditLogService: AuditLogService,
     private readonly devicesService: DevicesService,
     private readonly authService: AuthService,
+    private readonly timeEntriesService: TimeEntriesService,
   ) {}
 
   /**
@@ -276,6 +278,13 @@ export class MembershipsService {
         );
       }
     });
+
+    if (dto.allowedApps !== undefined) {
+      await this.timeEntriesService.stopEntriesDisallowedByApps(
+        organisationId,
+        membershipId,
+      );
+    }
 
     return this.toSummary(membership);
   }
@@ -498,6 +507,7 @@ export class MembershipsService {
           actorUserId,
         }),
       );
+      await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);
     }
     return { cleared };
   }

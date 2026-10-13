@@ -1,3 +1,4 @@
+import { AllowedApps, DEFAULT_ALLOWED_APPS } from './allowed-apps';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from './app-url-tracking';
 
 export interface CaptureSettings {
@@ -8,6 +9,8 @@ export interface CaptureSettings {
    * Overridable per Membership (see `Membership.appUrlTracking`).
    */
   appUrlTracking: AppUrlTracking;
+  /** Which timer clients this member may track from. */
+  allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
   /** How often the desktop agent captures a screenshot, in seconds. */
   screenshotFrequencySeconds: number;
@@ -30,6 +33,7 @@ export const DEFAULT_SCREENSHOT_RETENTION_DAYS = 30;
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   windowTrackingEnabled: true,
   appUrlTracking: DEFAULT_APP_URL_TRACKING,
+  allowedApps: DEFAULT_ALLOWED_APPS,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: DEFAULT_SCREENSHOT_FREQUENCY_SECONDS,
   screenshotRetentionDays: DEFAULT_SCREENSHOT_RETENTION_DAYS,

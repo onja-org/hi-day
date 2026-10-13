@@ -13,6 +13,7 @@ describe('CaptureSettingsGate', () => {
     return {
       windowTrackingEnabled: false,
       appUrlTracking: 'off',
+      allowedApps: 'all',
       screenshotsEnabled: false,
       screenshotFrequencySeconds: 0,
       // Matches OFF_SETTINGS' own default — see capture-settings-gate.ts's
@@ -107,6 +108,24 @@ describe('CaptureSettingsGate', () => {
 
     expect(onChange).toHaveBeenLastCalledWith(settings({ appUrlTracking: 'off' }));
     expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('calls onChange again when only allowedApps changes', async () => {
+    const onChange = vi.fn();
+    let value = settings({ allowedApps: 'all' });
+    const gate = new CaptureSettingsGate(
+      makeSession('token-1'),
+      { getCaptureSettings: () => Promise.resolve({ ok: true, data: value }) },
+      onChange,
+    );
+
+    await gate.pollOnce();
+    value = settings({ allowedApps: 'mobile_only' });
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      settings({ allowedApps: 'mobile_only' }),
+    );
   });
 
   it('calls onChange again when only screenshotFrequencySeconds changes', async () => {

@@ -117,7 +117,9 @@ describe('TimeEntriesService', () => {
     };
     const remove = jest.fn().mockResolvedValue({ affected: 1 });
     const find = jest.fn().mockResolvedValue([]);
+    const update = jest.fn().mockResolvedValue({ affected: 1 });
     const manager = {
+      update,
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
       ),
@@ -136,6 +138,7 @@ describe('TimeEntriesService', () => {
       save,
       remove,
       find,
+      update,
       manager,
     };
   }
@@ -814,7 +817,88 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('refuses a switch that would start a timer the member may not run', async () => {
+    it('re-reads the organisation setting on every start, never a cached one', async () => {
+      let allowedApps = 'mobile_only';
+      const service = makeService({
+        organisationsRepo: {
+          findOne: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve({ settings: { timezone: 'UTC', allowedApps } }),
+            ),
+        } as unknown as Repository<Organisation>,
+      });
+      const startWeb = () =>
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        );
+
+      await expect(startWeb()).rejects.toBeInstanceOf(ForbiddenException);
+
+      allowedApps = 'all';
+
+      await expect(startWeb()).resolves.toBeDefined();
+    });
+
+    it('stops a running web timer when the setting no longer permits it', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              source: TimeEntrySource.WEB,
+              membership: { allowedApps: null },
+            },
+          ]),
+        }),
+        organisationsRepo: {
+          findOne: jest.fn().mockResolvedValue({
+            settings: { allowedApps: 'desktop_only' },
+          }),
+        } as unknown as Repository<Organisation>,
+        dataSource,
+      });
+
+      await expect(service.stopEntriesDisallowedByApps('org-1')).resolves.toBe(
+        1,
+      );
+      // Open pauses closed, then the entries ended.
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+
+    it('leaves a running agent timer alone under the same setting', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              source: TimeEntrySource.AGENT,
+              membership: { allowedApps: null },
+            },
+          ]),
+        }),
+        organisationsRepo: {
+          findOne: jest.fn().mockResolvedValue({
+            settings: { allowedApps: 'desktop_only' },
+          }),
+        } as unknown as Repository<Organisation>,
+        dataSource,
+      });
+
+      await expect(service.stopEntriesDisallowedByApps('org-1')).resolves.toBe(
+        0,
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a switch the member may not run, as a start would be', async () => {
       const service = makeService({
         membershipsRepo: makeMembershipsRepo({
           findOne: jest.fn().mockResolvedValue({
@@ -835,35 +919,6 @@ describe('TimeEntriesService', () => {
           null,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('lets a timer already running switch project — it is left alone', async () => {
-      const { dataSource, manager } = makeDataSource();
-      (manager.findOne as jest.Mock).mockResolvedValue({ ...runningEntry });
-      const service = makeService({
-        dataSource,
-        timeEntriesRepo: makeTimeEntriesRepo({
-          find: jest.fn().mockResolvedValue([{ ...runningEntry }]),
-        }),
-        membershipsRepo: makeMembershipsRepo({
-          findOne: jest.fn().mockResolvedValue({
-            id: 'm-1',
-            role: MembershipRole.MEMBER,
-            allowedApps: 'mobile_only',
-          }),
-        }),
-      });
-
-      const result = await service.switchTo(
-        'org-1',
-        'user-1',
-        'project-1',
-        undefined,
-        TimeEntrySource.WEB,
-        null,
-      );
-
-      expect(result.endedAt).toBeNull();
     });
 
     it('refuses a web switch onto a different project than a running device', async () => {

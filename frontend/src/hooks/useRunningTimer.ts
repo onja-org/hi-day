@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { allowedAppsNotice } from "@/lib/allowedAppsNotice";
 import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
 import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
 import { startTimeEntry } from "@/lib/startTimeEntry";
@@ -8,6 +9,7 @@ import { stopTimeEntry } from "@/lib/stopTimeEntry";
 import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
 import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboardSummary";
+import { useCurrentOrganisation } from "./useCurrentOrganisation";
 import { useMyProjects } from "./useMyProjects";
 import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 
@@ -31,6 +33,10 @@ export function useRunningTimer(organisationId: string) {
   // when that's what's in the way — never a device's, which the web can't
   // stop.
   const [canSwitch, setCanSwitch] = useState(false);
+  // Shown instead of offering a Start button the server would refuse.
+  const trackingNotice = allowedAppsNotice(
+    useCurrentOrganisation().data?.allowedApps ?? "all",
+  );
   const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
   // The web's own timer only — a device's is never displayed here. It does
@@ -185,6 +191,7 @@ export function useRunningTimer(organisationId: string) {
     projectSecondsToday,
     conflictMessage,
     canSwitch,
+    trackingNotice,
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,
