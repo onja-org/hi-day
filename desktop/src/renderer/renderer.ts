@@ -2,6 +2,7 @@ export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
 const IDLE_POLL_INTERVAL_MS = 10_000;
+const IDLE_POLICY_REFRESH_MS = 60_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
 const PAIRING_POLL_MAX_ATTEMPTS = 210;
 const DEFAULT_PAIRING_MESSAGE =
@@ -545,6 +546,7 @@ let syncFailing = false;
 const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
+let idlePolicyLoadedAt = 0;
 let lastIdleSeconds = 0;
 let idleHandled = false;
 let pendingIdleDiscardAt: string | null = null;
@@ -1308,9 +1310,11 @@ async function refreshStatus(resync = false): Promise<void> {
   }
   syncFailing = false;
   lastSyncedAt = Date.now();
-  // Fetched once at setup; if that missed, idle detection would stay off
-  // for the whole session.
-  if (!idlePolicy) void loadIdlePolicy();
+  // Re-read now and then, so an admin's change to idle handling reaches a
+  // signed-in desktop — and a missed first fetch doesn't leave it off.
+  if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
+    void loadIdlePolicy();
+  }
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
@@ -1551,7 +1555,10 @@ idleAssignToggle.addEventListener("click", () => {
 
 async function loadIdlePolicy(): Promise<void> {
   const result = await callTracking(() => window.api.tracking.idlePolicy());
-  if (result.ok) idlePolicy = result.data;
+  if (result.ok) {
+    idlePolicy = result.data;
+    idlePolicyLoadedAt = Date.now();
+  }
 }
 
 let trackingRetryHandle: ReturnType<typeof setTimeout> | null = null;
