@@ -36,6 +36,8 @@ export function WeekNavigator({
           nextLabel="Next week"
           onPrevious={() => onChange(weekOffset - 1)}
           onNext={() => onChange(weekOffset + 1)}
+          // There's no tracked time in a future week.
+          nextDisabled={weekOffset >= 0}
         >
           <span className="flex items-center gap-2 px-4 text-sm text-slate-900">
             <CalendarBlankIcon
