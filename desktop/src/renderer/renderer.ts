@@ -1254,12 +1254,19 @@ async function chooseTask(taskId: string | null): Promise<void> {
     return;
   }
 
+  const previousTaskId = runningEntry.taskId;
   clearTrackingError();
   const result = await callTracking(() =>
     window.api.tracking.switchTo(projectId, taskId),
   );
-  if (result.ok) setRunning(result.data);
-  else handleTrackingFailure(result);
+  if (result.ok) {
+    setRunning(result.data);
+    return;
+  }
+  // Still on the old task, so the label shouldn't claim otherwise.
+  selectedTaskId = previousTaskId;
+  updateCurrentTaskLabel();
+  handleTrackingFailure(result);
 }
 
 taskTrigger.addEventListener("click", () => void openTaskPanel());

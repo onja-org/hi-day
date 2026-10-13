@@ -53,7 +53,15 @@ export class UrlCaptureService {
       idleThresholdMs: options.idleThresholdMs,
       idlePollIntervalMs: options.idlePollIntervalMs,
       clock: realClock,
-      onEvent: (event) => this.reportEvent(event),
+      onEvent: (event) => {
+        // Timers don't run while the machine sleeps, so after a wake the
+        // pending one would cut the session late — measure again.
+        if (event.type === 'powerStateChanged' && event.awake && this.dayBoundaryTimer) {
+          clearTimeout(this.dayBoundaryTimer);
+          this.scheduleDayBoundary();
+        }
+        this.reportEvent(event);
+      },
     });
   }
 

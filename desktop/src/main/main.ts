@@ -563,9 +563,17 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return firefoxInstalled ?? true;
   };
-  const isWaylandScreenshotGranted = (): boolean =>
-    hasWaylandScreenshotGrant(app.getPath("userData")) ||
-    authStore.load()?.waylandScreenshotGranted === true;
+  const isWaylandScreenshotGranted = (): boolean => {
+    const userDataDir = app.getPath("userData");
+    if (hasWaylandScreenshotGrant(userDataDir)) return true;
+    // A grant an older version kept in the session moves to setup-state the
+    // first time it's seen, so the next sign-out doesn't take it along.
+    if (authStore.load()?.waylandScreenshotGranted === true) {
+      markWaylandScreenshotGranted(userDataDir);
+      return true;
+    }
+    return false;
+  };
   const pendingOps = new PendingTimerOps(app.getPath("userData"));
   const apiClient = new ApiClient(API_BASE_URL);
 
