@@ -37,7 +37,7 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
   const [scheduling, setScheduling] = useState(false);
   const { scope, setScope, grouping: chosenGrouping, setGrouping, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
     useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
-  const { canViewOthers, showsEveryone, activeFilters, projectOptions, entries, isLoading, error } =
+  const { canViewOthers, showsEveryone, activeFilters, members, teams, projectOptions, entries, isLoading, error } =
     useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
   const grouping = isWorkSessionsGrouping(chosenGrouping) ? chosenGrouping : "day";
   const columns = workSessionsColumns(grouping);
@@ -89,7 +89,17 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
           setCustomDays={setCustomDays}
           setPreset={setPreset}
         />
-        <TimeActivityFilter filters={activeFilters} onChange={setFilters} projectOptions={projectOptions} />
+        <TimeActivityFilter
+          filters={activeFilters}
+          onChange={setFilters}
+          projectOptions={projectOptions}
+          memberOptions={
+            showsEveryone
+              ? (members ?? []).map((member) => ({ id: member.id, name: member.name ?? member.email }))
+              : undefined
+          }
+          teamOptions={teams}
+        />
       </div>
 
       {scheduling && (
