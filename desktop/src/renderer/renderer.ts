@@ -763,7 +763,9 @@ function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
     : "";
   idleBannerMessage.append(projectNameStrong);
   idleBannerMessage.append(
-    document.createTextNode(". Tracking paused automatically."),
+    document.createTextNode(
+      ". The timer is still running — choose what to do with the idle time.",
+    ),
   );
 }
 
