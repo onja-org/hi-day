@@ -3,6 +3,8 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProjects } from "@/hooks/useMyProjects";
 import { useProject } from "@/hooks/useProject";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
@@ -12,6 +14,7 @@ import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
 import { findOverlappingEntry } from "@/lib/findOverlappingEntry";
 import { formatClockTime } from "@/lib/formatClockTime";
+import { logTimeForCandidates } from "@/lib/logTimeForCandidates";
 import type { TimeEntryChange } from "@/lib/describeTimeEntryChanges";
 import {
   hasNoErrors,
@@ -85,6 +88,12 @@ export function TimeEntryForm({
     (selectedProject?.canLogTimeForOthers ?? false);
   const projectDetailQuery = useProject(organisationId, projectId, {
     enabled: canLogTimeForOthers,
+  });
+  const caller = useCurrentOrganisation().data;
+  // Team-scoped for a manager, so it's who they may log for unless they
+  // manage this project.
+  const visibleMembersQuery = useActiveMembers(organisationId, {
+    enabled: canLogTimeForOthers && caller?.role === "manager",
   });
 
   const invalidate = useInvalidateTimeEntryViews(organisationId);
@@ -296,10 +305,17 @@ export function TimeEntryForm({
           // resetting to "Me".
           <LogTimeForSelect
             key={projectId}
-            // A viewer can't have time logged on this project.
-            members={(projectDetailQuery.data?.members ?? []).filter(
-              (member) => member.role !== "viewer",
-            )}
+            members={
+              caller
+                ? logTimeForCandidates(
+                    projectDetailQuery.data?.members ?? [],
+                    caller,
+                    visibleMembersQuery.data
+                      ? new Set(visibleMembersQuery.data.map((member) => member.id))
+                      : null,
+                  )
+                : []
+            }
           />
         )}
 

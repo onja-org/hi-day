@@ -1112,10 +1112,9 @@ describe('TimeEntriesService', () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
       });
 
-      // Project-manager tier used to be enough to log for a teammate. The
-      // org-admin gate now sits in front of it, so this path is closed to
-      // anyone who isn't an org admin, however senior on the project.
-      it('rejects a project-manager-tier caller logging time for a teammate', async () => {
+      // Project-manager tier lets you log for teammates, but only once Modify
+      // time lets you add time at all.
+      it('rejects a project manager without Modify time logging time for a teammate', async () => {
         const membershipsRepo = makeMembershipsRepoFor(
           { id: 'm-1', role: MembershipRole.MEMBER },
           { id: 'm-2' },
@@ -1135,6 +1134,37 @@ describe('TimeEntriesService', () => {
             endedAt: '2026-01-01T10:00:00.000Z',
           }),
         ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('lets a project manager with Modify time log time for anyone on their project', async () => {
+        const membershipsRepo = makeMembershipsRepoFor(
+          {
+            id: 'm-1',
+            role: MembershipRole.MEMBER,
+            timesheetModifyTime: 'add_edit',
+          },
+          { id: 'm-2', role: MembershipRole.MEMBER },
+        );
+        const projectMembershipsRepo = makeProjectMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+        });
+        const service = makeService({
+          membershipsRepo,
+          projectMembershipsRepo,
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'user-1',
+          'project-1',
+          {
+            membershipId: 'm-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-2');
       });
 
       // How an admin fills an untracked gap on a member's timesheet: the

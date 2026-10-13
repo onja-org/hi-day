@@ -1806,7 +1806,7 @@ export class TimeEntriesService {
 
     let membership = caller;
     if (targetMembershipId && targetMembershipId !== caller.id) {
-      await this.assertCanLogTimeForOthers(caller, projectId);
+      const reach = await this.assertCanLogTimeForOthers(caller, projectId);
       const target = await this.memberships.findOne({
         where: {
           id: targetMembershipId,
@@ -1817,9 +1817,14 @@ export class TimeEntriesService {
       if (!target) {
         throw new NotFoundException('Membership not found.');
       }
-      // Same bound as editing: writing to someone's timesheet is never
-      // wider than being able to read it.
-      if (!(await this.canSeeMembership(caller, organisationId, target.id))) {
+      // A project manager reaches everyone on their Project — the target's
+      // own access is checked just below. Otherwise it's the same bound as
+      // editing: writing to someone's timesheet is never wider than being
+      // able to read it.
+      if (
+        reach === 'team' &&
+        !(await this.canSeeMembership(caller, organisationId, target.id))
+      ) {
         throw new ForbiddenException(
           "You do not have access to this member's timesheet.",
         );
@@ -1858,25 +1863,25 @@ export class TimeEntriesService {
 
   /**
    * Whether `caller` may attribute a manual entry to someone else on this
-   * Project — an org admin/manager, or a direct `manager`-tier
-   * ProjectMembership (see ProjectRoleGuard's own comment: a project role
-   * only ever *adds* access, never restricts an org admin/manager).
-   * Team-derived project access carries no role tier of its own, so it
-   * doesn't unlock this — only a direct ProjectMembership does.
+   * Project, and whom: a direct `manager`-tier ProjectMembership reaches
+   * everyone on the Project (`'project'`); otherwise an org admin/manager
+   * reaches whoever they can see (`'team'` — see `canSeeMembership`). A
+   * project role only ever *adds* access (see ProjectRoleGuard). Team-derived
+   * project access carries no role tier of its own, so it doesn't unlock
+   * this — only a direct ProjectMembership does.
    */
   private async assertCanLogTimeForOthers(
     caller: Membership,
     projectId: string,
-  ): Promise<void> {
-    if (ORG_WIDE_ROLES.includes(caller.role)) {
-      return;
-    }
-
+  ): Promise<'project' | 'team'> {
     const callerProjectMembership = await this.projectMemberships.findOne({
       where: { projectId, membershipId: caller.id },
     });
     if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
-      return;
+      return 'project';
+    }
+    if (ORG_WIDE_ROLES.includes(caller.role)) {
+      return 'team';
     }
 
     throw new ForbiddenException(
