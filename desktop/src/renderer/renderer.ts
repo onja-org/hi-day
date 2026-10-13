@@ -585,6 +585,7 @@ function handleTrackingFailure(result: {
   // fault, so it gets a dialog rather than the red line above the timer,
   // which was easy to miss while looking at the Play button.
   if (result.status === 403) {
+    timerBlockedTitle.textContent = "Timer could not be started";
     showTimerBlocked(result.message);
     return;
   }
@@ -612,6 +613,30 @@ function showTimerBlocked(message: string): void {
 timerBlockedDismiss.addEventListener("click", () => {
   timerBlocked.hidden = true;
 });
+
+const timerBlockedTitle = document.getElementById("timer-blocked-title")!;
+
+/**
+ * The timer was ended for them, not by them, for reaching a daily or
+ * weekly limit. Says so in the same dialog a refused start uses, and asks
+ * the main process to raise the window — stopping silently behind other
+ * windows is how someone keeps working untracked.
+ */
+function showTimerStoppedByLimit(limit: {
+  kind: "daily" | "weekly";
+  limitHours: number;
+}): void {
+  const period = limit.kind === "daily" ? "today" : "this week";
+  const resets = limit.kind === "daily" ? "tomorrow" : "when the week resets";
+  const body =
+    `You have tracked the ${formatElapsed(limit.limitHours * 3600 * 1000)} ` +
+    `your organisation allows ${period}, so your timer was stopped. The time ` +
+    `you tracked is saved. You can track again ${resets}.`;
+
+  timerBlockedTitle.textContent = "Your timer has stopped";
+  showTimerBlocked(body);
+  void window.api.trackingAlert(body);
+}
 
 function clearTrackingError(): void {
   trackingError.hidden = true;
@@ -1368,6 +1393,11 @@ async function refreshStatus(resync = false): Promise<void> {
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
+
+  // Reported on one poll only, by the read that ended the timer.
+  if (result.data.limitReached) {
+    showTimerStoppedByLimit(result.data.limitReached);
+  }
 
   const entry = result.data.entry;
   if (entry && (await reconcileDayBoundary(entry))) {

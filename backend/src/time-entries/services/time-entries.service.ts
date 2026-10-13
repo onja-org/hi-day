@@ -692,17 +692,34 @@ export class TimeEntriesService {
       }),
     ]);
 
-    const other = allRunning.find((entry) => entry.id !== running?.id) ?? null;
+    // The agent polls this as the web polls `currentForAccount`, so a
+    // limit has to bite here too — otherwise a desktop timer sails past
+    // one the web would have stopped.
+    const limitReached = await this.stopIfOverWorkTimeLimit(
+      membership,
+      organisationId,
+      allRunning,
+    );
+    const live = limitReached
+      ? await this.timeEntries.find({
+          where: { membershipId: membership.id, endedAt: IsNull() },
+        })
+      : allRunning;
+    const stillRunning = limitReached
+      ? (live.find((entry) => entry.id === running?.id) ?? null)
+      : running;
+    const other = live.find((entry) => entry.id !== stillRunning?.id) ?? null;
 
     return {
-      entry: running ? await this.toSummary(running) : null,
+      entry: stillRunning ? await this.toSummary(stillRunning) : null,
       // Where else the person is tracking. Reported, never controlled:
       // this Device's stop ends this Device's timer only.
       elsewhere: other ? await this.toSummary(other) : null,
       now: new Date(),
       // Account-wide on purpose: this Device displays the person's total, so
       // a machine joining at 10:00 shows the hour another already accrued.
-      workedSeconds: await this.unionWorkedSeconds(allRunning),
+      workedSeconds: await this.unionWorkedSeconds(live),
+      ...(limitReached ? { limitReached } : {}),
     };
   }
 

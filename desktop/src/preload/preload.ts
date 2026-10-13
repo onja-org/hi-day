@@ -67,6 +67,8 @@ export interface CurrentTimer {
   * running elsewhere shows the total already accrued (ADR-0022).
   */
   workedSeconds: number;
+  /** Present on the one poll that ended the timer for reaching a limit. */
+  limitReached?: { kind: "daily" | "weekly"; limitHours: number };
 }
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
@@ -240,6 +242,9 @@ const api = {
       ipcRenderer.send("urlCapture:timerStateChanged", running);
     },
   },
+  trackingAlert: (body: string): Promise<void> =>
+    ipcRenderer.invoke("tracking:alert", body) as Promise<void>,
+
   windowControls: {
     minimise: (): Promise<void> =>
       ipcRenderer.invoke("window:minimise") as Promise<void>,
