@@ -343,7 +343,11 @@ function buildUrlSessionUploadFn(
 function startSync(): void {
   stopSync();
   syncTimer = setInterval(() => {
-    void urlCaptureService?.runSync();
+    urlCaptureService?.runSync().catch((error: unknown) => {
+      // A failed sync is retried next tick; it must never reach the
+      // unhandled-rejection handler, which relaunches the app.
+      console.error("[url-capture] sync failed:", error);
+    });
   }, SYNC_INTERVAL_MS);
 }
 
@@ -736,6 +740,10 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      // URL capture's own copy too: a service created while the server was
+      // unreachable started out "stopped", and the renderer only pushes on
+      // a change it saw itself — so this is what brings it back.
+      urlCaptureService?.setTimerRunning(running);
       recomputeSampling();
     },
   );

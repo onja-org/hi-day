@@ -63,6 +63,9 @@ export class UrlCaptureService {
   }
 
   stop(): void {
+    // Closes any open session first, so its stretch since the last
+    // checkpoint is kept rather than left open in a store about to close.
+    this.reportEvent({ type: 'timerStateChanged', running: false, ...realClock() });
     this.powerAdapter.stop();
     if (this.dayBoundaryTimer) clearTimeout(this.dayBoundaryTimer);
     this.dayBoundaryTimer = null;
