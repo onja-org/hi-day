@@ -27,6 +27,7 @@ import { CaptureCleanupService } from '../../captures/services/capture-cleanup.s
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
+import { canViewMembership } from '../../common/membership-visibility.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -642,9 +643,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * A timesheet: the caller's entries, or another member's for an
-   * admin/manager, most recent first with Project/Task names resolved.
-   * Viewing uses the same role gate as editing (`canEditEntry`).
+   * A timesheet: the caller's entries, or another member's for an admin
+   * (anyone) or a manager (people on teams they manage — canViewMembership,
+   * as for every other kind of Activity), most recent first with
+   * Project/Task names resolved.
    *
    * `from`/`to` filter `startedAt` inclusively. The frontend resolves what
    * "today" means in the viewer's timezone, so this stays timezone-naive.
@@ -665,11 +667,23 @@ export class TimeEntriesService {
           "Only an admin or manager can view another member's timesheet.",
         );
       }
-      const target = await this.memberships.findOne({
-        where: { id: targetMembershipId, organisationId },
-      });
+      const [caller, target] = await Promise.all([
+        this.memberships.findOne({
+          where: { id: membership.id },
+          relations: { teamMemberships: true },
+        }),
+        this.memberships.findOne({
+          where: { id: targetMembershipId, organisationId },
+          relations: { teamMemberships: true },
+        }),
+      ]);
       if (!target) {
         throw new NotFoundException('Member not found.');
+      }
+      if (!caller || !canViewMembership(caller, target)) {
+        throw new ForbiddenException(
+          'You can only view the timesheets of people on teams you manage.',
+        );
       }
       subjectMembershipId = target.id;
     }

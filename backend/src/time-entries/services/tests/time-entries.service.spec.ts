@@ -2457,6 +2457,23 @@ describe('TimeEntriesService', () => {
       expect(result[0].canEdit).toBe(true);
     });
 
+    /** Answers the caller lookup (by userId) with `callerId`, and any lookup by id with that member. */
+    function membersById(
+      members: Record<string, object>,
+      callerId = 'm-admin',
+    ) {
+      return makeMembershipsRepo({
+        findOne: jest.fn(
+          (query: { where: { userId?: string; id?: string } }) => {
+            const id = query.where.userId ? callerId : query.where.id!;
+            return Promise.resolve(
+              members[id] ? { id, teamMemberships: [], ...members[id] } : null,
+            );
+          },
+        ),
+      });
+    }
+
     it("lets an admin view another member's timesheet by membershipId", async () => {
       const otherEntry = {
         id: 'entry-1',
@@ -2472,17 +2489,9 @@ describe('TimeEntriesService', () => {
       } as unknown as TimeEntry;
       const find = jest.fn().mockResolvedValue([otherEntry]);
       const timeEntriesRepo = makeTimeEntriesRepo({ find });
-      // The service calls memberships.findOne twice here — once to resolve
-      // the caller (by userId), once to confirm the target exists (by id)
-      // — so the mock needs to answer each differently, not return one
-      // fixed value for both.
-      const membershipsRepo = makeMembershipsRepo({
-        findOne: jest.fn(
-          (query: { where: { userId?: string; id?: string } }) =>
-            query.where.userId
-              ? Promise.resolve({ id: 'm-admin', role: MembershipRole.ADMIN })
-              : Promise.resolve({ id: 'm-other', role: MembershipRole.MEMBER }),
-        ),
+      const membershipsRepo = membersById({
+        'm-admin': { role: MembershipRole.ADMIN },
+        'm-other': { role: MembershipRole.MEMBER },
       });
       const service = makeService({ timeEntriesRepo, membershipsRepo });
 
@@ -2492,6 +2501,54 @@ describe('TimeEntriesService', () => {
         expect.objectContaining({ where: { membershipId: 'm-other' } }),
       );
       expect(result[0].canEdit).toBe(true);
+    });
+
+    it('lets a manager view the timesheet of someone on a team they manage', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        membershipsRepo: membersById(
+          {
+            'm-manager': {
+              role: MembershipRole.MANAGER,
+              teamMemberships: [{ teamId: 'team-a', isManager: true }],
+            },
+            'm-other': {
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-a', isManager: false }],
+            },
+          },
+          'm-manager',
+        ),
+      });
+
+      await service.list('org-1', 'manager-1', 'm-other');
+
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { membershipId: 'm-other' } }),
+      );
+    });
+
+    it('refuses a manager the timesheet of someone outside their teams', async () => {
+      const service = makeService({
+        membershipsRepo: membersById(
+          {
+            'm-manager': {
+              role: MembershipRole.MANAGER,
+              teamMemberships: [{ teamId: 'team-a', isManager: true }],
+            },
+            'm-other': {
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-b', isManager: false }],
+            },
+          },
+          'm-manager',
+        ),
+      });
+
+      await expect(
+        service.list('org-1', 'manager-1', 'm-other'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it("rejects a plain member trying to view another member's timesheet", async () => {
