@@ -39,7 +39,14 @@ export interface CaptureSettingsClient {
   getCaptureSettings(deviceToken: string): Promise<CaptureSettingsResult>;
 }
 
-export const DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS = 30_000;
+/**
+ * Matches TimerStatusGate's interval, so a setting change and the stopped
+ * timer it causes land together rather than up to 15s apart. Was 30s,
+ * halved because this is the only path by which an admin's change reaches
+ * a running agent — there is no push channel — and a minute of tracking
+ * against a setting that forbids it is a minute too many.
+ */
+export const DEFAULT_CAPTURE_SETTINGS_POLL_INTERVAL_MS = 15_000;
 
 /**
  * Polls `/device/capture-settings` from the main process and calls

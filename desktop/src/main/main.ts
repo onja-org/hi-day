@@ -268,6 +268,13 @@ process.on("unhandledRejection", (reason) =>
 // "offline" on the Devices page.
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
+/**
+ * How long the "tracking stopped" popup is left alone before focusing the
+ * window counts as having read it. Long enough to be seen, short enough
+ * that the unread badge doesn't linger.
+ */
+const TRACKING_ALERT_DWELL_MS = 5_000;
+
 // Refreshes Device.lastSeenAt, which is otherwise set once at login — every
 // device would flip to "offline" five minutes later while still running.
 // Same lifecycle as startUrlCapture/stopUrlCapture.
@@ -652,6 +659,7 @@ async function registerIpcHandlers(): Promise<void> {
   let allowedApps: AllowedApps = "all";
   /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
   let trackingNotification: Notification | null = null;
+  let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -735,6 +743,8 @@ async function registerIpcHandlers(): Promise<void> {
    * there says "unread" long after it has been read in the app itself.
    */
   function dismissTrackingAlert(): void {
+    if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
+    trackingAlertDwell = null;
     mainWindow?.flashFrame(false);
     trackingNotification?.close();
     trackingNotification = null;
@@ -766,9 +776,16 @@ async function registerIpcHandlers(): Promise<void> {
     mainWindow.setAlwaysOnTop(true);
     mainWindow.setAlwaysOnTop(false);
     mainWindow.flashFrame(true);
-    // Looking at the window *is* reading it, so clear both the flash and
-    // the shelf entry behind the badge.
-    mainWindow.once("focus", dismissTrackingAlert);
+
+    // Looking at the window *is* reading it, so that clears the flash and
+    // the shelf entry behind the badge — but not before the popup has had
+    // its moment: raising the window above fires `focus` itself, and
+    // withdrawing in the same tick made the popup flash and vanish.
+    if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
+    trackingAlertDwell = setTimeout(() => {
+      trackingAlertDwell = null;
+      mainWindow?.once("focus", dismissTrackingAlert);
+    }, TRACKING_ALERT_DWELL_MS);
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
