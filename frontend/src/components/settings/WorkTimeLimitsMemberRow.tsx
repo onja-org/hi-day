@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+
 import { describeWorkDays } from "@/lib/describeWorkDays";
 import { getInitials } from "@/lib/getInitials";
 import type { ActiveMemberListItem } from "@/types/membership";
@@ -15,6 +18,10 @@ type WorkTimeLimitsMemberRowProps = {
   onChange: (patch: Partial<WorkTimeLimits>) => void;
 };
 
+/** Long enough to absorb a run of stepper clicks, short enough that a
+ * value feels saved by the time attention moves on. */
+const SAVE_DELAY_MS = 700;
+
 export function WorkTimeLimitsMemberRow({
   member,
   organisationDefaults,
@@ -22,6 +29,19 @@ export function WorkTimeLimitsMemberRow({
   onChange,
 }: WorkTimeLimitsMemberRowProps) {
   const who = member.name ?? member.email;
+  // Typed-but-not-yet-saved values. Shown in preference to the server's,
+  // so the field doesn't snap back between keystroke and response.
+  const [pending, setPending] = useState<Partial<WorkTimeLimits>>({});
+  const save = useDebouncedCallback((patch: Partial<WorkTimeLimits>) => {
+    onChange(patch);
+    setPending({});
+  }, SAVE_DELAY_MS);
+
+  const edit = (patch: Partial<WorkTimeLimits>) => {
+    setPending((previous) => ({ ...previous, ...patch }));
+    save(patch);
+  };
+  const shown = { ...member, ...pending };
   const workDays = member.expectedWorkDays ?? organisationDefaults.expectedWorkDays;
   const disabledDays =
     member.trackingDisabledDays ?? organisationDefaults.trackingDisabledDays;
@@ -37,7 +57,11 @@ export function WorkTimeLimitsMemberRow({
             {getInitials(member.name, member.email)}
           </span>
           <span className="truncate font-medium text-primary">{who}</span>
-          {isSaving && <Spinner className="text-primary-dark" />}
+          {/* A fixed slot: rendering the spinner inline shifted the whole
+              row every time a value saved. */}
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            {isSaving && <Spinner className="text-primary-dark" />}
+          </span>
         </div>
       </td>
 
@@ -58,8 +82,8 @@ export function WorkTimeLimitsMemberRow({
           compact
           label={`Expected work hours for ${who}`}
           unit="wk"
-          value={member.expectedWeeklyHours}
-          onChange={(expectedWeeklyHours) => onChange({ expectedWeeklyHours })}
+          value={shown.expectedWeeklyHours}
+          onChange={(expectedWeeklyHours) => edit({ expectedWeeklyHours })}
         />
       </td>
       <td className="px-4 py-3">
@@ -67,8 +91,8 @@ export function WorkTimeLimitsMemberRow({
           compact
           label={`Weekly limit for ${who}`}
           unit="wk"
-          value={member.weeklyLimitHours}
-          onChange={(weeklyLimitHours) => onChange({ weeklyLimitHours })}
+          value={shown.weeklyLimitHours}
+          onChange={(weeklyLimitHours) => edit({ weeklyLimitHours })}
         />
       </td>
       <td className="px-4 py-3">
@@ -77,8 +101,8 @@ export function WorkTimeLimitsMemberRow({
           max={24}
           label={`Daily limit for ${who}`}
           unit="day"
-          value={member.dailyLimitHours}
-          onChange={(dailyLimitHours) => onChange({ dailyLimitHours })}
+          value={shown.dailyLimitHours}
+          onChange={(dailyLimitHours) => edit({ dailyLimitHours })}
         />
       </td>
     </tr>
