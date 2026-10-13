@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PencilSimple, Trash, X } from "@phosphor-icons/react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Spinner } from "@/components/Spinner";
 import type { TimesheetReason } from "@/types/timesheetReason";
 
@@ -21,6 +22,7 @@ export function TimesheetReasonRow({
   isBusy,
 }: TimesheetReasonRowProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const isEditing = draft !== null;
 
   function save() {
@@ -78,12 +80,25 @@ export function TimesheetReasonRow({
         <button
           type="button"
           aria-label={`Delete ${reason.label}`}
-          onClick={onDelete}
+          onClick={() => setConfirmingDelete(true)}
           className="cursor-pointer rounded-brand-sm p-1.5 text-slate-900/60 hover:bg-cream hover:text-error"
         >
           <Trash size={18} aria-hidden="true" />
         </button>
       </span>
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete this reason?"
+          message={`"${reason.label}" will no longer be offered. Entries that already use it keep their wording.`}
+          confirmLabel="Delete reason"
+          isDangerous
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            onDelete();
+          }}
+          onClose={() => setConfirmingDelete(false)}
+        />
+      )}
     </li>
   );
 }

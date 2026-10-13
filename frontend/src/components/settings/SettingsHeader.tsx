@@ -10,7 +10,6 @@ import {
   settingsHref,
   SETTINGS_GROUPS,
 } from "@/lib/settingsNavigation";
-import { useSettingsDirty } from "@/components/SettingsDirtyProvider";
 
 type SettingsHeaderProps = {
   organisationId: string;
@@ -28,7 +27,6 @@ const GROUP_ICONS: Record<string, Icon> = {
  */
 export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
   const pathname = usePathname();
-  const { confirmLeave } = useSettingsDirty();
   const active = activeSettingsLocation(pathname ?? "");
 
   if (!active) {
@@ -61,11 +59,6 @@ export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
               <li key={section.key}>
                 <Link
                   href={settingsHref(organisationId, group.key, section.key)}
-                  // Asks before leaving, same as any other way out of a
-                  // section with unsaved edits.
-                  onClick={(event) => {
-                    if (!confirmLeave()) event.preventDefault();
-                  }}
                   aria-current={isActive ? "page" : undefined}
                   className={clsx(
                     "-mb-0.5 block border-b-2 px-4 py-2 text-sm font-semibold tracking-wide whitespace-nowrap uppercase transition-colors duration-150",
