@@ -106,6 +106,22 @@ export class MembershipsController {
    * Organisation. Backs the "Apply to all" button on that setting — one
    * server-side UPDATE rather than N PATCHes from the client.
    */
+  @Post('allowed-apps/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetAllowedAppsOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllAllowedAppsOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Post('app-url-tracking/reset-overrides')
   @RequireRole(MembershipRole.ADMIN)
   async resetAppUrlTrackingOverrides(

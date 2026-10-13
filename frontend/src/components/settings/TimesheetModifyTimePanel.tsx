@@ -163,7 +163,7 @@ export function TimesheetModifyTimePanel() {
 
       <OrgDefaultWithOverrides<TimesheetModifyTime>
         title="Modify time (manual time)"
-        description="Who may add manual time and edit previously-tracked time. Set this to Off to allow no time modifications. Members can always delete their own time."
+        description="Your team's ability to modify time — adding manual time and editing previously tracked time. Leave it Off to allow none. It applies to every role, admins included; what varies is whose time you can change: an admin anyone's, a manager their teams', a member their own. Members can always delete their own time."
         options={MODIFY_TIME_OPTIONS}
         orgValue={organisation.timesheetModifyTime}
         onOrgChange={(next) =>
@@ -195,24 +195,23 @@ export function TimesheetModifyTimePanel() {
           // control comes back on.
           disabledWhen: (effective) => effective === "off",
         }}
+        belowDefault={
+          <div className="flex flex-col gap-3">
+            <span className="text-xs font-semibold tracking-wider text-slate-900/60 uppercase">
+              Approval permission
+            </span>
+            <Toggle
+              name="timesheetManagersApproveOwn"
+              label="Allow managers to approve or deny their own manual time"
+              description="With this off, a manager's own manual time waits for someone else to approve it."
+              checked={organisation.timesheetManagersApproveOwn}
+              onCheckedChange={(next) =>
+                orgMutation.mutate({ timesheetManagersApproveOwn: next })
+              }
+            />
+          </div>
+        }
       />
-
-      <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold tracking-wider text-slate-900/60 uppercase">
-          Approval permission
-        </h3>
-        <div className="rounded-brand-sm border-2 border-ink bg-white p-5">
-          <Toggle
-            name="timesheetManagersApproveOwn"
-            label="Allow managers to approve or deny their own manual time"
-            description="With this off, a manager's own manual time waits for someone else to approve it."
-            checked={organisation.timesheetManagersApproveOwn}
-            onCheckedChange={(next) =>
-              orgMutation.mutate({ timesheetManagersApproveOwn: next })
-            }
-          />
-        </div>
-      </section>
     </div>
   );
 }

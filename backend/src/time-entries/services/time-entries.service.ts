@@ -27,9 +27,13 @@ import { CaptureCleanupService } from '../../captures/services/capture-cleanup.s
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
-import { canViewMembership } from '../../common/membership-visibility.util';
 import { Membership } from '../../database/entities/membership.entity';
+import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
+import { DEFAULT_ALLOWED_APPS } from '../../organisations/allowed-apps';
+import type { AllowedApps } from '../../organisations/allowed-apps';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { DEFAULT_TIMESHEET_MODIFY_TIME } from '../../organisations/timesheet-settings';
+import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Project } from '../../database/entities/project.entity';
@@ -396,6 +400,7 @@ export class TimeEntriesService {
       projectId,
       taskId,
     );
+    await this.assertAppAllowed(membership, organisationId, source);
 
     // Another Device may be tracking anything, the same Project or a
     // different one. Only the Project totals made a different one a problem,
@@ -644,8 +649,8 @@ export class TimeEntriesService {
 
   /**
    * A timesheet: the caller's entries, or another member's for an admin
-   * (anyone) or a manager (people on teams they manage — canViewMembership,
-   * as for every other kind of Activity), most recent first with
+   * (anyone) or a manager (people on teams they manage — see
+   * canSeeMembership), most recent first with
    * Project/Task names resolved.
    *
    * `from`/`to` filter `startedAt` inclusively. The frontend resolves what
@@ -662,27 +667,25 @@ export class TimeEntriesService {
 
     let subjectMembershipId = membership.id;
     if (targetMembershipId && targetMembershipId !== membership.id) {
+      // Role first, existence second: a member who can never read anyone
+      // else's timesheet shouldn't learn from a 404-vs-403 whether a given
+      // membership id exists.
       if (!ORG_WIDE_ROLES.includes(membership.role)) {
         throw new ForbiddenException(
           "Only an admin or manager can view another member's timesheet.",
         );
       }
-      const [caller, target] = await Promise.all([
-        this.memberships.findOne({
-          where: { id: membership.id },
-          relations: { teamMemberships: true },
-        }),
-        this.memberships.findOne({
-          where: { id: targetMembershipId, organisationId },
-          relations: { teamMemberships: true },
-        }),
-      ]);
+      const target = await this.memberships.findOne({
+        where: { id: targetMembershipId, organisationId },
+      });
       if (!target) {
         throw new NotFoundException('Member not found.');
       }
-      if (!caller || !canViewMembership(caller, target)) {
+      if (
+        !(await this.canSeeMembership(membership, organisationId, target.id))
+      ) {
         throw new ForbiddenException(
-          'You can only view the timesheets of people on teams you manage.',
+          'You can only view the timesheets of members on teams you manage.',
         );
       }
       subjectMembershipId = target.id;
@@ -710,11 +713,13 @@ export class TimeEntriesService {
       entries.map((entry) => entry.id),
     );
     const activity = await this.getActivityFor(subjectMembershipId, entries);
+    const canModifyTime = await this.canModifyTime(membership, organisationId);
     return entries.map((entry) =>
       this.toListItem(
         entry,
         membership,
         pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
+        canModifyTime,
         activity.get(entry.id),
       ),
     );
@@ -1152,8 +1157,12 @@ export class TimeEntriesService {
     if (!entry) {
       throw new NotFoundException('Time entry not found.');
     }
-    if (!this.canEditEntry(membership)) {
-      throw new ForbiddenException('Only an admin can edit a time entry.');
+    if (
+      !(await this.canEditEntry(membership, organisationId, entry.membershipId))
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to edit this time entry.',
+      );
     }
     // A paused entry isn't accruing, so giving it an end just closes it where
     // it already left off — allowed, and handled as a stop below. A *ticking*
@@ -1306,8 +1315,12 @@ export class TimeEntriesService {
     if (!entry) {
       throw new NotFoundException('Time entry not found.');
     }
-    if (!this.canEditEntry(membership)) {
-      throw new ForbiddenException('Only an admin can split a time entry.');
+    if (
+      !(await this.canEditEntry(membership, organisationId, entry.membershipId))
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to split this time entry.',
+      );
     }
     if (entry.endedAt === null) {
       throw new ConflictException(
@@ -1767,13 +1780,11 @@ export class TimeEntriesService {
     targetMembershipId: string | undefined,
   ): Promise<ValidatedStart> {
     const caller = await this.getActiveMembership(organisationId, userId);
-    // Admin-only, the same gate as editing and deleting (`canEditEntry`):
-    // hand-authored hours are the ones nobody's timer witnessed, so the
-    // ability to write them sits with the same single role trusted to
-    // rewrite them. Everyone else logs time by running a timer.
-    if (!this.canEditEntry(caller)) {
+    // Hand-authored hours are the ones no timer witnessed, so writing them
+    // takes the same permission as rewriting them.
+    if (!(await this.canModifyTime(caller, organisationId))) {
       throw new ForbiddenException(
-        'Only an admin can add a time entry manually.',
+        'You do not have permission to add a time entry manually.',
       );
     }
     await this.assertProjectAccess(caller, projectId);
@@ -1790,6 +1801,13 @@ export class TimeEntriesService {
       });
       if (!target) {
         throw new NotFoundException('Membership not found.');
+      }
+      // Same bound as editing: writing to someone's timesheet is never
+      // wider than being able to read it.
+      if (!(await this.canSeeMembership(caller, organisationId, target.id))) {
+        throw new ForbiddenException(
+          "You do not have access to this member's timesheet.",
+        );
       }
       await this.assertProjectAccess(target, projectId);
       membership = target;
@@ -1851,12 +1869,42 @@ export class TimeEntriesService {
     );
   }
 
+  /**
+   * Whose timesheet this caller may read, and so — with `canModifyTime` —
+   * whose they may write. Their own always, an admin everyone's, a manager
+   * only members sharing a team they manage: the same rule the Members
+   * list and Activity use, so a manager of no team sees only themselves.
+   */
+  private async canSeeMembership(
+    caller: Membership,
+    organisationId: string,
+    targetMembershipId: string,
+  ): Promise<boolean> {
+    if (targetMembershipId === caller.id) return true;
+    if (caller.role === MembershipRole.ADMIN) return true;
+    if (caller.role !== MembershipRole.MANAGER) return false;
+
+    const scopeTeamIds = getManagerScopeTeamIds(caller);
+    if (scopeTeamIds.length === 0) return false;
+
+    const target = await this.memberships.findOne({
+      where: { id: targetMembershipId, organisationId },
+      relations: { teamMemberships: true },
+    });
+    return (target?.teamMemberships ?? []).some((teamMembership) =>
+      scopeTeamIds.includes(teamMembership.teamId),
+    );
+  }
+
   private async getActiveMembership(
     organisationId: string,
     userId: string,
   ): Promise<Membership> {
     const membership = await this.memberships.findOne({
       where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+      // Loaded eagerly because `canSeeMembership` needs the caller's teams
+      // on every timesheet read, and TypeORM won't populate them otherwise.
+      relations: { teamMemberships: true },
     });
     if (!membership) {
       throw new ForbiddenException(
@@ -2049,6 +2097,7 @@ export class TimeEntriesService {
     entry: TimeEntry,
     viewerMembership: Membership,
     pauseState: PauseState,
+    canModifyTime: boolean,
     activePercentage?: number,
   ): TimeEntryListItem {
     return {
@@ -2074,19 +2123,102 @@ export class TimeEntriesService {
             (entry.endedAt.getTime() - entry.startedAt.getTime()) / 1000,
           ) - pauseState.pausedSeconds
         : null,
-      canEdit: this.canEditEntry(viewerMembership),
+      canEdit: canModifyTime,
       canDelete: this.canDeleteEntry(viewerMembership, entry.membershipId),
       pauses: pauseState.spans,
     };
   }
 
-  /**
-   * Only an admin may edit or split an entry, anyone's including their own.
-   * Rewriting recorded hours sits with one role; *deleting* is a separate,
-   * wider rule — see `canDeleteEntry`.
-   */
-  private canEditEntry(viewerMembership: Membership): boolean {
-    return viewerMembership.role === MembershipRole.ADMIN;
+  /** Whether this person may add or rewrite hours at all. Gates every
+   * role, an admin included; *whose* hours is `canSeeMembership`. */
+  private async canModifyTime(
+    membership: Membership,
+    organisationId: string,
+  ): Promise<boolean> {
+    const effective =
+      membership.timesheetModifyTime ??
+      (await this.organisationModifyTime(organisationId));
+    return effective === 'add_edit';
+  }
+
+  /** Modify time, bounded by whose timesheet you can see — the grant never
+   * widens that. *Deleting* is wider still; see `canDeleteEntry`. */
+  private async canEditEntry(
+    viewerMembership: Membership,
+    organisationId: string,
+    entryMembershipId: string,
+  ): Promise<boolean> {
+    return (
+      (await this.canModifyTime(viewerMembership, organisationId)) &&
+      (await this.canSeeMembership(
+        viewerMembership,
+        organisationId,
+        entryMembershipId,
+      ))
+    );
+  }
+
+  /** Checked on `start` only: a timer already running when the setting
+   * changed is left alone, not killed under whoever is using it. */
+  private async assertAppAllowed(
+    membership: Membership,
+    organisationId: string,
+    source: TimeEntrySource,
+  ): Promise<void> {
+    // Typed, not tracked by a timer app.
+    if (source === TimeEntrySource.MANUAL) return;
+
+    const allowed =
+      membership.allowedApps ??
+      (await this.organisationAllowedApps(organisationId));
+    if (allowed === 'all') return;
+    if (allowed === 'desktop_only' && source === TimeEntrySource.AGENT) return;
+
+    throw new ForbiddenException(
+      allowed === 'desktop_only'
+        ? 'Your organisation only allows time tracked from the desktop app.'
+        : 'Your organisation only allows time tracked from the mobile app.',
+    );
+  }
+
+  /** Cached per run, as `organisationTimezone` is. */
+  private readonly allowedAppsByOrganisation = new Map<string, AllowedApps>();
+
+  private async organisationAllowedApps(
+    organisationId: string,
+  ): Promise<AllowedApps> {
+    const cached = this.allowedAppsByOrganisation.get(organisationId);
+    if (cached) return cached;
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = organisation?.settings as
+      { allowedApps?: AllowedApps } | undefined;
+    const value = settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
+    this.allowedAppsByOrganisation.set(organisationId, value);
+    return value;
+  }
+
+  /** Cached per run, as `organisationTimezone` is. */
+  private readonly modifyTimeByOrganisation = new Map<
+    string,
+    TimesheetModifyTime
+  >();
+
+  private async organisationModifyTime(
+    organisationId: string,
+  ): Promise<TimesheetModifyTime> {
+    const cached = this.modifyTimeByOrganisation.get(organisationId);
+    if (cached) return cached;
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = organisation?.settings as
+      { timesheetModifyTime?: TimesheetModifyTime } | undefined;
+    const value =
+      settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
+    this.modifyTimeByOrganisation.set(organisationId, value);
+    return value;
   }
 
   /**

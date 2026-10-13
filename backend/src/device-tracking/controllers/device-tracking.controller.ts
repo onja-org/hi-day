@@ -78,6 +78,7 @@ export class DeviceTrackingController {
   ): Promise<CaptureSettings & { consent: { required: boolean } }> {
     const captureSettings = await this.organisationsService.getCaptureSettings(
       request.organisationId,
+      request.userId,
     );
     const consentStatus = await this.resolveConsentStatus(
       request,

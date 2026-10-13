@@ -86,6 +86,8 @@ export interface CurrentTimer {
 
 export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
 
+export type AppUrlTracking = "off" | "apps" | "apps_urls";
+
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
@@ -93,6 +95,8 @@ export interface IdlePolicy {
 
 export interface CaptureSettings {
   windowTrackingEnabled: boolean;
+  /** The organisation default with this member's override applied. */
+  appUrlTracking: AppUrlTracking;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;
   screenshotRetentionDays: number;

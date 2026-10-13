@@ -10,6 +10,8 @@ import {
 } from 'class-validator';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { ASSIGNABLE_MEMBERSHIP_ROLES } from '../assignable-membership-roles';
+import { ALLOWED_APPS_VALUES } from '../../organisations/allowed-apps';
+import type { AllowedApps } from '../../organisations/allowed-apps';
 import { APP_URL_TRACKING_VALUES } from '../../organisations/app-url-tracking';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import { TIMESHEET_MODIFY_TIME_VALUES } from '../../organisations/timesheet-settings';
@@ -67,6 +69,12 @@ export class UpdateMembershipDto {
   @ValidateIf((_, value: AppUrlTracking | null) => value !== null)
   @IsIn(APP_URL_TRACKING_VALUES)
   appUrlTracking?: AppUrlTracking | null;
+
+  /** `null` clears the override and inherits the Organisation default. */
+  @IsOptional()
+  @ValidateIf((_, value: AllowedApps | null) => value !== null)
+  @IsIn(ALLOWED_APPS_VALUES)
+  allowedApps?: AllowedApps | null;
 
   /**
    * Per-member override of the Timesheets "Modify time" default. `null`

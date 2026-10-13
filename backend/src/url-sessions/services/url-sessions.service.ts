@@ -12,6 +12,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { UrlSession } from '../../database/entities/url-session.entity';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../dto/url-session-entry.dto';
 
@@ -83,6 +84,7 @@ export class UrlSessionsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly organisationsService: OrganisationsService,
   ) {}
 
   /**
@@ -101,6 +103,17 @@ export class UrlSessionsService {
     sessions: UrlSessionEntryDto[],
   ): Promise<SyncResult> {
     const membership = await this.getActiveMembership(organisationId, userId);
+
+    // Acked without being stored: an empty ack would leave the batch
+    // pending on the device, retried forever.
+    const { appUrlTracking } =
+      await this.organisationsService.getCaptureSettings(
+        organisationId,
+        userId,
+      );
+    if (appUrlTracking !== 'apps_urls') {
+      return { acked: sessions.map((session) => session.id) };
+    }
 
     // Plain objects, not `.create()` instances — `.upsert()` wants
     // `QueryDeepPartialEntity`, which the full `UrlSession` class (with its

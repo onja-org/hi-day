@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CaretUpIcon, ClockIcon, CreditCardIcon } from "@phosphor-icons/react";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { buildTimeActivityChartRows } from "@/lib/buildTimeActivityChartRows";
 import { buildTimeActivityRows, totalEntrySeconds } from "@/lib/buildTimeActivityRows";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -40,6 +41,7 @@ function renderTeamCell(row: ReportTableRow) {
 
 export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembers }: TimeActivityReportBodyProps) {
   const [sumDates, setSumDates] = useState(false);
+  const weekStart = useOrganisationWeekStart();
 
   return (
     <>
@@ -68,7 +70,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
           </summary>
           <div className="p-4 pt-0">
             <ReportsBarChart
-              rows={buildTimeActivityChartRows(entries, grouping, teamNames)}
+              rows={buildTimeActivityChartRows(entries, grouping, teamNames, weekStart)}
               series={TIME_ACTIVITY_CHART_SERIES}
             />
           </div>
@@ -80,7 +82,12 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
         columns={timeActivityColumns(grouping).map((column) =>
           column.key === "team" ? { ...column, renderCell: renderTeamCell } : column,
         )}
-        rows={buildTimeActivityRows(entries, grouping, { sumDates, teamNames, idleMembers })}
+        rows={buildTimeActivityRows(entries, grouping, {
+          sumDates,
+          teamNames,
+          idleMembers,
+          weekStart,
+        })}
         toolbarExtra={
           canSumDates(grouping) && (
             <label className="mr-2 flex cursor-pointer items-center gap-2 text-xs text-slate-900">

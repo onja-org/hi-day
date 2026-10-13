@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
@@ -40,8 +41,9 @@ export function useTimeActivityReportControls(
   // viewer's only when it has none. UTC only before hydration, when no
   // entries are on screen yet.
   const zone = organisationZone ?? viewerZone ?? "UTC";
+  const weekStart = useOrganisationWeekStart();
   const range = preset
-    ? getTimesheetDateRange(preset, new Date(), zone)
+    ? getTimesheetDateRange(preset, new Date(), zone, weekStart)
     : getCustomDateRange(customDays.from, customDays.to, zone);
 
   return {

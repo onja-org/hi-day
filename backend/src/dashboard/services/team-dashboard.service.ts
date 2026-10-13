@@ -18,6 +18,8 @@ import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
 import { MembershipsService } from '../../members/services/memberships.service';
+import type { WeekStart } from '../../organisations/company-profile';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
 import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import type { DashboardProjectTime } from './dashboard.service';
@@ -133,6 +135,7 @@ export class TeamDashboardService {
     @InjectRepository(UrlSession)
     private readonly urlSessions: Repository<UrlSession>,
     private readonly membershipsService: MembershipsService,
+    private readonly organisationsService: OrganisationsService,
     private readonly screenshotsService: ScreenshotsService,
     @InjectRepository(Team)
     private readonly teams: Repository<Team>,
@@ -158,7 +161,10 @@ export class TeamDashboardService {
 
     const membershipIds = scopedMembers.map((member) => member.id);
     const now = new Date();
-    const weekStart = this.startOfWeek(now);
+    const weekStart = this.startOfWeek(
+      now,
+      await this.organisationsService.getWeekStart(organisationId),
+    );
     const weekEnd = new Date(weekStart.getTime() + WEEK_DAYS * DAY_MS);
     const lastWeekStart = new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS);
     const lastWeekSameSpanEnd = new Date(now.getTime() - WEEK_DAYS * DAY_MS);
@@ -432,9 +438,13 @@ export class TeamDashboardService {
     return start;
   }
 
-  private startOfWeek(date: Date): Date {
+  /** Same rule as DashboardService, or a member's own week and their
+   * team's week would start on different days. */
+  private startOfWeek(date: Date, weekStartsOn: WeekStart): Date {
     const start = this.startOfDay(date);
-    start.setDate(start.getDate() - start.getDay());
+    const offset =
+      weekStartsOn === 'monday' ? (start.getDay() + 6) % 7 : start.getDay();
+    start.setDate(start.getDate() - offset);
     return start;
   }
 }

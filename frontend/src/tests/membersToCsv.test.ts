@@ -15,6 +15,7 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
     disclosureRegion: null,
     timezone: null,
     appUrlTracking: null,
+  allowedApps: null,
     timesheetModifyTime: null,
     timesheetRequireApproval: null,
     projectIds: ["p-1", "p-2"],

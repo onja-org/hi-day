@@ -3,6 +3,7 @@ import { formatElapsed } from "@/lib/formatElapsed";
 import { entryDayLabel, groupEntriesBy, memberLabelOf } from "@/lib/groupEntriesBy";
 import { formatTimeInZone } from "@/lib/timezone";
 import type { WorkSessionsGrouping } from "@/lib/workSessionsReportConfig";
+import type { WeekStart } from "@/types/organisation";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -32,8 +33,9 @@ export function buildWorkSessionsRows(
   entries: TimeEntryListItem[],
   grouping: WorkSessionsGrouping,
   zone: string,
+  weekStart: WeekStart = "monday",
 ): ReportTableRow[] {
-  return groupEntriesBy(entries, grouping).map((group) => ({
+  return groupEntriesBy(entries, grouping, new Map(), weekStart).map((group) => ({
     id: group.id,
     sortKey: group.sortKey,
     cells: {

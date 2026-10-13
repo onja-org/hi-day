@@ -7,6 +7,7 @@ import { useSavedReportPersist } from "@/hooks/useSavedReportPersist";
 import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportControls";
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
 import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { buildWorkSessionsRows } from "@/lib/buildWorkSessionsRows";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
@@ -41,7 +42,10 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
     useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
   const grouping = isWorkSessionsGrouping(chosenGrouping) ? chosenGrouping : "day";
   const columns = workSessionsColumns(grouping);
-  const rows = entries ? buildWorkSessionsRows(entries, grouping, zone) : undefined;
+  const weekStart = useOrganisationWeekStart();
+  const rows = entries
+    ? buildWorkSessionsRows(entries, grouping, zone, weekStart)
+    : undefined;
   const filenameBase = reportFilenameBase("work-sessions", range);
 
   function handleSend(input: SendReportInput): Promise<string | void> {

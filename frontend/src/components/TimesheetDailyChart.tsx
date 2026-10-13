@@ -6,6 +6,7 @@ import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { bucketWeekly, buildDailyTotals } from "@/lib/buildDailyTotals";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { fractionClass } from "@/lib/fractionClass";
+import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { keyAsLocalDate } from "@/lib/timezone";
 import type { DateRangePreset } from "@/types/dateRange";
@@ -34,7 +35,12 @@ export function TimesheetDailyChart({
   membershipId,
   datePreset,
 }: TimesheetDailyChartProps) {
-  const range = getTimesheetDateRange(datePreset);
+  const range = getTimesheetDateRange(
+    datePreset,
+    new Date(),
+    undefined,
+    useOrganisationWeekStart(),
+  );
   const entriesQuery = useTimeEntries(organisationId, {
     membershipId,
     from: range?.from,

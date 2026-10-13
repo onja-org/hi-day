@@ -1,3 +1,5 @@
+import type { CaptureSettings } from '../../../organisations/capture-settings';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -54,6 +56,21 @@ describe('AppEventsService', () => {
     } as unknown as TimeEntriesService;
   }
 
+  function makeOrganisationsService(
+    overrides: Partial<CaptureSettings> = {},
+  ): OrganisationsService {
+    return {
+      getCaptureSettings: jest.fn().mockResolvedValue({
+        windowTrackingEnabled: true,
+        appUrlTracking: 'apps_urls',
+        screenshotsEnabled: false,
+        screenshotFrequencySeconds: 600,
+        screenshotRetentionDays: 30,
+        ...overrides,
+      }),
+    } as unknown as OrganisationsService;
+  }
+
   describe('recordBatch', () => {
     it('resolves the active membership and saves one row per event', async () => {
       const findOne = jest.fn().mockResolvedValue({
@@ -66,6 +83,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await service.recordBatch('org-1', 'user-1', 'device-1', [
@@ -103,11 +121,54 @@ describe('AppEventsService', () => {
       ]);
     });
 
+    it('stores the event without its title when window titles are off', async () => {
+      const { repo: appEventsRepo, save } = makeAppEventsRepo();
+      const service = new AppEventsService(
+        appEventsRepo,
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        makeTimeEntriesService(),
+        makeOrganisationsService({ windowTrackingEnabled: false }),
+      );
+
+      await service.recordBatch('org-1', 'user-1', 'device-1', [
+        {
+          appName: 'Firefox',
+          title: 'Secret document',
+          sampledAt: new Date().toISOString(),
+        },
+      ]);
+
+      expect(save).toHaveBeenCalledWith([
+        expect.objectContaining({ appName: 'Firefox', title: null }),
+      ]);
+    });
+
+    it('drops the batch when the organisation has app tracking off', async () => {
+      const { repo: appEventsRepo, save } = makeAppEventsRepo();
+      const service = new AppEventsService(
+        appEventsRepo,
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        makeTimeEntriesService(),
+        makeOrganisationsService({ appUrlTracking: 'off' }),
+      );
+
+      await service.recordBatch('org-1', 'user-1', 'device-1', [
+        { appName: 'Firefox', sampledAt: new Date().toISOString() },
+      ]);
+
+      expect(save).not.toHaveBeenCalled();
+    });
+
     it('throws when the caller has no active membership in the organisation', async () => {
       const service = new AppEventsService(
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(null) }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await expect(
@@ -134,6 +195,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -185,6 +247,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -219,6 +282,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(coveringEntries),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -243,6 +307,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -277,6 +342,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -302,6 +368,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(coveringEntries),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08', {
@@ -329,6 +396,7 @@ describe('AppEventsService', () => {
         appEventsRepo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService([]),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
@@ -343,6 +411,7 @@ describe('AppEventsService', () => {
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       const day = await service.getMyDay('org-1', 'user-1', undefined);
@@ -356,6 +425,7 @@ describe('AppEventsService', () => {
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await expect(
@@ -382,6 +452,7 @@ describe('AppEventsService', () => {
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await expect(
@@ -411,6 +482,7 @@ describe('AppEventsService', () => {
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await expect(
@@ -429,6 +501,7 @@ describe('AppEventsService', () => {
         makeAppEventsRepo().repo,
         makeMembershipsRepo({ findOne }),
         makeTimeEntriesService(),
+        makeOrganisationsService(),
       );
 
       await expect(

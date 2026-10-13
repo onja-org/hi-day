@@ -11,8 +11,12 @@ export const TIMESHEET_MODIFY_TIME_VALUES: readonly TimesheetModifyTime[] = [
   'add_edit',
 ];
 
-/** Applied when an Organisation hasn't customised this yet. */
-export const DEFAULT_TIMESHEET_MODIFY_TIME: TimesheetModifyTime = 'add_edit';
+/**
+ * `off`: this is an opt-in grant, given per Membership. Defaulting to
+ * `add_edit` would hand the right to everyone in every Organisation the
+ * moment it started being enforced.
+ */
+export const DEFAULT_TIMESHEET_MODIFY_TIME: TimesheetModifyTime = 'off';
 
 /**
  * Whether a manual entry or edit needs approval before it counts. Set at

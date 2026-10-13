@@ -25,6 +25,14 @@ describe("getWeekRange", () => {
     expect(end.getDate()).toBe(11);
   });
 
+  it("cuts the week on Sunday for an organisation whose weeks start there", () => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { start, end } = getWeekRange(new Date(2026, 0, 7, 15, 30), 0, zone, "sunday");
+
+    expect(start).toEqual(new Date(2026, 0, 4, 0, 0, 0, 0));
+    expect(end.getDate()).toBe(10);
+  });
+
   it("navigates forward and backward by whole weeks via offset", () => {
     const anchor = new Date(2026, 0, 7);
 
