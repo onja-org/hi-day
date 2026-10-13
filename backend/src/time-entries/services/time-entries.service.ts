@@ -430,27 +430,7 @@ export class TimeEntriesService {
       });
     }
 
-    // The web may track alongside a Device, but only the same Project:
-    // "laptop says X, browser says Y" is a split the person cannot see,
-    // unlike two machines they picked up one at a time. Devices keep their
-    // freedom to differ from each other (ADR-0022).
-    const deviceProjectIds = new Set(
-      elsewhere
-        .filter((entry) => entry.deviceId !== null)
-        .map((entry) => entry.projectId),
-    );
-    if (
-      deviceId === null &&
-      deviceProjectIds.size > 0 &&
-      !deviceProjectIds.has(projectId)
-    ) {
-      const mismatch = elsewhere.find((entry) => entry.deviceId !== null)!;
-      throw new ConflictException({
-        message:
-          'Your device is tracking a different project. Start that same project here, or stop it there first.',
-        runningEntry: await this.toSummary(mismatch),
-      });
-    }
+    await this.assertWebMatchesDevices(elsewhere, deviceId, projectId);
 
     const startedAt = await this.resolveStartedAt(
       membership.id,
@@ -542,10 +522,40 @@ export class TimeEntriesService {
   }
 
   /**
+   * The web may track alongside a Device, but only the same Project:
+   * "laptop says X, browser says Y" is a split the person cannot see,
+   * unlike two machines they picked up one at a time. Devices keep their
+   * freedom to differ from each other (ADR-0022).
+   */
+  private async assertWebMatchesDevices(
+    running: TimeEntry[],
+    deviceId: string | null,
+    projectId: string,
+  ): Promise<void> {
+    if (deviceId !== null) return;
+    const onDevices = running.filter((entry) => entry.deviceId !== null);
+    if (
+      onDevices.length === 0 ||
+      onDevices.some((entry) => entry.projectId === projectId)
+    ) {
+      return;
+    }
+    throw new ConflictException({
+      message:
+        'Your device is tracking a different project. Start that same project here, or stop it there first.',
+      runningEntry: await this.toSummary(onDevices[0]),
+    });
+  }
+
+  /**
    * Atomically stops whatever's currently running (if anything) and starts
    * a new timer, in one transaction — the explicit alternative to the 409
    * `start` throws, so there's no client-side gap between the stop and the
    * next start.
+   *
+   * With nothing running on this Device it *is* a start, so it answers to
+   * Allowed apps the same way; a timer already running is left alone (see
+   * `assertAppAllowed`), so moving it to another Project or Task isn't.
    */
   async switchTo(
     organisationId: string,
@@ -561,6 +571,16 @@ export class TimeEntriesService {
       projectId,
       taskId,
     );
+    const running = await this.timeEntries.find({
+      where: { membershipId: membership.id, endedAt: IsNull() },
+    });
+    const onThisSurface = running.some((entry) =>
+      deviceId === null ? entry.deviceId === null : entry.deviceId === deviceId,
+    );
+    if (!onThisSurface) {
+      await this.assertAppAllowed(membership, organisationId, source);
+    }
+    await this.assertWebMatchesDevices(running, deviceId, projectId);
 
     const saved = await this.dataSource.transaction(async (manager) => {
       // Scoped to this Device: switching on one machine stops that machine's
@@ -907,12 +927,9 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run: a batch is usually one or two Organisations. */
-  private readonly timezoneByOrganisation = new Map<string, string>();
-
+  /** Read fresh: the zone is editable, and a cached one would cut days at
+   * the old midnight until a restart. */
   private async organisationTimezone(organisationId: string): Promise<string> {
-    const cached = this.timezoneByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
@@ -920,9 +937,7 @@ export class TimeEntriesService {
       { timezone?: string } | undefined;
     // UTC is the value every Organisation was created with, and the right
     // answer when the row has gone.
-    const zone = settings?.timezone ?? 'UTC';
-    this.timezoneByOrganisation.set(organisationId, zone);
-    return zone;
+    return settings?.timezone ?? 'UTC';
   }
 
   /**
@@ -2129,12 +2144,14 @@ export class TimeEntriesService {
     };
   }
 
-  /** Whether this person may add or rewrite hours at all. Gates every
-   * role, an admin included; *whose* hours is `canSeeMembership`. */
+  /** Whether this person may add or rewrite hours at all. An admin always
+   * may; for everyone else it's the Modify time setting. *Whose* hours is
+   * `canSeeMembership`. */
   private async canModifyTime(
     membership: Membership,
     organisationId: string,
   ): Promise<boolean> {
+    if (membership.role === MembershipRole.ADMIN) return true;
     const effective =
       membership.timesheetModifyTime ??
       (await this.organisationModifyTime(organisationId));
@@ -2158,8 +2175,9 @@ export class TimeEntriesService {
     );
   }
 
-  /** Checked on `start` only: a timer already running when the setting
-   * changed is left alone, not killed under whoever is using it. */
+  /** Checked whenever a timer starts — `start`, or a `switchTo` with
+   * nothing running. A timer already running when the setting changed is
+   * left alone, not killed under whoever is using it. */
   private async assertAppAllowed(
     membership: Membership,
     organisationId: string,
@@ -2181,44 +2199,29 @@ export class TimeEntriesService {
     );
   }
 
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly allowedAppsByOrganisation = new Map<string, AllowedApps>();
-
+  /** Read fresh each time: an admin's change must apply at once, on every
+   * backend instance. */
   private async organisationAllowedApps(
     organisationId: string,
   ): Promise<AllowedApps> {
-    const cached = this.allowedAppsByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { allowedApps?: AllowedApps } | undefined;
-    const value = settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
-    this.allowedAppsByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.allowedApps ?? DEFAULT_ALLOWED_APPS;
   }
 
-  /** Cached per run, as `organisationTimezone` is. */
-  private readonly modifyTimeByOrganisation = new Map<
-    string,
-    TimesheetModifyTime
-  >();
-
+  /** Read fresh, like `organisationAllowedApps`. */
   private async organisationModifyTime(
     organisationId: string,
   ): Promise<TimesheetModifyTime> {
-    const cached = this.modifyTimeByOrganisation.get(organisationId);
-    if (cached) return cached;
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
     const settings = organisation?.settings as
       { timesheetModifyTime?: TimesheetModifyTime } | undefined;
-    const value =
-      settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
-    this.modifyTimeByOrganisation.set(organisationId, value);
-    return value;
+    return settings?.timesheetModifyTime ?? DEFAULT_TIMESHEET_MODIFY_TIME;
   }
 
   /**

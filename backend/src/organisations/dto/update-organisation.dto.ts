@@ -37,7 +37,7 @@ export class UpdateOrganisationDto {
    * field, and the same goes for `industry`, `taxId` and `website`. */
   @IsOptional()
   @IsString()
-  address?: string;
+  address?: string | null;
 
   @IsOptional()
   @IsIn([...INDUSTRY_VALUES, ''])
@@ -46,7 +46,7 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsString()
   @MaxLength(TAX_ID_MAX_LENGTH)
-  taxId?: string;
+  taxId?: string | null;
 
   @IsOptional()
   @IsIn(WEEK_START_VALUES)
@@ -54,7 +54,7 @@ export class UpdateOrganisationDto {
 
   @IsOptional()
   @IsString()
-  website?: string;
+  website?: string | null;
 
   @IsOptional()
   @IsIn(IDLE_HANDLING_VALUES)

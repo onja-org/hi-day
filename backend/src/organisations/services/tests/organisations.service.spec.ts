@@ -406,6 +406,56 @@ describe('OrganisationsService', () => {
   });
 
   describe('updateProfile', () => {
+    it('treats null on address, tax ID and website as clearing them', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: { address: 'a', taxId: 't', website: 'https://w' },
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        address: null,
+        taxId: null,
+        website: null,
+      });
+
+      expect(profile).toEqual(
+        expect.objectContaining({ address: null, taxId: null, website: null }),
+      );
+    });
+
+    it("reports an admin's canModifyTime as true whatever Modify time says", async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: { timesheetModifyTime: 'off' },
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      const profile = await service.updateProfile('org-1', 'user-1', {});
+
+      expect(profile.canModifyTime).toBe(true);
+    });
+
     it('updates the name and settings fields (authorization is enforced by RoleGuard upstream)', async () => {
       const organisation = {
         id: 'org-1',

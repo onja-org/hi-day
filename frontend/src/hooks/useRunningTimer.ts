@@ -27,6 +27,10 @@ export function useRunningTimer(organisationId: string) {
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  // Switching only ever stops the web's own timer, so it's offered only
+  // when that's what's in the way — never a device's, which the web can't
+  // stop.
+  const [canSwitch, setCanSwitch] = useState(false);
   const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
   // The web's own timer only — a device's is never displayed here. It does
@@ -83,6 +87,7 @@ export function useRunningTimer(organisationId: string) {
         invalidate();
       } else {
         setConflictMessage(result.runningEntry ? result.message : null);
+        setCanSwitch(result.runningEntry?.deviceId === null);
       }
     },
   });
@@ -179,6 +184,7 @@ export function useRunningTimer(organisationId: string) {
     // total before the person even presses Start.
     projectSecondsToday,
     conflictMessage,
+    canSwitch,
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,

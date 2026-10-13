@@ -756,6 +756,83 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    it('refuses a switch that would start a timer the member may not run', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-1',
+            role: MembershipRole.MEMBER,
+            allowedApps: 'mobile_only',
+          }),
+        }),
+      });
+
+      await expect(
+        service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets a timer already running switch project — it is left alone', async () => {
+      const { dataSource, manager } = makeDataSource();
+      (manager.findOne as jest.Mock).mockResolvedValue({ ...runningEntry });
+      const service = makeService({
+        dataSource,
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([{ ...runningEntry }]),
+        }),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-1',
+            role: MembershipRole.MEMBER,
+            allowedApps: 'mobile_only',
+          }),
+        }),
+      });
+
+      const result = await service.switchTo(
+        'org-1',
+        'user-1',
+        'project-1',
+        undefined,
+        TimeEntrySource.WEB,
+        null,
+      );
+
+      expect(result.endedAt).toBeNull();
+    });
+
+    it('refuses a web switch onto a different project than a running device', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              ...runningEntry,
+              deviceId: 'device-1',
+              projectId: 'project-other',
+            },
+          ]),
+        }),
+      });
+
+      await expect(
+        service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('allows the desktop agent under the same restriction', async () => {
       const save = jest.fn((entry: unknown) => Promise.resolve(entry));
       const service = makeService({
@@ -2650,7 +2727,7 @@ describe('TimeEntriesService', () => {
       expect(result[0].canEdit).toBe(true);
     });
 
-    it('marks canEdit false for an admin without it — the setting gates every role', async () => {
+    it('marks canEdit true for an admin even with Modify time off — it governs everyone else', async () => {
       const service = makeService({
         timeEntriesRepo: makeTimeEntriesRepo({
           find: jest.fn().mockResolvedValue([
@@ -2679,7 +2756,39 @@ describe('TimeEntriesService', () => {
 
       const result = await service.list('org-1', 'admin-1');
 
-      expect(result[0].canEdit).toBe(false);
+      expect(result[0].canEdit).toBe(true);
+    });
+
+    it('reads the org Modify time fresh, so a change applies without a restart', async () => {
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce({ settings: { timesheetModifyTime: 'off' } })
+        .mockResolvedValue({ settings: { timesheetModifyTime: 'add_edit' } });
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([
+            {
+              id: 'entry-1',
+              membershipId: 'm-1',
+              projectId: 'project-1',
+              taskId: null,
+              startedAt: new Date('2026-01-01T09:00:00Z'),
+              endedAt: new Date('2026-01-01T10:00:00Z'),
+              source: TimeEntrySource.WEB,
+              deviceId: null,
+              project: { name: 'Website', colour: 'blue' },
+              task: null,
+            },
+          ]),
+        }),
+        organisationsRepo: { findOne } as unknown as Repository<Organisation>,
+      });
+
+      const before = await service.list('org-1', 'user-1');
+      const after = await service.list('org-1', 'user-1');
+
+      expect(before[0].canEdit).toBe(false);
+      expect(after[0].canEdit).toBe(true);
     });
 
     it('marks canEdit true for a member granted the Modify time exception', async () => {

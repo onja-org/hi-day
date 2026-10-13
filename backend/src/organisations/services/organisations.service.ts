@@ -294,13 +294,16 @@ export class OrganisationsService {
       ...organisation.settings,
       // `||`, not `??`: '' means cleared, and storing it would read back
       // as "set, but blank".
+      // `null` clears too — `@IsOptional` lets it through validation.
       ...(dto.address !== undefined
-        ? { address: dto.address.trim() || null }
+        ? { address: (dto.address ?? '').trim() || null }
         : {}),
       ...(dto.industry !== undefined ? { industry: dto.industry || null } : {}),
-      ...(dto.taxId !== undefined ? { taxId: dto.taxId.trim() || null } : {}),
+      ...(dto.taxId !== undefined
+        ? { taxId: (dto.taxId ?? '').trim() || null }
+        : {}),
       ...(dto.website !== undefined
-        ? { website: dto.website.trim() || null }
+        ? { website: (dto.website ?? '').trim() || null }
         : {}),
       ...(dto.weekStartsOn !== undefined
         ? { weekStartsOn: dto.weekStartsOn }
@@ -475,7 +478,10 @@ export class OrganisationsService {
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
       allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
       timesheetModifyTime: modifyTime,
-      canModifyTime: (membershipModifyTime ?? modifyTime) === 'add_edit',
+      // An admin always may; Modify time governs everyone else.
+      canModifyTime:
+        role === MembershipRole.ADMIN ||
+        (membershipModifyTime ?? modifyTime) === 'add_edit',
       timesheetRequireApproval:
         settings.timesheetRequireApproval ?? DEFAULT_TIMESHEET_REQUIRE_APPROVAL,
       timesheetManagersApproveOwn:
