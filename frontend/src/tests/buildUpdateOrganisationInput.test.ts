@@ -39,7 +39,7 @@ describe("buildUpdateOrganisationInput", () => {
     });
   });
 
-  it("omits an empty website and leaves non-numeric fields undefined", () => {
+  it("sends an empty website to clear it and leaves non-numeric fields undefined", () => {
     const input = buildUpdateOrganisationInput(
       formDataFrom({
         name: "Onja",
@@ -54,7 +54,7 @@ describe("buildUpdateOrganisationInput", () => {
       { windowTrackingEnabled: false, screenshotsEnabled: false },
     );
 
-    expect(input.website).toBeUndefined();
+    expect(input.website).toBe("");
     expect(input.idleThresholdMinutes).toBeUndefined();
     expect(input.workingHoursPerDay).toBeUndefined();
     expect(input.screenshotFrequencySeconds).toBeUndefined();

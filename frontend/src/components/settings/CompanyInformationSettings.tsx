@@ -30,9 +30,8 @@ export function CompanyInformationSettings({
         buildInput={(formData) => ({
           name: String(formData.get("name") ?? ""),
           address: String(formData.get("address") ?? ""),
-          website: formData.get("website")
-            ? String(formData.get("website"))
-            : undefined,
+          // Sent even when empty: that's how a saved website is cleared.
+          website: String(formData.get("website") ?? "").trim(),
         })}
       >
         {(loaded) => (
