@@ -12,7 +12,38 @@ on:
       - 'desktop-v*'
 
 jobs:
+  # Tag pushes only. Creates the release in the public releases repo (see
+  # `publish` below for why it lives there) as a *draft* up front, so each
+  # build job can upload its installers straight into it instead of handing
+  # them to `publish` as workflow artifacts — artifact uploads count against
+  # the org's Actions storage quota, which blocked both the 0.3.2 and the
+  # first 0.3.3 run. Drafts are invisible to electron-updater and to the
+  # landing page's releases/latest links, so nothing reaches users until
+  # `publish` flips it. Skips creation if a draft from an earlier attempt at
+  # the same tag is already there, so a re-run picks up where it left off.
+  prepare:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo onja-org/workfoce-monitoring-app-releases >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists, reusing it"
+          else
+            gh release create "${{ github.ref_name }}" \
+              --repo onja-org/workfoce-monitoring-app-releases \
+              --title "Desktop ${{ github.ref_name }}" \
+              --generate-notes \
+              --draft
+          fi
+
   build:
+    needs: prepare
+    # `prepare` is skipped on a manual dispatch, which would otherwise skip
+    # this job too.
+    if: ${{ !cancelled() && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +100,33 @@ jobs:
       - name: Build installer
         run: pnpm --filter desktop ${{ matrix.dist-script }}
 
+      # The release token is scoped to this one step rather than the job:
+      # earlier steps run third-party install scripts (`pnpm install`), and
+      # whoever holds this token controls the installers and the latest*.yml
+      # sha512s that Windows/Linux clients auto-install from. `--clobber` so a
+      # re-run of a failed job replaces whatever it half-uploaded last time.
+      - name: Upload installers to draft release
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=(desktop/release/*.AppImage desktop/release/*.deb desktop/release/*.exe \
+                 desktop/release/*.dmg desktop/release/*.zip desktop/release/latest*.yml \
+                 desktop/release/*.blockmap)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No installers found in desktop/release" >&2
+            exit 1
+          fi
+          gh release upload "${{ github.ref_name }}" "${files[@]}" \
+            --repo onja-org/workfoce-monitoring-app-releases \
+            --clobber
+
+      # Manual dispatch only — a tag push uploads to the release above
+      # instead.
       - name: Upload installer artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/desktop-v') }}
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
@@ -82,11 +139,9 @@ jobs:
             desktop/release/latest*.yml
             desktop/release/*.blockmap
           if-no-files-found: error
-          # Only a hand-off to the publish job below (users download from the
-          # releases repo), so don't keep ~770MB per release around for the
-          # default 90 days — that filled the Actions storage quota and
-          # blocked the 0.3.2 release. A manual dispatch build has to be
-          # downloaded within a day.
+          # ~770MB per run counts against the org's Actions storage quota,
+          # so don't keep it for the default 90 days. A manual dispatch build
+          # has to be downloaded within a day.
           retention-days: 1
 
   # Permanent (not workflow_dispatch-only) because Windows CI needs to
@@ -120,21 +175,23 @@ jobs:
         run: dotnet build native/win/resolver/WinResolver/WinResolver.csproj -c Release
 
   # Only runs for the `desktop-v*` tag push, once every platform in the
-  # matrix above has built successfully — attaches every installer to a
-  # GitHub Release in the separate *public* onja-org/workfoce-monitoring-app-releases
-  # repo (this source repo is private, and GitHub never serves private-repo
-  # release assets to unauthenticated users, so a public download link has
-  # to point at a public repo). The landing page links to
+  # matrix above has built and uploaded successfully — takes the draft that
+  # `prepare` created out of draft, which is the moment it becomes visible.
+  # It lives in the separate *public*
+  # onja-org/workfoce-monitoring-app-releases repo (this source repo is
+  # private, and GitHub never serves private-repo release assets to
+  # unauthenticated users, so a public download link has to point at a
+  # public repo). The landing page links to
   # github.com/<releases-repo>/releases/latest/download/<fixed filename>,
   # which is why electron-builder's artifactName (see
   # desktop/electron-builder.yml) is deliberately version-free: those links
   # never need to change here.
   #
-  # `installers/*` also picks up latest.yml/latest-mac.yml/latest-linux.yml
-  # and the NSIS/AppImage .blockmap files each build job now uploads
-  # alongside its installers (see electron-builder.yml's `publish` block) —
-  # electron-updater on a running app reads those from this same release to
-  # find out there's something newer and verify it before installing.
+  # The uploads include latest.yml/latest-mac.yml/latest-linux.yml and the
+  # NSIS/dmg/zip .blockmap files alongside the installers (see
+  # electron-builder.yml's `publish` block) — electron-updater on a running
+  # app reads those from this same release to find out there's something
+  # newer and verify it before installing.
   #
   # RELEASES_REPO_TOKEN is a fine-grained PAT scoped to just that releases
   # repo with Contents: Read and write — the default GITHUB_TOKEN can't be
@@ -144,18 +201,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download all platform installers
-        uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          path: installers
-          merge-multiple: true
-
-      - name: Create release and upload installers
+      - name: Publish draft release
         env:
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" installers/* \
+          gh release edit "${{ github.ref_name }}" \
             --repo onja-org/workfoce-monitoring-app-releases \
-            --title "Desktop ${{ github.ref_name }}" \
-            --generate-notes
+            --draft=false \
+            --latest
