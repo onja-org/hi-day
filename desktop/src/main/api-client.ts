@@ -99,7 +99,7 @@ export interface CaptureSettings {
   windowTrackingEnabled: boolean;
   /** The organisation default with this member's override applied. */
   appUrlTracking: AppUrlTracking;
-  /** Likewise resolved. `mobile_only` leaves this agent nothing to track. */
+  /** Likewise resolved. */
   allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
   screenshotFrequencySeconds: number;

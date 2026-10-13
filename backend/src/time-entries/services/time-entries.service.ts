@@ -914,10 +914,9 @@ export class TimeEntriesService {
   }
 
   /**
-   * `seen` memoises within one batch — a job usually touches one or two
-   * Organisations. Passed in rather than held on the service, which is a
-   * singleton: a Map here would outlive every request and keep serving a
-   * zone an admin had already changed.
+   * `seen` memoises within one batch. Passed in rather than held on the
+   * service, which is a singleton: a Map here would outlive every request
+   * and keep serving a zone an admin had already changed.
    */
   private async organisationTimezone(
     organisationId: string,
@@ -2193,13 +2192,10 @@ export class TimeEntriesService {
   }
 
   /**
-   * Ends every running entry whose client the Allowed apps setting no
-   * longer permits — called after the setting is saved, so a change takes
-   * effect at once rather than at the next `start`. Time already tracked
-   * is kept: the entry simply ends where the policy changed.
-   *
-   * Pass `membershipId` when one person's override changed; omit it when
-   * the organisation default did, which affects everyone inheriting it.
+   * Ends every running entry whose client Allowed apps no longer permits,
+   * so a change takes effect at once rather than at the next `start`. The
+   * hours already tracked are kept. Pass `membershipId` when one person's
+   * override changed; omit it when the organisation default did.
    */
   async stopEntriesDisallowedByApps(
     organisationId: string,

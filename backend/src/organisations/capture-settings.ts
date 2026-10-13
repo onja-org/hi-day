@@ -9,8 +9,7 @@ export interface CaptureSettings {
    * Overridable per Membership (see `Membership.appUrlTracking`).
    */
   appUrlTracking: AppUrlTracking;
-  /** Which timer clients this member may track from. The agent shows a
-   * notice and refuses to start when it isn't one of them. */
+  /** Which timer clients this member may track from. */
   allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
   /** How often the desktop agent captures a screenshot, in seconds. */

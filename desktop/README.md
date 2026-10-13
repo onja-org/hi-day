@@ -182,7 +182,7 @@ using a UUID generated on first run and persisted under Electron's
    in the web console's org settings (`OrganisationSettingsForm`), *and*
    **Start timer** in this app (step 8) — both must be true for sampling to
    run; window tracking follows being clocked in, not merely being logged
-   in. `CaptureSettingsGate` polls `GET /device/capture-settings` every 30s
+   in. `CaptureSettingsGate` polls `GET /device/capture-settings` every 15s
    (and immediately on login/logout) and `TimerStatusGate` polls
    `GET /device/time-entries/current` every 15s (immediately on login/
    logout, and instantly on this app's own Start/Stop/switch actions).
@@ -199,7 +199,7 @@ using a UUID generated on first run and persisted under Electron's
    permanently instead — this is a known, informational, un-fixable-from-here
    gap for those cases (no "Grant Access"-style button, since there's
    nothing to grant). macOS-specific behavior (the Screen Recording banner,
-   "Grant Access", and the 30s grant-detection poll) needs a real Mac to
+   "Grant Access", and the 15s grant-detection poll) needs a real Mac to
    verify — see `docs/adr/0011-...` for the migration that fixed
    `0009-...`'s known macOS title-reading gap (window titles are gated by
    Screen Recording access, not Accessibility — this app now checks and
@@ -233,7 +233,7 @@ using a UUID generated on first run and persisted under Electron's
     console's org settings (same form as step 8's window-tracking toggle),
     set a short frequency (e.g. 1 minute) to avoid a long wait, and
     **Start timer** — both must be true, same Hubstaff-style rule as
-    window tracking. `CaptureSettingsGate`'s existing 30s poll picks up
+    window tracking. `CaptureSettingsGate`'s existing 15s poll picks up
     the change automatically (no separate poll — see docs/adr/0012-...).
     Like window tracking, nothing is logged to this app's own terminal;
     confirm it worked via the web console's Activity → Screenshots tab

@@ -268,11 +268,8 @@ process.on("unhandledRejection", (reason) =>
 // "offline" on the Devices page.
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
-/**
- * How long the "tracking stopped" popup is left alone before focusing the
- * window counts as having read it. Long enough to be seen, short enough
- * that the unread badge doesn't linger.
- */
+/** How long the "tracking stopped" popup is left alone before focusing the
+ * window counts as having read it. */
 const TRACKING_ALERT_DWELL_MS = 5_000;
 
 // Refreshes Device.lastSeenAt, which is otherwise set once at login — every
@@ -723,11 +720,10 @@ async function registerIpcHandlers(): Promise<void> {
   }
 
   /**
-   * Tells the renderer when an admin restricts tracking to another client.
    * The server has already ended the running entry by this point, so
    * someone left looking at a stopped timer behind other windows would
-   * carry on working believing it was still running — hence the push to
-   * the front as well as the banner.
+   * carry on working believing it still ran — hence the push to the front
+   * as well as the banner.
    */
   function announceAllowedApps(next: AllowedApps): void {
     if (next === allowedApps) return;
@@ -737,11 +733,8 @@ async function registerIpcHandlers(): Promise<void> {
     else dismissTrackingAlert();
   }
 
-  /**
-   * Takes the notification back out of the desktop's shelf. The shelf is
-   * what carries the unread badge on our icon, and leaving one sitting
-   * there says "unread" long after it has been read in the app itself.
-   */
+  /** The desktop's notification shelf is what carries the unread badge on
+   * our icon, so a read alert has to be taken back out of it. */
   function dismissTrackingAlert(): void {
     if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
     trackingAlertDwell = null;
@@ -777,10 +770,8 @@ async function registerIpcHandlers(): Promise<void> {
     mainWindow.setAlwaysOnTop(false);
     mainWindow.flashFrame(true);
 
-    // Looking at the window *is* reading it, so that clears the flash and
-    // the shelf entry behind the badge — but not before the popup has had
-    // its moment: raising the window above fires `focus` itself, and
-    // withdrawing in the same tick made the popup flash and vanish.
+    // Deferred: raising the window above fires `focus` itself, and
+    // dismissing in the same tick made the popup flash and vanish.
     if (trackingAlertDwell) clearTimeout(trackingAlertDwell);
     trackingAlertDwell = setTimeout(() => {
       trackingAlertDwell = null;

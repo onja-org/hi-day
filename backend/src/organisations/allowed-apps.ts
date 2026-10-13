@@ -14,10 +14,9 @@ export const ALLOWED_APPS_VALUES: readonly AllowedApps[] = [
 export const DEFAULT_ALLOWED_APPS: AllowedApps = 'all';
 
 /**
- * The one rule for "may this client track time", shared by the check on
- * `start` and the sweep that stops timers when the setting changes, so the
- * two can never disagree. `source` is a `TimeEntrySource`, taken as a
- * string to keep this module free of entity imports.
+ * Shared by the check on `start` and the sweep that stops timers when the
+ * setting changes, so the two cannot disagree. `source` is a
+ * `TimeEntrySource`, typed as a string to avoid an entity import here.
  */
 export function isTimerSourceAllowed(
   source: string,

@@ -1,9 +1,6 @@
 import type { AllowedApps } from "@/types/organisation";
 
-/**
- * What to tell someone on the web whose organisation has restricted time
- * tracking to another client. Null when the web timer is allowed.
- */
+/** Null when the web timer is allowed. */
 export function allowedAppsNotice(allowed: AllowedApps): string | null {
   switch (allowed) {
     case "all":

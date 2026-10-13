@@ -1380,8 +1380,7 @@ async function startTracking(): Promise<void> {
   }
 }
 
-/** Set while the organisation tracks from another client — see the
- * `onTrackingNotice` handler. */
+/** Set while the organisation tracks from another client. */
 let trackingToggleBlocked = false;
 
 timerToggle.addEventListener("click", () => {
@@ -1565,9 +1564,8 @@ async function runInitTracking(): Promise<void> {
 
 /**
  * An admin restricting tracking to another client. The server has already
- * ended any running entry, so this only has to say so and stop offering a
- * button that would be refused. Neutral styling, not `error-text`: nothing
- * has gone wrong.
+ * ended any running entry, so this only says so and stops offering
+ * buttons that would be refused. Neutral styling, not `error-text`.
  */
 window.api.windowControls.onTrackingNotice((notice) => {
   trackingNotice.textContent = notice ?? "";
@@ -1577,7 +1575,6 @@ window.api.windowControls.onTrackingNotice((notice) => {
   trackingToggleBlocked = Boolean(notice);
   timerToggle.disabled = trackingToggleBlocked;
   compactTimerToggle.disabled = trackingToggleBlocked;
-  // Repaints the rows against the new blocked state.
   renderProjects();
   if (notice) void refreshStatus(true);
 });
