@@ -1,6 +1,12 @@
 export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
+/**
+ * How often the day's totals are reconciled against the server, to catch
+ * time added elsewhere. Longer than the status poll: it is a second
+ * request, and manual time is not something anyone adds by the second.
+ */
+const TODAY_MERGE_INTERVAL_MS = 30_000;
 const IDLE_POLL_INTERVAL_MS = 10_000;
 const IDLE_POLICY_REFRESH_MS = 60_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
@@ -526,6 +532,11 @@ let projectsLoaded = false;
 let todaySecondsByProject = new Map<string, number>();
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
 let todaySecondsDayStart: number | null = null;
+/** Completed entries already folded into the totals, so a later read adds
+ * only what is genuinely new. */
+let countedEntryIds = new Set<string>();
+/** When the totals were last reconciled against the server. */
+let todaySecondsReconciledAt = 0;
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
 // The Project `currentProjectTasks` was loaded for.
@@ -752,6 +763,9 @@ function setRunning(entry: TimeEntry | null): void {
         previous.projectId,
         displayedSecondsFor(previous.projectId),
       );
+      // Counted here, so the server's copy of this same entry is not
+      // folded in again by `mergeNewTodayEntries`.
+      countedEntryIds.add(previous.id);
     }
     // A new entry counts from now, not from the last poll's baseline — that
     // stale baseline is what made a restarted timer jump ahead, then back.
@@ -951,10 +965,12 @@ async function refreshTodayTotals(): Promise<void> {
   if (!result.ok) return; // transient — keep whatever totals we already had
 
   const totals = new Map<string, number>();
+  const counted = new Set<string>();
   for (const entry of result.data) {
     // A null duration is the still-running entry; tick() adds its time
     // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
+    counted.add(entry.id);
     totals.set(
       entry.projectId,
       (totals.get(entry.projectId) ?? 0) + entry.durationSeconds,
@@ -962,6 +978,48 @@ async function refreshTodayTotals(): Promise<void> {
   }
   todaySecondsByProject = totals;
   todaySecondsDayStart = startOfToday();
+  countedEntryIds = counted;
+  todaySecondsReconciledAt = Date.now();
+}
+
+/**
+ * Folds in completed entries this agent has not counted yet — time added
+ * from the web console, or tracked on another machine. Deliberately
+ * *additive*: replacing the totals would re-derive the baseline the live
+ * tick counts up from, and any disagreement between the server's clock
+ * and this one would show as the display jumping backwards.
+ */
+async function mergeNewTodayEntries(): Promise<void> {
+  const result = await window.api.tracking.entriesBetween(
+    new Date(startOfToday()).toISOString(),
+    new Date().toISOString(),
+  );
+  if (!result.ok) return; // transient — try again on the next poll
+
+  todaySecondsReconciledAt = Date.now();
+  let added = false;
+  for (const entry of result.data) {
+    // The running entry belongs to the live tick, which counts it up from
+    // this baseline — folding it in here too would count it twice. A
+    // duration is not enough to tell: the server reports one for an entry
+    // that is still open.
+    if (entry.durationSeconds === null) continue;
+    if (runningEntry && entry.id === runningEntry.id) continue;
+    // Without an id there is no telling this apart from time already
+    // counted, and adding it twice is worse than missing it.
+    if (!entry.id) continue;
+    if (countedEntryIds.has(entry.id)) continue;
+    countedEntryIds.add(entry.id);
+    todaySecondsByProject.set(
+      entry.projectId,
+      (todaySecondsByProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
+    );
+    added = true;
+  }
+  if (added) {
+    renderProjects();
+    tick();
+  }
 }
 
 function renderProjects(): void {
@@ -1414,6 +1472,12 @@ async function refreshStatus(resync = false): Promise<void> {
     if (entry?.pausedAt) pausedAtWorkedMs = workedMs;
     tick();
   } else if (todaySecondsDayStart === startOfToday()) {
+    // Totals are already this day's, so nothing needs re-deriving — but
+    // time added from the web console changes neither the running entry
+    // nor the day, so without this it would never appear here at all.
+    if (Date.now() - todaySecondsReconciledAt >= TODAY_MERGE_INTERVAL_MS) {
+      await mergeNewTodayEntries();
+    }
     return;
   }
   // Also reached when the day rolled over, or the totals never loaded.
