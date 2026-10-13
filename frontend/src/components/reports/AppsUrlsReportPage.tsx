@@ -50,16 +50,14 @@ const SAVED_GROUPINGS: Record<AppsUrlsGrouping, "day" | "project" | "member"> = 
 
 /** Reuses the Time and activity report's date and filter controls over the Activity tabs' app and website data. */
 export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsReportPageProps) {
+  const organisationQuery = useCurrentOrganisation();
   const { scope, setScope, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
-    useTimeActivityReportControls(
-      savedReport?.settings,
-    );
+    useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const [grouping, setGrouping] = useState<AppsUrlsGrouping>(
     () => APPS_URLS_GROUPINGS.find((option) => SAVED_GROUPINGS[option.value] === savedReport?.settings.grouping)?.value ?? "date",
   );
   const [scheduling, setScheduling] = useState(false);
   const [search, setSearch] = useState("");
-  const organisationQuery = useCurrentOrganisation();
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const projects = projectsQuery.data ?? [];
   const profile = useMyProfile().data;
@@ -86,7 +84,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
     organisationId,
     dateKeys,
     members,
-    !tooLong && !(isAll && membersQuery.isLoading),
+    !tooLong && !organisationQuery.isLoading && !(isAll && membersQuery.isLoading),
   );
 
   const items =
@@ -167,7 +165,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
               ? "Choose a shorter date range: the All tab fetches every member's days."
               : `Choose a date range of ${APPS_URLS_MAX_DAYS} days or fewer.`
           } />}
-      <ReportStatus isLoading={isLoading || (isAll && membersQuery.isLoading)} error={error ?? membersQuery.error} />
+      <ReportStatus isLoading={isLoading || organisationQuery.isLoading || (isAll && membersQuery.isLoading)} error={error ?? membersQuery.error} />
       {rows && (
         <AppsUrlsReportBody
           rows={rows}

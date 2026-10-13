@@ -36,9 +36,9 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
   const organisationQuery = useCurrentOrganisation();
   const [scheduling, setScheduling] = useState(false);
   const { scope, setScope, grouping: chosenGrouping, setGrouping, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
-    useTimeActivityReportControls(savedReport?.settings);
+    useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const { canViewOthers, showsEveryone, activeFilters, projectOptions, entries, isLoading, error } =
-    useTimeActivityReportData(organisationId, scope, range, filters);
+    useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
   const grouping = isWorkSessionsGrouping(chosenGrouping) ? chosenGrouping : "day";
   const columns = workSessionsColumns(grouping);
   const rows = entries ? buildWorkSessionsRows(entries, grouping, zone) : undefined;
@@ -101,7 +101,7 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
         />
       )}
 
-      <ReportStatus isLoading={isLoading} error={error} />
+      <ReportStatus isLoading={isLoading || organisationQuery.isLoading} error={error} />
       {entries && rows && (
         <WorkSessionsReportBody
           entries={entries}
