@@ -1,7 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsNumber,
+  Max,
+  Min,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -75,6 +80,45 @@ export class UpdateMembershipDto {
   @ValidateIf((_, value: AllowedApps | null) => value !== null)
   @IsIn(ALLOWED_APPS_VALUES)
   allowedApps?: AllowedApps | null;
+
+  /** Work time limit overrides. Every one takes `null` to clear it and
+   * inherit the Organisation's again, independently of the others. */
+  @IsOptional()
+  @ValidateIf((_, value: number[] | null) => value !== null)
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  expectedWorkDays?: number[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number[] | null) => value !== null)
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  trackingDisabledDays?: number[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(168)
+  expectedWeeklyHours?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(168)
+  weeklyLimitHours?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(24)
+  dailyLimitHours?: number | null;
 
   /**
    * Per-member override of the Timesheets "Modify time" default. `null`

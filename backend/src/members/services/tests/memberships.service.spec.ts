@@ -164,6 +164,11 @@ describe('MembershipsService', () => {
           status: MembershipStatus.ACTIVE,
           joinedAt: new Date('2026-01-01'),
           projectIds: ['project-1', 'project-2'],
+          expectedWorkDays: null,
+          trackingDisabledDays: null,
+          expectedWeeklyHours: null,
+          weeklyLimitHours: null,
+          dailyLimitHours: null,
         },
       ]);
     });
@@ -1048,6 +1053,11 @@ describe('MembershipsService', () => {
         deactivatedAt: null,
         createdAt: new Date('2026-01-01'),
         appUrlTracking: null,
+        expectedWorkDays: null,
+        trackingDisabledDays: null,
+        expectedWeeklyHours: null,
+        weeklyLimitHours: null,
+        dailyLimitHours: null,
         user: { email: 'a@b.test', name: 'A B' },
       };
       const findOne = jest
@@ -1101,6 +1111,11 @@ describe('MembershipsService', () => {
 
       const result = await service.update('org-1', 'membership-1', 'admin-1', {
         appUrlTracking: null,
+        expectedWorkDays: null,
+        trackingDisabledDays: null,
+        expectedWeeklyHours: null,
+        weeklyLimitHours: null,
+        dailyLimitHours: null,
       });
 
       expect(result.appUrlTracking).toBeNull();
