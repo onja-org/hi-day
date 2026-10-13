@@ -101,17 +101,19 @@ export class UpdateOrganisationDto {
   @Max(168)
   expectedWeeklyHours?: number | null;
 
+  /** `null` is "no limit". A number is a real ceiling, and zero would mean
+   * "may never track" — never what an admin meant to type. */
   @IsOptional()
   @ValidateIf((_, value: number | null) => value !== null)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   @Max(168)
   weeklyLimitHours?: number | null;
 
   @IsOptional()
   @ValidateIf((_, value: number | null) => value !== null)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   @Max(24)
   dailyLimitHours?: number | null;
 

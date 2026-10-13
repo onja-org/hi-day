@@ -318,7 +318,14 @@ export class MembershipsService {
       );
     }
 
-    return this.toSummary(membership);
+    // Re-read rather than echo the object we just built: the hour columns
+    // are `numeric(5,2)`, so Postgres rounds what it stores, and returning
+    // the in-memory value would report something the database doesn't hold.
+    const saved = await this.memberships.findOne({
+      where: { id: membershipId },
+      relations: { user: true, teamMemberships: true },
+    });
+    return this.toSummary(saved ?? membership);
   }
 
   /**
