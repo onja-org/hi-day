@@ -650,6 +650,8 @@ async function registerIpcHandlers(): Promise<void> {
   // docs/adr/0006-...), and any one flipping recomputes both.
   let appUrlTracking: AppUrlTracking = "off";
   let allowedApps: AllowedApps = "all";
+  /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
+  let trackingNotification: Notification | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -724,6 +726,18 @@ async function registerIpcHandlers(): Promise<void> {
     const notice = allowedAppsNotice(next);
     mainWindow?.webContents.send("tracking:notice", notice);
     if (notice) alertTrackingStopped(notice);
+    else dismissTrackingAlert();
+  }
+
+  /**
+   * Takes the notification back out of the desktop's shelf. The shelf is
+   * what carries the unread badge on our icon, and leaving one sitting
+   * there says "unread" long after it has been read in the app itself.
+   */
+  function dismissTrackingAlert(): void {
+    mainWindow?.flashFrame(false);
+    trackingNotification?.close();
+    trackingNotification = null;
   }
 
   /**
@@ -737,7 +751,13 @@ async function registerIpcHandlers(): Promise<void> {
    */
   function alertTrackingStopped(body: string): void {
     if (Notification.isSupported()) {
-      new Notification({ title: "Time tracking stopped", body }).show();
+      // Replaces rather than stacks: two of these say the same thing.
+      trackingNotification?.close();
+      trackingNotification = new Notification({
+        title: "Time tracking stopped",
+        body,
+      });
+      trackingNotification.show();
     }
 
     showMainWindow();
@@ -746,7 +766,9 @@ async function registerIpcHandlers(): Promise<void> {
     mainWindow.setAlwaysOnTop(true);
     mainWindow.setAlwaysOnTop(false);
     mainWindow.flashFrame(true);
-    mainWindow.once("focus", () => mainWindow?.flashFrame(false));
+    // Looking at the window *is* reading it, so clear both the flash and
+    // the shelf entry behind the badge.
+    mainWindow.once("focus", dismissTrackingAlert);
   }
 
   const captureSettingsGate = new CaptureSettingsGate(

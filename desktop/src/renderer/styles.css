@@ -594,7 +594,7 @@ input::placeholder {
   text-align: left;
 }
 
-.project-list button:hover {
+.project-list button:hover:not(:disabled) {
   border-color: rgb(18 17 23 / 0.25);
 }
 

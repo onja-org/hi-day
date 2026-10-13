@@ -931,6 +931,9 @@ function renderProjects(): void {
       `${isRunningHere ? "Stop tracking" : "Track"} ${project.name}`,
     );
     button.classList.toggle("is-running", isRunningHere);
+    // Each row starts a timer, so none can work while tracking is blocked.
+    // The banner above already says why; a red error repeating it is noise.
+    button.disabled = trackingToggleBlocked;
 
     const iconWrapper = document.createElement("span");
     iconWrapper.className = "project-icon";
@@ -990,6 +993,7 @@ function renderProjects(): void {
  * moment is double-counted or lost between the two.
  */
 async function selectProject(projectId: string): Promise<void> {
+  if (trackingToggleBlocked) return;
   clearTrackingError();
 
   // Clicking the row that is currently running pauses it — the row shows a
@@ -1573,6 +1577,8 @@ window.api.windowControls.onTrackingNotice((notice) => {
   trackingToggleBlocked = Boolean(notice);
   timerToggle.disabled = trackingToggleBlocked;
   compactTimerToggle.disabled = trackingToggleBlocked;
+  // Repaints the rows against the new blocked state.
+  renderProjects();
   if (notice) void refreshStatus(true);
 });
 
