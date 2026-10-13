@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { approveDevicePairing } from "@/lib/approveDevicePairing";
 import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { getDevicePairing } from "@/lib/getDevicePairing";
@@ -51,7 +52,15 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
 
   if (approveMutation.data?.ok) {
     return (
-      <SuccessMessage message="You're logged in — you can go back to the desktop app now." />
+      <div className="flex w-full max-w-sm flex-col gap-4">
+        <SuccessMessage message="You're logged in — you can go back to the desktop app now." />
+        <Link
+          href="/dashboard"
+          className="flex items-center justify-center gap-2 rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 font-bold"
+        >
+          Open the web app
+        </Link>
+      </div>
     );
   }
 
