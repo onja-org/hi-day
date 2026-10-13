@@ -36,6 +36,10 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
   const [rows, setRows] = useState<MemberImportRow[] | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [results, setResults] = useState<InviteEntryResult[] | null>(null);
+  // How many valid entries have already gone out, so a failure partway
+  // through can resume with the rest instead of re-inviting everyone.
+  const [sentCount, setSentCount] = useState(0);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const teams = teamsQuery.data ?? [];
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
@@ -45,6 +49,8 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
     const file = event.target.files?.[0];
     setRows(null);
     setResults(null);
+    setSentCount(0);
+    setSendError(null);
     setFileError(null);
     if (!file) return;
     try {
@@ -63,24 +69,35 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const collected: InviteEntryResult[] = [];
-      for (let start = 0; start < validEntries.length; start += INVITES_PER_REQUEST) {
+      setSendError(null);
+      const collected = [...(results ?? [])];
+      for (let start = sentCount; start < validEntries.length; start += INVITES_PER_REQUEST) {
         const result = await inviteMembers(
           organisationId,
           validEntries.slice(start, start + INVITES_PER_REQUEST),
         );
-        if (!result.ok) return { ok: false as const, message: result.message };
+        if (!result.ok) {
+          if (collected.length > 0) setResults(collected);
+          setSentCount(start);
+          setSendError(
+            `${result.message} ${validEntries.length - start} of ${validEntries.length} invites weren't sent.`,
+          );
+          return { ok: false as const, message: result.message };
+        }
         collected.push(...result.results);
       }
       setResults(collected);
+      setSentCount(validEntries.length);
       const sent = collected.filter((r) => r.outcome === "sent" || r.outcome === "resent").length;
       return { ok: true as const, message: `Sent ${sent} of ${collected.length} invites` };
     },
+    meta: { inlineErrors: true },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: PENDING_INVITATIONS_QUERY_KEY(organisationId) }),
   });
 
   const lookupsLoading = teamsQuery.isLoading || projectsQuery.isLoading;
+  const remaining = validEntries.length - sentCount;
 
   return (
     <Modal title="Import members" onClose={onClose} size="wide">
@@ -117,6 +134,7 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         )}
 
         {fileError && <ErrorMessage message={fileError} />}
+        {sendError && <ErrorMessage message={sendError} />}
         {rows && !results && <ImportPreviewTable rows={rows} teamNames={teamNames} />}
 
         <div className="flex justify-end gap-3">
@@ -127,15 +145,16 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
           >
             {results ? "Done" : "Cancel"}
           </button>
-          {rows && !results && (
+          {rows && (!results || remaining > 0) && (
             <button
               type="button"
               onClick={() => mutation.mutate()}
-              disabled={validEntries.length === 0 || mutation.isPending}
+              disabled={remaining === 0 || mutation.isPending}
               className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
             >
               {mutation.isPending && <Spinner />}
-              Send {validEntries.length} {validEntries.length === 1 ? "invite" : "invites"}
+              Send {sentCount > 0 && "remaining "}
+              {remaining} {remaining === 1 ? "invite" : "invites"}
             </button>
           )}
         </div>
