@@ -16,18 +16,23 @@ export class UpdateTaskDto {
   @MaxLength(255)
   name?: string;
 
+  // For the three optional details, explicit null clears the value;
+  // omitted leaves it unchanged.
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsString()
   @MaxLength(2000)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsNumberString()
-  estimate?: string;
+  estimate?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsDateString()
-  dueDate?: string;
+  dueDate?: string | null;
 
   // Explicit null unassigns the task; omitted leaves the assignee unchanged.
   @IsOptional()

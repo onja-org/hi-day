@@ -52,9 +52,10 @@ export type TaskFormInput = {
 
 export type UpdateTaskInput = {
   name?: string;
-  description?: string;
-  estimate?: string;
-  dueDate?: string;
+  // null clears the value; omitted leaves it unchanged.
+  description?: string | null;
+  estimate?: string | null;
+  dueDate?: string | null;
   assigneeProjectMembershipId?: string | null;
 };
 
