@@ -154,6 +154,7 @@ function showLoginView(errorMessage?: string): void {
   projectsLoaded = false;
   idlePolicy = null;
   lastTrackedProjectId = null;
+  pendingTaskChoice = null;
   // Stops the clock, tells main to stop url-capture, and clears the row
   // highlight — otherwise the timer keeps counting behind the login screen.
   setRunning(null);
@@ -525,6 +526,11 @@ let todaySecondsByProject = new Map<string, number>();
 let todaySecondsDayStart: number | null = null;
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
+// The Project `currentProjectTasks` was loaded for.
+let tasksProjectId: string | null = null;
+// A Task picked while stopped, which the next play starts on.
+let pendingTaskChoice: { projectId: string; taskId: string | null } | null =
+  null;
 // 24×24 icons. "Stop" rather than pause: pausing ends the entry.
 const PLAY_PATH =
   "M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z";
@@ -1003,6 +1009,7 @@ async function selectProject(projectId: string): Promise<void> {
     return;
   }
 
+  pendingTaskChoice = null;
   await loadTasks(projectId);
   const taskId = selectedTaskId;
 
@@ -1111,6 +1118,7 @@ async function loadTasks(projectId: string): Promise<void> {
   );
   currentProjectTasks = [];
   selectedTaskId = null;
+  tasksProjectId = projectId;
   if (!result.ok) {
     // Offline, tasks are optional and starting/switching still works (it is
     // queued), so only a real rejection or a sign-out is worth a banner.
@@ -1149,11 +1157,7 @@ function renderTaskPanelList(): void {
   noTaskButton.type = "button";
   noTaskButton.textContent = "No task";
   noTaskButton.classList.toggle("is-selected", selectedTaskId === null);
-  noTaskButton.addEventListener("click", () => {
-    selectedTaskId = null;
-    updateCurrentTaskLabel();
-    closeTaskPanel();
-  });
+  noTaskButton.addEventListener("click", () => void chooseTask(null));
   const noTaskItem = document.createElement("li");
   noTaskItem.appendChild(noTaskButton);
   taskPanelList.appendChild(noTaskItem);
@@ -1180,11 +1184,7 @@ function renderTaskPanelList(): void {
     dates.textContent = `Created ${formatTaskDate(task.createdAt)} · Updated ${formatTaskDate(task.updatedAt)}`;
     button.appendChild(dates);
 
-    button.addEventListener("click", () => {
-      selectedTaskId = task.id;
-      updateCurrentTaskLabel();
-      closeTaskPanel();
-    });
+    button.addEventListener("click", () => void chooseTask(task.id));
 
     const item = document.createElement("li");
     item.appendChild(button);
@@ -1194,11 +1194,27 @@ function renderTaskPanelList(): void {
   taskPanelEmpty.hidden = matches.length > 0;
 }
 
+/** The Task the timer is on — or, when stopped, the one play would start on. */
+async function currentTaskFor(projectId: string): Promise<string | null> {
+  if (runningEntry?.projectId === projectId) return runningEntry.taskId;
+  if (pendingTaskChoice?.projectId === projectId) {
+    return pendingTaskChoice.taskId;
+  }
+  const remembered = await window.api.tracking.lastProject();
+  return remembered?.projectId === projectId ? remembered.taskId : null;
+}
+
 async function openTaskPanel(): Promise<void> {
-  const projectId = runningEntry?.projectId ?? projects[0]?.id;
+  const projectId =
+    runningEntry?.projectId ?? lastTrackedProjectId ?? projects[0]?.id;
   if (!projectId) return;
 
+  const taskId = await currentTaskFor(projectId);
   await loadTasks(projectId);
+  if (currentProjectTasks.some((task) => task.id === taskId)) {
+    selectedTaskId = taskId;
+    updateCurrentTaskLabel();
+  }
   taskPanelProject.textContent = projectNameFor(projectId);
   taskSearch.value = "";
   renderTaskPanelList();
@@ -1208,6 +1224,33 @@ async function openTaskPanel(): Promise<void> {
 
 function closeTaskPanel(): void {
   taskPanel.hidden = true;
+}
+
+/**
+ * Puts the timer on a Task. Running, that's a switch — the time so far stays
+ * on the old Task; stopped, the next play starts on it.
+ */
+async function chooseTask(taskId: string | null): Promise<void> {
+  selectedTaskId = taskId;
+  updateCurrentTaskLabel();
+  closeTaskPanel();
+  const projectId = tasksProjectId;
+  if (!projectId) return;
+
+  if (!runningEntry || runningEntry.pausedAt) {
+    pendingTaskChoice = { projectId, taskId };
+    return;
+  }
+  if (runningEntry.projectId !== projectId || runningEntry.taskId === taskId) {
+    return;
+  }
+
+  clearTrackingError();
+  const result = await callTracking(() =>
+    window.api.tracking.switchTo(projectId, taskId),
+  );
+  if (result.ok) setRunning(result.data);
+  else handleTrackingFailure(result);
 }
 
 taskTrigger.addEventListener("click", () => void openTaskPanel());
@@ -1348,11 +1391,16 @@ async function startTracking(): Promise<void> {
     if (!projectsLoaded || runningEntry) return;
   }
   clearTrackingError();
-  const target = await resolveProjectToTrack();
-  if (!target) {
+  const resolved = await resolveProjectToTrack();
+  if (!resolved) {
     showTrackingError("No projects are available to track time against.");
     return;
   }
+  const target =
+    pendingTaskChoice?.projectId === resolved.projectId
+      ? pendingTaskChoice
+      : resolved;
+  pendingTaskChoice = null;
 
   void loadTasks(target.projectId).then(() => {
     if (target.taskId) {
