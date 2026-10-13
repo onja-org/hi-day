@@ -436,6 +436,7 @@ const compactTimerTogglePath = document.getElementById(
 const currentTaskLabelEl = document.getElementById("current-task-label")!;
 const timerDisplay = document.getElementById("timer-display")!;
 const trackingError = document.getElementById("tracking-error")!;
+const trackingNotice = document.getElementById("tracking-notice")!;
 const timerToggle = document.getElementById(
   "timer-toggle",
 ) as HTMLButtonElement;
@@ -1375,6 +1376,10 @@ async function startTracking(): Promise<void> {
   }
 }
 
+/** Set while the organisation tracks from another client — see the
+ * `onTrackingNotice` handler. */
+let trackingToggleBlocked = false;
+
 timerToggle.addEventListener("click", () => {
   void (async () => {
     timerToggle.disabled = true;
@@ -1400,7 +1405,7 @@ timerToggle.addEventListener("click", () => {
         handleTrackingFailure(result);
       }
     } finally {
-      timerToggle.disabled = false;
+      timerToggle.disabled = trackingToggleBlocked;
     }
   })();
 });
@@ -1553,6 +1558,21 @@ async function runInitTracking(): Promise<void> {
   void refreshCapturePermissionBanner();
   startPolling();
 }
+
+/**
+ * An admin restricting tracking to another client. The server has already
+ * ended any running entry, so this only has to say so and stop offering a
+ * button that would be refused. Neutral styling, not `error-text`: nothing
+ * has gone wrong.
+ */
+window.api.windowControls.onTrackingNotice((notice) => {
+  trackingNotice.textContent = notice ?? "";
+  trackingNotice.hidden = notice === null;
+  trackingToggleBlocked = notice !== null;
+  timerToggle.disabled = trackingToggleBlocked;
+  compactTimerToggle.disabled = trackingToggleBlocked;
+  if (notice) void refreshStatus(true);
+});
 
 // Closing the window only hides it to the tray, so reopening it doesn't rerun
 // setup — re-read the day's time from the server here instead.

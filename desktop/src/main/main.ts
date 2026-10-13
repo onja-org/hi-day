@@ -12,6 +12,7 @@ import {
   Tray,
 } from "electron";
 import type {
+  AllowedApps,
   AppUrlTracking,
   PairingPollResult,
   TimeEntry,
@@ -24,6 +25,7 @@ import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { X11WindowTracker } from "./x11-window-tracker";
@@ -646,6 +648,7 @@ async function registerIpcHandlers(): Promise<void> {
   // started/stopped from the web console or another device, see
   // docs/adr/0006-...), and any one flipping recomputes both.
   let appUrlTracking: AppUrlTracking = "off";
+  let allowedApps: AllowedApps = "all";
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -708,12 +711,28 @@ async function registerIpcHandlers(): Promise<void> {
     service.setTimerRunning(timerRunning);
   }
 
+  /**
+   * Tells the renderer when an admin restricts tracking to another client,
+   * and pulls the window forward so it isn't missed — the server has
+   * already ended the running entry by this point, and someone left looking
+   * at a stopped timer behind other windows would carry on working
+   * believing it was still running.
+   */
+  function announceAllowedApps(next: AllowedApps): void {
+    if (next === allowedApps) return;
+    const notice = allowedAppsNotice(next);
+    mainWindow?.webContents.send("tracking:notice", notice);
+    if (notice) showMainWindow();
+  }
+
   const captureSettingsGate = new CaptureSettingsGate(
     authStore,
     apiClient,
     (settings) => {
       windowTrackingEnabled = settings.windowTrackingEnabled;
       appUrlTracking = settings.appUrlTracking;
+      announceAllowedApps(settings.allowedApps);
+      allowedApps = settings.allowedApps;
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       recomputeSampling();

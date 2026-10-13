@@ -1,4 +1,4 @@
-import type { AppUrlTracking } from "./api-client";
+import type { AllowedApps, AppUrlTracking } from "./api-client";
 
 export interface CaptureSettingsSession {
   load(): { deviceToken: string } | null;
@@ -7,6 +7,7 @@ export interface CaptureSettingsSession {
 export interface CaptureSettingsValue {
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
+  allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
   /** How often to capture a screenshot, in seconds — meaningless while `screenshotsEnabled` is false. */
   screenshotFrequencySeconds: number;
@@ -21,6 +22,9 @@ export interface CaptureSettingsValue {
 const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
   appUrlTracking: "off",
+  // `all`, not a restriction: with no session there is nothing to track
+  // anyway, and claiming the admin forbade it would be a lie.
+  allowedApps: "all",
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
   consent: { required: true },
@@ -93,6 +97,7 @@ export class CaptureSettingsGate {
     if (
       settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
       settings.appUrlTracking === this.lastSettings.appUrlTracking &&
+      settings.allowedApps === this.lastSettings.allowedApps &&
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&
