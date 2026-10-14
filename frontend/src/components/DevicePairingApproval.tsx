@@ -6,6 +6,7 @@ import { approveDevicePairing } from "@/lib/approveDevicePairing";
 import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { getDevicePairing } from "@/lib/getDevicePairing";
 import { ErrorMessage } from "./ErrorMessage";
+import { OpenDesktopAppButton } from "./OpenDesktopAppButton";
 import { Spinner } from "./Spinner";
 import { SuccessMessage } from "./SuccessMessage";
 
@@ -40,13 +41,19 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
 
   if (pairingQuery.isError || !pairingQuery.data) {
     return (
-      <ErrorMessage
-        message={
-          pairingQuery.error instanceof Error
-            ? pairingQuery.error.message
-            : "This link is invalid or has expired."
-        }
-      />
+      <div className="flex w-full max-w-sm flex-col gap-4">
+        <ErrorMessage
+          message={
+            pairingQuery.error instanceof Error
+              ? pairingQuery.error.message
+              : "This link is invalid or has expired."
+          }
+        />
+        <p className="text-slate-900">
+          Open Hi Day and start again from there for a fresh link.
+        </p>
+        <OpenDesktopAppButton />
+      </div>
     );
   }
 
@@ -54,9 +61,10 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
     return (
       <div className="flex w-full max-w-sm flex-col gap-4">
         <SuccessMessage message="You're logged in — you can go back to the desktop app now." />
+        <OpenDesktopAppButton />
         <Link
           href="/dashboard"
-          className="flex items-center justify-center gap-2 rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 font-bold"
+          className="flex h-11 items-center justify-center gap-2 rounded-brand-sm border-2 border-ink px-4 font-semibold text-slate-900 transition-colors duration-150 hover:bg-cream"
         >
           Open the web app
         </Link>

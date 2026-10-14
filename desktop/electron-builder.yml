@@ -11,6 +11,13 @@ artifactName: hiday-${os}-${arch}.${ext}
 # smaller), but it's free size reduction with no functional tradeoff, just
 # a slower build.
 compression: maximum
+# Writes the macOS Info.plist entry and the Linux .desktop MimeType
+# (x-scheme-handler/hiday). NSIS reads nothing from this, so Windows is
+# registered at runtime by main.ts's registerDeepLinkScheme.
+protocols:
+  - name: Hi Day
+    schemes:
+      - hiday
 directories:
   output: release
 # App icon (source: build/icon.svg — see README "App icon" for how the PNG
