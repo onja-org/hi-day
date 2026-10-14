@@ -40,20 +40,24 @@ export function ScreenshotTile({
         />
         {onDelete && (
           // Revealed on hover, as the gallery it mirrors does — but always
-          // present for keyboard and touch, which have no hover.
-          <button
-            type="button"
-            aria-label={`Delete the screenshot from ${formatTimeOfDay(capturedAt)}`}
-            disabled={isDeleting}
-            onClick={() => onDelete(screenshot.id)}
-            className="absolute top-2 right-2 flex size-8 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink bg-white/90 text-slate-900 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
-          >
-            {isDeleting ? (
-              <Spinner className="text-primary-dark" />
-            ) : (
-              <TrashIcon size={16} aria-hidden="true" />
-            )}
-          </button>
+          // present for keyboard and touch, which have no hover. The scrim
+          // keeps the button legible over a light screenshot.
+          <>
+            <div className="pointer-events-none absolute inset-0 bg-ink/50 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100" />
+            <button
+              type="button"
+              aria-label={`Delete the screenshot from ${formatTimeOfDay(capturedAt)}`}
+              disabled={isDeleting}
+              onClick={() => onDelete(screenshot.id)}
+              className="absolute top-2 right-2 flex size-8 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink bg-error text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
+            >
+              {isDeleting ? (
+                <Spinner className="text-white" />
+              ) : (
+                <TrashIcon size={16} aria-hidden="true" />
+              )}
+            </button>
+          </>
         )}
       </div>
       <figcaption className="flex flex-col gap-2 px-2 pb-2">
