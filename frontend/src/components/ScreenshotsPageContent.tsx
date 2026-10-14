@@ -7,6 +7,7 @@ import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useProjects } from "@/hooks/useProjects";
 import { useDeleteScreenshots } from "@/hooks/useDeleteScreenshots";
+import { canDeleteShownScreenshots } from "@/lib/canDeleteShownScreenshots";
 import { describeScreenshotDeletion } from "@/lib/describeScreenshotDeletion";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
@@ -33,10 +34,15 @@ export function ScreenshotsPageContent({
   /** What the open confirmation would delete — one id from a tile's
    * button, or the whole selection. */
   const [pendingIds, setPendingIds] = useState<string[] | null>(null);
-  // Resolved server-side: an admin always, everyone else only where the
-  // organisation (or their own override) allows it.
-  const canDelete =
-    useCurrentOrganisation().data?.canDeleteOwnScreenshots ?? false;
+  // canDeleteOwnScreenshots is resolved server-side: an admin always,
+  // everyone else only where the organisation (or their own override)
+  // allows it. Whose gallery is on screen decides the rest.
+  const organisation = useCurrentOrganisation().data;
+  const canDelete = canDeleteShownScreenshots({
+    role: organisation?.role,
+    canDeleteOwnScreenshots: organisation?.canDeleteOwnScreenshots ?? false,
+    viewedMembershipId: membershipId,
+  });
 
   const deleteMutation = useDeleteScreenshots(organisationId, () => {
     setPendingIds(null);
