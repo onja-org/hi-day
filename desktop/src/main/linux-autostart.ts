@@ -46,7 +46,7 @@ export function resolveLinuxExecutablePath(
 }
 
 /** The desktop-entry spec allows double-quoting an Exec value that contains whitespace. */
-function quoteExecPath(path: string): string {
+export function quoteExecPath(path: string): string {
   return /\s/.test(path) ? `"${path}"` : path;
 }
 

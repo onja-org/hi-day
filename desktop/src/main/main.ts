@@ -1,5 +1,6 @@
+import { execFile } from "node:child_process";
 import { hostname as osHostname, release as osRelease } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -29,6 +30,7 @@ import { PendingTimerOps } from "./pending-timer-ops";
 import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
+import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
 import { X11WindowTracker } from "./x11-window-tracker";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
@@ -1373,12 +1375,59 @@ function activateBrowsersOnLinux(): void {
   }
 }
 
+/** What the web console's "Open Hi Day" button navigates to once a device
+ * is linked. The app is already running by then, so the link's job is
+ * raising its window. */
+const DEEP_LINK_SCHEME = "hiday";
+
+/**
+ * Covers Windows, whose registry entries nothing else writes — macOS and
+ * Linux are registered at package time by electron-builder's `protocols:`.
+ * Unpackaged, Electron is the registered binary rather than Hi Day, so the
+ * script path goes too or the launch resolves to a bare Electron.
+ */
+function registerDeepLinkScheme(): void {
+  if (!app.isPackaged) {
+    const entryScript = process.argv[1];
+    if (entryScript === undefined) return;
+    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [
+      resolve(entryScript),
+    ]);
+    return;
+  }
+
+  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+
+  // Best-effort and deliberately swallowed: this runs before the window
+  // and every capture loop, so a read-only home directory or a missing
+  // update-desktop-database must cost the person a deep link, never their
+  // tracking.
+  try {
+    const directory = registerAppImageSchemeHandler(DEEP_LINK_SCHEME);
+    if (directory === null) return;
+    // Without re-indexing, the entry sits there unread until something
+    // else happens to rebuild the cache.
+    execFile("update-desktop-database", [directory], (error) => {
+      if (error) console.log(`[deep-link] re-index skipped: ${error.message}`);
+    });
+  } catch (error) {
+    console.log(`[deep-link] registration skipped: ${String(error)}`);
+  }
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  // A deep link reaches Windows and Linux as a fresh launch, which this
+  // already turns into "raise the window we have".
   app.on("second-instance", reopenMainWindow);
+  // macOS delivers it to the running instance, possibly before ready.
+  app.on("open-url", (event) => {
+    event.preventDefault();
+    if (app.isReady()) reopenMainWindow();
+  });
 
   void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
@@ -1387,6 +1436,10 @@ if (!gotSingleInstanceLock) {
     createWindow();
     createTray();
     startAutoUpdater((line) => console.log(line));
+    // Last, and never awaited: claiming a URL scheme is the least
+    // important thing this app does, and nothing above it should wait on
+    // or be reachable by it.
+    registerDeepLinkScheme();
 
     app.on("activate", reopenMainWindow);
   });
