@@ -542,6 +542,32 @@ export class MembershipsService {
    * default. Backs the "Apply to all" button on the Track apps & URLs
    * setting — one UPDATE rather than N PATCHes from the client.
    */
+  /** "Apply to all" for the screenshot-deletion permission. */
+  async resetAllScreenshotDeleteOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ canDeleteScreenshots: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"canDeleteScreenshots" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.screenshot_delete_overrides_reset',
+          organisationId,
+          actorUserId,
+        }),
+      );
+    }
+    return { cleared };
+  }
+
   /** "Apply to all" for screenshot frequency. */
   async resetAllScreenshotFrequencyOverrides(
     organisationId: string,

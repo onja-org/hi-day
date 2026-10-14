@@ -61,6 +61,11 @@ export type OrganisationProfile = {
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
+  /** The organisation default: may members delete their own screenshots. */
+  membersCanDeleteScreenshots: boolean;
+  /** Resolved for *you* — your override, else the default. Always true for
+   * an admin, who may delete anyone's. */
+  canDeleteOwnScreenshots: boolean;
   workTimeLimits: WorkTimeLimits;
   timesheetModifyTime: TimesheetModifyTime;
   /** Whether *you* may add manual time and edit tracked time: always for an
@@ -130,6 +135,7 @@ export type UpdateOrganisationInput = {
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
+  membersCanDeleteScreenshots?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;

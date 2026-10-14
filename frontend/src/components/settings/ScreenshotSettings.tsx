@@ -4,6 +4,7 @@ import { useState } from "react";
 import { NumberFieldWithUnit } from "@/components/NumberFieldWithUnit";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SettingsSectionRow } from "@/components/SettingsSectionRow";
+import { ScreenshotDeletePanel } from "./ScreenshotDeletePanel";
 import { ScreenshotFrequencyPanel } from "./ScreenshotFrequencyPanel";
 import { SettingsSubNav } from "./SettingsSubNav";
 import type { SettingsSubNavItem } from "./SettingsSubNav";
@@ -34,7 +35,12 @@ export function ScreenshotSettings() {
 
       <div className="min-w-0">
         {active === "frequency" && <ScreenshotFrequencyPanel />}
-        {active === "retention" && <RetentionPanel />}
+        {active === "retention" && (
+          <div className="flex flex-col gap-10">
+            <RetentionPanel />
+            <ScreenshotDeletePanel />
+          </div>
+        )}
       </div>
     </div>
   );
