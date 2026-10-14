@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { TrashIcon, XIcon } from "@phosphor-icons/react";
 
 type ScreenshotSelectionBarProps = {
@@ -10,8 +11,13 @@ type ScreenshotSelectionBarProps = {
   onDelete: () => void;
 };
 
-/** Floats over the gallery so the actions stay reachable however far
- * down the grid the selection was made. */
+/**
+ * Floats over the gallery so the actions stay reachable however far down
+ * the grid the selection was made. Portalled into document.body for the
+ * same reason Modal is: the dashboard shell wraps every page in FadeIn,
+ * whose translate classes make it the containing block for `fixed`, which
+ * would otherwise pin this to the bottom of the *page* and scroll it away.
+ */
 export function ScreenshotSelectionBar({
   selectedCount,
   totalCount,
@@ -19,11 +25,15 @@ export function ScreenshotSelectionBar({
   onClear,
   onDelete,
 }: ScreenshotSelectionBarProps) {
-  return (
-    <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-6 rounded-brand-sm border-2 border-ink bg-white px-4 py-3 shadow-hard">
+  return createPortal(
+    <div
+      role="toolbar"
+      aria-label="Selected screenshots"
+      className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-brand-sm border-2 border-ink bg-white px-3 py-3 shadow-hard sm:gap-6 sm:px-4"
+    >
       <span
         aria-live="polite"
-        className="text-sm font-semibold whitespace-nowrap text-slate-900"
+        className="text-xs font-semibold whitespace-nowrap text-slate-900 sm:text-sm"
       >
         {selectedCount} {selectedCount === 1 ? "screenshot" : "screenshots"}{" "}
         selected
@@ -43,7 +53,7 @@ export function ScreenshotSelectionBar({
           <button
             type="button"
             onClick={onSelectAll}
-            className="cursor-pointer text-sm font-semibold text-primary hover:underline"
+            className="cursor-pointer text-xs font-semibold whitespace-nowrap text-primary hover:underline sm:text-sm"
           >
             Select all
           </button>
@@ -57,6 +67,7 @@ export function ScreenshotSelectionBar({
           <XIcon size={18} aria-hidden="true" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
