@@ -5,7 +5,9 @@ import clsx from "clsx";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useProjects } from "@/hooks/useProjects";
 import { useDeleteScreenshots } from "@/hooks/useDeleteScreenshots";
+import { describeScreenshotDeletion } from "@/lib/describeScreenshotDeletion";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -53,6 +55,14 @@ export function ScreenshotsPageContent({
 
   const pendingCount = pendingIds?.length ?? 0;
   const pendingNoun = pendingCount === 1 ? "screenshot" : "screenshots";
+  // "all" so a screenshot taken against a since-archived project still
+  // resolves to its name, as the tile's own badge does.
+  const projects = useProjects(organisationId, { status: "all" }).data;
+  const pendingMessage = describeScreenshotDeletion(
+    screenshots.filter((screenshot) => pendingIds?.includes(screenshot.id)),
+    (projectId) =>
+      projects?.find((project) => project.id === projectId)?.name,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -122,7 +132,7 @@ export function ScreenshotsPageContent({
       {pendingIds && (
         <ConfirmDialog
           title={`Delete ${pendingCount} ${pendingNoun}?`}
-          message={`This permanently removes the ${pendingCount === 1 ? "image" : "images"} and cannot be undone. The tracked time stays on the timesheet.`}
+          message={pendingMessage}
           confirmLabel={`Delete ${pendingCount} ${pendingNoun}`}
           isDangerous
           isPending={deleteMutation.isPending}
