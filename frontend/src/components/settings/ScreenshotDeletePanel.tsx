@@ -103,15 +103,19 @@ export function ScreenshotDeletePanel() {
 
   const rows = useMemo(
     () =>
-      (membersQuery.data ?? []).map((member) => ({
-        membershipId: member.id,
-        name: member.name,
-        email: member.email,
-        override:
-          member.canDeleteScreenshots === null
-            ? null
-            : toKey(member.canDeleteScreenshots),
-      })),
+      (membersQuery.data ?? [])
+        // Finance has no access to the screenshots routes at all, so an
+        // override on one could never take effect.
+        .filter((member) => member.role !== "finance")
+        .map((member) => ({
+          membershipId: member.id,
+          name: member.name,
+          email: member.email,
+          override:
+            member.canDeleteScreenshots === null
+              ? null
+              : toKey(member.canDeleteScreenshots),
+        })),
     [membersQuery.data],
   );
 
