@@ -17,6 +17,14 @@ import type { WorkTimeLimits } from '../work-time-limits';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
+import {
+  DEFAULT_REMINDER_DELIVERY,
+  DEFAULT_REMINDER_INTERVAL_MINUTES,
+} from '../tracking-reminders';
+import type {
+  TrackingReminderDelivery,
+  TrackingReminderSettings,
+} from '../tracking-reminders';
 import type { Industry, WeekStart } from '../company-profile';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import {
@@ -57,6 +65,10 @@ export interface OrganisationProfile {
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   workTimeLimits: WorkTimeLimits;
+  trackingReminders: {
+    intervalMinutes: number;
+    delivery: TrackingReminderDelivery;
+  };
   timesheetModifyTime: TimesheetModifyTime;
   /** The Modify time setting resolved for the caller, so the UI doesn't
    * combine override and default itself. Gates every role, admins too. */
@@ -96,6 +108,8 @@ interface OrganisationSettings {
   expectedWeeklyHours?: number | null;
   weeklyLimitHours?: number | null;
   dailyLimitHours?: number | null;
+  reminderIntervalMinutes?: number;
+  reminderDelivery?: TrackingReminderDelivery;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;
@@ -347,6 +361,12 @@ export class OrganisationsService {
       ...(dto.weeklyLimitHours !== undefined
         ? { weeklyLimitHours: dto.weeklyLimitHours }
         : {}),
+      ...(dto.reminderIntervalMinutes !== undefined
+        ? { reminderIntervalMinutes: dto.reminderIntervalMinutes }
+        : {}),
+      ...(dto.reminderDelivery !== undefined
+        ? { reminderDelivery: dto.reminderDelivery }
+        : {}),
       ...(dto.dailyLimitHours !== undefined
         ? { dailyLimitHours: dto.dailyLimitHours }
         : {}),
@@ -401,6 +421,34 @@ export class OrganisationsService {
       handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       thresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+    };
+  }
+
+  /**
+   * What the desktop agent needs to decide whether to nudge someone who
+   * has not started their timer. Tracking-disabled days are removed here
+   * rather than in the agent: there is nothing to remind someone to start
+   * on a day they may not track, and the agent should not re-derive
+   * policy it can be handed.
+   */
+  /**
+   * What the desktop agent needs to decide whether to nudge someone whose
+   * app is open with no timer running. No schedule: the agent judges
+   * presence from idle time, which beats a clock for anyone whose hours
+   * are not fixed (see tracking-reminders.ts).
+   */
+  async getTrackingReminders(
+    organisationId: string,
+  ): Promise<TrackingReminderSettings> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return {
+      intervalMinutes:
+        settings.reminderIntervalMinutes ?? DEFAULT_REMINDER_INTERVAL_MINUTES,
+      delivery: settings.reminderDelivery ?? DEFAULT_REMINDER_DELIVERY,
     };
   }
 
@@ -563,6 +611,11 @@ export class OrganisationsService {
         expectedWeeklyHours: settings.expectedWeeklyHours ?? null,
         weeklyLimitHours: settings.weeklyLimitHours ?? null,
         dailyLimitHours: settings.dailyLimitHours ?? null,
+      },
+      trackingReminders: {
+        intervalMinutes:
+          settings.reminderIntervalMinutes ?? DEFAULT_REMINDER_INTERVAL_MINUTES,
+        delivery: settings.reminderDelivery ?? DEFAULT_REMINDER_DELIVERY,
       },
       timesheetModifyTime: modifyTime,
       // An admin always may; Modify time governs everyone else.

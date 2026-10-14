@@ -35,6 +35,7 @@ import { ActivitySamplesService } from '../../activity-samples/services/activity
 import { CreateActivitySamplesBatchDto } from '../../activity-samples/dto/create-activity-samples-batch.dto';
 import { CreateAppEventsBatchDto } from '../../app-events/dto/create-app-events-batch.dto';
 import type { CaptureSettings } from '../../organisations/capture-settings';
+import type { TrackingReminderSettings } from '../../organisations/tracking-reminders';
 import type { IdlePolicy } from '../../organisations/idle-policy';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { SyncUrlSessionsDto } from '../../url-sessions/dto/sync-url-sessions.dto';
@@ -72,14 +73,25 @@ export class DeviceTrackingController {
     return this.organisationsService.getIdlePolicy(request.organisationId);
   }
 
+  /**
+   * Reminders ride along on the settings poll the agent already runs,
+   * alongside `consent`, rather than adding a second loop — they are not
+   * capture, so they stay a sibling key rather than joining CaptureSettings.
+   */
   @Get('capture-settings')
-  async captureSettings(
-    @Req() request: DeviceAuthenticatedRequest,
-  ): Promise<CaptureSettings & { consent: { required: boolean } }> {
-    const captureSettings = await this.organisationsService.getCaptureSettings(
-      request.organisationId,
-      request.userId,
-    );
+  async captureSettings(@Req() request: DeviceAuthenticatedRequest): Promise<
+    CaptureSettings & {
+      consent: { required: boolean };
+      reminders: TrackingReminderSettings;
+    }
+  > {
+    const [captureSettings, reminders] = await Promise.all([
+      this.organisationsService.getCaptureSettings(
+        request.organisationId,
+        request.userId,
+      ),
+      this.organisationsService.getTrackingReminders(request.organisationId),
+    ]);
     const consentStatus = await this.resolveConsentStatus(
       request,
       captureSettings,
@@ -87,6 +99,7 @@ export class DeviceTrackingController {
     return {
       ...captureSettings,
       consent: { required: consentStatus.required },
+      reminders,
     };
   }
 
