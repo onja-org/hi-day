@@ -1,4 +1,5 @@
 import type { DesktopDevicePlatform } from './platform';
+import type { ReminderSettings } from "./tracking-reminder";
 import type { ActivitySample } from './activity-sampler';
 import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
@@ -106,6 +107,8 @@ export interface CaptureSettings {
   screenshotRetentionDays: number;
   /** See docs/adr/0015-... — whether the passive disclosure banner should be shown. Informational only; never gates capture. */
   consent: { required: boolean };
+  /** When to nudge someone who has not started their timer. */
+  reminders: ReminderSettings;
 }
 
 /**

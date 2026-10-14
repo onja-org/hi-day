@@ -31,6 +31,8 @@ import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
+import { shouldRemind } from "./tracking-reminder";
+import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
@@ -66,6 +68,8 @@ import {
   markBrowserRestartPromptSeen,
   markWaylandScreenshotGranted,
   rememberCloseAction,
+  cacheReminderSettings,
+  cachedReminderSettings,
   rememberedCloseAction,
 } from "./setup-state";
 import type { BrowserRestartPrompt } from "../preload/preload";
@@ -661,14 +665,15 @@ async function registerIpcHandlers(): Promise<void> {
   // Reads idle rather than hooking input: a segment counts as active when
   // the last input landed inside it. Same reading the idle banner uses, so
   // activity needs no native input hook (see docs/adr/0013-...).
+  const readIdleSeconds = async (): Promise<number> => {
+    const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
+    if (gnomeMs !== null && gnomeMs !== undefined) {
+      return Math.floor(gnomeMs / 1000);
+    }
+    return powerMonitor.getSystemIdleTime();
+  };
   const activitySampler = new ActivitySampler(activitySampleUploader.enqueue, {
-    readIdleSeconds: async () => {
-      const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
-      if (gnomeMs !== null && gnomeMs !== undefined) {
-        return Math.floor(gnomeMs / 1000);
-      }
-      return powerMonitor.getSystemIdleTime();
-    },
+    readIdleSeconds,
   });
   let activityTicker: ReturnType<typeof setInterval> | null = null;
 
@@ -797,17 +802,12 @@ async function registerIpcHandlers(): Promise<void> {
    * plain `show()` is ignored; and a flashing taskbar entry as the last
    * resort, cleared once the window is actually looked at.
    */
-  function alertTrackingStopped(body: string): void {
-    if (Notification.isSupported()) {
-      // Replaces rather than stacks: two of these say the same thing.
-      trackingNotification?.close();
-      trackingNotification = new Notification({
-        title: "Time tracking stopped",
-        body,
-      });
-      trackingNotification.show();
-    }
-
+  /**
+   * A brief always-on-top pass, which is what actually raises the window
+   * when a plain `show()` is ignored, and a flashing taskbar entry as the
+   * last resort — a window manager is free to refuse either.
+   */
+  function raiseWindowInsistently(): void {
     showMainWindow();
     if (!mainWindow) return;
 
@@ -824,6 +824,91 @@ async function registerIpcHandlers(): Promise<void> {
     }, TRACKING_ALERT_DWELL_MS);
   }
 
+  function alertTrackingStopped(body: string): void {
+    if (Notification.isSupported()) {
+      // Replaces rather than stacks: two of these say the same thing.
+      trackingNotification?.close();
+      trackingNotification = new Notification({
+        title: "Time tracking stopped",
+        body,
+      });
+      trackingNotification.show();
+    }
+
+    raiseWindowInsistently();
+  }
+
+  /** Ticks far more often than the interval, so a reminder lands close to
+   * the minute it is due rather than up to an interval late. */
+  const REMINDER_TICK_MS = 30_000;
+  let reminderSettings: ReminderSettings | null = null;
+  /** When this untracked stretch last got attention: the app starting, a
+   * timer stopping, or the last reminder. */
+  let untrackedSince = new Date();
+
+  function describeLateness(minutes: number): string {
+    if (minutes < 60) return `${minutes} minutes`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    const hoursPart = `${hours} hour${hours === 1 ? "" : "s"}`;
+    return rest === 0 ? hoursPart : `${hoursPart} ${rest} min`;
+  }
+
+  function deliverReminder(
+    delivery: string,
+    untrackedMinutes: number,
+    signedOut: boolean,
+  ): void {
+    const how = describeLateness(untrackedMinutes);
+    const body = signedOut
+      ? `Open Hi Day and log in to start tracking — ${how} untracked.`
+      : `You have not started tracking — ${how} untracked.`;
+
+    if (delivery === "alert") {
+      // The modal is the interruption; raising is only what puts it in
+      // front of the person.
+      mainWindow?.webContents.send("tracking:reminder", body);
+      raiseWindowInsistently();
+      return;
+    }
+
+    if (!Notification.isSupported()) return;
+    // Never steals focus, but still opens the app when clicked — a
+    // reminder nobody can act on is no reminder at all.
+    trackingNotification?.close();
+    trackingNotification = new Notification({
+      title: "Not tracking time",
+      body,
+    });
+    trackingNotification.on("click", showMainWindow);
+    trackingNotification.show();
+  }
+
+  async function reminderTick(): Promise<void> {
+    // Signed out the poll reports nothing, so the last settings this
+    // machine saw stand in — that is the morning someone needs telling.
+    const signedOut = authStore.load() === null;
+    const settings = signedOut
+      ? cachedReminderSettings(app.getPath("userData"))
+      : reminderSettings;
+
+    const now = new Date();
+    const due = shouldRemind({
+      settings,
+      now,
+      isTracking: signedOut ? false : timerRunning,
+      idleSeconds: await readIdleSeconds(),
+      since: untrackedSince,
+    });
+    if (!due || settings === null) return;
+
+    const untrackedMinutes = Math.round(
+      (now.getTime() - untrackedSince.getTime()) / 60_000,
+    );
+    untrackedSince = now;
+    deliverReminder(settings.delivery, untrackedMinutes, signedOut);
+  }
+
   const captureSettingsGate = new CaptureSettingsGate(
     authStore,
     apiClient,
@@ -834,6 +919,12 @@ async function registerIpcHandlers(): Promise<void> {
       allowedApps = settings.allowedApps;
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
+      reminderSettings = settings.reminders;
+      // Only while signed in: the gate reports an all-off object with no
+      // session, and caching that would erase the settings this is for.
+      if (authStore.load() !== null) {
+        cacheReminderSettings(app.getPath("userData"), settings.reminders);
+      }
       recomputeSampling();
     },
   );
@@ -842,6 +933,9 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      // Restart the reminder clock on any change, so stopping for lunch
+      // buys a full interval of quiet rather than a nudge seconds later.
+      untrackedSince = new Date();
       // URL capture's own copy too: a service created while the server was
       // unreachable started out "stopped", and the renderer only pushes on
       // a change it saw itself — so this is what brings it back.
@@ -851,6 +945,7 @@ async function registerIpcHandlers(): Promise<void> {
   );
   captureSettingsGate.start();
   timerStatusGate.start();
+  setInterval(() => void reminderTick(), REMINDER_TICK_MS);
 
   // Set once a pairing request is started, cleared once it's claimed or
   // expires — the renderer's poll doesn't need to pass the code back on

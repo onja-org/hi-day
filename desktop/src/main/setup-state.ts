@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ReminderSettings } from './tracking-reminder';
 
 const SETUP_FILE_NAME = 'setup-state.json';
 
@@ -11,6 +12,7 @@ interface SetupState {
   browserRestartPromptSeen?: boolean;
   closeAction?: CloseAction;
   waylandScreenshotGranted?: boolean;
+  reminderSettings?: ReminderSettings;
 }
 
 /**
@@ -64,6 +66,25 @@ export function hasWaylandScreenshotGrant(userDataDir: string): boolean {
 
 export function markWaylandScreenshotGranted(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
+}
+
+/**
+ * The last reminder settings the server sent. Kept so a signed-out agent
+ * can still say "open Hi Day and log in" on a morning nobody started a
+ * timer — settings arrive over an authenticated poll, so without this a
+ * signed-out machine is silent exactly when the nudge is most useful.
+ */
+export function cachedReminderSettings(
+  userDataDir: string,
+): ReminderSettings | null {
+  return read(userDataDir).reminderSettings ?? null;
+}
+
+export function cacheReminderSettings(
+  userDataDir: string,
+  settings: ReminderSettings,
+): void {
+  write(userDataDir, { ...read(userDataDir), reminderSettings: settings });
 }
 
 function write(userDataDir: string, state: SetupState): void {

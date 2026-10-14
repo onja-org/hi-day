@@ -1,4 +1,5 @@
 import type { AllowedApps, AppUrlTracking } from "./api-client";
+import type { ReminderSettings } from "./tracking-reminder";
 
 export interface CaptureSettingsSession {
   load(): { deviceToken: string } | null;
@@ -13,6 +14,9 @@ export interface CaptureSettingsValue {
   screenshotFrequencySeconds: number;
   /** See docs/adr/0015-... — purely informational, drives the renderer's passive disclosure banner. Never gates capture. Same shape as ApiClient's own CaptureSettings.consent, so a real API result needs no mapping here. */
   consent: { required: boolean };
+  /** Rides along on this poll rather than adding a second loop; not
+   * capture, so it stays its own object. */
+  reminders: ReminderSettings;
 }
 
 // consent.required defaults true (not false, unlike every other field here):
@@ -28,6 +32,8 @@ const OFF_SETTINGS: CaptureSettingsValue = {
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
   consent: { required: true },
+  // Signed out, there is no timer to remind anyone to start.
+  reminders: { intervalMinutes: 0, delivery: "alert" },
 };
 
 export interface CaptureSettingsResult {
@@ -105,6 +111,15 @@ export class CaptureSettingsGate {
     return null;
   }
 
+  /** Field by field, not by identity: every poll builds a fresh object. */
+  private sameReminders(other: ReminderSettings): boolean {
+    const mine = this.lastSettings.reminders;
+    return (
+      mine.intervalMinutes === other.intervalMinutes &&
+      mine.delivery === other.delivery
+    );
+  }
+
   private applyIfChanged(settings: CaptureSettingsValue): void {
     if (
       settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
@@ -113,7 +128,10 @@ export class CaptureSettingsGate {
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&
-      settings.consent.required === this.lastSettings.consent.required
+      settings.consent.required === this.lastSettings.consent.required &&
+      // Easy to forget, and the failure is silent: without this an admin
+      // turning reminders on never reaches an agent that is already up.
+      this.sameReminders(settings.reminders)
     ) {
       return;
     }

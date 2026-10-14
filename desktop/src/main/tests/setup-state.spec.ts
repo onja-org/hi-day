@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  cacheReminderSettings,
+  cachedReminderSettings,
   hasSeenBrowserRestartPrompt,
   hasWaylandScreenshotGrant,
   markBrowserRestartPromptSeen,
@@ -10,6 +12,7 @@ import {
   rememberCloseAction,
   rememberedCloseAction,
 } from '../setup-state';
+import type { ReminderSettings } from '../tracking-reminder';
 
 describe('setup state', () => {
   let userDataDir: string;
@@ -153,5 +156,46 @@ describe('remembered close action', () => {
     writeFileSync(join(userDataDir, 'setup-state.json'), JSON.stringify({ closeAction: 'explode' }));
 
     expect(rememberedCloseAction(userDataDir)).toBeNull();
+  });
+});
+
+describe('cached reminder settings', () => {
+  const SETTINGS: ReminderSettings = {
+    intervalMinutes: 10,
+    delivery: 'alert',
+  };
+
+  let userDataDir: string;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-reminder-cache-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('has nothing to offer before the first poll', () => {
+    expect(cachedReminderSettings(userDataDir)).toBeNull();
+  });
+
+  it('reads back whole, so a signed-out agent still knows the shift', () => {
+    cacheReminderSettings(userDataDir, SETTINGS);
+
+    expect(cachedReminderSettings(userDataDir)).toEqual(SETTINGS);
+  });
+
+  it('leaves the other remembered answers alone', () => {
+    rememberCloseAction(userDataDir, 'minimize');
+    cacheReminderSettings(userDataDir, SETTINGS);
+
+    expect(rememberedCloseAction(userDataDir)).toBe('minimize');
+    expect(cachedReminderSettings(userDataDir)).toEqual(SETTINGS);
+  });
+
+  it('reads a hand-broken file as "nothing cached" rather than throwing', () => {
+    writeFileSync(join(userDataDir, 'setup-state.json'), '{ not json', 'utf-8');
+
+    expect(cachedReminderSettings(userDataDir)).toBeNull();
   });
 });

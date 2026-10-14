@@ -260,6 +260,12 @@ const api = {
         listener(notice),
       );
     },
+    /** A reminder that the timer is not running — see tracking-reminder.ts. */
+    onTrackingReminder: (listener: (message: string) => void): void => {
+      ipcRenderer.on("tracking:reminder", (_event, message: string) =>
+        listener(message),
+      );
+    },
     onReopened: (listener: () => void): void => {
       ipcRenderer.on("window:reopened", () => listener());
     },

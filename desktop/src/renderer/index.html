@@ -181,6 +181,25 @@
               <ul id="idle-assign-list" class="idle-assign-list" hidden></ul>
             </div>
 
+            <div id="reminder-banner" class="idle-screen" role="alert" hidden>
+              <span class="centred-icon" aria-hidden="true">
+                <svg viewBox="0 0 256 256" width="24" height="24">
+                  <path
+                    d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,104a8,8,0,0,1-8,8H72a8,8,0,0,1,0-16h48V72a8,8,0,0,1,16,0Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </span>
+              <h2 class="centred-title">You're not tracking time</h2>
+              <p id="reminder-banner-message" class="centred-message"></p>
+              <button id="reminder-start-button" type="button" class="button button-primary">
+                Start timer
+              </button>
+              <button id="reminder-dismiss-button" type="button" class="button button-secondary">
+                Not now
+              </button>
+            </div>
+
             <div class="timer-section">
               <div id="timer-card" class="timer-card">
                 <div class="timer-card-row">
