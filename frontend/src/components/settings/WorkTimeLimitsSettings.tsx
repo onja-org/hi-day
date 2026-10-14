@@ -17,6 +17,7 @@ import type { ActiveMemberListItem } from "@/types/membership";
 import type { WorkTimeLimits } from "@/types/organisation";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Spinner } from "@/components/Spinner";
+import { TrackingRemindersPanel } from "./TrackingRemindersPanel";
 import { WorkTimeLimitsDefaults } from "./WorkTimeLimitsDefaults";
 import { WorkTimeLimitsMemberRow } from "./WorkTimeLimitsMemberRow";
 
@@ -148,6 +149,8 @@ export function WorkTimeLimitsSettings() {
 
         <WorkTimeLimitsDefaults draft={current} onChange={setDraft} />
       </section>
+
+      <TrackingRemindersPanel />
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-0.5">

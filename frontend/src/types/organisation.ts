@@ -48,6 +48,14 @@ export type WorkTimeLimits = {
   dailyLimitHours: number | null;
 };
 
+export type TrackingReminderDelivery = "notification" | "alert";
+
+export type TrackingReminders = {
+  /** `0` switches reminders off, as with screenshot frequency. */
+  intervalMinutes: number;
+  delivery: TrackingReminderDelivery;
+};
+
 export type OrganisationProfile = {
   id: number;
   name: string;
@@ -62,6 +70,7 @@ export type OrganisationProfile = {
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   workTimeLimits: WorkTimeLimits;
+  trackingReminders: TrackingReminders;
   timesheetModifyTime: TimesheetModifyTime;
   /** Whether *you* may add manual time and edit tracked time: always for an
    * admin, otherwise per Modify time. Your role decides whose time. */
@@ -135,6 +144,8 @@ export type UpdateOrganisationInput = {
   expectedWeeklyHours?: number | null;
   weeklyLimitHours?: number | null;
   dailyLimitHours?: number | null;
+  reminderIntervalMinutes?: number;
+  reminderDelivery?: TrackingReminderDelivery;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;
