@@ -202,6 +202,8 @@ describe('OrganisationsService', () => {
         workingHoursPerDay: 8,
         timezone: 'UTC',
         weekStartsOn: 'monday',
+        membersCanDeleteScreenshots: false,
+        canDeleteOwnScreenshots: false,
         workTimeLimits: {
           expectedWorkDays: [1, 2, 3, 4, 5],
           trackingDisabledDays: [],

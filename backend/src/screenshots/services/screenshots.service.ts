@@ -10,6 +10,7 @@ import { Between, In, LessThan, Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Screenshot } from '../../database/entities/screenshot.entity';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
@@ -255,6 +256,50 @@ export class ScreenshotsService {
       throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
     }
     return date;
+  }
+
+  /**
+   * Removes one screenshot and the object behind it. An admin may delete
+   * anyone's; everyone else only their own, and only while the
+   * Organisation allows it — a capture is evidence of someone's work, so
+   * the power to erase it is granted, not assumed.
+   */
+  async deleteScreenshot(
+    organisationId: string,
+    userId: string,
+    screenshotId: string,
+  ): Promise<void> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const screenshot = await this.screenshots.findOne({
+      where: { id: screenshotId, organisationId },
+    });
+    if (!screenshot) {
+      throw new NotFoundException('Screenshot not found.');
+    }
+
+    const isAdmin = membership.role === MembershipRole.ADMIN;
+    if (!isAdmin) {
+      if (screenshot.membershipId !== membership.id) {
+        throw new ForbiddenException(
+          'You can only delete your own screenshots.',
+        );
+      }
+      const allowed =
+        membership.canDeleteScreenshots ??
+        (await this.organisationsService.membersCanDeleteScreenshots(
+          organisationId,
+        ));
+      if (!allowed) {
+        throw new ForbiddenException(
+          'Your organisation does not allow deleting your own screenshots.',
+        );
+      }
+    }
+
+    // Row first: an object left behind is invisible clutter, where a row
+    // pointing at a deleted object is a broken tile in the gallery.
+    await this.screenshots.delete({ id: screenshot.id });
+    await this.storage.deleteObjects([screenshot.storageKey]);
   }
 
   private async getActiveMembership(

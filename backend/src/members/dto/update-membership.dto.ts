@@ -123,6 +123,12 @@ export class UpdateMembershipDto {
   @Min(MIN_LIMIT_HOURS)
   @Max(24)
   dailyLimitHours?: number | null;
+  /** `null` inherits the Organisation's setting. */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  canDeleteScreenshots?: boolean | null;
+
   /** `null` inherits; `0` is "None". Hence `@Min(0)`, where the
    * organisation's own field floors at 30 — it has no "None", that being
    * what `screenshotsEnabled` is for. */

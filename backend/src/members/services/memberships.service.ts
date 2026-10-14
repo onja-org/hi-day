@@ -44,6 +44,8 @@ export interface ActiveMemberSummary {
   dailyLimitHours: number | null;
   /** `null` inherits the Organisation's; `0` is "None". */
   screenshotFrequencySeconds: number | null;
+  /** `null` inherits the Organisation's screenshot-deletion setting. */
+  canDeleteScreenshots: boolean | null;
   /** `null` means inherit the Organisation's Timesheets "Modify time" default. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
@@ -259,6 +261,9 @@ export class MembershipsService {
     }
     if (dto.dailyLimitHours !== undefined) {
       membership.dailyLimitHours = toNumericColumn(dto.dailyLimitHours);
+    }
+    if (dto.canDeleteScreenshots !== undefined) {
+      membership.canDeleteScreenshots = dto.canDeleteScreenshots;
     }
     if (dto.screenshotFrequencySeconds !== undefined) {
       membership.screenshotFrequencySeconds = dto.screenshotFrequencySeconds;
@@ -524,7 +529,8 @@ export class MembershipsService {
       expectedWeeklyHours: fromNumericColumn(membership.expectedWeeklyHours),
       weeklyLimitHours: fromNumericColumn(membership.weeklyLimitHours),
       dailyLimitHours: fromNumericColumn(membership.dailyLimitHours),
-      screenshotFrequencySeconds: membership.screenshotFrequencySeconds,
+      screenshotFrequencySeconds: membership.screenshotFrequencySeconds ?? null,
+      canDeleteScreenshots: membership.canDeleteScreenshots ?? null,
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
     };
