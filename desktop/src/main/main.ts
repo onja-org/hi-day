@@ -841,7 +841,7 @@ async function registerIpcHandlers(): Promise<void> {
   /** Ticks far more often than the interval, so a reminder lands close to
    * the minute it is due rather than up to an interval late. */
   const REMINDER_TICK_MS = 30_000;
-  let reminderSettings: ReminderSettings | null = null;
+  let reminderSettings: ReminderSettings | null | undefined = null;
   /** When this untracked stretch last got attention: the app starting, a
    * timer stopping, or the last reminder. */
   let untrackedSince = new Date();
@@ -900,7 +900,7 @@ async function registerIpcHandlers(): Promise<void> {
       idleSeconds: await readIdleSeconds(),
       since: untrackedSince,
     });
-    if (!due || settings === null) return;
+    if (!due || !settings) return;
 
     const untrackedMinutes = Math.round(
       (now.getTime() - untrackedSince.getTime()) / 60_000,

@@ -13,7 +13,9 @@ export interface ReminderSettings {
 }
 
 export interface ReminderInput {
-  settings: ReminderSettings | null;
+  /** Undefined as well as null: a cache written by an older build, or a
+   * server that does not send the field, must simply mean "off". */
+  settings: ReminderSettings | null | undefined;
   now: Date;
   isTracking: boolean;
   /** Seconds since the last keyboard or mouse input. */
@@ -42,7 +44,7 @@ export const PRESENCE_IDLE_LIMIT_SECONDS = 10 * 60;
 export function shouldRemind(input: ReminderInput): boolean {
   const { settings, now, isTracking, idleSeconds, since } = input;
 
-  if (settings === null) return false;
+  if (!settings) return false;
   if (settings.intervalMinutes <= 0) return false;
   if (isTracking) return false;
   if (idleSeconds > PRESENCE_IDLE_LIMIT_SECONDS) return false;

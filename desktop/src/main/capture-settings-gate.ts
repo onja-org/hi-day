@@ -19,6 +19,12 @@ export interface CaptureSettingsValue {
   reminders: ReminderSettings;
 }
 
+/** Reminders off, and the default delivery for when they are turned on. */
+const OFF_REMINDERS: ReminderSettings = {
+  intervalMinutes: 0,
+  delivery: "alert",
+};
+
 // consent.required defaults true (not false, unlike every other field here):
 // with no session/settings loaded yet, showing the disclosure banner is the
 // safer default until the gate actually confirms it isn't needed — this no
@@ -33,7 +39,7 @@ const OFF_SETTINGS: CaptureSettingsValue = {
   screenshotFrequencySeconds: 0,
   consent: { required: true },
   // Signed out, there is no timer to remind anyone to start.
-  reminders: { intervalMinutes: 0, delivery: "alert" },
+  reminders: OFF_REMINDERS,
 };
 
 export interface CaptureSettingsResult {
@@ -106,7 +112,15 @@ export class CaptureSettingsGate {
     deviceToken: string,
   ): Promise<CaptureSettingsValue | null> {
     const result = await this.apiClient.getCaptureSettings(deviceToken);
-    if (result.ok && result.data) return result.data;
+    // Normalised, not trusted: the type describes what a current server
+    // sends, and a server older than this agent omits `reminders`
+    // entirely. A missing field must leave reminders off, never take the
+    // app down with it.
+    if (result.ok && result.data) {
+      return result.data.reminders
+        ? result.data
+        : { ...result.data, reminders: OFF_REMINDERS };
+    }
     if (result.unauthorized) return OFF_SETTINGS;
     return null;
   }

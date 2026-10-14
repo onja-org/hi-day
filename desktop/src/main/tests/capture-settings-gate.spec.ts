@@ -267,4 +267,22 @@ describe('CaptureSettingsGate', () => {
     // repeated 10 is not reported twice.
     expect(seen).toEqual([10, 5, 0]);
   });
+
+  it('survives a server too old to send reminders at all', async () => {
+    const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
+    const withoutReminders = settings({ windowTrackingEnabled: true });
+    delete (withoutReminders as Partial<CaptureSettingsValue>).reminders;
+    const gate = new CaptureSettingsGate(
+      makeSession('token'),
+      makeClient({ ok: true, data: withoutReminders }),
+      onChange,
+    );
+
+    await expect(gate.pollOnce()).resolves.toBeUndefined();
+
+    expect(onChange.mock.calls[0][0].reminders).toEqual({
+      intervalMinutes: 0,
+      delivery: 'alert',
+    });
+  });
 });
