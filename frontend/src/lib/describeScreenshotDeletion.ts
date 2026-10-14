@@ -17,11 +17,8 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/**
- * Spells out exactly what a delete would take — how many screenshots, the
- * span they cover and which projects they sit under — so a selection built
- * up over a long scroll can be checked before it goes.
- */
+/** Spells out what a delete would take, so a selection built up over a
+ * long scroll can be checked before it goes. */
 export function describeScreenshotDeletion(
   screenshots: DeletableScreenshot[],
   projectName: (projectId: string) => string | undefined,

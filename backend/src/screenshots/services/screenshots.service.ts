@@ -259,10 +259,8 @@ export class ScreenshotsService {
   }
 
   /**
-   * Removes one screenshot and the object behind it. An admin may delete
-   * anyone's; everyone else only their own, and only while the
-   * Organisation allows it — a capture is evidence of someone's work, so
-   * the power to erase it is granted, not assumed.
+   * An admin may delete anyone's; everyone else only their own, and only
+   * while the Organisation (or their own override) allows it.
    */
   async deleteScreenshot(
     organisationId: string,

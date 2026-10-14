@@ -17,8 +17,7 @@ type ScreenshotTileProps = {
   onDelete?: (screenshotId: string) => void;
   isDeleting: boolean;
   isSelected: boolean;
-  /** True while anything in the gallery is ticked, so every other tick box
-   * stays visible rather than needing a hover to be found. */
+  /** True while anything is ticked, so every tick box stays visible. */
   isSelecting: boolean;
   onSelectedChange: (selected: boolean) => void;
 };
@@ -56,9 +55,8 @@ export function ScreenshotTile({
           className="object-cover"
         />
         {onDelete && (
-          // Revealed on hover, as the gallery it mirrors does — but always
-          // present for keyboard and touch, which have no hover. The scrim
-          // keeps the controls legible over a light screenshot.
+          // Revealed on hover, but always present for keyboard and touch,
+          // which have no hover.
           <>
             <div
               className={clsx(

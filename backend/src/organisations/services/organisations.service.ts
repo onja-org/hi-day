@@ -590,8 +590,7 @@ export class OrganisationsService {
       membersCanDeleteScreenshots:
         settings.membersCanDeleteScreenshots ?? false,
       // Finance is off the screenshots endpoints entirely (see
-      // ScreenshotsController's @RequireRole), so the flag must not promise
-      // a delete button that could only ever be refused.
+      // ScreenshotsController's @RequireRole), so never promise it one.
       canDeleteOwnScreenshots:
         role !== MembershipRole.FINANCE &&
         (role === MembershipRole.ADMIN ||

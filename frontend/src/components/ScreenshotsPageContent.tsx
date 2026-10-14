@@ -30,8 +30,8 @@ export function ScreenshotsPageContent({
     projectId,
   });
   const [tickedIds, setTickedIds] = useState<string[]>([]);
-  /** Non-null while the confirmation dialog is open, holding what it would
-   * delete — one id from a tile's button, or the whole selection. */
+  /** What the open confirmation would delete — one id from a tile's
+   * button, or the whole selection. */
   const [pendingIds, setPendingIds] = useState<string[] | null>(null);
   // Resolved server-side: an admin always, everyone else only where the
   // organisation (or their own override) allows it.
@@ -44,9 +44,8 @@ export function ScreenshotsPageContent({
   });
 
   const screenshots = screenshotsQuery.data ?? [];
-  // Derived rather than reset in an effect: changing the day or filter
-  // swaps the gallery, and a tick on a screenshot that is no longer shown
-  // would otherwise delete something the user cannot see.
+  // Derived, not reset in an effect: a tick left over from another day
+  // or filter would delete something the user can no longer see.
   const visibleIds = new Set(screenshots.map((screenshot) => screenshot.id));
   const selectedIds = tickedIds.filter((id) => visibleIds.has(id));
   const deletingIds = deleteMutation.isPending
@@ -55,8 +54,7 @@ export function ScreenshotsPageContent({
 
   const pendingCount = pendingIds?.length ?? 0;
   const pendingNoun = pendingCount === 1 ? "screenshot" : "screenshots";
-  // "all" so a screenshot taken against a since-archived project still
-  // resolves to its name, as the tile's own badge does.
+  // "all" so a since-archived project still resolves to its name.
   const projects = useProjects(organisationId, { status: "all" }).data;
   const pendingMessage = describeScreenshotDeletion(
     screenshots.filter((screenshot) => pendingIds?.includes(screenshot.id)),

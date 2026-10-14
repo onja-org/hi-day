@@ -10,8 +10,8 @@ type ScreenshotSelectionBarProps = {
   onDelete: () => void;
 };
 
-/** Floats over the gallery while anything is ticked, so the actions stay
- * reachable however far down the grid the selection was made. */
+/** Floats over the gallery so the actions stay reachable however far
+ * down the grid the selection was made. */
 export function ScreenshotSelectionBar({
   selectedCount,
   totalCount,

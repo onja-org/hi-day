@@ -26,10 +26,10 @@ function summarise(
 }
 
 /**
- * Deletes one or several screenshots. There is no bulk endpoint, so this
- * issues one DELETE each and a batch can be *partly* applied — hence a
- * count rather than an all-or-nothing claim. Only the first failure's
- * message is surfaced: refusals in one batch share the same reason.
+ * There is no bulk endpoint, so this issues one DELETE each and a batch
+ * can be *partly* applied — hence a count rather than an all-or-nothing
+ * claim. Only the first failure's message is surfaced: refusals in one
+ * batch share the same reason.
  */
 export function useDeleteScreenshots(
   organisationId: string,
