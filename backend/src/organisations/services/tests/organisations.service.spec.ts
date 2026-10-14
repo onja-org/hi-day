@@ -219,6 +219,29 @@ describe('OrganisationsService', () => {
       });
     });
 
+    it('never reports a delete permission for finance, which cannot reach the screenshots endpoints at all', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.FINANCE,
+        organisation: {
+          id: 'org-1',
+          publicId: 100000,
+          name: 'Acme Inc',
+          settings: { membersCanDeleteScreenshots: true },
+        },
+      });
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+
+      const profile = await service.findCurrentForUser('user-1');
+
+      expect(profile.canDeleteOwnScreenshots).toBe(false);
+    });
+
     it('throws when the user has no membership', async () => {
       const findOne = jest.fn().mockResolvedValue(null);
       const service = new OrganisationsService(
