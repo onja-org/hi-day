@@ -202,6 +202,13 @@ describe('OrganisationsService', () => {
         workingHoursPerDay: 8,
         timezone: 'UTC',
         weekStartsOn: 'monday',
+        workTimeLimits: {
+          expectedWorkDays: [1, 2, 3, 4, 5],
+          trackingDisabledDays: [],
+          expectedWeeklyHours: null,
+          weeklyLimitHours: null,
+          dailyLimitHours: null,
+        },
         userId: 'user-1',
         isOwner: false,
         deletionScheduledFor: null,

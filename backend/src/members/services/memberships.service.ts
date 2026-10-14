@@ -36,6 +36,12 @@ export interface ActiveMemberSummary {
   appUrlTracking: AppUrlTracking | null;
   /** `null` means inherit the Organisation's "Allowed apps" default. */
   allowedApps: AllowedApps | null;
+  /** Work time limit overrides; each `null` inherits the Organisation's. */
+  expectedWorkDays: number[] | null;
+  trackingDisabledDays: number[] | null;
+  expectedWeeklyHours: number | null;
+  weeklyLimitHours: number | null;
+  dailyLimitHours: number | null;
   /** `null` means inherit the Organisation's Timesheets "Modify time" default. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
@@ -55,6 +61,16 @@ export interface PasswordResetResult {
   email: string | null;
   outcome: 'sent' | 'skipped';
   message?: string;
+}
+
+/** `numeric` crosses the driver as a string; null stays null, meaning
+ * "inherit" rather than zero. */
+function toNumericColumn(value: number | null): string | null {
+  return value === null ? null : String(value);
+}
+
+function fromNumericColumn(value: string | null): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 @Injectable()
@@ -227,6 +243,21 @@ export class MembershipsService {
     if (dto.allowedApps !== undefined) {
       membership.allowedApps = dto.allowedApps;
     }
+    if (dto.expectedWorkDays !== undefined) {
+      membership.expectedWorkDays = dto.expectedWorkDays;
+    }
+    if (dto.trackingDisabledDays !== undefined) {
+      membership.trackingDisabledDays = dto.trackingDisabledDays;
+    }
+    if (dto.expectedWeeklyHours !== undefined) {
+      membership.expectedWeeklyHours = toNumericColumn(dto.expectedWeeklyHours);
+    }
+    if (dto.weeklyLimitHours !== undefined) {
+      membership.weeklyLimitHours = toNumericColumn(dto.weeklyLimitHours);
+    }
+    if (dto.dailyLimitHours !== undefined) {
+      membership.dailyLimitHours = toNumericColumn(dto.dailyLimitHours);
+    }
 
     if (dto.timesheetModifyTime !== undefined) {
       membership.timesheetModifyTime = dto.timesheetModifyTime;
@@ -286,7 +317,14 @@ export class MembershipsService {
       );
     }
 
-    return this.toSummary(membership);
+    // Re-read rather than echo the object we just built: the hour columns
+    // are `numeric(5,2)`, so Postgres rounds what it stores, and returning
+    // the in-memory value would report something the database doesn't hold.
+    const saved = await this.memberships.findOne({
+      where: { id: membershipId },
+      relations: { user: true, teamMemberships: true },
+    });
+    return this.toSummary(saved ?? membership);
   }
 
   /**
@@ -474,6 +512,13 @@ export class MembershipsService {
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
       allowedApps: membership.allowedApps,
+      // `?? null`, because a partially-selected row leaves these
+      // undefined, and the summary promises null for "inherits".
+      expectedWorkDays: membership.expectedWorkDays ?? null,
+      trackingDisabledDays: membership.trackingDisabledDays ?? null,
+      expectedWeeklyHours: fromNumericColumn(membership.expectedWeeklyHours),
+      weeklyLimitHours: fromNumericColumn(membership.weeklyLimitHours),
+      dailyLimitHours: fromNumericColumn(membership.dailyLimitHours),
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
     };

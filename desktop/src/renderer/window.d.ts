@@ -63,6 +63,7 @@ declare global {
    * running elsewhere shows the total already accrued (ADR-0022).
    */
     workedSeconds: number;
+    limitReached?: { kind: "daily" | "weekly"; limitHours: number };
   }
 
   type IdleHandling = 'off' | 'flag' | 'auto_subtract';
@@ -166,7 +167,8 @@ declare global {
       urlCapture: {
         timerStateChanged: (running: boolean) => void;
       };
-      windowControls: {
+      trackingAlert: (body: string) => Promise<void>;
+    windowControls: {
         minimise: () => Promise<void>;
         show: () => Promise<void>;
         close: () => Promise<void>;

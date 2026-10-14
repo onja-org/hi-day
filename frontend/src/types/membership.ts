@@ -26,6 +26,12 @@ export type ActiveMember = {
   appUrlTracking: AppUrlTracking | null;
   /** `null` means inherit the organisation's Allowed apps default. */
   allowedApps: AllowedApps | null;
+  /** Work time limit overrides; each `null` inherits the organisation's. */
+  expectedWorkDays: number[] | null;
+  trackingDisabledDays: number[] | null;
+  expectedWeeklyHours: number | null;
+  weeklyLimitHours: number | null;
+  dailyLimitHours: number | null;
   /** Per-member override of the org's Timesheets "Modify time" default; `null` inherits. */
   timesheetModifyTime: TimesheetModifyTime | null;
   /** Per-member override of the org's Timesheets "Require approval" default; `null` inherits. */
@@ -60,6 +66,11 @@ export type UpdateMembershipInput = {
   /** `null` clears the override; omit to leave the override as-is. */
   appUrlTracking?: AppUrlTracking | null;
   allowedApps?: AllowedApps | null;
+  expectedWorkDays?: number[] | null;
+  trackingDisabledDays?: number[] | null;
+  expectedWeeklyHours?: number | null;
+  weeklyLimitHours?: number | null;
+  dailyLimitHours?: number | null;
   /** `null` clears the override; omit to leave the override as-is. */
   timesheetModifyTime?: TimesheetModifyTime | null;
   /** `null` clears the override; omit to leave the override as-is. */

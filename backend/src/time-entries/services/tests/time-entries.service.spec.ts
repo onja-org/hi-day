@@ -972,6 +972,148 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  describe('work time limits', () => {
+    const TODAY = new Date().getDay();
+    const NOT_TODAY = [(TODAY + 1) % 7, (TODAY + 2) % 7];
+
+    function makeOrgRepo(settings: Record<string, unknown>) {
+      return {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ settings: { timezone: 'UTC', ...settings } }),
+      } as unknown as Repository<Organisation>;
+    }
+
+    /** Only the limit's own lookup filters `startedAt`, so only it sees
+     * `worked`. */
+    function makeEntriesRepoFor(worked: Partial<TimeEntry>[]) {
+      const save = jest.fn((entry: unknown) => Promise.resolve(entry));
+      const repo = makeTimeEntriesRepo({
+        save,
+        find: jest.fn((options: { where?: Record<string, unknown> }) =>
+          Promise.resolve(
+            options.where && 'startedAt' in options.where ? worked : [],
+          ),
+        ),
+      });
+      return { repo, save };
+    }
+
+    const runningNow = {
+      id: 'running-1',
+      membershipId: 'm-1',
+      deviceId: null,
+      projectId: 'project-1',
+      startedAt: new Date(Date.now() - 60 * 1000),
+      endedAt: null,
+      project: { name: 'Website', colour: 'blue' },
+    } as unknown as TimeEntry;
+
+    /** The running lookup filters `endedAt`; the limit's filters `startedAt`. */
+    function makePollRepo(worked: TimeEntry[]) {
+      return makeTimeEntriesRepo({
+        find: jest.fn((options: { where?: Record<string, unknown> }) =>
+          Promise.resolve(
+            options.where && 'startedAt' in options.where
+              ? worked
+              : [runningNow],
+          ),
+        ),
+      });
+    }
+
+    const twoHoursToday = [
+      {
+        id: 'worked-1',
+        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        endedAt: new Date(),
+      } as unknown as TimeEntry,
+    ];
+
+    function start(service: ReturnType<typeof makeService>) {
+      return service.start(
+        'org-1',
+        'user-1',
+        'project-1',
+        undefined,
+        TimeEntrySource.WEB,
+        null,
+      );
+    }
+
+    it('refuses a timer on a day tracking is switched off', async () => {
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+      });
+
+      await expect(start(service)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows a day that is not switched off', async () => {
+      const { repo, save } = makeEntriesRepoFor([]);
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ trackingDisabledDays: NOT_TODAY }),
+        timeEntriesRepo: repo,
+      });
+
+      await start(service);
+
+      expect(save).toHaveBeenCalled();
+    });
+
+    it('ends a running timer on the poll that notices the limit', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ dailyLimitHours: 1 }),
+        timeEntriesRepo: makePollRepo(twoHoursToday),
+        dataSource,
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.limitReached).toEqual({ kind: 'daily', limitHours: 1 });
+      // Open pauses closed, then the entries ended.
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports nothing while the limit is not reached', async () => {
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ dailyLimitHours: 8 }),
+        timeEntriesRepo: makePollRepo(twoHoursToday),
+        dataSource,
+      });
+
+      const current = await service.currentForAccount('org-1', 'user-1');
+
+      expect(current.limitReached).toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('refuses once the daily limit is already reached', async () => {
+      const { repo } = makeEntriesRepoFor(twoHoursToday);
+      const service = makeService({
+        organisationsRepo: makeOrgRepo({ dailyLimitHours: 1 }),
+        timeEntriesRepo: repo,
+      });
+
+      await expect(start(service)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('does not treat expected weekly hours as a cap', async () => {
+      const { repo, save } = makeEntriesRepoFor(twoHoursToday);
+      const service = makeService({
+        // A one-hour target, two hours worked, and no limit set.
+        organisationsRepo: makeOrgRepo({ expectedWeeklyHours: 1 }),
+        timeEntriesRepo: repo,
+      });
+
+      await start(service);
+
+      expect(save).toHaveBeenCalled();
+    });
+  });
+
   describe('createManual', () => {
     // Manual entry is admin-only, so every baseline case here needs an
     // admin caller — a plain member can't reach any of this code.

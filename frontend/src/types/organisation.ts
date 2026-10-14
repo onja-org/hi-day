@@ -36,6 +36,18 @@ export type AllowedApps = "all" | "desktop_only" | "mobile_only";
  */
 export type TimesheetModifyTime = "off" | "add_edit";
 
+/** What the organisation expects of a week, and the ceilings on tracking.
+ * Expected hours are a target for reports; only the limits cap. */
+export type WorkTimeLimits = {
+  /** 0 = Sunday, matching `Date.getDay()`. */
+  expectedWorkDays: number[];
+  trackingDisabledDays: number[];
+  /** `null` means removed (target) or no limit (ceilings). */
+  expectedWeeklyHours: number | null;
+  weeklyLimitHours: number | null;
+  dailyLimitHours: number | null;
+};
+
 export type OrganisationProfile = {
   id: number;
   name: string;
@@ -49,6 +61,7 @@ export type OrganisationProfile = {
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
+  workTimeLimits: WorkTimeLimits;
   timesheetModifyTime: TimesheetModifyTime;
   /** Whether *you* may add manual time and edit tracked time: always for an
    * admin, otherwise per Modify time. Your role decides whose time. */
@@ -117,6 +130,11 @@ export type UpdateOrganisationInput = {
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
+  expectedWorkDays?: number[];
+  trackingDisabledDays?: number[];
+  expectedWeeklyHours?: number | null;
+  weeklyLimitHours?: number | null;
+  dailyLimitHours?: number | null;
   timesheetModifyTime?: TimesheetModifyTime;
   timesheetRequireApproval?: boolean;
   timesheetManagersApproveOwn?: boolean;

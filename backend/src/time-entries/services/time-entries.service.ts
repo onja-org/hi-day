@@ -35,6 +35,11 @@ import {
   isTimerSourceAllowed,
 } from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
+import {
+  DAY_LABELS,
+  DEFAULT_WORK_TIME_LIMITS,
+} from '../../organisations/work-time-limits';
+import type { WorkTimeLimits } from '../../organisations/work-time-limits';
 import { Organisation } from '../../database/entities/organisation.entity';
 import {
   DEFAULT_TIMESHEET_MODIFY_TIME,
@@ -153,6 +158,19 @@ export interface TimeEntryListItem extends TimeEntrySummary {
  */
 type OverlapScope = 'tracked' | 'manual';
 
+/** Why a timer was ended for someone rather than by them. */
+/**
+ * How long after a limit stop the clients are still told about it. The
+ * web and the agent poll independently, so the one that does the stopping
+ * is not necessarily the one the person is looking at.
+ */
+const LIMIT_NOTICE_WINDOW_MS = 2 * 60 * 1000;
+
+export interface WorkTimeLimitReached {
+  kind: 'daily' | 'weekly';
+  limitHours: number;
+}
+
 export interface CurrentTimeEntry {
   /** The web's own entry, never a Device's — what its controls act on. */
   entry: TimeEntrySummary | null;
@@ -166,6 +184,8 @@ export interface CurrentTimeEntry {
    * surfaces disagree about how long a timer has been running.
    */
   now: Date;
+  /** Set on the one read that ends the timer, so the modal shows once. */
+  limitReached?: WorkTimeLimitReached;
   /**
    * The person's worked seconds across every Device currently tracking,
    * counting shared wall-clock time once. Clients display this rather than
@@ -314,14 +334,29 @@ export class TimeEntriesService {
       where: { membershipId: membership.id, endedAt: IsNull() },
       order: { startedAt: 'ASC' },
     });
-    const own = running.find((entry) => entry.deviceId === null) ?? null;
-    const onADevice = running.find((entry) => entry.deviceId !== null) ?? null;
+    const limitReached = await this.stopIfOverWorkTimeLimit(
+      membership,
+      organisationId,
+      running,
+    );
+    // Re-read after a stop, or the response would still show the timer
+    // this very call just ended.
+    const live = limitReached
+      ? await this.timeEntries.find({
+          where: { membershipId: membership.id, endedAt: IsNull() },
+          order: { startedAt: 'ASC' },
+        })
+      : running;
+
+    const own = live.find((entry) => entry.deviceId === null) ?? null;
+    const onADevice = live.find((entry) => entry.deviceId !== null) ?? null;
 
     return {
       entry: own ? await this.toSummary(own) : null,
       elsewhere: onADevice ? await this.toSummary(onADevice) : null,
       now: new Date(),
-      workedSeconds: await this.unionWorkedSeconds(running),
+      workedSeconds: await this.unionWorkedSeconds(live),
+      ...(limitReached ? { limitReached } : {}),
     };
   }
 
@@ -408,6 +443,11 @@ export class TimeEntriesService {
       taskId,
     );
     await this.assertAppAllowed(membership, organisationId, source);
+    await this.assertWithinWorkTimeLimits(
+      membership,
+      organisationId,
+      requestedStartedAt ?? new Date(),
+    );
 
     // Another Device may be tracking anything, the same Project or a
     // different one. Only the Project totals made a different one a problem,
@@ -655,17 +695,33 @@ export class TimeEntriesService {
       }),
     ]);
 
-    const other = allRunning.find((entry) => entry.id !== running?.id) ?? null;
+    // The agent polls this as the web polls `currentForAccount`, so a
+    // limit has to bite here too.
+    const limitReached = await this.stopIfOverWorkTimeLimit(
+      membership,
+      organisationId,
+      allRunning,
+    );
+    const live = limitReached
+      ? await this.timeEntries.find({
+          where: { membershipId: membership.id, endedAt: IsNull() },
+        })
+      : allRunning;
+    const stillRunning = limitReached
+      ? (live.find((entry) => entry.id === running?.id) ?? null)
+      : running;
+    const other = live.find((entry) => entry.id !== stillRunning?.id) ?? null;
 
     return {
-      entry: running ? await this.toSummary(running) : null,
+      entry: stillRunning ? await this.toSummary(stillRunning) : null,
       // Where else the person is tracking. Reported, never controlled:
       // this Device's stop ends this Device's timer only.
       elsewhere: other ? await this.toSummary(other) : null,
       now: new Date(),
       // Account-wide on purpose: this Device displays the person's total, so
       // a machine joining at 10:00 shows the hour another already accrued.
-      workedSeconds: await this.unionWorkedSeconds(allRunning),
+      workedSeconds: await this.unionWorkedSeconds(live),
+      ...(limitReached ? { limitReached } : {}),
     };
   }
 
@@ -931,6 +987,204 @@ export class TimeEntriesService {
       `[abandoned] entry=${entry.id} removed — it began ${entry.startedAt.toISOString()}, ` +
         `after its device was last seen ${deviceLastSeenAt.toISOString()}, so it holds no worked time`,
     );
+  }
+
+  /**
+   * Refuses a timer on a day tracking is off, or past a ceiling. Expected
+   * hours are deliberately not consulted — a target, never a cap. Days and
+   * the weekly reset follow the Organisation's timezone and week start, so
+   * a limit means the same thing to everyone in it.
+   */
+  private async assertWithinWorkTimeLimits(
+    membership: Membership,
+    organisationId: string,
+    now: Date,
+  ): Promise<void> {
+    const limits = await this.workTimeLimitsFor(organisationId, membership);
+    const zone = await this.organisationTimezone(organisationId, new Map());
+
+    // Read in the Organisation's zone, not the server's: near midnight the
+    // two disagree, and a disabled day has to mean the member's day.
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      weekday: 'short',
+    }).format(now) as (typeof DAY_LABELS)[number];
+    const day = DAY_LABELS.indexOf(weekday);
+
+    if (limits.trackingDisabledDays.includes(day)) {
+      throw new ForbiddenException(
+        `Your organisation has time tracking switched off on ${DAY_LABELS[day]}.`,
+      );
+    }
+
+    if (limits.dailyLimitHours !== null) {
+      const workedToday = await this.workedSecondsSince(
+        organisationId,
+        membership.id,
+        this.startOfDayInZone(now, zone),
+      );
+      if (workedToday >= limits.dailyLimitHours * 3600) {
+        throw new ForbiddenException(
+          `You have reached your daily limit of ${limits.dailyLimitHours} hours.`,
+        );
+      }
+    }
+
+    if (limits.weeklyLimitHours !== null) {
+      const workedThisWeek = await this.workedSecondsSince(
+        organisationId,
+        membership.id,
+        await this.startOfWeekInZone(organisationId, now, zone),
+      );
+      if (workedThisWeek >= limits.weeklyLimitHours * 3600) {
+        throw new ForbiddenException(
+          `You have reached your weekly limit of ${limits.weeklyLimitHours} hours.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Ends a running timer that has crossed a ceiling, and says which. The
+   * clients poll constantly, so this is where a limit bites rather than at
+   * the next start. `undefined` when nothing was stopped — only the poll
+   * that does the stopping reports it, so the modal shows once.
+   */
+  private async stopIfOverWorkTimeLimit(
+    membership: Membership,
+    organisationId: string,
+    running: TimeEntry[],
+  ): Promise<WorkTimeLimitReached | undefined> {
+    const limits = await this.workTimeLimitsFor(organisationId, membership);
+    if (limits.dailyLimitHours === null && limits.weeklyLimitHours === null) {
+      return undefined;
+    }
+
+    const now = new Date();
+    const zone = await this.organisationTimezone(organisationId, new Map());
+
+    const over = async (
+      limitHours: number | null,
+      from: Date,
+    ): Promise<boolean> =>
+      limitHours !== null &&
+      (await this.workedSecondsSince(organisationId, membership.id, from)) >=
+        limitHours * 3600;
+
+    let reached: WorkTimeLimitReached | undefined;
+    if (await over(limits.dailyLimitHours, this.startOfDayInZone(now, zone))) {
+      reached = { kind: 'daily', limitHours: limits.dailyLimitHours! };
+    } else if (
+      await over(
+        limits.weeklyLimitHours,
+        await this.startOfWeekInZone(organisationId, now, zone),
+      )
+    ) {
+      reached = { kind: 'weekly', limitHours: limits.weeklyLimitHours! };
+    }
+    if (!reached) return undefined;
+
+    // Nothing of ours to stop. Another client's poll got there first, so
+    // report it anyway for a short while: the signal has to reach every
+    // client, not just whichever one happened to poll first.
+    if (running.length === 0) {
+      const lastEnded = await this.timeEntries.findOne({
+        where: { membershipId: membership.id },
+        order: { endedAt: 'DESC' },
+      });
+      const endedAt = lastEnded?.endedAt?.getTime() ?? 0;
+      return now.getTime() - endedAt <= LIMIT_NOTICE_WINDOW_MS
+        ? reached
+        : undefined;
+    }
+
+    const ids = running.map((entry) => entry.id);
+    await this.dataSource.transaction(async (manager) => {
+      // Pauses first, as suspending an Organisation does: an entry must
+      // never end with one of its pauses still open.
+      await manager.update(
+        TimeEntryPause,
+        { timeEntryId: In(ids), resumedAt: IsNull() },
+        { resumedAt: now },
+      );
+      await manager.update(TimeEntry, { id: In(ids) }, { endedAt: now });
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.stopped_by_work_time_limit',
+        organisationId,
+        metadata: { timeEntryIds: ids, ...reached },
+      });
+    });
+    return reached;
+  }
+
+  /** Each field is the member's own when set, the Organisation's otherwise. */
+  private async workTimeLimitsFor(
+    organisationId: string,
+    membership: Membership,
+  ): Promise<WorkTimeLimits> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const settings = (organisation?.settings ?? {}) as Partial<WorkTimeLimits>;
+    // pg hands `numeric` back as a string. `undefined` has to collapse to
+    // null too: `Number(undefined)` is NaN, and a NaN limit compares false
+    // against everything, silently switching the limit off.
+    const own = (value: string | null | undefined): number | null =>
+      value === null || value === undefined ? null : Number(value);
+
+    return {
+      expectedWorkDays:
+        membership.expectedWorkDays ??
+        settings.expectedWorkDays ??
+        DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
+      trackingDisabledDays:
+        membership.trackingDisabledDays ??
+        settings.trackingDisabledDays ??
+        DEFAULT_WORK_TIME_LIMITS.trackingDisabledDays,
+      expectedWeeklyHours:
+        own(membership.expectedWeeklyHours) ??
+        settings.expectedWeeklyHours ??
+        null,
+      weeklyLimitHours:
+        own(membership.weeklyLimitHours) ?? settings.weeklyLimitHours ?? null,
+      dailyLimitHours:
+        own(membership.dailyLimitHours) ?? settings.dailyLimitHours ?? null,
+    };
+  }
+
+  /** Union, not sum: two Devices running at once are one stretch of work. */
+  private async workedSecondsSince(
+    organisationId: string,
+    membershipId: string,
+    from: Date,
+  ): Promise<number> {
+    const entries = await this.timeEntries.find({
+      where: {
+        organisationId,
+        membershipId,
+        startedAt: MoreThanOrEqual(from),
+      },
+    });
+    return this.unionWorkedSeconds(entries);
+  }
+
+  private async startOfWeekInZone(
+    organisationId: string,
+    now: Date,
+    zone: string,
+  ): Promise<Date> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const weekStartsOn =
+      (organisation?.settings as { weekStartsOn?: string } | undefined)
+        ?.weekStartsOn === 'sunday'
+        ? 0
+        : 1;
+    const start = this.startOfDayInZone(now, zone);
+    const day = start.getDay();
+    const offset = (day - weekStartsOn + 7) % 7;
+    return new Date(start.getTime() - offset * 24 * 60 * 60 * 1000);
   }
 
   /**

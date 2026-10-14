@@ -1,6 +1,12 @@
 export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
+/**
+ * How often the day's totals are reconciled against the server, to catch
+ * time added elsewhere. Below the status poll, so in practice every poll
+ * reconciles and added time lands within one.
+ */
+const TODAY_MERGE_INTERVAL_MS = 5_000;
 const IDLE_POLL_INTERVAL_MS = 10_000;
 const IDLE_POLICY_REFRESH_MS = 60_000;
 const PAIRING_POLL_INTERVAL_MS = 3_000;
@@ -526,6 +532,13 @@ let projectsLoaded = false;
 let todaySecondsByProject = new Map<string, number>();
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
 let todaySecondsDayStart: number | null = null;
+/** Completed entries already folded into the totals, so a later read adds
+ * only what is genuinely new. */
+let countedEntryIds = new Set<string>();
+/** The limit stop already shown, so a repeated report doesn't reopen it. */
+let shownLimitKey: string | null = null;
+/** When the totals were last reconciled against the server. */
+let todaySecondsReconciledAt = 0;
 let currentProjectTasks: TrackedTask[] = [];
 let selectedTaskId: string | null = null;
 // The Project `currentProjectTasks` was loaded for.
@@ -574,12 +587,68 @@ async function callTracking<T>(
 function handleTrackingFailure(result: {
   message: string;
   unauthorized?: boolean;
+  status?: number;
 }): void {
   if (result.unauthorized) {
     showLoginView(result.message);
     return;
   }
+  // 403 is the organisation refusing this — a work time limit, a day
+  // tracking is off on, an app it doesn't allow. That is a rule, not a
+  // fault, so it gets a dialog rather than the red line above the timer,
+  // which was easy to miss while looking at the Play button.
+  if (result.status === 403) {
+    timerBlockedTitle.textContent = "Timer could not be started";
+    showTimerBlocked(result.message);
+    return;
+  }
   showTrackingError(result.message);
+}
+
+const timerBlocked = document.getElementById("timer-blocked")!;
+const timerBlockedMessage = document.getElementById("timer-blocked-message")!;
+const timerBlockedDismiss = document.getElementById(
+  "timer-blocked-dismiss",
+) as HTMLButtonElement;
+
+/**
+ * A refusal to start — a work time limit reached, a day tracking is off
+ * on — shown as a dialog rather than the red line above the timer. It is
+ * a rule the organisation set, not a fault, and the inline text was easy
+ * to miss while looking at the Play button.
+ */
+function showTimerBlocked(message: string): void {
+  timerBlockedMessage.textContent = message;
+  timerBlocked.hidden = false;
+  timerBlockedDismiss.focus();
+}
+
+timerBlockedDismiss.addEventListener("click", () => {
+  timerBlocked.hidden = true;
+});
+
+const timerBlockedTitle = document.getElementById("timer-blocked-title")!;
+
+/**
+ * The timer was ended for them, not by them, for reaching a daily or
+ * weekly limit. Says so in the same dialog a refused start uses, and asks
+ * the main process to raise the window — stopping silently behind other
+ * windows is how someone keeps working untracked.
+ */
+function showTimerStoppedByLimit(limit: {
+  kind: "daily" | "weekly";
+  limitHours: number;
+}): void {
+  const period = limit.kind === "daily" ? "today" : "this week";
+  const resets = limit.kind === "daily" ? "tomorrow" : "when the week resets";
+  const body =
+    `You have tracked the ${formatElapsed(limit.limitHours * 3600 * 1000)} ` +
+    `your organisation allows ${period}, so your timer was stopped. The time ` +
+    `you tracked is saved. You can track again ${resets}.`;
+
+  timerBlockedTitle.textContent = "Your timer has stopped";
+  showTimerBlocked(body);
+  void window.api.trackingAlert(body);
 }
 
 function clearTrackingError(): void {
@@ -696,6 +765,9 @@ function setRunning(entry: TimeEntry | null): void {
         previous.projectId,
         displayedSecondsFor(previous.projectId),
       );
+      // Counted here, so the server's copy of this same entry is not
+      // folded in again by `mergeNewTodayEntries`.
+      countedEntryIds.add(previous.id);
     }
     // A new entry counts from now, not from the last poll's baseline — that
     // stale baseline is what made a restarted timer jump ahead, then back.
@@ -895,10 +967,12 @@ async function refreshTodayTotals(): Promise<void> {
   if (!result.ok) return; // transient — keep whatever totals we already had
 
   const totals = new Map<string, number>();
+  const counted = new Set<string>();
   for (const entry of result.data) {
     // A null duration is the still-running entry; tick() adds its time
     // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
+    counted.add(entry.id);
     totals.set(
       entry.projectId,
       (totals.get(entry.projectId) ?? 0) + entry.durationSeconds,
@@ -906,6 +980,48 @@ async function refreshTodayTotals(): Promise<void> {
   }
   todaySecondsByProject = totals;
   todaySecondsDayStart = startOfToday();
+  countedEntryIds = counted;
+  todaySecondsReconciledAt = Date.now();
+}
+
+/**
+ * Folds in completed entries this agent has not counted yet — time added
+ * from the web console, or tracked on another machine. Deliberately
+ * *additive*: replacing the totals would re-derive the baseline the live
+ * tick counts up from, and any disagreement between the server's clock
+ * and this one would show as the display jumping backwards.
+ */
+async function mergeNewTodayEntries(): Promise<void> {
+  const result = await window.api.tracking.entriesBetween(
+    new Date(startOfToday()).toISOString(),
+    new Date().toISOString(),
+  );
+  if (!result.ok) return; // transient — try again on the next poll
+
+  todaySecondsReconciledAt = Date.now();
+  let added = false;
+  for (const entry of result.data) {
+    // The running entry belongs to the live tick, which counts it up from
+    // this baseline — folding it in here too would count it twice. A
+    // duration is not enough to tell: the server reports one for an entry
+    // that is still open.
+    if (entry.durationSeconds === null) continue;
+    if (runningEntry && entry.id === runningEntry.id) continue;
+    // Without an id there is no telling this apart from time already
+    // counted, and adding it twice is worse than missing it.
+    if (!entry.id) continue;
+    if (countedEntryIds.has(entry.id)) continue;
+    countedEntryIds.add(entry.id);
+    todaySecondsByProject.set(
+      entry.projectId,
+      (todaySecondsByProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
+    );
+    added = true;
+  }
+  if (added) {
+    renderProjects();
+    tick();
+  }
 }
 
 function renderProjects(): void {
@@ -1338,6 +1454,18 @@ async function refreshStatus(resync = false): Promise<void> {
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
 
+  // Reported for a couple of minutes after the stop, so it reaches this
+  // client even when another one's poll did the stopping — hence shown
+  // once per stop here rather than once per report.
+  const limit = result.data.limitReached;
+  const limitKey = limit ? `${limit.kind}:${limit.limitHours}` : null;
+  if (limitKey && limitKey !== shownLimitKey) {
+    shownLimitKey = limitKey;
+    showTimerStoppedByLimit(limit!);
+  } else if (!limitKey) {
+    shownLimitKey = null;
+  }
+
   const entry = result.data.entry;
   if (entry && (await reconcileDayBoundary(entry))) {
     return; // reconcile already applied the correct state
@@ -1353,6 +1481,12 @@ async function refreshStatus(resync = false): Promise<void> {
     if (entry?.pausedAt) pausedAtWorkedMs = workedMs;
     tick();
   } else if (todaySecondsDayStart === startOfToday()) {
+    // Totals are already this day's, so nothing needs re-deriving — but
+    // time added from the web console changes neither the running entry
+    // nor the day, so without this it would never appear here at all.
+    if (Date.now() - todaySecondsReconciledAt >= TODAY_MERGE_INTERVAL_MS) {
+      await mergeNewTodayEntries();
+    }
     return;
   }
   // Also reached when the day rolled over, or the totals never loaded.

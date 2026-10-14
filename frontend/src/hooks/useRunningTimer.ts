@@ -42,6 +42,13 @@ export function useRunningTimer(organisationId: string) {
   // The web's own timer only — a device's is never displayed here. It does
   // constrain what can be started, though: see `webTimerConstraint`.
   const entry = currentQuery.data?.entry ?? null;
+  // Latched: the server reports it on one poll only, and the modal has to
+  // outlive that poll. Cleared when the person dismisses it.
+  const [limitReached, setLimitReached] = useState<
+    { kind: "daily" | "weekly"; limitHours: number } | null
+  >(null);
+  const reportedLimit = currentQuery.data?.limitReached ?? null;
+  if (reportedLimit && !limitReached) setLimitReached(reportedLimit);
   const { requiredProjectId } = webTimerConstraint(
     currentQuery.data?.elsewhere ?? null,
   );
@@ -167,6 +174,8 @@ export function useRunningTimer(organisationId: string) {
       : 0);
 
   return {
+    limitReached,
+    dismissLimitReached: () => setLimitReached(null),
     isLoading: currentQuery.isLoading || projectsQuery.isLoading,
     isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
     entry: entry,

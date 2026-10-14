@@ -105,7 +105,11 @@ function launch(scenario: Scenario) {
   let entrySeq = 1;
   const reopenListeners: (() => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
-  const completed: { projectId: string; durationSeconds: number }[] = [];
+  const completed: {
+    id: string;
+    projectId: string;
+    durationSeconds: number;
+  }[] = [];
   /** Seconds the running entry has on the server's books. */
   const serverWorkedSeconds = () =>
     running
@@ -161,7 +165,11 @@ function launch(scenario: Scenario) {
       pause: () => {
         const ended = { ...(running ?? entry), endedAt: new Date(now()).toISOString() };
         if (!server.revoked && running) {
-          completed.push({ projectId: running.projectId, durationSeconds: serverWorkedSeconds() });
+          completed.push({
+            id: running.id,
+            projectId: running.projectId,
+            durationSeconds: serverWorkedSeconds(),
+          });
           running = null;
         }
         return ok(ended);
@@ -239,6 +247,19 @@ function launch(scenario: Scenario) {
     reopen: () => reopenListeners.forEach((listener) => listener()),
     isRunning: () => running !== null,
     projectCount: () => document.getElementById('project-count')!.textContent,
+    /** What the project row shows as tracked today. */
+    projectTotal: (name: string) =>
+      [...document.querySelectorAll('#project-list li')]
+        .find((li) => li.textContent?.includes(name))
+        ?.querySelector('.project-total')?.textContent ?? null,
+    /** Time booked against a project from somewhere else — the web console. */
+    addCompletedElsewhere: (projectId: string, durationSeconds: number) => {
+      completed.push({
+        id: `elsewhere-${completed.length + 1}`,
+        projectId,
+        durationSeconds,
+      });
+    },
     trackingError: () => {
       const el = document.getElementById('tracking-error')!;
       return el.hidden ? null : el.textContent;
@@ -449,6 +470,21 @@ describe('renderer asks for login before the timer can start on an ended session
     expect(app.isRunning()).toBe(true);
     app.close();
   });
+});
+
+describe("renderer picks up time added elsewhere", () => {
+  it("adds it to the project it belongs to, without a restart", async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.projectTotal('Project One') !== null);
+    expect(app.projectTotal('Project One')).toBe('0:00');
+
+    // An admin adds an hour to this project from the web console.
+    app.addCompletedElsewhere('p1', 3600);
+
+    await waitFor(() => app.projectTotal('Project One') === '1:00');
+    app.close();
+  });
+
 });
 
 describe('renderer timer runs on the local clock', () => {

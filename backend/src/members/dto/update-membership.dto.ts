@@ -1,7 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
+  IsNumber,
+  Max,
+  Min,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -16,6 +21,10 @@ import { APP_URL_TRACKING_VALUES } from '../../organisations/app-url-tracking';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import { TIMESHEET_MODIFY_TIME_VALUES } from '../../organisations/timesheet-settings';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
+
+/** Below this a `numeric(5,2)` column rounds to zero, which would read as
+ * "may never track" — never what an admin meant to type. */
+const MIN_LIMIT_HOURS = 0.01;
 
 export class UpdateMembershipDto {
   @IsOptional()
@@ -75,6 +84,45 @@ export class UpdateMembershipDto {
   @ValidateIf((_, value: AllowedApps | null) => value !== null)
   @IsIn(ALLOWED_APPS_VALUES)
   allowedApps?: AllowedApps | null;
+
+  /** Work time limit overrides; `null` clears one and inherits again. */
+  @IsOptional()
+  @ValidateIf((_, value: number[] | null) => value !== null)
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  expectedWorkDays?: number[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number[] | null) => value !== null)
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  trackingDisabledDays?: number[] | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(0)
+  @Max(168)
+  expectedWeeklyHours?: number | null;
+
+  /** `null` is "no limit"; a number is a real ceiling — see `MIN_LIMIT_HOURS`. */
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(MIN_LIMIT_HOURS)
+  @Max(168)
+  weeklyLimitHours?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value: number | null) => value !== null)
+  @IsNumber()
+  @Min(MIN_LIMIT_HOURS)
+  @Max(24)
+  dailyLimitHours?: number | null;
 
   /**
    * Per-member override of the Timesheets "Modify time" default. `null`

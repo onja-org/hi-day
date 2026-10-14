@@ -61,6 +61,23 @@ export class Membership {
   @Column({ type: 'character varying', nullable: true })
   allowedApps: AllowedApps | null;
 
+  /** Per-member work time limits; each inherits the Organisation's when
+   * null, independently of the others. */
+  @Column({ type: 'jsonb', nullable: true })
+  expectedWorkDays: number[] | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  trackingDisabledDays: number[] | null;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  expectedWeeklyHours: string | null;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  weeklyLimitHours: string | null;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  dailyLimitHours: string | null;
+
   /**
    * Per-member override of the Organisation's "Modify time (manual time)"
    * default. `null` inherits (see `Organisation.settings.timesheetModifyTime`).
