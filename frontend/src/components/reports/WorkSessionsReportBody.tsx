@@ -9,13 +9,14 @@ import { DAILY_TOTALS_CHART_SERIES } from "@/lib/dailyTotalsReportConfig";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatReportDay } from "@/lib/formatReportDay";
 import {
-  WORK_SESSIONS_GROUPINGS,
   workSessionsColumns,
+  workSessionsGroupings,
   type WorkSessionsGrouping,
 } from "@/lib/workSessionsReportConfig";
 import type { DateRange } from "@/types/dateRange";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { ReportsBarChart } from "./ReportsBarChart";
 import { ReportsStatCard } from "./ReportsStatCard";
 import { ReportsTable } from "./ReportsTable";
@@ -32,6 +33,7 @@ type WorkSessionsReportBodyProps = {
 };
 
 export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChange, range, zone, actions }: WorkSessionsReportBodyProps) {
+  const projectsEnabled = useProjectsEnabled();
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -56,7 +58,7 @@ export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChan
           onChange={(event) => onGroupingChange(event.target.value as WorkSessionsGrouping)}
           className="w-fit"
         >
-          {WORK_SESSIONS_GROUPINGS.map((option) => (
+          {workSessionsGroupings(projectsEnabled).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -65,7 +67,7 @@ export function WorkSessionsReportBody({ entries, rows, grouping, onGroupingChan
         <div className="flex flex-wrap items-center gap-3">{actions}</div>
       </div>
 
-      <ReportsTable key={grouping} columns={workSessionsColumns(grouping)} rows={rows} defaultExpanded />
+      <ReportsTable key={grouping} columns={workSessionsColumns(grouping, projectsEnabled)} rows={rows} defaultExpanded />
     </>
   );
 }

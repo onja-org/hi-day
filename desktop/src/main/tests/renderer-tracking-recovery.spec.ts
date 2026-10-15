@@ -278,6 +278,7 @@ function launch(scenario: Scenario) {
       document.getElementById('search-section')!.hidden &&
       document.getElementById('projects-section')!.hidden,
     taskTriggerHidden: () => document.getElementById('task-trigger')!.hidden,
+    trackingName: () => document.getElementById('tracking-project-name')!.textContent,
     /** What the project row shows as tracked today. */
     projectTotal: (name: string) =>
       [...document.querySelectorAll('#project-list li')]
@@ -656,6 +657,18 @@ describe('renderer with Projects turned off', () => {
 
     expect(app.projectSectionsHidden()).toBe(false);
     expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  it('names a timer that still carries an old project "Tracking time", never its id', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      projectsEnabled: false,
+      runningElsewhere: true,
+    });
+    await waitFor(() => app.isRunning() && !!app.trackingName());
+
+    expect(app.trackingName()).toBe('Tracking time');
     app.close();
   });
 });

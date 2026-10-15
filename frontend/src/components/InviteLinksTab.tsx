@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useInviteLinks } from "@/hooks/useInviteLinks";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { ErrorMessage } from "./ErrorMessage";
 import { InviteLinkFormModal } from "./InviteLinkFormModal";
 import { InviteLinkRow } from "./InviteLinkRow";
@@ -13,6 +14,7 @@ type InviteLinksTabProps = {
 };
 
 export function InviteLinksTab({ organisationId }: InviteLinksTabProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [createOpen, setCreateOpen] = useState(false);
   const linksQuery = useInviteLinks(organisationId);
   const teamsQuery = useOrganisationTeams(organisationId);
@@ -57,7 +59,9 @@ export function InviteLinksTab({ organisationId }: InviteLinksTabProps) {
             <th className="px-4 py-3 font-semibold">Name</th>
             <th className="hidden px-4 py-3 font-semibold sm:table-cell">Role</th>
             <th className="hidden px-4 py-3 font-semibold md:table-cell">Teams</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            {projectsEnabled && (
+              <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            )}
             <th className="hidden px-4 py-3 font-semibold lg:table-cell">Expiration date</th>
             <th className="hidden px-4 py-3 font-semibold lg:table-cell">Usage</th>
             <th className="px-4 py-3 font-semibold">Status</th>
@@ -72,7 +76,7 @@ export function InviteLinksTab({ organisationId }: InviteLinksTabProps) {
           ))}
           {linksQuery.data.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-4 py-8 text-center text-slate-900">
+              <td colSpan={projectsEnabled ? 8 : 7} className="px-4 py-8 text-center text-slate-900">
                 No invite links yet.
               </td>
             </tr>

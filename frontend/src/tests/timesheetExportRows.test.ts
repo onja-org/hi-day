@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TIMESHEET_EXPORT_HEADER,
+  timesheetExportHeader,
   timesheetExportRows,
 } from "@/lib/timesheetExportRows";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -72,5 +73,16 @@ describe("timesheetExportRows", () => {
 
   it("returns nothing for no entries", () => {
     expect(timesheetExportRows([], NAIROBI)).toEqual([]);
+  });
+});
+
+describe("timesheetExportRows with Projects off", () => {
+  it("drops the project from the header and every row together", () => {
+    const header = timesheetExportHeader(false);
+    const [row] = timesheetExportRows([makeEntry()], "UTC", false);
+
+    expect(header).not.toContain("Project");
+    expect(row).toHaveLength(header.length);
+    expect(row).not.toContain("Website");
   });
 });

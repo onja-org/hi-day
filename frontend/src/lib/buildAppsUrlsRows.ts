@@ -1,6 +1,6 @@
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatReportDay } from "@/lib/formatReportDay";
-import { APPS_URLS_DIMENSIONS } from "@/lib/appsUrlsReportConfig";
+import { appsUrlsDimensions } from "@/lib/appsUrlsReportConfig";
 import type { AppsUrlsDimension, AppsUrlsGrouping, AppsUrlsItem } from "@/types/appsUrlsReport";
 import type { ReportTableRow } from "@/types/reportTable";
 
@@ -42,6 +42,7 @@ function blankedContext(cells: Record<string, string>): Record<string, string> {
 export function buildAppsUrlsRows(
   items: AppsUrlsItem[],
   grouping: AppsUrlsGrouping,
+  projectsEnabled = true,
 ): ReportTableRow[] {
   const groups = new Map<string, { label: string; items: AppsUrlsItem[] }>();
   for (const item of items) {
@@ -51,7 +52,7 @@ export function buildAppsUrlsRows(
     groups.set(id, group);
   }
 
-  const detail = APPS_URLS_DIMENSIONS.map((option) => option.value).filter((dimension) => dimension !== grouping);
+  const detail = appsUrlsDimensions(projectsEnabled).map((option) => option.value).filter((dimension) => dimension !== grouping);
 
   return [...groups.entries()].map(([groupId, group]) => {
     const groupTotal = totalOf(group.items);

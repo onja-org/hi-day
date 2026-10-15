@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { CaretRightIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useTeamDashboardSummary } from "@/hooks/useTeamDashboardSummary";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -13,6 +14,7 @@ type WhosOnlineListProps = {
 };
 
 export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
+  const projectsEnabled = useProjectsEnabled();
   const summaryQuery = useTeamDashboardSummary(organisationId);
 
   if (summaryQuery.isLoading) {
@@ -65,7 +67,7 @@ export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
                     )}
                   />
                   {member.isWorking
-                    ? (member.currentProjectName ?? "Working")
+                    ? ((projectsEnabled ? member.currentProjectName : null) ?? "Working")
                     : "Not working"}
                 </span>
               </div>

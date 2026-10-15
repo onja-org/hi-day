@@ -53,7 +53,7 @@ describe("urlActivityRows", () => {
     expect(rows[0]).toContain("01:00:00");
   });
 
-  it("resolves a null projectId to 'Untracked' and a null title to an empty string", () => {
+  it("resolves a null projectId to 'No project' and a null title to an empty string", () => {
     const day = makeDay({
       buckets: [
         {
@@ -73,11 +73,23 @@ describe("urlActivityRows", () => {
     });
 
     const { rows } = urlActivityRows(day, projects);
-    expect(rows[0]).toContain("Untracked");
+    expect(rows[0]).toContain("No project");
     expect(rows[0]).toContain("");
   });
 
   it("returns no rows for a day with no buckets", () => {
     expect(urlActivityRows(makeDay(), projects).rows).toHaveLength(0);
+  });
+});
+
+describe("urlActivityRows with Projects off", () => {
+  it("has no Project column", () => {
+    expect(urlActivityRows(makeDay(), projects, false).header).toEqual([
+      "Hour",
+      "URL",
+      "Title",
+      "Time spent",
+      "Sessions",
+    ]);
   });
 });

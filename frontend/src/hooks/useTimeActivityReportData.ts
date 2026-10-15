@@ -5,6 +5,7 @@ import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useMyProjects } from "@/hooks/useMyProjects";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildMembershipTeamIds, buildMembershipTeamNames } from "@/lib/buildMembershipTeamNames";
 import { filterReportEntries, filterReportMembers } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
@@ -50,7 +51,13 @@ export function useTimeActivityReportData(
   // A member filter only means something when other people's data is shown;
   // a leftover choice from the "All" tab must not silently apply to "Me".
   // Teams apply to both: even your own entries can sit under several teams.
-  const activeFilters: ReportFilters = isAll ? filters : { ...filters, memberIds: [] };
+  // Likewise a project filter saved while Projects were on: with them off it
+  // can't be seen or cleared, and entries have no project to match.
+  const projectsEnabled = useProjectsEnabled();
+  const activeFilters: ReportFilters = {
+    ...(isAll ? filters : { ...filters, memberIds: [] }),
+    ...(projectsEnabled ? {} : { projectIds: [] }),
+  };
   // With a team filter on, only those teams are shown or grouped by: a member
   // on both "General" and another team would otherwise still list the other
   // one beside the team that was asked for.

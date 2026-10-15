@@ -7,6 +7,7 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
@@ -26,6 +27,7 @@ const ADMIN_INVITABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
 const MANAGER_INVITABLE_ROLES: MembershipRole[] = ["manager", "member"];
 
 export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
+  const projectsEnabled = useProjectsEnabled();
   const queryClient = useQueryClient();
   const teamsQuery = useOrganisationTeams(organisationId);
   const projectsQuery = useProjects(organisationId, { status: "active" });
@@ -108,15 +110,17 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
         isLoading={teamsQuery.isLoading}
       />
 
-      <CheckboxDropdownField
-        id="invite-projects"
-        label="Projects (optional)"
-        items={projectsQuery.data ?? []}
-        selectedIds={projectIds}
-        onChange={setProjectIds}
-        noun={["project", "projects"]}
-        isLoading={projectsQuery.isLoading}
-      />
+      {projectsEnabled && (
+        <CheckboxDropdownField
+          id="invite-projects"
+          label="Projects (optional)"
+          items={projectsQuery.data ?? []}
+          selectedIds={projectIds}
+          onChange={setProjectIds}
+          noun={["project", "projects"]}
+          isLoading={projectsQuery.isLoading}
+        />
+      )}
 
       <button
         type="submit"

@@ -71,7 +71,11 @@ function report(overrides: Partial<SavedReport> = {}): SavedReport {
     lastSentOn: null,
     lastSentAt: null,
     lastError: null,
-    organisation: { name: 'Acme', settings: {}, suspendedAt: null },
+    organisation: {
+      name: 'Acme',
+      settings: { projectsEnabled: true },
+      suspendedAt: null,
+    },
     membership: {
       id: 'm1',
       userId: 'u1',
@@ -235,6 +239,24 @@ describe('ScheduledReportsService', () => {
           }) as object,
         }),
       );
+    });
+
+    it('leaves the project column out of an apps and URLs report when projects are off', async () => {
+      const { service, sendReportEmail } = setup();
+
+      const apps = report({
+        reportType: 'apps-and-urls',
+        settings: { ...settings, grouping: 'project' },
+        organisation: { name: 'Acme', settings: {}, suspendedAt: null },
+      } as Partial<SavedReport>);
+      expect(await service.runOne(apps, NOW)).toBe('sent');
+
+      const [{ attachment }] = sendReportEmail.mock.calls[0] as [
+        { attachment: { content: Buffer } },
+      ];
+      const csv = attachment.content.toString('utf-8');
+      expect(csv).not.toMatch(/Project/);
+      expect(csv).not.toMatch(/No project/);
     });
 
     it('builds an all-members apps and URLs report for an admin owner', async () => {

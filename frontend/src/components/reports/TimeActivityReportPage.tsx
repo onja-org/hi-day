@@ -5,8 +5,9 @@ import { useSavedReportPersist } from "@/hooks/useSavedReportPersist";
 import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportControls";
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { timezoneAbbreviation, timezoneTooltip } from "@/lib/timezone";
-import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
+import { timeActivityGroupings } from "@/lib/timeActivityReportConfig";
 import type { SavedReport } from "@/types/savedReport";
 import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import { ReportDateRangePicker } from "./ReportDateRangePicker";
@@ -23,6 +24,7 @@ type TimeActivityReportPageProps = {
 };
 
 export function TimeActivityReportPage({ organisationId, savedReport }: TimeActivityReportPageProps) {
+  const projectsEnabled = useProjectsEnabled();
   const organisationQuery = useCurrentOrganisation();
   const controls = useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const { scope, setScope, grouping, setGrouping, preset, setPreset, filters, setFilters, setCustomDays, zone, range } =
@@ -103,7 +105,7 @@ export function TimeActivityReportPage({ organisationId, savedReport }: TimeActi
         onChange={(event) => setGrouping(event.target.value as TimeActivityGrouping)}
         className="w-fit"
       >
-        {TIME_ACTIVITY_GROUPINGS.map((option) => (
+        {timeActivityGroupings(projectsEnabled).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>

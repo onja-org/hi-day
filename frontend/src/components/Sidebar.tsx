@@ -24,7 +24,7 @@ import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
-import { REPORTS } from "@/lib/reportCatalog";
+import { reportsFor } from "@/lib/reportCatalog";
 import type { Icon } from "@phosphor-icons/react";
 import type { NavEntry, NavLink } from "@/types/navigation";
 
@@ -134,7 +134,7 @@ export function Sidebar({
       label: "Reports",
       icon: ChartBar,
       children: [
-        ...REPORTS.filter((report) => favouriteIds.includes(report.id)).map(
+        ...reportsFor(projectsEnabled).filter((report) => favouriteIds.includes(report.id)).map(
           (report): NavLink => ({
             kind: "link",
             label: report.title,

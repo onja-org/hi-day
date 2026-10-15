@@ -52,7 +52,7 @@ describe("buildTimeActivityRows", () => {
       "day",
     );
     expect(rows).toHaveLength(2);
-    expect(String(rows[0].cells.date)).toMatch(/\(2\)$/);
+    expect(String(rows[0].cells.date)).not.toMatch(/\(\d+\)$/);
     expect(rows[0].subRows?.map((r) => r.cells.date)).toEqual(["Ada", "Ada"]);
     expect(rows[0].subRows?.[0].subRows).toBeUndefined();
   });
@@ -66,7 +66,7 @@ describe("buildTimeActivityRows", () => {
       ],
       "day",
     );
-    expect(row.cells.date).toMatch(/\(1\)$/);
+    expect(row.cells.date).not.toMatch(/\(\d+\)$/);
     expect(row.subRows).toHaveLength(1);
     expect(row.subRows?.[0].cells.total).toBe("00:03:30");
   });
@@ -84,7 +84,7 @@ describe("buildTimeActivityRows", () => {
     const [row] = build([entry({ id: "a" })], "day", { teamNames: new Map([["m1", ["Dev", "Design"]]]) });
     expect(row.subRows).toHaveLength(1);
     expect(row.subRows?.[0].cells.team).toBe("Dev, Design");
-    expect(row.cells.date).toMatch(/\(1\)$/);
+    expect(row.cells.date).not.toMatch(/\(\d+\)$/);
   });
 
   it("keeps different members on the same project as separate rows", () => {
@@ -95,12 +95,12 @@ describe("buildTimeActivityRows", () => {
   it("week grouping: entries sit directly under the week", () => {
     const [row] = build([entry({ id: "a" }), entry({ id: "b", startedAt: "2026-10-02T09:00:00" })], "week");
     expect(row.subRows).toHaveLength(2);
-    expect(row.cells.date).toMatch(/\(2\)$/);
+    expect(row.cells.date).not.toMatch(/\(\d+\)$/);
   });
 
   it("project grouping: project → day → entry", () => {
     const [row] = build([entry({ id: "a" })], "project");
-    expect(row.cells.date).toBe("Alpha (1)");
+    expect(row.cells.date).toBe("Alpha");
     expect(row.subRows).toHaveLength(1);
     expect(row.subRows?.[0].subRows).toHaveLength(1);
   });
@@ -118,7 +118,7 @@ describe("buildTimeActivityRows", () => {
 
   it("team grouping counts a member on two teams in both", () => {
     const rows = build([entry({ id: "a" })], "team", { teamNames: new Map([["m1", ["Dev", "Design"]]]) });
-    expect(rows.map((r) => r.cells.date)).toEqual(["Design (1)", "Dev (1)"]);
+    expect(rows.map((r) => r.cells.date)).toEqual(["Design", "Dev"]);
     expect(rows[0].subRows?.[0].id).not.toBe(rows[1].subRows?.[0].id);
   });
 
@@ -171,14 +171,14 @@ describe("buildTimeActivityRows week grouping", () => {
 
   it("labels the week with both end days, in full", () => {
     const [row] = build([entry({ id: "a" })], "week");
-    expect(row.cells.date).toMatch(/^Mon, Sep 28, 2026 - Sun, Oct 4, 2026 \(1\)$/);
+    expect(row.cells.date).toBe("Mon, Sep 28, 2026 - Sun, Oct 4, 2026");
   });
 
   it("gives a member on two teams one row per day and project, listing both teams", () => {
     const [row] = build([entry({ id: "a" })], "week", { teamNames: twoTeams });
     expect(row.subRows).toHaveLength(1);
     expect(row.subRows?.[0].cells.team).toBe("Dev, Design");
-    expect(row.cells.date).toMatch(/\(1\)$/);
+    expect(row.cells.date).not.toMatch(/\(\d+\)$/);
   });
 
   it("still gives one row per day", () => {
@@ -199,7 +199,7 @@ describe("buildTimeActivityRows idle members", () => {
 
   it("lists a member with no entries as a zero-hour row under member grouping", () => {
     const rows = build([entry({ id: "a" })], "member", { idleMembers: idle });
-    expect(rows.map((r) => r.cells.date)).toEqual(["Ada (1)", "Bob (0)"]);
+    expect(rows.map((r) => r.cells.date)).toEqual(["Ada", "Bob"]);
     expect(rows[1].cells.total).toBe("00:00:00");
     expect(rows[1].subRows).toBeUndefined();
   });

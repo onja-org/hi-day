@@ -60,9 +60,19 @@ function valueOf(item: AppsUrlsItem, dimension: Dimension): string {
  */
 export function buildAppsUrlsTable(
   items: AppsUrlsItem[],
-  grouping: AppsUrlsGrouping,
+  requestedGrouping: AppsUrlsGrouping,
+  /** Off for an Organisation without Projects: no project column, and no grouping by one. */
+  includeProject = true,
 ): AppsUrlsTable {
-  const columns = [grouping, ...DIMENSIONS.filter((d) => d !== grouping)];
+  // A report saved while Projects were on may still ask to group by project.
+  const grouping =
+    !includeProject && requestedGrouping === 'project'
+      ? 'day'
+      : requestedGrouping;
+  const dimensions = includeProject
+    ? DIMENSIONS
+    : DIMENSIONS.filter((d) => d !== 'project');
+  const columns = [grouping, ...dimensions.filter((d) => d !== grouping)];
 
   const merged = new Map<string, { item: AppsUrlsItem; seconds: number }>();
   for (const item of items) {

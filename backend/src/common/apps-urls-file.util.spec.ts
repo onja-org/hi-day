@@ -64,3 +64,34 @@ describe('buildAppsUrlsTable', () => {
     expect(buildAppsUrlsTable([], 'member').body).toEqual([]);
   });
 });
+
+describe('buildAppsUrlsTable without projects', () => {
+  it('drops the project column, and the "No project" it would have held', () => {
+    const table = buildAppsUrlsTable(
+      items.map((item) => ({ ...item, projectName: 'No project' })),
+      'day',
+      false,
+    );
+
+    expect(table.header).toEqual([
+      'Date',
+      'Member',
+      'App or site',
+      'Time spent (hrs)',
+      'Percent used',
+    ]);
+    expect(table.body.flat()).not.toContain('No project');
+  });
+
+  it('groups by day when a saved report still asks for project', () => {
+    const table = buildAppsUrlsTable(items, 'project', false);
+
+    expect(table.header[0]).toBe('Date');
+  });
+
+  it('leaves the table alone while projects are on', () => {
+    expect(buildAppsUrlsTable(items, 'project').header[0]).toBe(
+      'Project / Work order',
+    );
+  });
+});

@@ -1,3 +1,4 @@
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import type { UrlHourBucket } from "@/types/urlSession";
 import { ActivityBucketTable } from "@/components/ActivityBucketTable";
 import { UrlActivityHourSection } from "@/components/UrlActivityHourSection";
@@ -17,10 +18,12 @@ export function UrlActivityTable({
   organisationId,
   buckets,
 }: UrlActivityTableProps) {
+  const projectsEnabled = useProjectsEnabled();
+
   return (
     <ActivityBucketTable
       columns={[
-        { label: "Project" },
+        ...(projectsEnabled ? [{ label: "Project" }] : []),
         { label: "Site" },
         { label: "Time spent", align: "right" },
       ]}

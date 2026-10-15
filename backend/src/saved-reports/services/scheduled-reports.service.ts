@@ -31,6 +31,7 @@ import { isValidTimezone } from '../../common/timezone.util';
 import { addDaysToKey, zonedParts } from '../../common/zoned-time.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { DEFAULT_PROJECTS_ENABLED } from '../../organisations/projects-setting';
 import { Project } from '../../database/entities/project.entity';
 import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailService } from '../../email/services/email.service';
@@ -164,6 +165,10 @@ export class ScheduledReportsService {
       const fromKey = dayKey(range.from, zone);
       const toKey = dayKey(range.to, zone);
       const title = `${report.name} — ${fromKey} to ${toKey}`;
+      // Off for an Organisation without Projects: no report names one.
+      const projectsEnabled =
+        (organisation.settings?.projectsEnabled as boolean | undefined) ??
+        DEFAULT_PROJECTS_ENABLED;
       let content: Buffer;
       if (report.reportType === 'apps-and-urls') {
         content = await this.buildAppsUrlsContent(
@@ -172,6 +177,7 @@ export class ScheduledReportsService {
           title,
           fromKey,
           toKey,
+          projectsEnabled,
         );
       } else if (report.reportType === 'manual-time-edits') {
         content = await this.buildManualTimeEditsContent(
@@ -180,6 +186,7 @@ export class ScheduledReportsService {
           title,
           range,
           zone,
+          projectsEnabled,
         );
       } else {
         content = this.buildContent(
@@ -190,6 +197,7 @@ export class ScheduledReportsService {
           fromKey,
           toKey,
           zone,
+          projectsEnabled,
         );
       }
 
@@ -243,6 +251,7 @@ export class ScheduledReportsService {
     title: string,
     fromKey: string,
     toKey: string,
+    projectsEnabled: boolean,
   ): Promise<Buffer> {
     const { membership, organisationId } = report;
     const { filters, scope } = report.settings;
@@ -294,7 +303,8 @@ export class ScheduledReportsService {
       select: { id: true, name: true },
     });
     const projectName = (projectId: string | null): string =>
-      projects.find((project) => project.id === projectId)?.name ?? 'Untracked';
+      projects.find((project) => project.id === projectId)?.name ??
+      'No project';
     const included = (projectId: string | null): boolean =>
       filters.projectIds.length === 0 ||
       (projectId !== null && filters.projectIds.includes(projectId));
@@ -349,6 +359,7 @@ export class ScheduledReportsService {
     const table = buildAppsUrlsTable(
       items,
       report.settings.grouping as AppsUrlsGrouping,
+      projectsEnabled,
     );
     return fileType === 'csv'
       ? Buffer.from(buildAppsUrlsCsv(table), 'utf-8')
@@ -367,6 +378,7 @@ export class ScheduledReportsService {
     title: string,
     range: { from: Date; to: Date },
     zone: string,
+    projectsEnabled: boolean,
   ): Promise<Buffer> {
     const { membership, organisationId } = report;
     const { filters, scope } = report.settings;
@@ -390,6 +402,7 @@ export class ScheduledReportsService {
               filters.projectIds.includes(edit.projectId))),
       ),
       zone,
+      projectsEnabled,
     );
     return fileType === 'csv'
       ? Buffer.from(buildManualTimeEditsCsv(table), 'utf-8')
@@ -404,6 +417,7 @@ export class ScheduledReportsService {
     fromKey: string,
     toKey: string,
     zone: string,
+    projectsEnabled: boolean,
   ): Buffer {
     if (reportType === 'daily-totals') {
       const table = buildDailyTotalsTable(entries, fromKey, toKey, zone);
@@ -413,8 +427,8 @@ export class ScheduledReportsService {
     }
     // Time and activity and Work sessions both list each session as a row.
     return fileType === 'csv'
-      ? Buffer.from(buildReportCsv(entries, zone), 'utf-8')
-      : buildReportPdf(title, entries, zone);
+      ? Buffer.from(buildReportCsv(entries, zone, projectsEnabled), 'utf-8')
+      : buildReportPdf(title, entries, zone, projectsEnabled);
   }
 
   /**

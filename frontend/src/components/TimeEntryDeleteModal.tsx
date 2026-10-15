@@ -4,6 +4,7 @@ import { useState } from "react";
 import { UserIcon } from "@phosphor-icons/react";
 import { useDeleteTimeEntry } from "@/hooks/useDeleteTimeEntry";
 import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatClockTimeWithSeconds } from "@/lib/formatClockTimeWithSeconds";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
@@ -31,6 +32,7 @@ export function TimeEntryDeleteModal({
   entry,
   onClose,
 }: TimeEntryDeleteModalProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [reason, setReason] = useState("");
   const deleteMutation = useDeleteTimeEntry(organisationId, entry.id, onClose);
   const isReasonRequired = useRequireTimeEntryReason();
@@ -60,18 +62,20 @@ export function TimeEntryDeleteModal({
               </span>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
-                Project
-              </span>
-              <span className="flex items-center gap-2 text-slate-900">
-                <ProjectAvatar
-                  name={entryTitle(entry)}
-                  colour={entryProjectColour(entry)}
-                />
-                {entryTitle(entry)}
-              </span>
-            </div>
+            {projectsEnabled && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium tracking-wide text-slate-900/60 uppercase">
+                  Project
+                </span>
+                <span className="flex items-center gap-2 text-slate-900">
+                  <ProjectAvatar
+                    name={entryTitle(entry)}
+                    colour={entryProjectColour(entry)}
+                  />
+                  {entryTitle(entry)}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

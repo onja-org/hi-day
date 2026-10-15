@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { FunnelIcon } from "@phosphor-icons/react";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { countReportFilters } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
 import type { ReportFilterOption } from "@/types/reportFilterOption";
@@ -24,8 +25,15 @@ export function TimeActivityFilter({
   memberOptions,
   teamOptions,
 }: TimeActivityFilterProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [open, setOpen] = useState(false);
   const activeCount = countReportFilters(filters);
+
+  // The drawer offers members, teams and projects, each only when there is
+  // something to choose. With none of them the button opens an empty panel.
+  const hasAnythingToFilter =
+    projectsEnabled || (memberOptions?.length ?? 0) > 0 || (teamOptions?.length ?? 0) > 0;
+  if (!hasAnythingToFilter) return null;
 
   return (
     <>

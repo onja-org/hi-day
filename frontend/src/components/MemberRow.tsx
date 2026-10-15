@@ -2,6 +2,7 @@ import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { formatShortDate } from "@/lib/formatShortDate";
 import { getInitials } from "@/lib/getInitials";
 import type { ActiveMemberListItem, MembershipRole } from "@/types/membership";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { AvatarStack } from "./AvatarStack";
 import { MemberRowActions } from "./MemberRowActions";
 
@@ -22,6 +23,7 @@ export function MemberRow({
   callerRole,
   callerUserId,
 }: MemberRowProps) {
+  const projectsEnabled = useProjectsEnabled();
   const isSelf = member.userId === callerUserId;
 
   return (
@@ -53,7 +55,9 @@ export function MemberRow({
       <td className="hidden px-4 py-3 text-slate-900 sm:table-cell">
         {formatMembershipRole(member.role)}
       </td>
-      <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{member.projectIds.length}</td>
+      {projectsEnabled && (
+        <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{member.projectIds.length}</td>
+      )}
       <td className="hidden px-4 py-3 md:table-cell">
         <AvatarStack
           tone="secondary"

@@ -1,3 +1,4 @@
+import { RequireProjectsEnabled } from "@/components/RequireProjectsEnabled";
 import { DailyTotalsReportPage } from "@/components/reports/DailyTotalsReportPage";
 
 type DailyTotalsPageProps = {
@@ -7,5 +8,9 @@ type DailyTotalsPageProps = {
 export default async function DailyTotalsPage({ params }: DailyTotalsPageProps) {
   const { organisationId } = await params;
 
-  return <DailyTotalsReportPage organisationId={organisationId} />;
+  return (
+    <RequireProjectsEnabled>
+      <DailyTotalsReportPage organisationId={organisationId} />
+    </RequireProjectsEnabled>
+  );
 }

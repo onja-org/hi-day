@@ -1,3 +1,4 @@
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildUrlActivityHourSections } from "@/lib/buildUrlActivityHourSections";
 import { formatHourLabel } from "@/lib/formatHourLabel";
 import type { UrlHourBucket } from "@/types/urlSession";
@@ -14,13 +15,14 @@ export function UrlActivityHourSection({
   organisationId,
   bucket,
 }: UrlActivityHourSectionProps) {
+  const projectsEnabled = useProjectsEnabled();
   const sections = buildUrlActivityHourSections(bucket.pages, bucket.hourStart);
 
   return (
     <TableBody>
       <ActivityHourSectionRow
         label={formatHourLabel(bucket.hourStart)}
-        colSpan={3}
+        colSpan={projectsEnabled ? 3 : 2}
       />
       {sections.map((section) => (
         <UrlActivityDomainRow

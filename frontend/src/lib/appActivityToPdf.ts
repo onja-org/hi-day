@@ -7,7 +7,8 @@ export function appActivityToPdf(
   title: string,
   day: AppActivityDay,
   projects: Pick<Project, "id" | "name">[],
+  projectsEnabled = true,
 ): Blob {
-  const { header, rows } = appActivityRows(day, projects);
+  const { header, rows } = appActivityRows(day, projects, projectsEnabled);
   return toPdfBlob(title, header, rows);
 }

@@ -12,6 +12,8 @@ export const REPORTS: Report[] = [
     title: "Time & activity",
     description:
       "See team members' time worked, activity levels, and amounts earned per project/work order",
+    descriptionWithoutProjects:
+      "See team members' time worked, activity levels, and amounts earned",
     section: "popular",
     badge: "New",
   },
@@ -21,6 +23,7 @@ export const REPORTS: Report[] = [
     description:
       "See team members' time worked, activity levels, and amount earned per days",
     section: "popular",
+    needsProjects: true,
   },
   {
     id: "work-sessions",
@@ -42,3 +45,12 @@ export const REPORTS: Report[] = [
     section: "general",
   },
 ];
+
+/** The catalog as an Organisation sees it: Project-only reports are left out when Projects are off, and descriptions stop mentioning them. */
+export function reportsFor(projectsEnabled: boolean): Report[] {
+  if (projectsEnabled) return REPORTS;
+  return REPORTS.filter((report) => !report.needsProjects).map((report) => ({
+    ...report,
+    description: report.descriptionWithoutProjects ?? report.description,
+  }));
+}

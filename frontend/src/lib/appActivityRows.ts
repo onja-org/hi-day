@@ -11,12 +11,14 @@ function formatHour(hourStart: string): string {
 export function appActivityRows(
   day: AppActivityDay,
   projects: Pick<Project, "id" | "name">[],
+  /** Off, there is no Project column: "No project" on every row would only be noise. */
+  projectsEnabled = true,
 ): { header: string[]; rows: string[][] } {
-  const header = ["Hour", "Project", "App", "Time spent", "Sessions"];
+  const header = ["Hour", ...(projectsEnabled ? ["Project"] : []), "App", "Time spent", "Sessions"];
   const rows = day.buckets.flatMap((bucket) =>
     bucket.items.map((item) => [
       formatHour(bucket.hourStart),
-      projectNameOrUntracked(projects, item.projectId),
+      ...(projectsEnabled ? [projectNameOrUntracked(projects, item.projectId)] : []),
       item.appName,
       formatElapsed(item.secondsSpent * 1000),
       String(item.sessionCount),

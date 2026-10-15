@@ -8,6 +8,7 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useProjects } from "@/hooks/useProjects";
 import { useSavedReportPersist } from "@/hooks/useSavedReportPersist";
 import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportControls";
@@ -58,6 +59,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
   );
   const [scheduling, setScheduling] = useState(false);
   const [search, setSearch] = useState("");
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const projects = projectsQuery.data ?? [];
   const profile = useMyProfile().data;
@@ -89,10 +91,12 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
 
   const items =
     appDays && urlDays
-      ? filterAppsUrlsItems(collectAppsUrlsItems(appDays, urlDays, projects), filters.projectIds, search)
+      ? filterAppsUrlsItems(collectAppsUrlsItems(appDays, urlDays, projects), projectsEnabled ? filters.projectIds : [], search, projectsEnabled)
       : undefined;
-  const rows = items ? buildAppsUrlsRows(items, grouping) : undefined;
-  const columns = appsUrlsColumns(grouping);
+  // A report saved while Projects were on may still be grouped by project.
+  const activeGrouping = projectsEnabled || grouping !== "project" ? grouping : "date";
+  const rows = items ? buildAppsUrlsRows(items, activeGrouping, projectsEnabled) : undefined;
+  const columns = appsUrlsColumns(activeGrouping, projectsEnabled);
   const filenameBase = reportFilenameBase("apps-and-urls", range);
 
   function handleSend(input: SendReportInput): Promise<string | void> {
@@ -169,7 +173,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
       {rows && (
         <AppsUrlsReportBody
           rows={rows}
-          grouping={grouping}
+          grouping={activeGrouping}
           onGroupingChange={setGrouping}
           search={search}
           onSearchChange={setSearch}

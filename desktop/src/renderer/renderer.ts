@@ -583,10 +583,15 @@ let projectsLoaded = false;
  */
 let projectsEnabled = true;
 
-/** Entries with no Project share one bucket in the per-Project totals. */
+/**
+ * Entries with no Project share one bucket in the per-Project totals. So do
+ * all entries while Projects are off, including ones tracked back when they
+ * were on: their Project is hidden, not gone, and counting them apart would
+ * split one day's time across buckets nobody can see.
+ */
 const NO_PROJECT_KEY = "";
 function projectKey(projectId: string | null): string {
-  return projectId ?? NO_PROJECT_KEY;
+  return projectsEnabled ? (projectId ?? NO_PROJECT_KEY) : NO_PROJECT_KEY;
 }
 
 let todaySecondsByProject = new Map<string, number>();
@@ -761,7 +766,7 @@ function updateSyncStatus(): void {
 }
 
 function projectNameFor(projectId: string | null): string {
-  if (projectId === null) return "Tracking time";
+  if (!projectsEnabled || projectId === null) return "Tracking time";
   return (
     projects.find((project) => project.id === projectId)?.name ?? projectId
   );

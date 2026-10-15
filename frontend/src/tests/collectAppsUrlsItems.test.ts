@@ -48,7 +48,7 @@ describe("collectAppsUrlsItems", () => {
   it("flattens apps then sites, naming projects and converting site ms to seconds", () => {
     expect(collectAppsUrlsItems(appDays, urlDays, projects)).toEqual([
       { dateKey: "2026-10-05", projectId: "p1", projectName: "Website", label: "Figma", kind: "app", seconds: 60, memberId: "me", memberName: "Ana" },
-      { dateKey: "2026-10-05", projectId: null, projectName: "Untracked", label: "Slack", kind: "app", seconds: 30, memberId: "me", memberName: "Ana" },
+      { dateKey: "2026-10-05", projectId: null, projectName: "No project", label: "Slack", kind: "app", seconds: 30, memberId: "me", memberName: "Ana" },
       { dateKey: "2026-10-06", projectId: "p1", projectName: "Website", label: "github.com", kind: "site", seconds: 5, memberId: "me", memberName: "Ana" },
     ]);
   });

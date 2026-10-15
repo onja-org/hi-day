@@ -4,7 +4,8 @@ import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { getTimesheetDateRange } from "@/lib/getTimesheetDateRange";
 import { EMPTY_REPORT_FILTERS } from "@/lib/reportFilters";
-import { TIME_ACTIVITY_GROUPINGS } from "@/lib/timeActivityReportConfig";
+import { timeActivityGroupings } from "@/lib/timeActivityReportConfig";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import type { ReportFilters } from "@/lib/reportFilters";
 import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
 import type { DateRangePreset } from "@/types/dateRange";
@@ -19,10 +20,11 @@ export function useTimeActivityReportControls(
   initial?: SavedReportSettings,
   organisationZone?: string | null,
 ) {
+  const projectsEnabled = useProjectsEnabled();
   const [scope, setScope] = useState<ReportScope>(initial?.scope ?? "me");
   const [grouping, setGrouping] = useState<TimeActivityGrouping>(() =>
     // A saved report may hold a grouping that no longer exists (e.g. "todo").
-    TIME_ACTIVITY_GROUPINGS.some((option) => option.value === initial?.grouping)
+    timeActivityGroupings(projectsEnabled).some((option) => option.value === initial?.grouping)
       ? initial!.grouping
       : "day",
   );

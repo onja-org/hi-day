@@ -61,7 +61,7 @@ export function CompanyInformationSettings({
 
             <SettingsSectionRow
               title="Projects"
-              description="Track time against Projects and Tasks, or just per person. Turning this off hides Projects for everyone; existing Projects and the time logged to them are kept."
+              description="Track time against Projects and Tasks, or just per person. Turning this off hides Projects for everyone; existing Projects and the time logged to them are kept. It can only be turned off once no timer is running on a project."
             >
               <div className="rounded-lg border border-input-border bg-white p-5">
                 <Toggle

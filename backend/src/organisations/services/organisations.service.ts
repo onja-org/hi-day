@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
@@ -321,6 +325,19 @@ export class OrganisationsService {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
     });
+
+    const wasEnabled =
+      (organisation.settings as OrganisationSettings).projectsEnabled ??
+      DEFAULT_PROJECTS_ENABLED;
+    if (dto.projectsEnabled === false && wasEnabled) {
+      const running =
+        await this.timeEntriesService.countRunningOnProjects(organisationId);
+      if (running > 0) {
+        throw new ConflictException(
+          `Can't turn Projects off while ${running === 1 ? '1 timer is' : `${running} timers are`} running on a project. Ask ${running === 1 ? 'that person' : 'those people'} to stop ${running === 1 ? 'it' : 'them'}, then try again.`,
+        );
+      }
+    }
 
     if (dto.name !== undefined) {
       organisation.name = dto.name;

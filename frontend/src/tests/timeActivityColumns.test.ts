@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { timeActivityColumns } from "@/lib/timeActivityReportConfig";
+import { timeActivityColumns, timeActivityGroupings } from "@/lib/timeActivityReportConfig";
 
 const keys = (grouping: Parameters<typeof timeActivityColumns>[0]) =>
   timeActivityColumns(grouping).map((column) => column.key);
@@ -27,5 +27,13 @@ describe("timeActivityColumns", () => {
   it("names the first column after the grouping", () => {
     expect(timeActivityColumns("team")[0].header).toBe("Team");
     expect(timeActivityColumns("project")[0].header).toBe("Project / Work order");
+  });
+});
+
+describe("timeActivityColumns with Projects off", () => {
+  it("has no project column, and offers no project grouping", () => {
+    expect(timeActivityColumns("day", false).map((column) => column.key)).not.toContain("project");
+    expect(timeActivityGroupings(false).map((option) => option.value)).not.toContain("project");
+    expect(timeActivityGroupings(true).map((option) => option.value)).toContain("project");
   });
 });

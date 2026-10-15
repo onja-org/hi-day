@@ -6,6 +6,7 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useInvalidateAssignments } from "@/hooks/useInvalidateAssignments";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { syncMemberAssignments } from "@/lib/syncMemberAssignments";
 import type { ActiveMemberListItem } from "@/types/membership";
 import { AssignmentChecklist } from "./AssignmentChecklist";
@@ -26,6 +27,7 @@ export function EditMemberAssignmentsModal({
   member,
   onClose,
 }: EditMemberAssignmentsModalProps) {
+  const projectsEnabled = useProjectsEnabled();
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
   const projectsQuery = useProjects(organisationId, { status: "active" });
@@ -60,7 +62,7 @@ export function EditMemberAssignmentsModal({
         (id) => names.get(id) ?? "item",
       );
       return failures.length === 0
-        ? { ok: true, message: "Teams and projects updated", failures }
+        ? { ok: true, message: projectsEnabled ? "Teams and projects updated" : "Teams updated", failures }
         : { ok: false, message: `${failures.length} change(s) couldn't be saved`, failures };
     },
     onSuccess: (result) => {
@@ -72,7 +74,7 @@ export function EditMemberAssignmentsModal({
   const isLoading = teamsQuery.isLoading || projectsQuery.isLoading || organisationQuery.isLoading;
 
   return (
-    <Modal title={`Teams & projects · ${member.name ?? member.email}`} onClose={onClose} size="wide">
+    <Modal title={`${projectsEnabled ? "Teams & projects" : "Teams"} · ${member.name ?? member.email}`} onClose={onClose} size="wide">
       {isLoading ? (
         <p className="flex items-center gap-2 text-slate-900">
           <Spinner className="text-primary-dark" />
@@ -92,13 +94,15 @@ export function EditMemberAssignmentsModal({
               onChange={setTeamIds}
               emptyText="No teams to choose from."
             />
-            <AssignmentChecklist
-              title="Projects"
-              items={projects.map((project) => ({ id: project.id, name: project.name }))}
-              selectedIds={selectedProjectIds}
-              onChange={setProjectIds}
-              emptyText="No active projects to choose from."
-            />
+            {projectsEnabled && (
+              <AssignmentChecklist
+                title="Projects"
+                items={projects.map((project) => ({ id: project.id, name: project.name }))}
+                selectedIds={selectedProjectIds}
+                onChange={setProjectIds}
+                emptyText="No active projects to choose from."
+              />
+            )}
           </div>
 
           {failures.map((failure) => (

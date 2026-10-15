@@ -16,7 +16,7 @@ import { AppEventsService } from '../app-events.service';
 type FakeAppEvent = { appName: string; sampledAt: Date };
 type FakeCoveringEntry = {
   id: string;
-  projectId: string;
+  projectId: string | null;
   startedAt: Date;
   endedAt: Date | null;
 };
@@ -294,6 +294,38 @@ describe('AppEventsService', () => {
       expect(
         day.buckets.find((b) => b.hourStart === '2026-09-08T11:00:00.000Z'),
       ).toBeUndefined();
+      expect(day.totalSecondsSpent).toBe(5);
+    });
+
+    // Covered is not the same as having a Project: an Organisation with
+    // Projects off tracks on entries that have none, and their samples must
+    // still show.
+    it('keeps a sample covered by an entry that has no project', async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const { repo: appEventsRepo } = makeAppEventsRepo([
+        { appName: 'Chrome', sampledAt: new Date('2026-09-08T09:00:00.000Z') },
+        { appName: 'Chrome', sampledAt: new Date('2026-09-08T11:00:00.000Z') },
+      ]);
+      const service = new AppEventsService(
+        appEventsRepo,
+        makeMembershipsRepo({ findOne }),
+        makeTimeEntriesService([
+          {
+            id: 'te-1',
+            projectId: null,
+            startedAt: new Date('2026-09-08T08:00:00.000Z'),
+            endedAt: new Date('2026-09-08T10:00:00.000Z'),
+          },
+        ]),
+        makeOrganisationsService(),
+      );
+
+      const day = await service.getMyDay('org-1', 'user-1', '2026-09-08');
+
+      const covered = day.buckets.find(
+        (b) => b.hourStart === '2026-09-08T09:00:00.000Z',
+      )!;
+      expect(covered.items[0].projectId).toBeNull();
       expect(day.totalSecondsSpent).toBe(5);
     });
 

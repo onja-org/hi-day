@@ -19,7 +19,7 @@ function item(overrides: Partial<AppsUrlsItem>): AppsUrlsItem {
 const items = [
   item({ label: "Figma" }),
   item({ label: "github.com", kind: "site", projectId: "p2", projectName: "Mobile" }),
-  item({ label: "Slack", projectId: null, projectName: "Untracked" }),
+  item({ label: "Slack", projectId: null, projectName: "No project" }),
 ];
 
 describe("filterAppsUrlsItems", () => {
@@ -41,5 +41,15 @@ describe("filterAppsUrlsItems", () => {
 
   it("combines the project and search filters", () => {
     expect(filterAppsUrlsItems(items, ["p1"], "mobile")).toEqual([]);
+  });
+});
+
+describe("filterAppsUrlsItems with Projects off", () => {
+  it("does not match the project name, only the app or site", () => {
+    const items = [item({ label: "Slack", projectId: null, projectName: "No project" })];
+
+    expect(filterAppsUrlsItems(items, [], "project", false)).toEqual([]);
+    expect(filterAppsUrlsItems(items, [], "slack", false)).toEqual(items);
+    expect(filterAppsUrlsItems(items, [], "project", true)).toEqual(items);
   });
 });

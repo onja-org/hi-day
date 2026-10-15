@@ -43,6 +43,11 @@ const FIRST_COLUMN_HEADERS: Record<TimeActivityGrouping, string> = {
   team: "Team",
 };
 
+/** Without Projects there is no project to group by. */
+export function timeActivityGroupings(projectsEnabled: boolean): typeof TIME_ACTIVITY_GROUPINGS {
+  return projectsEnabled ? TIME_ACTIVITY_GROUPINGS : TIME_ACTIVITY_GROUPINGS.filter((option) => option.value !== "project");
+}
+
 /** Columns the grouping already spells out in its first column, so repeating them would be noise. */
 const REDUNDANT_COLUMN: Partial<Record<TimeActivityGrouping, string>> = {
   project: "project",
@@ -52,8 +57,10 @@ const REDUNDANT_COLUMN: Partial<Record<TimeActivityGrouping, string>> = {
 /** The first column names whatever the rows are grouped by (and its own column is dropped); "None" lists entries by member, so it gets a separate Date column. */
 export function timeActivityColumns(
   grouping: TimeActivityGrouping,
+  projectsEnabled = true,
 ): ReportTableColumn[] {
-  const [, ...rest] = TIME_ACTIVITY_COLUMNS;
+  const [, ...allRest] = TIME_ACTIVITY_COLUMNS;
+  const rest = projectsEnabled ? allRest : allRest.filter((column) => column.key !== "project");
   return [
     { key: "date", header: FIRST_COLUMN_HEADERS[grouping] },
     ...(grouping === "none"

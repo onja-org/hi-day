@@ -253,9 +253,9 @@ export function TimeEntriesPageContent({
             )}
           </button>
           <ExportButtons
-            csv={entriesToCsv(activeEntries ?? [], activeZone)}
+            csv={entriesToCsv(activeEntries ?? [], activeZone, projectsEnabled)}
             buildPdf={() =>
-              entriesToPdf(exportTitle, activeEntries ?? [], activeZone)
+              entriesToPdf(exportTitle, activeEntries ?? [], activeZone, projectsEnabled)
             }
             filenameBase={activeFilenameBase}
             disabled={(activeEntries ?? []).length === 0}

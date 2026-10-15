@@ -9,6 +9,7 @@ import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useManualTimeEdits } from "@/hooks/useManualTimeEdits";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useSavedReportPersist } from "@/hooks/useSavedReportPersist";
 import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportControls";
 import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
@@ -18,7 +19,7 @@ import { filterManualTimeEdits } from "@/lib/filterManualTimeEdits";
 import { manualTimeEditProjectOptions } from "@/lib/manualTimeEditProjectOptions";
 import {
   MANUAL_TIME_EDIT_ACTION_LABELS,
-  MANUAL_TIME_EDITS_COLUMNS,
+  manualTimeEditsColumns,
 } from "@/lib/manualTimeEditsReportConfig";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
@@ -62,10 +63,15 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
   );
   const membersQuery = useActiveMembers(organisationId, { enabled: showsEveryone });
   const myProjectsQuery = useMyProjects(organisationId);
+  const projectsEnabled = useProjectsEnabled();
 
   // A member choice left over from the "All" tab must not silently narrow "Me".
-  const activeFilters = showsEveryone ? filters : { ...filters, memberIds: [] };
+  const activeFilters = {
+    ...(showsEveryone ? filters : { ...filters, memberIds: [] }),
+    ...(projectsEnabled ? {} : { projectIds: [] }),
+  };
   const edits = editsQuery.data ? filterManualTimeEdits(editsQuery.data, activeFilters, action) : undefined;
+  const columns = manualTimeEditsColumns(projectsEnabled);
   const rows = edits ? buildManualTimeEditRows(edits, zone) : undefined;
   const totals = edits ? sumManualTimeEdits(edits) : undefined;
   const filenameBase = reportFilenameBase("manual-time-edits", range);
@@ -79,7 +85,7 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
       filenameBase,
       isEmpty: !rows || rows.length === 0,
       buildContent: (fileType, fileTitle) =>
-        buildReportTableAttachment(fileType, MANUAL_TIME_EDITS_COLUMNS, rows ?? [], fileTitle),
+        buildReportTableAttachment(fileType, columns, rows ?? [], fileTitle),
     });
   }
 
@@ -162,7 +168,7 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
         <>
           <div className="flex flex-wrap items-center justify-end gap-3">
             <ExportButtons
-              csv={reportTableToCsv(MANUAL_TIME_EDITS_COLUMNS, rows)}
+              csv={reportTableToCsv(columns, rows)}
               filenameBase={filenameBase}
               disabled={rows.length === 0}
             />
@@ -172,7 +178,7 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
           {rows.length === 0 ? (
             <p className="text-sm text-slate-900">No manual time edits in this period.</p>
           ) : (
-            <ReportsTable columns={MANUAL_TIME_EDITS_COLUMNS} rows={rows} />
+            <ReportsTable columns={columns} rows={rows} />
           )}
         </>
       )}
