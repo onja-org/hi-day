@@ -1,4 +1,5 @@
 import type { AllowedApps, AppUrlTracking } from "./api-client";
+import type { ReminderSettings } from "./tracking-reminder";
 
 export interface CaptureSettingsSession {
   load(): { deviceToken: string } | null;
@@ -13,7 +14,16 @@ export interface CaptureSettingsValue {
   screenshotFrequencySeconds: number;
   /** See docs/adr/0015-... — purely informational, drives the renderer's passive disclosure banner. Never gates capture. Same shape as ApiClient's own CaptureSettings.consent, so a real API result needs no mapping here. */
   consent: { required: boolean };
+  /** Rides along on this poll rather than adding a second loop; not
+   * capture, so it stays its own object. */
+  reminders: ReminderSettings;
 }
+
+/** Reminders off, and the default delivery for when they are turned on. */
+const OFF_REMINDERS: ReminderSettings = {
+  intervalMinutes: 0,
+  delivery: "alert",
+};
 
 // consent.required defaults true (not false, unlike every other field here):
 // with no session/settings loaded yet, showing the disclosure banner is the
@@ -28,6 +38,8 @@ const OFF_SETTINGS: CaptureSettingsValue = {
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 0,
   consent: { required: true },
+  // Signed out, there is no timer to remind anyone to start.
+  reminders: OFF_REMINDERS,
 };
 
 export interface CaptureSettingsResult {
@@ -100,9 +112,26 @@ export class CaptureSettingsGate {
     deviceToken: string,
   ): Promise<CaptureSettingsValue | null> {
     const result = await this.apiClient.getCaptureSettings(deviceToken);
-    if (result.ok && result.data) return result.data;
+    // Normalised, not trusted: the type describes what a current server
+    // sends, and a server older than this agent omits `reminders`
+    // entirely. A missing field must leave reminders off, never take the
+    // app down with it.
+    if (result.ok && result.data) {
+      return result.data.reminders
+        ? result.data
+        : { ...result.data, reminders: OFF_REMINDERS };
+    }
     if (result.unauthorized) return OFF_SETTINGS;
     return null;
+  }
+
+  /** Field by field, not by identity: every poll builds a fresh object. */
+  private sameReminders(other: ReminderSettings): boolean {
+    const mine = this.lastSettings.reminders;
+    return (
+      mine.intervalMinutes === other.intervalMinutes &&
+      mine.delivery === other.delivery
+    );
   }
 
   private applyIfChanged(settings: CaptureSettingsValue): void {
@@ -113,7 +142,10 @@ export class CaptureSettingsGate {
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&
       settings.screenshotFrequencySeconds ===
         this.lastSettings.screenshotFrequencySeconds &&
-      settings.consent.required === this.lastSettings.consent.required
+      settings.consent.required === this.lastSettings.consent.required &&
+      // Easy to forget, and the failure is silent: without this an admin
+      // turning reminders on never reaches an agent that is already up.
+      this.sameReminders(settings.reminders)
     ) {
       return;
     }

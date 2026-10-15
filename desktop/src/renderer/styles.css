@@ -359,10 +359,12 @@ input::placeholder {
   overflow-y: auto;
 }
 
-/* The idle prompt takes the whole panel until it's answered. */
-.tracking-view:has(.idle-screen:not([hidden])) .timer-section,
-.tracking-view:has(.idle-screen:not([hidden])) .search-section,
-.tracking-view:has(.idle-screen:not([hidden])) .projects-section {
+/* The idle prompt takes the whole panel until it's answered. By id, not
+   by class: the reminder below shares the look but must not blank the
+   controls it is asking someone to use. */
+.tracking-view:has(#idle-banner:not([hidden])) .timer-section,
+.tracking-view:has(#idle-banner:not([hidden])) .search-section,
+.tracking-view:has(#idle-banner:not([hidden])) .projects-section {
   display: none;
 }
 
@@ -791,6 +793,17 @@ input::placeholder {
   background: #ffffff;
   box-shadow: 5px 5px 0 var(--sun);
   text-align: center;
+}
+
+/* Sits at the foot of the panel rather than taking it over: the person
+   still needs the project list and the play button to act on it. */
+.reminder-screen {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  margin-top: auto;
+  padding: 16px;
+  gap: 8px;
 }
 
 .idle-stats {

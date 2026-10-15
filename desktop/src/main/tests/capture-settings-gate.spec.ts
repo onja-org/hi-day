@@ -20,6 +20,7 @@ describe('CaptureSettingsGate', () => {
       // comment on it. Informational only now (drives the disclosure
       // banner), never gates capture.
       consent: { required: true },
+      reminders: { intervalMinutes: 0, delivery: 'alert' },
       ...overrides,
     };
   }
@@ -241,5 +242,47 @@ describe('CaptureSettingsGate', () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ appUrlTracking: 'off', windowTrackingEnabled: false }),
     );
+  });
+
+  it('reports every reminder change to a running agent, and only real ones', async () => {
+    const seen: number[] = [];
+    const withInterval = (intervalMinutes: number) =>
+      settings({ reminders: { intervalMinutes, delivery: 'alert' } });
+    const client: CaptureSettingsClient = {
+      getCaptureSettings: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, data: withInterval(10) })
+        .mockResolvedValueOnce({ ok: true, data: withInterval(10) })
+        .mockResolvedValueOnce({ ok: true, data: withInterval(5) })
+        .mockResolvedValue({ ok: true, data: withInterval(0) }),
+    };
+    const gate = new CaptureSettingsGate(makeSession('token'), client, (next) =>
+      seen.push(next.reminders.intervalMinutes),
+    );
+
+    for (let poll = 0; poll < 4; poll += 1) await gate.pollOnce();
+
+    // An admin saving reaches a running agent on the next poll, with no
+    // restart — the gate used to compare only the capture fields. The
+    // repeated 10 is not reported twice.
+    expect(seen).toEqual([10, 5, 0]);
+  });
+
+  it('survives a server too old to send reminders at all', async () => {
+    const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
+    const withoutReminders = settings({ windowTrackingEnabled: true });
+    delete (withoutReminders as Partial<CaptureSettingsValue>).reminders;
+    const gate = new CaptureSettingsGate(
+      makeSession('token'),
+      makeClient({ ok: true, data: withoutReminders }),
+      onChange,
+    );
+
+    await expect(gate.pollOnce()).resolves.toBeUndefined();
+
+    expect(onChange.mock.calls[0][0].reminders).toEqual({
+      intervalMinutes: 0,
+      delivery: 'alert',
+    });
   });
 });

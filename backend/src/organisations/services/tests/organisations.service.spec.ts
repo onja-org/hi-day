@@ -209,6 +209,10 @@ describe('OrganisationsService', () => {
           weeklyLimitHours: null,
           dailyLimitHours: null,
         },
+        trackingReminders: {
+          intervalMinutes: 0,
+          delivery: 'alert',
+        },
         userId: 'user-1',
         isOwner: false,
         deletionScheduledFor: null,
@@ -251,6 +255,35 @@ describe('OrganisationsService', () => {
           },
         }),
       );
+    });
+  });
+
+  describe('getTrackingReminders', () => {
+    function makeService(settings: Record<string, unknown>) {
+      return new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({ id: 'org-1', settings }),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+    }
+
+    it('is off until an admin opts in, and raises the window when it does fire', async () => {
+      await expect(
+        makeService({}).getTrackingReminders('org-1'),
+      ).resolves.toEqual({ intervalMinutes: 0, delivery: 'alert' });
+    });
+
+    it('carries the interval and delivery an admin chose', async () => {
+      await expect(
+        makeService({
+          reminderIntervalMinutes: 15,
+          reminderDelivery: 'notification',
+        }).getTrackingReminders('org-1'),
+      ).resolves.toEqual({ intervalMinutes: 15, delivery: 'notification' });
     });
   });
 

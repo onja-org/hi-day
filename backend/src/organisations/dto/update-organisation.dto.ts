@@ -14,9 +14,12 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { IsIanaTimezone } from '../../auth/dto/is-iana-timezone.validator';
+
 import { ALLOWED_APPS_VALUES } from '../allowed-apps';
 import type { AllowedApps } from '../allowed-apps';
 import { APP_URL_TRACKING_VALUES } from '../app-url-tracking';
+import { MIN_REMINDER_INTERVAL_MINUTES } from '../tracking-reminders';
+import type { TrackingReminderDelivery } from '../tracking-reminders';
 import type { AppUrlTracking } from '../app-url-tracking';
 import {
   INDUSTRY_VALUES,
@@ -100,6 +103,19 @@ export class UpdateOrganisationDto {
   @Min(0)
   @Max(168)
   expectedWeeklyHours?: number | null;
+
+  /** `0` switches reminders off; anything else is held at or above the
+   * five-minute floor, below which a reminder is just nagging. */
+  @IsOptional()
+  @IsInt()
+  @ValidateIf((_, value: number) => value !== 0)
+  @Min(MIN_REMINDER_INTERVAL_MINUTES)
+  @Max(240)
+  reminderIntervalMinutes?: number;
+
+  @IsOptional()
+  @IsIn(['notification', 'alert'])
+  reminderDelivery?: TrackingReminderDelivery;
 
   /** `null` is "no limit". A number is a real ceiling, and zero would mean
    * "may never track" — never what an admin meant to type. */

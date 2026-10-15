@@ -457,6 +457,14 @@ const switchButton = document.getElementById(
   "switch-button",
 ) as HTMLButtonElement;
 const idleBanner = document.getElementById("idle-banner")!;
+const reminderBanner = document.getElementById("reminder-banner")!;
+const reminderBannerMessage = document.getElementById(
+  "reminder-banner-message",
+)!;
+const reminderStartButton = document.getElementById("reminder-start-button")!;
+const reminderDismissButton = document.getElementById(
+  "reminder-dismiss-button",
+)!;
 const idleBannerMessage = document.getElementById("idle-banner-message")!;
 const idleKeepButton = document.getElementById(
   "idle-keep-button",
@@ -1775,6 +1783,23 @@ async function runInitTracking(): Promise<void> {
  * ended any running entry, so this only says so and stops offering
  * buttons that would be refused. Neutral styling, not `error-text`.
  */
+function hideTrackingReminder(): void {
+  reminderBanner.hidden = true;
+}
+
+reminderDismissButton.addEventListener("click", hideTrackingReminder);
+reminderStartButton.addEventListener("click", () => {
+  hideTrackingReminder();
+  // The same path the main toggle takes, so the reminder can never start a
+  // timer the button itself would have refused.
+  if (!timerToggle.disabled) timerToggle.click();
+});
+
+window.api.windowControls.onTrackingReminder((message) => {
+  reminderBannerMessage.textContent = message;
+  reminderBanner.hidden = false;
+});
+
 window.api.windowControls.onTrackingNotice((notice) => {
   trackingNotice.textContent = notice ?? "";
   // Truthiness, not `!== null`: an older main process sends `undefined`,
