@@ -24,13 +24,15 @@ describe('ScreenshotsService', () => {
     const save = jest.fn().mockResolvedValue(undefined);
     const find = jest.fn().mockResolvedValue(rows);
     const deleteFn = jest.fn().mockResolvedValue(undefined);
+    const findOne = jest.fn().mockResolvedValue(rows[0] ?? null);
     const repo = {
       create: jest.fn((data: unknown) => data),
       save,
       find,
+      findOne,
       delete: deleteFn,
     } as unknown as Repository<Screenshot>;
-    return { repo, save, find, delete: deleteFn };
+    return { repo, save, find, findOne, delete: deleteFn };
   }
 
   function makeMembershipsRepo(
@@ -52,6 +54,7 @@ describe('ScreenshotsService', () => {
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
       }),
+      membersCanDeleteScreenshots: jest.fn().mockResolvedValue(false),
       ...overrides,
     } as unknown as OrganisationsService;
   }
@@ -451,6 +454,125 @@ describe('ScreenshotsService', () => {
 
       await expect(
         service.getScreenshotsForMembership('org-1', 'user-1', 'missing'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('deleteScreenshot', () => {
+    const OWNED = {
+      id: 'screenshot-1',
+      membershipId: 'membership-owner',
+      storageKey: 'screenshots/org-1/device-1/a.jpg',
+    } as Screenshot;
+
+    function makeService(
+      caller: Partial<Membership>,
+      organisationAllows: boolean,
+      row: Screenshot | null = OWNED,
+    ) {
+      const { repo, delete: deleteFn } = makeScreenshotsRepo(row ? [row] : []);
+      const { storage, deleteObjects } = makeStorage();
+      const service = new ScreenshotsService(
+        repo,
+        makeMembershipsRepo({ findOne: jest.fn().mockResolvedValue(caller) }),
+        makeOrganisationsService({
+          membersCanDeleteScreenshots: jest
+            .fn()
+            .mockResolvedValue(organisationAllows),
+        }),
+        storage,
+        makeTimeEntriesService(),
+      );
+      return { service, delete: deleteFn, deleteObjects };
+    }
+
+    it("lets an admin delete anyone's, whatever the organisation allows", async () => {
+      const {
+        service,
+        delete: deleteFn,
+        deleteObjects,
+      } = makeService(
+        { id: 'membership-admin', role: MembershipRole.ADMIN },
+        false,
+      );
+
+      await service.deleteScreenshot('org-1', 'user-1', 'screenshot-1');
+
+      expect(deleteFn).toHaveBeenCalledWith({ id: 'screenshot-1' });
+      expect(deleteObjects).toHaveBeenCalledWith([OWNED.storageKey]);
+    });
+
+    it('lets a member delete their own once the organisation allows it', async () => {
+      const { service, delete: deleteFn } = makeService(
+        {
+          id: 'membership-owner',
+          role: MembershipRole.MEMBER,
+          canDeleteScreenshots: null,
+        },
+        true,
+      );
+
+      await service.deleteScreenshot('org-1', 'user-1', 'screenshot-1');
+
+      expect(deleteFn).toHaveBeenCalled();
+    });
+
+    it('refuses a member their own while the organisation does not allow it', async () => {
+      const { service, delete: deleteFn } = makeService(
+        {
+          id: 'membership-owner',
+          role: MembershipRole.MEMBER,
+          canDeleteScreenshots: null,
+        },
+        false,
+      );
+
+      await expect(
+        service.deleteScreenshot('org-1', 'user-1', 'screenshot-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it("refuses someone else's screenshot even where deleting is allowed", async () => {
+      const { service, delete: deleteFn } = makeService(
+        {
+          id: 'membership-other',
+          role: MembershipRole.MEMBER,
+          canDeleteScreenshots: true,
+        },
+        true,
+      );
+
+      await expect(
+        service.deleteScreenshot('org-1', 'user-1', 'screenshot-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it("lets a member's own override beat an organisation that forbids it", async () => {
+      const { service, delete: deleteFn } = makeService(
+        {
+          id: 'membership-owner',
+          role: MembershipRole.MEMBER,
+          canDeleteScreenshots: true,
+        },
+        false,
+      );
+
+      await service.deleteScreenshot('org-1', 'user-1', 'screenshot-1');
+
+      expect(deleteFn).toHaveBeenCalled();
+    });
+
+    it('throws when the screenshot is not in this organisation', async () => {
+      const { service } = makeService(
+        { id: 'membership-admin', role: MembershipRole.ADMIN },
+        true,
+        null,
+      );
+
+      await expect(
+        service.deleteScreenshot('org-1', 'user-1', 'missing'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

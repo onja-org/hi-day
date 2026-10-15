@@ -2,6 +2,7 @@
 
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { SegmentedControl } from "@/components/SegmentedControl";
+import { SelectField } from "@/components/ui/form";
 import { Spinner } from "@/components/Spinner";
 import { Switch } from "@/components/Switch";
 import { getInitials } from "@/lib/getInitials";
@@ -19,6 +20,7 @@ type MemberOverrideRowProps<K extends string> = {
   isSaving: boolean;
   onMemberChange: (membershipId: string, next: K | null) => void;
   onMemberReset?: (membershipId: string) => void;
+  control?: "segmented" | "select";
   secondary?: SecondaryToggleColumn<K>;
 };
 
@@ -30,6 +32,7 @@ export function MemberOverrideRow<K extends string>({
   isSaving,
   onMemberChange,
   onMemberReset,
+  control = "segmented",
   secondary,
 }: MemberOverrideRowProps<K>) {
   const who = row.name ?? row.email;
@@ -84,12 +87,30 @@ export function MemberOverrideRow<K extends string>({
 
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <SegmentedControl
-            label={`${title} for ${who}`}
-            options={options}
-            value={effective}
-            onChange={(next) => onMemberChange(row.membershipId, next)}
-          />
+          {control === "select" ? (
+            <SelectField
+              label={`${title} for ${who}`}
+              hideLabel
+              compact
+              value={effective}
+              onChange={(event) =>
+                onMemberChange(row.membershipId, event.target.value as K)
+              }
+            >
+              {options.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </SelectField>
+          ) : (
+            <SegmentedControl
+              label={`${title} for ${who}`}
+              options={options}
+              value={effective}
+              onChange={(next) => onMemberChange(row.membershipId, next)}
+            />
+          )}
           {isSaving && <Spinner className="text-primary-dark" />}
           {!secondary && clearButton}
         </div>

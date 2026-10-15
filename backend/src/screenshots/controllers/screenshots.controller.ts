@@ -1,4 +1,13 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
@@ -16,6 +25,21 @@ import { ScreenshotsService } from '../services/screenshots.service';
 )
 export class ScreenshotsController {
   constructor(private readonly screenshotsService: ScreenshotsService) {}
+
+  /** Who may delete what is decided in the service — an admin anyone's,
+   * everyone else their own and only where the Organisation allows it. */
+  @Delete(':screenshotId')
+  @HttpCode(204)
+  remove(
+    @Param('screenshotId') screenshotId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.screenshotsService.deleteScreenshot(
+      request.organisationId!,
+      request.userId,
+      screenshotId,
+    );
+  }
 
   @Get('mine')
   getMine(

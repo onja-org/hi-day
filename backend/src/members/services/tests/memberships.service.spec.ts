@@ -169,6 +169,9 @@ describe('MembershipsService', () => {
           expectedWeeklyHours: null,
           weeklyLimitHours: null,
           dailyLimitHours: null,
+          canDeleteScreenshots: null,
+          screenshotFrequencySeconds: null,
+          canDeleteScreenshots: null,
         },
       ]);
     });
@@ -1058,6 +1061,7 @@ describe('MembershipsService', () => {
         expectedWeeklyHours: null,
         weeklyLimitHours: null,
         dailyLimitHours: null,
+        canDeleteScreenshots: null,
         user: { email: 'a@b.test', name: 'A B' },
       };
       const findOne = jest
@@ -1116,6 +1120,7 @@ describe('MembershipsService', () => {
         expectedWeeklyHours: null,
         weeklyLimitHours: null,
         dailyLimitHours: null,
+        canDeleteScreenshots: null,
       });
 
       expect(result.appUrlTracking).toBeNull();

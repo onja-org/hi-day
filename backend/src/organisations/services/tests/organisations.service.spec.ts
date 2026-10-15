@@ -202,6 +202,8 @@ describe('OrganisationsService', () => {
         workingHoursPerDay: 8,
         timezone: 'UTC',
         weekStartsOn: 'monday',
+        membersCanDeleteScreenshots: false,
+        canDeleteOwnScreenshots: false,
         workTimeLimits: {
           expectedWorkDays: [1, 2, 3, 4, 5],
           trackingDisabledDays: [],
@@ -219,6 +221,29 @@ describe('OrganisationsService', () => {
         suspendedAt: null,
         purgeAt: null,
       });
+    });
+
+    it('never reports a delete permission for finance, which cannot reach the screenshots endpoints at all', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        role: MembershipRole.FINANCE,
+        organisation: {
+          id: 'org-1',
+          publicId: 100000,
+          name: 'Acme Inc',
+          settings: { membersCanDeleteScreenshots: true },
+        },
+      });
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+
+      const profile = await service.findCurrentForUser('user-1');
+
+      expect(profile.canDeleteOwnScreenshots).toBe(false);
     });
 
     it('throws when the user has no membership', async () => {
@@ -809,6 +834,83 @@ describe('OrganisationsService', () => {
   });
 
   describe('getCaptureSettings', () => {
+    it("switches one member's screenshots off while the organisation's stay on", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: {
+              screenshotsEnabled: true,
+              screenshotFrequencySeconds: 300,
+            },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ screenshotFrequencySeconds: 0 }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ screenshotsEnabled: false });
+    });
+
+    it("applies a member's own screenshot frequency over the organisation's", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: {
+              screenshotsEnabled: true,
+              screenshotFrequencySeconds: 600,
+            },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ screenshotFrequencySeconds: 200 }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({
+        screenshotsEnabled: true,
+        screenshotFrequencySeconds: 200,
+      });
+    });
+
+    it('captures a member whose organisation default is off', async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest
+            .fn()
+            .mockResolvedValue({ id: 'org-1', settings: {} }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ screenshotFrequencySeconds: 300 }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({
+        screenshotsEnabled: true,
+        screenshotFrequencySeconds: 300,
+      });
+    });
+
     it('defaults window tracking on, and everything else off, when the organisation has no explicit capture settings', async () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo({

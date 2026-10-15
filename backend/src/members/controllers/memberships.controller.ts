@@ -106,6 +106,38 @@ export class MembershipsController {
    * Organisation. Backs the "Apply to all" button on that setting — one
    * server-side UPDATE rather than N PATCHes from the client.
    */
+  @Post('screenshot-delete/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetScreenshotDeleteOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllScreenshotDeleteOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
+  @Post('screenshot-frequency/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetScreenshotFrequencyOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllScreenshotFrequencyOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Post('allowed-apps/reset-overrides')
   @RequireRole(MembershipRole.ADMIN)
   async resetAllowedAppsOverrides(

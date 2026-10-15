@@ -77,6 +77,15 @@ export class Membership {
 
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   dailyLimitHours: string | null;
+  /** Whether this member may delete their own screenshots; `null`
+   * inherits the Organisation's setting. */
+  @Column({ type: 'boolean', nullable: true })
+  canDeleteScreenshots: boolean | null;
+
+  /** Per-member screenshot frequency. `null` inherits the Organisation's;
+   * `0` is "None", no screenshots for this member at all. */
+  @Column({ type: 'integer', nullable: true })
+  screenshotFrequencySeconds: number | null;
 
   /**
    * Per-member override of the Organisation's "Modify time (manual time)"

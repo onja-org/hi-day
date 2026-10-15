@@ -64,6 +64,11 @@ export interface OrganisationProfile {
   windowTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
+  /** The Organisation's default: may members delete their own screenshots. */
+  membersCanDeleteScreenshots: boolean;
+  /** Resolved for *the caller* — their override, else the default. Admins
+   * may always delete, so this is true for them regardless. */
+  canDeleteOwnScreenshots: boolean;
   workTimeLimits: WorkTimeLimits;
   trackingReminders: {
     intervalMinutes: number;
@@ -103,6 +108,7 @@ interface OrganisationSettings {
   windowTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
+  membersCanDeleteScreenshots?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;
@@ -226,6 +232,7 @@ export class OrganisationsService {
       membership.role,
       userId,
       membership.timesheetModifyTime,
+      membership.canDeleteScreenshots,
     );
   }
 
@@ -346,6 +353,9 @@ export class OrganisationsService {
         : {}),
       ...(dto.allowedApps !== undefined
         ? { allowedApps: dto.allowedApps }
+        : {}),
+      ...(dto.membersCanDeleteScreenshots !== undefined
+        ? { membersCanDeleteScreenshots: dto.membersCanDeleteScreenshots }
         : {}),
       ...(dto.expectedWorkDays !== undefined
         ? { expectedWorkDays: dto.expectedWorkDays }
@@ -493,6 +503,16 @@ export class OrganisationsService {
     };
   }
 
+  /** Narrow, like `getIdlePolicy`: the screenshots service needs only
+   * this one flag to decide whether a member may delete their own. */
+  async membersCanDeleteScreenshots(organisationId: string): Promise<boolean> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+    return settings.membersCanDeleteScreenshots ?? false;
+  }
+
   /** Narrow, like `getIdlePolicy`: the dashboard services bucket time by
    * week and need this without the whole `OrganisationProfile`. */
   async getWeekStart(organisationId: string): Promise<WeekStart> {
@@ -550,6 +570,18 @@ export class OrganisationsService {
         })
       : null;
 
+    // One number carries both questions for screenshots: `0` is "None",
+    // which is how a member is switched off while the organisation is on.
+    // The organisation has no "None" of its own — `screenshotsEnabled` is
+    // its off switch — so it collapses to 0 here.
+    const organisationFrequency =
+      (settings.screenshotsEnabled ?? false)
+        ? (settings.screenshotFrequencySeconds ??
+          DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds)
+        : 0;
+    const frequencySeconds =
+      membership?.screenshotFrequencySeconds ?? organisationFrequency;
+
     return {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
@@ -562,12 +594,13 @@ export class OrganisationsService {
         membership?.allowedApps ??
         settings.allowedApps ??
         DEFAULT_CAPTURE_SETTINGS.allowedApps,
-      screenshotsEnabled:
-        settings.screenshotsEnabled ??
-        DEFAULT_CAPTURE_SETTINGS.screenshotsEnabled,
+      screenshotsEnabled: frequencySeconds > 0,
+      // Kept sane even while disabled: the agent feeds this straight to
+      // `setIntervalMs`, which has no meaning for 0.
       screenshotFrequencySeconds:
-        settings.screenshotFrequencySeconds ??
-        DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
+        frequencySeconds > 0
+          ? frequencySeconds
+          : DEFAULT_CAPTURE_SETTINGS.screenshotFrequencySeconds,
       screenshotRetentionDays:
         settings.screenshotRetentionDays ??
         DEFAULT_CAPTURE_SETTINGS.screenshotRetentionDays,
@@ -580,6 +613,7 @@ export class OrganisationsService {
     userId: string,
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
+    membershipCanDeleteScreenshots: boolean | null = null,
   ): OrganisationProfile {
     const settings = organisation.settings as OrganisationSettings;
     const modifyTime =
@@ -601,6 +635,16 @@ export class OrganisationsService {
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
       allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
+      membersCanDeleteScreenshots:
+        settings.membersCanDeleteScreenshots ?? false,
+      // Finance is off the screenshots endpoints entirely (see
+      // ScreenshotsController's @RequireRole), so never promise it one.
+      canDeleteOwnScreenshots:
+        role !== MembershipRole.FINANCE &&
+        (role === MembershipRole.ADMIN ||
+          (membershipCanDeleteScreenshots ??
+            settings.membersCanDeleteScreenshots ??
+            false)),
       workTimeLimits: {
         expectedWorkDays:
           settings.expectedWorkDays ??

@@ -18,6 +18,7 @@ type IndividualOverridesSectionProps<K extends string> = {
   onMemberChange: (membershipId: string, next: K | null) => void;
   onMemberReset?: (membershipId: string) => void;
   savingMemberIds: ReadonlySet<string>;
+  control?: "segmented" | "select";
   secondary?: SecondaryToggleColumn<K>;
 };
 
@@ -30,6 +31,7 @@ export function IndividualOverridesSection<K extends string>({
   onMemberChange,
   onMemberReset,
   savingMemberIds,
+  control,
   secondary,
 }: IndividualOverridesSectionProps<K>) {
   const [search, setSearch] = useState("");
@@ -101,6 +103,7 @@ export function IndividualOverridesSection<K extends string>({
                 isSaving={savingMemberIds.has(row.membershipId)}
                 onMemberChange={onMemberChange}
                 onMemberReset={onMemberReset}
+                control={control}
                 secondary={secondary}
               />
             ))}

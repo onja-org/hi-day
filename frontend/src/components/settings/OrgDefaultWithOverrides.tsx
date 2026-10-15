@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { SegmentedControl } from "@/components/SegmentedControl";
+import { SelectField } from "@/components/ui/form";
 import { Spinner } from "@/components/Spinner";
 import { Switch } from "@/components/Switch";
 import { IndividualOverridesSection } from "./IndividualOverridesSection";
@@ -56,6 +57,9 @@ type Props<K extends string> = {
   /** Clears every per-member override at once ("Apply to all"). */
   onApplyToAll: () => void;
   isResetting: boolean;
+  /** `select` for a list long enough that a segmented control would wrap.
+   * Defaults to the segmented control the other settings panels use. */
+  control?: "segmented" | "select";
   secondary?: SecondaryToggleColumn<K>;
   /** Rendered between the default and the member table, for an org-wide
    * switch belonging with the default (Timesheets' "Approval permission"). */
@@ -79,6 +83,7 @@ export function OrgDefaultWithOverrides<K extends string>({
   savingMemberIds,
   onApplyToAll,
   isResetting,
+  control = "segmented",
   secondary,
   belowDefault,
 }: Props<K>) {
@@ -107,12 +112,28 @@ export function OrgDefaultWithOverrides<K extends string>({
           Default
         </span>
         <div className="flex flex-wrap items-center gap-3">
-          <SegmentedControl
-            label={title}
-            options={options}
-            value={orgValue}
-            onChange={onOrgChange}
-          />
+          {control === "select" ? (
+            <SelectField
+              label={title}
+              hideLabel
+              compact
+              value={orgValue}
+              onChange={(event) => onOrgChange(event.target.value as K)}
+            >
+              {options.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </SelectField>
+          ) : (
+            <SegmentedControl
+              label={title}
+              options={options}
+              value={orgValue}
+              onChange={onOrgChange}
+            />
+          )}
           {secondary && (
             <span
               className={clsx(
@@ -155,6 +176,7 @@ export function OrgDefaultWithOverrides<K extends string>({
         onMemberChange={onMemberChange}
         onMemberReset={onMemberReset}
         savingMemberIds={savingMemberIds}
+        control={control}
         secondary={secondary}
       />
     </section>

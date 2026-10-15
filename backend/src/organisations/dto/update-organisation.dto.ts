@@ -83,6 +83,10 @@ export class UpdateOrganisationDto {
   allowedApps?: AllowedApps;
 
   @IsOptional()
+  @IsBoolean()
+  membersCanDeleteScreenshots?: boolean;
+
+  @IsOptional()
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })

@@ -52,7 +52,7 @@ const VIEW_MODE_LABELS: Record<TimesheetViewMode, string> = {
   calendar: "Calendar",
 };
 
-const DEFAULT_DATE_PRESET: DateRangePreset = "last_7_days";
+const DEFAULT_DATE_PRESET: DateRangePreset = "today";
 
 export function TimeEntriesPageContent({
   organisationId,
