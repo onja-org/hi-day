@@ -3,6 +3,7 @@ import { asZonedWallClock, detectTimezone } from "./timezone";
 import { splitEntryIntoSegments, type EntrySegment } from "@/lib/splitEntryIntoSegments";
 import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 
 export type CalendarEvent = {
   /** The Time entry this block came from — one entry can produce several
@@ -79,8 +80,8 @@ export function buildCalendarEvents(
           start: asZonedWallClock(piece.startedAt, zone),
           end: asZonedWallClock(piece.endedAt, zone),
           kind: piece.kind,
-          projectColour: entry.projectColour,
-          projectName: entry.projectName,
+          projectColour: entryProjectColour(entry),
+          projectName: entryTitle(entry),
           taskName: entry.taskName,
           isRunning,
         });

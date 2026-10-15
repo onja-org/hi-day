@@ -58,6 +58,7 @@ export function Sidebar({
   const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
+  const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
   const teamsLink: NavLink = {
@@ -86,6 +87,28 @@ export function Sidebar({
       }
     : teamsLink;
 
+  // Projects are optional: an organisation that doesn't track time against
+  // them has no use for either page.
+  const projectManagementEntry: NavEntry = {
+    kind: "group",
+    label: "Project management",
+    icon: Briefcase,
+    children: [
+      {
+        kind: "link",
+        label: "Projects",
+        href: `/organisations/${organisationId}/projects`,
+        icon: FolderSimple,
+      },
+      {
+        kind: "link",
+        label: "Tasks",
+        href: `/organisations/${organisationId}/tasks`,
+        icon: ListChecks,
+      },
+    ],
+  };
+
   const entries: NavEntry[] = [
     {
       kind: "link",
@@ -105,25 +128,7 @@ export function Sidebar({
       href: `/organisations/${organisationId}/activities`,
       icon: ChartLineUp,
     },
-    {
-      kind: "group",
-      label: "Project management",
-      icon: Briefcase,
-      children: [
-        {
-          kind: "link",
-          label: "Projects",
-          href: `/organisations/${organisationId}/projects`,
-          icon: FolderSimple,
-        },
-        {
-          kind: "link",
-          label: "Tasks",
-          href: `/organisations/${organisationId}/tasks`,
-          icon: ListChecks,
-        },
-      ],
-    },
+    ...(projectsEnabled ? [projectManagementEntry] : []),
     {
       kind: "group",
       label: "Reports",

@@ -1,6 +1,6 @@
 export interface TimeEntryCoverageWindow {
   id: string;
-  projectId: string;
+  projectId: string | null;
   startedAt: Date;
   /** null = still running — covers everything from `startedAt` onward. */
   endedAt: Date | null;

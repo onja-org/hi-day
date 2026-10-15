@@ -10,7 +10,8 @@ export type TimeEntryType = "normal" | "idle" | "resumed" | "manual";
 export type TimeEntry = {
   id: string;
   membershipId: string;
-  projectId: string;
+  /** null when the organisation doesn't track time against Projects. */
+  projectId: string | null;
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -33,8 +34,8 @@ export type PauseSpan = {
 };
 
 export type TimeEntryListItem = TimeEntry & {
-  projectName: string;
-  projectColour: ProjectColour;
+  projectName: string | null;
+  projectColour: ProjectColour | null;
   taskName: string | null;
   /** null while the entry is still running. */
   durationSeconds: number | null;
@@ -78,7 +79,8 @@ export type TimeEntryActionResult = ApiResult<
 >;
 
 export type TimeEntryFormInput = {
-  projectId: string;
+  /** Omit when the organisation doesn't track time against Projects. */
+  projectId?: string;
   taskId?: string;
   /** Local `datetime-local` input values, converted to ISO before sending. */
   startedAt: string;

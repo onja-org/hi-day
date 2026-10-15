@@ -157,6 +157,8 @@ export class DashboardService {
 
       const key = localDateKey(entry.startedAt);
       entriesByDay.set(key, [...(entriesByDay.get(key) ?? []), entry]);
+      // A Project breakdown is only about entries that have one.
+      if (entry.projectId === null || !entry.project) continue;
       entriesByProject.set(entry.projectId, [
         ...(entriesByProject.get(entry.projectId) ?? []),
         entry,
@@ -226,7 +228,7 @@ export class DashboardService {
         pauseStates,
         now,
       );
-      lastWeekProjectIds.add(entry.projectId);
+      if (entry.projectId !== null) lastWeekProjectIds.add(entry.projectId);
     }
 
     const workingHoursPolicy =

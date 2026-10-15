@@ -6,6 +6,7 @@ import { useDeleteTimeEntry } from "@/hooks/useDeleteTimeEntry";
 import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
 import { formatClockTimeWithSeconds } from "@/lib/formatClockTimeWithSeconds";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 import { Modal } from "./Modal";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { Spinner } from "./Spinner";
@@ -65,10 +66,10 @@ export function TimeEntryDeleteModal({
               </span>
               <span className="flex items-center gap-2 text-slate-900">
                 <ProjectAvatar
-                  name={entry.projectName}
-                  colour={entry.projectColour}
+                  name={entryTitle(entry)}
+                  colour={entryProjectColour(entry)}
                 />
-                {entry.projectName}
+                {entryTitle(entry)}
               </span>
             </div>
           </div>

@@ -187,10 +187,17 @@ describe('TimeEntriesService', () => {
     timesheetModifyTime: 'off' | 'add_edit' = 'off',
     // Off unless a test is about it, so the rest needn't invent reasons.
     timesheetRequireReason = false,
+    // On, since nearly every test starts an entry on a Project.
+    projectsEnabled = true,
   ) {
     return {
       findOne: jest.fn().mockResolvedValue({
-        settings: { timezone, timesheetModifyTime, timesheetRequireReason },
+        settings: {
+          timezone,
+          timesheetModifyTime,
+          timesheetRequireReason,
+          projectsEnabled,
+        },
       }),
     } as unknown as Repository<Organisation>;
   }
@@ -249,6 +256,125 @@ describe('TimeEntriesService', () => {
     source: TimeEntrySource.WEB,
     deviceId: null,
   } as TimeEntry;
+
+  describe('projects setting', () => {
+    it('starts a timer with no project when projects are off', async () => {
+      const create = jest.fn((value: object) => value);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          create,
+          findOne: jest.fn().mockResolvedValue(null),
+        }),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', false, false),
+      });
+
+      await service.start(
+        'org-1',
+        'user-1',
+        null,
+        undefined,
+        TimeEntrySource.WEB,
+        null,
+      );
+
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: null, taskId: null }),
+      );
+    });
+
+    it('refuses a project when projects are off', async () => {
+      const service = makeService({
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', false, false),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses a task when projects are off, since tasks belong to projects', async () => {
+      const service = makeService({
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', false, false),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          null,
+          'task-1',
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('requires a project when projects are on', async () => {
+      const service = makeService();
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          null,
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('treats an organisation that never set it as off', async () => {
+      const service = makeService({
+        organisationsRepo: {
+          findOne: jest.fn().mockResolvedValue({ settings: {} }),
+        } as unknown as Repository<Organisation>,
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('lets the web track alongside a device that also has no project', async () => {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { ...runningEntry, deviceId: 'device-1', projectId: null },
+            ]),
+          create: jest.fn((value: object) => value),
+        }),
+        organisationsRepo: makeOrganisationsRepo('UTC', 'off', false, false),
+      });
+
+      await expect(
+        service.start(
+          'org-1',
+          'user-1',
+          null,
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
 
   describe('start', () => {
     it('starts a timer and records an audit log entry', async () => {
@@ -821,11 +947,11 @@ describe('TimeEntriesService', () => {
       let allowedApps = 'mobile_only';
       const service = makeService({
         organisationsRepo: {
-          findOne: jest
-            .fn()
-            .mockImplementation(() =>
-              Promise.resolve({ settings: { timezone: 'UTC', allowedApps } }),
-            ),
+          findOne: jest.fn().mockImplementation(() =>
+            Promise.resolve({
+              settings: { timezone: 'UTC', allowedApps, projectsEnabled: true },
+            }),
+          ),
         } as unknown as Repository<Organisation>,
       });
       const startWeb = () =>
@@ -978,9 +1104,9 @@ describe('TimeEntriesService', () => {
 
     function makeOrgRepo(settings: Record<string, unknown>) {
       return {
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ settings: { timezone: 'UTC', ...settings } }),
+        findOne: jest.fn().mockResolvedValue({
+          settings: { timezone: 'UTC', projectsEnabled: true, ...settings },
+        }),
       } as unknown as Repository<Organisation>;
     }
 

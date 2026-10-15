@@ -453,6 +453,8 @@ document.getElementById("logout-button")!.addEventListener("click", () => {
 
 // --- Time tracking -----------------------------------------------------
 
+const searchSection = document.getElementById("search-section")!;
+const projectsSection = document.getElementById("projects-section")!;
 const projectList = document.getElementById("project-list") as HTMLUListElement;
 const projectListEmpty = document.getElementById("project-list-empty")!;
 const projectCountEl = document.getElementById("project-count")!;
@@ -571,10 +573,21 @@ let accountWorkedMs = 0;
 let accountWorkedMsAt: number | null = null;
 /** The account total frozen at the instant this device paused. */
 let pausedAtWorkedMs = 0;
-let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
+let pendingSwitch: { projectId: string | null; taskId: string | null } | null = null;
 let projects: TrackedProject[] = [];
 /** False until a project list has actually come back — an empty `projects` alone can't tell "none" from "not loaded". */
 let projectsLoaded = false;
+/**
+ * Whether this organisation tracks time against Projects. Off, there is no
+ * list to pick from: the timer is one button and entries carry no Project.
+ */
+let projectsEnabled = true;
+
+/** Entries with no Project share one bucket in the per-Project totals. */
+const NO_PROJECT_KEY = "";
+function projectKey(projectId: string | null): string {
+  return projectId ?? NO_PROJECT_KEY;
+}
 
 let todaySecondsByProject = new Map<string, number>();
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
@@ -724,7 +737,7 @@ function formatHoursMinutes(seconds: number): string {
 /** Every Project's time today, the live entry included. */
 function todayTotalSeconds(): number {
   const projectIds = new Set(todaySecondsByProject.keys());
-  if (runningEntry) projectIds.add(runningEntry.projectId);
+  if (runningEntry) projectIds.add(projectKey(runningEntry.projectId));
   let total = 0;
   for (const projectId of projectIds) total += displayedSecondsFor(projectId);
   return total;
@@ -747,7 +760,8 @@ function updateSyncStatus(): void {
       : `Synced ${Math.floor(ageMs / 60_000)} min ago`;
 }
 
-function projectNameFor(projectId: string): string {
+function projectNameFor(projectId: string | null): string {
+  if (projectId === null) return "Tracking time";
   return (
     projects.find((project) => project.id === projectId)?.name ?? projectId
   );
@@ -797,7 +811,7 @@ function tick(): void {
   compactTimerEl.textContent = formatted;
   miniTimerEl.textContent = formatted;
 
-  const activeTotal = projectTotalElements.get(runningEntry.projectId);
+  const activeTotal = projectTotalElements.get(projectKey(runningEntry.projectId));
   if (activeTotal) activeTotal.textContent = formatHoursMinutes(seconds);
 }
 
@@ -812,7 +826,7 @@ function setRunning(entry: TimeEntry | null): void {
     // doesn't jump to whatever the server booked.
     if (previous) {
       todaySecondsByProject.set(
-        previous.projectId,
+        projectKey(previous.projectId),
         displayedSecondsFor(previous.projectId),
       );
       // Counted here, so the server's copy of this same entry is not
@@ -993,9 +1007,11 @@ async function checkIdle(): Promise<void> {
 }
 
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
-function displayedSecondsFor(projectId: string): number {
-  const recorded = todaySecondsByProject.get(projectId) ?? 0;
-  if (!runningEntry || runningEntry.projectId !== projectId) return recorded;
+function displayedSecondsFor(projectId: string | null): number {
+  const recorded = todaySecondsByProject.get(projectKey(projectId)) ?? 0;
+  if (!runningEntry || projectKey(runningEntry.projectId) !== projectKey(projectId)) {
+    return recorded;
+  }
   return recorded + Math.max(0, Math.floor(liveElapsedMs() / 1000));
 }
 
@@ -1025,10 +1041,8 @@ async function refreshTodayTotals(): Promise<void> {
     // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
     counted.add(entry.id);
-    totals.set(
-      entry.projectId,
-      (totals.get(entry.projectId) ?? 0) + entry.durationSeconds,
-    );
+    const key = projectKey(entry.projectId);
+    totals.set(key, (totals.get(key) ?? 0) + entry.durationSeconds);
   }
   todaySecondsByProject = totals;
   todaySecondsDayStart = startOfToday();
@@ -1064,9 +1078,10 @@ async function mergeNewTodayEntries(): Promise<void> {
     if (!entry.id) continue;
     if (countedEntryIds.has(entry.id)) continue;
     countedEntryIds.add(entry.id);
+    const key = projectKey(entry.projectId);
     todaySecondsByProject.set(
-      entry.projectId,
-      (todaySecondsByProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
+      key,
+      (todaySecondsByProject.get(key) ?? 0) + entry.durationSeconds,
     );
     added = true;
   }
@@ -1272,6 +1287,24 @@ accessibilitySettingsButton.addEventListener("click", () => {
  * still empty — callers chaining further tracking setup should stop either way.
  */
 async function loadProjects(): Promise<"ok" | "failed" | "signedOut"> {
+  const setting = await window.api.tracking.projectsSetting();
+  // A server that predates the setting answers 404, and every organisation it
+  // serves has Projects — carrying on as before beats retrying forever.
+  if (!setting.ok && setting.status !== 404) {
+    handleTrackingFailure(setting);
+    return setting.unauthorized ? "signedOut" : "failed";
+  }
+  projectsEnabled = setting.ok ? setting.data.projectsEnabled : true;
+  applyProjectsMode();
+
+  if (!projectsEnabled) {
+    projects = [];
+    projectsLoaded = true;
+    await refreshTodayTotals();
+    renderProjects();
+    return "ok";
+  }
+
   const result = await window.api.tracking.listProjects();
   if (!result.ok) {
     handleTrackingFailure(result);
@@ -1287,6 +1320,25 @@ async function loadProjects(): Promise<"ok" | "failed" | "signedOut"> {
     await loadTasks(projects[0].id);
   }
   return "ok";
+}
+
+/** With Projects off there is nothing to search, list, pick a task from or move idle time to. */
+function applyProjectsMode(): void {
+  searchSection.hidden = !projectsEnabled;
+  projectsSection.hidden = !projectsEnabled;
+  taskTrigger.hidden = !projectsEnabled;
+  idleAssignToggle.hidden = !projectsEnabled;
+}
+
+/**
+ * Picks up an admin switching Projects on or off while the app is open, by
+ * rerunning setup — which re-reads the setting and the list. Quiet on any
+ * failure: the status poll already reports an unreachable server.
+ */
+async function refreshProjectsSetting(): Promise<void> {
+  const setting = await window.api.tracking.projectsSetting();
+  if (!setting.ok || setting.data.projectsEnabled === projectsEnabled) return;
+  await initTracking();
 }
 
 function updateCurrentTaskLabel(): void {
@@ -1551,6 +1603,7 @@ function startPolling(): void {
   void refreshStatus();
   pollHandle = setInterval(() => {
     void refreshStatus();
+    void refreshProjectsSetting();
     void refreshCapturePermissionBanner();
   }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
@@ -1600,23 +1653,29 @@ async function startTracking(): Promise<void> {
     if (!projectsLoaded || runningEntry) return;
   }
   clearTrackingError();
-  const resolved = await resolveProjectToTrack();
+  const resolved: { projectId: string | null; taskId: string | null } | null =
+    projectsEnabled
+      ? await resolveProjectToTrack()
+      : { projectId: null, taskId: null };
   if (!resolved) {
     showTrackingError("No projects are available to track time against.");
     return;
   }
   const target =
+    resolved.projectId !== null &&
     pendingTaskChoice?.projectId === resolved.projectId
       ? pendingTaskChoice
       : resolved;
   pendingTaskChoice = null;
 
-  void loadTasks(target.projectId).then(() => {
-    if (target.taskId) {
-      selectedTaskId = target.taskId;
-      updateCurrentTaskLabel();
-    }
-  });
+  if (target.projectId !== null) {
+    void loadTasks(target.projectId).then(() => {
+      if (target.taskId) {
+        selectedTaskId = target.taskId;
+        updateCurrentTaskLabel();
+      }
+    });
+  }
 
   const result = await window.api.tracking.start(
     target.projectId,
@@ -1811,7 +1870,7 @@ async function runInitTracking(): Promise<void> {
   // Never starts the timer: quitting stopped it, and only the person
   // pressing play starts it again. Shows what play would resume instead,
   // with that Project's time so far today.
-  if (!runningEntry && !lastTrackedProjectId) {
+  if (projectsEnabled && !runningEntry && !lastTrackedProjectId) {
     const target = await resolveProjectToTrack();
     if (target && !runningEntry) {
       lastTrackedProjectId = target.projectId;

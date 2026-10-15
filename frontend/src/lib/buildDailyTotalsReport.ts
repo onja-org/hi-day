@@ -4,6 +4,7 @@ import { formatReportDay } from "@/lib/formatReportDay";
 import type { ReportTableColumn, ReportTableRow } from "@/types/reportTable";
 import type { DateRange } from "@/types/dateRange";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectName } from "@/lib/entryProjectDisplay";
 
 export type DailyTotalsReport = {
   /** One column per day of the range, between "Project / Work order" and the totals. */
@@ -37,7 +38,8 @@ export function buildDailyTotalsReport(
 
   const projects = new Map<string, TimeEntryListItem[]>();
   for (const entry of entries) {
-    projects.set(entry.projectId, [...(projects.get(entry.projectId) ?? []), entry]);
+    const key = entry.projectId ?? "";
+    projects.set(key, [...(projects.get(key) ?? []), entry]);
   }
 
   const rows: ReportTableRow[] = [...projects.entries()]
@@ -48,8 +50,8 @@ export function buildDailyTotalsReport(
         total,
         row: {
           id: projectId,
-          sortKey: projectEntries[0].projectName,
-          cells: { project: projectEntries[0].projectName, ...cellsFor(projectDays, total) },
+          sortKey: entryProjectName(projectEntries[0]),
+          cells: { project: entryProjectName(projectEntries[0]), ...cellsFor(projectDays, total) },
         },
       };
     })

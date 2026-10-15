@@ -57,15 +57,16 @@ export class TimeEntry {
   @JoinColumn({ name: 'membershipId' })
   membership: Membership;
 
-  @Column()
-  projectId: string;
+  /** `null` when the Organisation doesn't track time against Projects. */
+  @Column({ type: 'uuid', nullable: true })
+  projectId: string | null;
 
   @ManyToOne(() => Project, {
     onDelete: 'RESTRICT',
     onUpdate: 'CASCADE',
   })
   @JoinColumn({ name: 'projectId' })
-  project: Project;
+  project: Project | null;
 
   @Column({ type: 'uuid', nullable: true })
   taskId: string | null;

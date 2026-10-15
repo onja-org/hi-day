@@ -6,6 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useProject } from "@/hooks/useProject";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
@@ -62,6 +63,7 @@ export function TimeEntryForm({
   onSaved,
 }: TimeEntryFormProps) {
   const projectsQuery = useMyProjects(organisationId);
+  const projectsEnabled = useProjectsEnabled();
   const [projectId, setProjectId] = useState(entry?.projectId ?? "");
   const [errors, setErrors] = useState<TimeEntryFieldErrors>({});
   // Held here rather than read off FormData: the field is a picker with an
@@ -100,7 +102,7 @@ export function TimeEntryForm({
 
   const createMutation = useMutation({
     mutationFn: (input: {
-      projectId: string;
+      projectId?: string;
       taskId?: string;
       startedAt: string;
       endedAt: string;
@@ -201,7 +203,7 @@ export function TimeEntryForm({
 
     if (mode === "create") {
       createMutation.mutate({
-        projectId,
+        projectId: projectsEnabled ? projectId : undefined,
         taskId: taskId || undefined,
         startedAt,
         endedAt,
@@ -214,7 +216,8 @@ export function TimeEntryForm({
       });
     } else {
       const input: UpdateTimeEntryInput = {
-        projectId: projectId !== entry.projectId ? projectId : undefined,
+        projectId:
+          projectId !== (entry.projectId ?? "") ? projectId : undefined,
         taskId: taskId !== (entry.taskId ?? "") ? taskId || null : undefined,
         startedAt,
         endedAt: isTicking ? undefined : endedAt,
@@ -222,13 +225,13 @@ export function TimeEntryForm({
       };
       const changes = describeTimeEntryChanges(
         {
-          projectName: entry.projectName,
+          projectName: entry.projectName ?? "",
           taskName: entry.taskName,
           startedAt: entry.startedAt,
           endedAt: entry.endedAt ?? "",
         },
         {
-          projectName: selectedProject?.name ?? entry.projectName,
+          projectName: selectedProject?.name ?? entry.projectName ?? "",
           taskName: tasks.find((task) => task.id === taskId)?.name ?? null,
           startedAt,
           endedAt: isTicking ? "" : endedAt,
@@ -266,36 +269,40 @@ export function TimeEntryForm({
   return (
     <>
       <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-5">
-        <SelectField
-          label="Project"
-          value={projectId}
-          onChange={(event) => setProjectId(event.target.value)}
-          required
-          disabled={projectsQuery.isLoading}
-        >
-          <option value="" disabled>
-            Select a project…
-          </option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
+        {projectsEnabled && (
+          <>
+          <SelectField
+            label="Project"
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+            required
+            disabled={projectsQuery.isLoading}
+          >
+            <option value="" disabled>
+              Select a project…
             </option>
-          ))}
-        </SelectField>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </SelectField>
 
-        <SelectField
-          label="Task (optional)"
-          name="taskId"
-          defaultValue={entry?.taskId ?? ""}
-          disabled={!projectId}
-        >
-          <option value="">No task</option>
-          {tasks.map((task) => (
-            <option key={task.id} value={task.id}>
-              {task.name}
-            </option>
-          ))}
-        </SelectField>
+          <SelectField
+            label="Task (optional)"
+            name="taskId"
+            defaultValue={entry?.taskId ?? ""}
+            disabled={!projectId}
+          >
+            <option value="">No task</option>
+            {tasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.name}
+              </option>
+            ))}
+          </SelectField>
+          </>
+        )}
 
         {canLogTimeForOthers && (
           // Keyed on projectId: without a fresh mount per project, switching
@@ -339,7 +346,7 @@ export function TimeEntryForm({
 
         <button
           type="submit"
-          disabled={mutation.isPending || !projectId}
+          disabled={mutation.isPending || (projectsEnabled && !projectId)}
           className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
         >
           {mutation.isPending && <Spinner />}

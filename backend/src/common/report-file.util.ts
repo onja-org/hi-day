@@ -61,7 +61,7 @@ export function reportRows(entries: ReportEntry[], zone: string): string[][] {
   return entries.map((entry) => [
     formatDate(entry.startedAt, zone),
     entry.memberName ?? entry.memberEmail ?? '',
-    entry.projectName,
+    entry.projectName ?? '',
     entry.taskName ?? '',
     formatTime(entry.startedAt, zone),
     entry.endedAt ? formatTime(entry.endedAt, zone) : 'In progress',

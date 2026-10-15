@@ -1,5 +1,6 @@
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectName } from "@/lib/entryProjectDisplay";
 
 /** Shared so the CSV and the PDF can't drift apart. The CSV appends a
  * "Time zone" column; the PDF names the zone once in its title instead. */
@@ -27,7 +28,7 @@ export function timesheetExportRows(
 ): string[][] {
   return entries.map((entry) => [
     new Date(entry.startedAt).toLocaleDateString([], { timeZone: zone }),
-    entry.projectName,
+    entryProjectName(entry),
     entry.taskName ?? "",
     formatDateTime(entry.startedAt, zone),
     entry.endedAt ? formatDateTime(entry.endedAt, zone) : "In progress",

@@ -6,6 +6,7 @@ import { formatDuration } from "@/lib/formatDuration";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { groupTimeEntriesByDay } from "@/lib/groupTimeEntriesByDay";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectName } from "@/lib/entryProjectDisplay";
 import { DashboardKpiTile } from "./DashboardKpiTile";
 
 type TimesheetSummaryTilesProps = {
@@ -24,7 +25,12 @@ export function TimesheetSummaryTiles({ entries, zone, isSingleDay }: TimesheetS
   const totalSeconds = dayGroups.reduce((sum, group) => sum + group.totalSeconds, 0);
   const averageSecondsPerDay =
     dayGroups.length > 0 ? totalSeconds / dayGroups.length : 0;
-  const projects = new Map(entries.map((entry) => [entry.projectId, entry]));
+  const projects = new Map(
+    entries.flatMap((entry) =>
+      entry.projectId === null ? [] : [[entry.projectId, entry] as const],
+    ),
+  );
+  const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
   const dailyTarget = organisationQuery.data?.workingHoursPerDay;
   const showDailyTarget =
     dailyTarget !== undefined && isSingleDay;
@@ -60,12 +66,14 @@ export function TimesheetSummaryTiles({ entries, zone, isSingleDay }: TimesheetS
           value={String(entries.length)}
           subLabel={entriesUnderMinute > 0 ? `${entriesUnderMinute} under a minute` : undefined}
         />
-        <DashboardKpiTile
-          dotClassName="bg-primary"
-          label="Projects worked"
-          value={String(projects.size)}
-          subLabel={soleProject ? soleProject.projectName : undefined}
-        />
+        {projectsEnabled && (
+          <DashboardKpiTile
+            dotClassName="bg-primary"
+            label="Projects worked"
+            value={String(projects.size)}
+            subLabel={soleProject ? entryProjectName(soleProject) : undefined}
+          />
+        )}
       </div>
     </div>
   );

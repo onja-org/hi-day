@@ -10,6 +10,7 @@ import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
 import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboardSummary";
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
+import { useProjectsEnabled } from "./useProjectsEnabled";
 import { useMyProjects } from "./useMyProjects";
 import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 
@@ -23,6 +24,8 @@ import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 export function useRunningTimer(organisationId: string) {
   const queryClient = useQueryClient();
   const currentQuery = useCurrentTimeEntry(organisationId);
+  const organisationQuery = useCurrentOrganisation();
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useMyProjects(organisationId);
   const dashboardQuery = useDashboardSummary(organisationId);
 
@@ -35,7 +38,7 @@ export function useRunningTimer(organisationId: string) {
   const [canSwitch, setCanSwitch] = useState(false);
   // Shown instead of offering a Start button the server would refuse.
   const trackingNotice = allowedAppsNotice(
-    useCurrentOrganisation().data?.allowedApps ?? "all",
+    organisationQuery.data?.allowedApps ?? "all",
   );
   const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
@@ -52,7 +55,10 @@ export function useRunningTimer(organisationId: string) {
   const { requiredProjectId } = webTimerConstraint(
     currentQuery.data?.elsewhere ?? null,
   );
-  const effectiveProjectId = requiredProjectId ?? projectId;
+  // With Projects off there is nothing to pick, and the server refuses one.
+  const effectiveProjectId = projectsEnabled
+    ? (requiredProjectId ?? projectId)
+    : "";
   const activeProject = entry
     ? (projectsQuery.data?.find(
         (project) => project.id === entry.projectId,
@@ -93,7 +99,11 @@ export function useRunningTimer(organisationId: string) {
 
   const startMutation = useMutation({
     mutationFn: () =>
-      startTimeEntry(organisationId, effectiveProjectId, taskId || null),
+      startTimeEntry(
+        organisationId,
+        projectsEnabled ? effectiveProjectId : null,
+        taskId || null,
+      ),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -112,7 +122,11 @@ export function useRunningTimer(organisationId: string) {
 
   const switchMutation = useMutation({
     mutationFn: () =>
-      switchTimeEntry(organisationId, effectiveProjectId, taskId || null),
+      switchTimeEntry(
+        organisationId,
+        projectsEnabled ? effectiveProjectId : null,
+        taskId || null,
+      ),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -176,8 +190,15 @@ export function useRunningTimer(organisationId: string) {
   return {
     limitReached,
     dismissLimitReached: () => setLimitReached(null),
-    isLoading: currentQuery.isLoading || projectsQuery.isLoading,
-    isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
+    isLoading:
+      currentQuery.isLoading ||
+      organisationQuery.isLoading ||
+      projectsQuery.isLoading,
+    isError:
+      currentQuery.isError ||
+      organisationQuery.isError ||
+      (projectsEnabled && (projectsQuery.isError || !projectsQuery.data)),
+    projectsEnabled,
     entry: entry,
     activeProject,
     /** The displayed timer belongs to a device, so it can be watched but not

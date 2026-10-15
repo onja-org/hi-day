@@ -7,7 +7,7 @@ const HOUR = 3600;
 
 function entry(
   id: string,
-  projectId: string,
+  projectId: string | null,
   startedAt: string,
   endedAt: string | null,
 ): TimeEntry {
@@ -121,5 +121,24 @@ describe('attributeProjectSeconds', () => {
 
   it('returns nothing for no entries', () => {
     expect(attributeProjectSeconds([], noPauses, NOW).size).toBe(0);
+  });
+
+  it('credits nothing to an entry with no project, and takes nothing from one that has it', () => {
+    const seconds = attributeProjectSeconds(
+      [
+        entry('a', 'x', '2026-01-05T09:00:00.000Z', '2026-01-05T13:00:00.000Z'),
+        entry(
+          'b',
+          null,
+          '2026-01-05T09:00:00.000Z',
+          '2026-01-05T17:00:00.000Z',
+        ),
+      ],
+      noPauses,
+      NOW,
+    );
+
+    expect([...seconds.keys()]).toEqual(['x']);
+    expect(seconds.get('x')).toBe(4 * HOUR);
   });
 });

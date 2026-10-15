@@ -475,7 +475,8 @@ export class ScheduledReportsService {
       .filter(
         (entry) =>
           filters.projectIds.length === 0 ||
-          filters.projectIds.includes(entry.projectId),
+          (entry.projectId !== null &&
+            filters.projectIds.includes(entry.projectId)),
       )
       .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
   }

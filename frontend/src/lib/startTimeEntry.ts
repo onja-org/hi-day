@@ -4,13 +4,16 @@ import type { TimeEntry, TimeEntryActionResult } from "@/types/timeEntry";
 
 export async function startTimeEntry(
   organisationId: string,
-  projectId: string,
+  /** null when the organisation doesn't track time against Projects. */
+  projectId: string | null,
   taskId: string | null,
 ): Promise<TimeEntryActionResult> {
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/projects/${projectId}/time-entries/start`,
+      projectId === null
+        ? `${API_URL}/organisations/${organisationId}/time-entries/start`
+        : `${API_URL}/organisations/${organisationId}/projects/${projectId}/time-entries/start`,
       {
         method: "POST",
         credentials: "include",

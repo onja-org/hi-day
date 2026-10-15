@@ -32,7 +32,8 @@ declare global {
 
   interface TimeEntry {
     id: string;
-    projectId: string;
+    /** null when the organisation doesn't track time against Projects. */
+    projectId: string | null;
     taskId: string | null;
     startedAt: string;
     endedAt: string | null;
@@ -49,7 +50,7 @@ declare global {
 
   interface TrackedEntry {
     id: string;
-    projectId: string;
+    projectId: string | null;
     durationSeconds: number | null;
   }
 
@@ -140,14 +141,15 @@ declare global {
       };
       logout: () => Promise<AuthStatus>;
       tracking: {
+        projectsSetting: () => Promise<TrackingResult<{ projectsEnabled: boolean }>>;
         listProjects: () => Promise<TrackingResult<TrackedProject[]>>;
         listTasks: (projectId: string) => Promise<TrackingResult<{ tasks: TrackedTask[] }>>;
         start: (
-          projectId: string,
+          projectId: string | null,
           taskId: string | null,
           startedAt?: string,
         ) => Promise<TrackingResult<TimeEntry>>;
-        switchTo: (projectId: string, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
+        switchTo: (projectId: string | null, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;
         status: () => Promise<TrackingResult<CurrentTimer>>;
         pause: () => Promise<TrackingResult<TimeEntry>>;

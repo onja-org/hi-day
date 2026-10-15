@@ -36,7 +36,8 @@ export interface TrackedTask {
 
 export interface TimeEntry {
   id: string;
-  projectId: string;
+  /** null when the organisation doesn't track time against Projects. */
+  projectId: string | null;
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -53,7 +54,7 @@ export interface LastProject {
 
 export interface TrackedEntry {
   id: string;
-  projectId: string;
+  projectId: string | null;
   durationSeconds: number | null;
 }
 
@@ -164,6 +165,10 @@ const api = {
   logout: (): Promise<AuthStatus> =>
     ipcRenderer.invoke("auth:logout") as Promise<AuthStatus>,
   tracking: {
+    projectsSetting: (): Promise<TrackingResult<{ projectsEnabled: boolean }>> =>
+      ipcRenderer.invoke("tracking:projectsSetting") as Promise<
+        TrackingResult<{ projectsEnabled: boolean }>
+      >,
     listProjects: (): Promise<TrackingResult<TrackedProject[]>> =>
       ipcRenderer.invoke("tracking:listProjects") as Promise<
         TrackingResult<TrackedProject[]>
@@ -175,7 +180,7 @@ const api = {
         TrackingResult<{ tasks: TrackedTask[] }>
       >,
     start: (
-      projectId: string,
+      projectId: string | null,
       taskId: string | null,
       startedAt?: string,
     ): Promise<TrackingResult<TimeEntry>> =>
@@ -183,7 +188,7 @@ const api = {
         TrackingResult<TimeEntry>
       >,
     switchTo: (
-      projectId: string,
+      projectId: string | null,
       taskId: string | null,
     ): Promise<TrackingResult<TimeEntry>> =>
       ipcRenderer.invoke("tracking:switch", projectId, taskId) as Promise<

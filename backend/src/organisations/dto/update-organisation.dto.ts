@@ -58,6 +58,10 @@ export class UpdateOrganisationDto {
   weekStartsOn?: WeekStart;
 
   @IsOptional()
+  @IsBoolean()
+  projectsEnabled?: boolean;
+
+  @IsOptional()
   @IsString()
   website?: string | null;
 

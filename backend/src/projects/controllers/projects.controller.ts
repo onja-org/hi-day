@@ -20,6 +20,7 @@ import { AddProjectTeamDto } from '../dto/add-project-team.dto';
 import { CreateProjectDto } from '../dto/create-project.dto';
 import { UpdateProjectDto } from '../dto/update-project.dto';
 import { UpdateProjectMemberDto } from '../dto/update-project-member.dto';
+import { ProjectsEnabledGuard } from '../guards/projects-enabled.guard';
 import { ProjectRoleGuard } from '../guards/project-role.guard';
 import { ProjectViewGuard } from '../guards/project-view.guard';
 import type {
@@ -35,7 +36,7 @@ import type {
 import { ProjectsService } from '../services/projects.service';
 
 @Controller('organisations/:id/projects')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectsEnabledGuard)
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 

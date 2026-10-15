@@ -3,6 +3,7 @@
 import { formatTimeInZone } from "@/lib/timezone";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { RunningEntryDuration } from "./RunningEntryDuration";
 import { RunningEntryTimeRange } from "./RunningEntryTimeRange";
@@ -33,18 +34,24 @@ export function TimesheetEntryRow({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelected(entry.id)}
-          aria-label={`Select ${entry.projectName} entry starting ${formatTimeInZone(entry.startedAt, zone)}`}
+          aria-label={`Select ${entryTitle(entry)} entry starting ${formatTimeInZone(entry.startedAt, zone)}`}
           className="h-4 w-4 cursor-pointer accent-primary"
         />
       </td>
       <td className="px-3 py-3">
         <span className="flex items-center gap-3">
-          <ProjectAvatar name={entry.projectName} colour={entry.projectColour} />
+          {entry.projectId !== null && (
+            <ProjectAvatar name={entryTitle(entry)} colour={entryProjectColour(entry)} />
+          )}
           <span className="flex flex-col">
-            <span className="font-medium text-primary-dark">{entry.projectName}</span>
-            <span className="text-xs text-slate-900/60">
-              {entry.taskName ?? "No task"}
-            </span>
+            <span className="font-medium text-primary-dark">{entryTitle(entry)}</span>
+            {/* An entry with no project has no task either, so a "No task"
+                line under it would only be noise. */}
+            {(entry.projectId !== null || entry.taskName !== null) && (
+              <span className="text-xs text-slate-900/60">
+                {entry.taskName ?? "No task"}
+              </span>
+            )}
           </span>
         </span>
       </td>

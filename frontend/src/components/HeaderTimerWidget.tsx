@@ -90,6 +90,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
           ) : (
             <TimerPicker
               organisationId={organisationId}
+              projectsEnabled={timer.projectsEnabled}
               projects={timer.projects}
               projectId={timer.projectId}
               taskId={timer.taskId}

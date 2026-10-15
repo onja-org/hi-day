@@ -63,6 +63,7 @@ import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Device } from '../../database/entities/device.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { TimeEntryType } from '../../database/entities/time-entry-type.enum';
+import { DEFAULT_PROJECTS_ENABLED } from '../../organisations/projects-setting';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
@@ -95,7 +96,8 @@ const ABANDONED_ENTRY_BATCH_SIZE = 200;
 export interface TimeEntrySummary {
   id: string;
   membershipId: string;
-  projectId: string;
+  /** `null` when the Organisation doesn't track time against Projects. */
+  projectId: string | null;
   taskId: string | null;
   startedAt: Date;
   endedAt: Date | null;
@@ -118,8 +120,8 @@ export interface PauseSpan {
 }
 
 export interface TimeEntryListItem extends TimeEntrySummary {
-  projectName: string;
-  projectColour: ProjectColour;
+  projectName: string | null;
+  projectColour: ProjectColour | null;
   taskName: string | null;
   /** Whose hours these are, for naming them in confirmations. `memberName`
    * is null when the User never set one — fall back to the email. */
@@ -429,7 +431,7 @@ export class TimeEntriesService {
   async start(
     organisationId: string,
     userId: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
@@ -577,7 +579,7 @@ export class TimeEntriesService {
   private async assertWebMatchesDevices(
     running: TimeEntry[],
     deviceId: string | null,
-    projectId: string,
+    projectId: string | null,
   ): Promise<void> {
     if (deviceId !== null) return;
     const onDevices = running.filter((entry) => entry.deviceId !== null);
@@ -607,7 +609,7 @@ export class TimeEntriesService {
   async switchTo(
     organisationId: string,
     userId: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
@@ -1350,7 +1352,7 @@ export class TimeEntriesService {
   async createManual(
     organisationId: string,
     userId: string,
-    projectId: string,
+    projectId: string | null,
     dto: CreateManualTimeEntryDto,
   ): Promise<TimeEntrySummary> {
     const { membership, task } = await this.resolveManualEntryTarget(
@@ -1466,7 +1468,8 @@ export class TimeEntriesService {
       );
     }
 
-    const nextProjectId = dto.projectId ?? entry.projectId;
+    const nextProjectId =
+      dto.projectId !== undefined ? dto.projectId : entry.projectId;
     const projectChanged = nextProjectId !== entry.projectId;
     // A Task belongs to exactly one Project, so a Task from the old
     // Project can't carry over silently when the Project itself changes.
@@ -1477,7 +1480,7 @@ export class TimeEntriesService {
           ? null
           : entry.taskId;
 
-    if (projectChanged || dto.taskId !== undefined) {
+    if (projectChanged || (dto.taskId !== undefined && dto.taskId !== null)) {
       await this.validateStart(
         organisationId,
         userId,
@@ -1488,7 +1491,11 @@ export class TimeEntriesService {
     // The entry stays on its owner's timesheet, so the Project it moves to
     // must be one *they* can log time against, not just the editor — the
     // same rule as directing a manual entry at someone.
-    if (projectChanged && entry.membershipId !== membership.id) {
+    if (
+      projectChanged &&
+      nextProjectId !== null &&
+      entry.membershipId !== membership.id
+    ) {
       const owner = await this.memberships.findOne({
         where: { id: entry.membershipId, organisationId },
       });
@@ -2030,13 +2037,46 @@ export class TimeEntriesService {
     return entry !== null;
   }
 
+  /**
+   * Time is tracked against a Project exactly when the Organisation has
+   * Projects enabled: on, every entry names one; off, none may. Checked on
+   * the server because hiding the picker is only a courtesy.
+   */
+  private async assertProjectChoiceMatchesSetting(
+    organisationId: string,
+    projectId: string | null,
+    taskId: string | undefined,
+  ): Promise<void> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    const enabled =
+      (organisation?.settings as { projectsEnabled?: boolean } | undefined)
+        ?.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED;
+
+    if (enabled && projectId === null) {
+      throw new BadRequestException('Choose a project to track time against.');
+    }
+    if (!enabled && (projectId !== null || taskId)) {
+      throw new BadRequestException(
+        'Projects are not enabled for this organisation.',
+      );
+    }
+  }
+
   private async validateStart(
     organisationId: string,
     userId: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | undefined,
   ): Promise<ValidatedStart> {
     const membership = await this.getActiveMembership(organisationId, userId);
+    await this.assertProjectChoiceMatchesSetting(
+      organisationId,
+      projectId,
+      taskId,
+    );
+    if (projectId === null) return { membership, task: null };
     await this.assertProjectAccess(membership, projectId);
 
     const project = await this.projects.findOne({
@@ -2081,7 +2121,7 @@ export class TimeEntriesService {
   private async resolveManualEntryTarget(
     organisationId: string,
     userId: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | undefined,
     targetMembershipId: string | undefined,
   ): Promise<ValidatedStart> {
@@ -2093,7 +2133,12 @@ export class TimeEntriesService {
         'You do not have permission to add a time entry manually.',
       );
     }
-    await this.assertProjectAccess(caller, projectId);
+    await this.assertProjectChoiceMatchesSetting(
+      organisationId,
+      projectId,
+      taskId,
+    );
+    if (projectId !== null) await this.assertProjectAccess(caller, projectId);
 
     let membership = caller;
     if (targetMembershipId && targetMembershipId !== caller.id) {
@@ -2120,9 +2165,11 @@ export class TimeEntriesService {
           "You do not have access to this member's timesheet.",
         );
       }
-      await this.assertProjectAccess(target, projectId);
+      if (projectId !== null) await this.assertProjectAccess(target, projectId);
       membership = target;
     }
+
+    if (projectId === null) return { membership, task: null };
 
     const project = await this.projects.findOne({
       where: { id: projectId, organisationId },
@@ -2163,11 +2210,14 @@ export class TimeEntriesService {
    */
   private async assertCanLogTimeForOthers(
     caller: Membership,
-    projectId: string,
+    projectId: string | null,
   ): Promise<'project' | 'team'> {
-    const callerProjectMembership = await this.projectMemberships.findOne({
-      where: { projectId, membershipId: caller.id },
-    });
+    const callerProjectMembership =
+      projectId === null
+        ? null
+        : await this.projectMemberships.findOne({
+            where: { projectId, membershipId: caller.id },
+          });
     if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
       return 'project';
     }
@@ -2422,8 +2472,8 @@ export class TimeEntriesService {
       deviceId: entry.deviceId,
       pausedAt: pauseState.pausedAt,
       pausedSeconds: pauseState.pausedSeconds,
-      projectName: entry.project.name,
-      projectColour: entry.project.colour,
+      projectName: entry.project?.name ?? null,
+      projectColour: entry.project?.colour ?? null,
       taskName: entry.task?.name ?? null,
       memberName: entry.membership?.user?.name ?? null,
       memberEmail: entry.membership?.user?.email ?? null,

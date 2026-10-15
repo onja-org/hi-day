@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
+import { ProjectsEnabledGuard } from '../../projects/guards/projects-enabled.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { ProjectMemberGuard } from '../../projects/guards/project-member.guard';
 import { ProjectRoleGuard } from '../../projects/guards/project-role.guard';
@@ -19,7 +20,7 @@ import type { ProjectTasksList, TaskSummary } from '../services/tasks.service';
 import { TasksService } from '../services/tasks.service';
 
 @Controller('organisations/:id/projects/:projectId/tasks')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectsEnabledGuard)
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 

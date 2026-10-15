@@ -5,6 +5,7 @@ import { differenceInCalendarDays } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { getDayRange } from "@/lib/getDayRange";
 import { DayNavigator } from "@/components/DayNavigator";
 import { Label } from "@/components/ui/form/Label";
@@ -25,6 +26,7 @@ export function ActivityFilterToolbar({
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();
   const profile = profileQuery.data;
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useProjects(organisationId, { status: "active" });
 
   function updateParams(patch: Record<string, string | null>) {
@@ -78,23 +80,25 @@ export function ActivityFilterToolbar({
           />
         </div>
       )}
-      <div className="flex flex-col gap-1">
-        <Label>Project</Label>
-        <SearchableSelect
-          value={projectId}
-          onChange={(value) => updateParams({ projectId: value || null })}
-          ariaLabel="Filter by project"
-          placeholder="Search projects…"
-          noMatchesLabel="No matching projects"
-          options={[
-            { value: "", label: "All projects" },
-            ...(projectsQuery.data?.map((project) => ({
-              value: project.id,
-              label: project.name,
-            })) ?? []),
-          ]}
-        />
-      </div>
+      {projectsEnabled && (
+        <div className="flex flex-col gap-1">
+          <Label>Project</Label>
+          <SearchableSelect
+            value={projectId}
+            onChange={(value) => updateParams({ projectId: value || null })}
+            ariaLabel="Filter by project"
+            placeholder="Search projects…"
+            noMatchesLabel="No matching projects"
+            options={[
+              { value: "", label: "All projects" },
+              ...(projectsQuery.data?.map((project) => ({
+                value: project.id,
+                label: project.name,
+              })) ?? []),
+            ]}
+          />
+        </div>
+      )}
     </div>
   );
 }

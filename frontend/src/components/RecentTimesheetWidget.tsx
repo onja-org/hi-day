@@ -3,6 +3,7 @@
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 import { ErrorMessage } from "./ErrorMessage";
 import { ProjectColourBadge } from "./ProjectColourBadge";
 import { Spinner } from "./Spinner";
@@ -81,8 +82,8 @@ export function RecentTimesheetWidget({ organisationId }: RecentTimesheetWidgetP
             className="flex items-center justify-between gap-3 border-t border-input-border py-2 first:border-t-0 text-sm"
           >
             <span className="flex min-w-0 items-center gap-2 text-slate-900">
-              <ProjectColourBadge colour={entry.projectColour} />
-              <span className="truncate">{entry.projectName}</span>
+              <ProjectColourBadge colour={entryProjectColour(entry)} />
+              <span className="truncate">{entryTitle(entry)}</span>
               <span className="shrink-0 font-mono tabular-nums text-slate-900/60">
                 {formatTimeRange(entry.startedAt, entry.endedAt)}
               </span>

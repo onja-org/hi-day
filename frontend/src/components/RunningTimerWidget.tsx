@@ -104,6 +104,7 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
       ) : (
         <TimerPicker
           organisationId={organisationId}
+          projectsEnabled={timer.projectsEnabled}
           projects={timer.projects}
           projectId={timer.projectId}
           taskId={timer.taskId}

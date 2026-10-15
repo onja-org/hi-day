@@ -204,6 +204,7 @@ describe('OrganisationsService', () => {
         weekStartsOn: 'monday',
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
+        projectsEnabled: false,
         workTimeLimits: {
           expectedWorkDays: [1, 2, 3, 4, 5],
           trackingDisabledDays: [],
@@ -605,6 +606,34 @@ describe('OrganisationsService', () => {
       expect(profile.taxId).toBe('GB123456789');
       expect(profile.weekStartsOn).toBe('sunday');
       expect(profile.timezone).toBe('Africa/Nairobi');
+    });
+
+    it('reads projects as off until an admin enables them', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+
+      expect(await service.getProjectsEnabled('org-1')).toBe(false);
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        projectsEnabled: true,
+      });
+
+      expect(profile.projectsEnabled).toBe(true);
+      expect(await service.getProjectsEnabled('org-1')).toBe(true);
     });
 
     it('clears an optional profile field when sent an empty value', async () => {

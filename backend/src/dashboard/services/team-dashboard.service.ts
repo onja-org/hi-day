@@ -216,6 +216,8 @@ export class TeamDashboardService {
         );
       }
 
+      if (entry.projectId === null || !entry.project) continue;
+
       const existingProject = projectSeconds.get(entry.projectId);
       if (existingProject) {
         existingProject.seconds += seconds;
@@ -237,7 +239,7 @@ export class TeamDashboardService {
         pauseStates,
         now,
       );
-      lastWeekProjectIds.add(entry.projectId);
+      if (entry.projectId !== null) lastWeekProjectIds.add(entry.projectId);
     }
 
     const runningByMembershipId = new Map(
@@ -252,7 +254,7 @@ export class TeamDashboardService {
           name: member.name,
           email: member.email,
           isWorking: running !== undefined,
-          currentProjectName: running ? running.project.name : null,
+          currentProjectName: running?.project?.name ?? null,
           workedTodaySeconds: memberTodaySeconds.get(member.id) ?? 0,
           workedThisWeekSeconds: memberWeekSeconds.get(member.id) ?? 0,
         };

@@ -1,6 +1,7 @@
 import { splitEntryIntoSegments } from "@/lib/splitEntryIntoSegments";
 import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 
 export type TimelineSegment = {
   startMinute: number;
@@ -44,8 +45,8 @@ export function buildDayTimelineSegments(
         startMinute,
         endMinute,
         kind: segment.kind,
-        projectColour: entry.projectColour,
-        projectName: entry.projectName,
+        projectColour: entryProjectColour(entry),
+        projectName: entryTitle(entry),
         startedAt: segment.startedAt,
         endedAt: segment.endedAt,
       });

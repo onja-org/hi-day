@@ -19,6 +19,7 @@ import { DisclosureService } from '../../disclosure/services/disclosure.service'
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import type { ProjectListItem } from '../../projects/services/projects.service';
 import { ProjectsService } from '../../projects/services/projects.service';
+import { ProjectsEnabledGuard } from '../../projects/guards/projects-enabled.guard';
 import { StartTimeEntryDto } from '../../time-entries/dto/start-time-entry.dto';
 import { StopTimeEntryDto } from '../../time-entries/dto/stop-time-entry.dto';
 import { SwitchTimeEntryDto } from '../../time-entries/dto/switch-time-entry.dto';
@@ -78,6 +79,18 @@ export class DeviceTrackingController {
    * alongside `consent`, rather than adding a second loop — they are not
    * capture, so they stay a sibling key rather than joining CaptureSettings.
    */
+  /** Whether this device offers a Project picker at all, or just a timer. */
+  @Get('projects-setting')
+  async projectsSetting(
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<{ projectsEnabled: boolean }> {
+    return {
+      projectsEnabled: await this.organisationsService.getProjectsEnabled(
+        request.organisationId,
+      ),
+    };
+  }
+
   @Get('capture-settings')
   async captureSettings(@Req() request: DeviceAuthenticatedRequest): Promise<
     CaptureSettings & {
@@ -238,7 +251,7 @@ export class DeviceTrackingController {
   }
 
   @Get('projects/:projectId/tasks')
-  @UseGuards(DeviceProjectMemberGuard)
+  @UseGuards(ProjectsEnabledGuard, DeviceProjectMemberGuard)
   listTasks(
     @Param('projectId') projectId: string,
     @Req() request: DeviceAuthenticatedRequest,
@@ -251,7 +264,7 @@ export class DeviceTrackingController {
   }
 
   @Post('projects/:projectId/time-entries/start')
-  @UseGuards(DeviceProjectMemberGuard)
+  @UseGuards(ProjectsEnabledGuard, DeviceProjectMemberGuard)
   start(
     @Param('projectId') projectId: string,
     @Body() dto: StartTimeEntryDto,
@@ -261,6 +274,22 @@ export class DeviceTrackingController {
       request.organisationId,
       request.userId,
       projectId,
+      dto.taskId,
+      TimeEntrySource.AGENT,
+      request.deviceId,
+      dto.startedAt ? new Date(dto.startedAt) : undefined,
+    );
+  }
+
+  @Post('time-entries/start')
+  startWithoutProject(
+    @Body() dto: StartTimeEntryDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntrySummary> {
+    return this.timeEntriesService.start(
+      request.organisationId,
+      request.userId,
+      null,
       dto.taskId,
       TimeEntrySource.AGENT,
       request.deviceId,
@@ -289,7 +318,7 @@ export class DeviceTrackingController {
     return this.timeEntriesService.switchTo(
       request.organisationId,
       request.userId,
-      dto.projectId,
+      dto.projectId ?? null,
       dto.taskId,
       TimeEntrySource.AGENT,
       request.deviceId,
