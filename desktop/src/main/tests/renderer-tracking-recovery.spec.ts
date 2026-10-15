@@ -104,6 +104,7 @@ function launch(scenario: Scenario) {
   let running: typeof entry | null = scenario.runningElsewhere ? entry : null;
   let entrySeq = 1;
   const reopenListeners: (() => void)[] = [];
+  const reminderListeners: ((message: string) => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
   const completed: {
     id: string;
@@ -203,9 +204,13 @@ function launch(scenario: Scenario) {
       minimise: async () => {},
       show: async () => {},
       close: async () => {},
-      setCompact: async () => {},
+      setMode: async () => {},
+      compactAlwaysOnTop: () => Promise.resolve(true),
+      setCompactAlwaysOnTop: async () => {},
       onTrackingNotice: () => {},
-      onTrackingReminder: () => {},
+      onTrackingReminder: (listener: (message: string) => void) => {
+        reminderListeners.push(listener);
+      },
       onReopened: (listener: () => void) => {
         reopenListeners.push(listener);
       },
@@ -246,6 +251,15 @@ function launch(scenario: Scenario) {
     closePromptVisible: () => !document.getElementById('close-prompt')!.hidden,
     /** Main's signal that the window came back from the tray. */
     reopen: () => reopenListeners.forEach((listener) => listener()),
+    remind: (message: string) =>
+      reminderListeners.forEach((listener) => listener(message)),
+    shrinkToSmallest: () => {
+      document.getElementById('compact-button')!.click();
+      document.getElementById('compact-shrink')!.click();
+    },
+    reminderVisible: () =>
+      !document.getElementById('reminder-banner')!.hidden &&
+      !document.getElementById('full-view')!.hidden,
     isRunning: () => running !== null,
     projectCount: () => document.getElementById('project-count')!.textContent,
     /** What the project row shows as tracked today. */
@@ -388,6 +402,17 @@ describe('renderer tracking setup recovers from a failed first load', () => {
 
     expect(app.projectCount()).toBe('1');
     expect(app.calls.start).toBe(0);
+    app.close();
+  });
+
+  it('shows the not-tracking reminder even from the smallest view', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+    app.shrinkToSmallest();
+
+    app.remind('You have not started tracking — 10 minutes untracked.');
+
+    expect(app.reminderVisible()).toBe(true);
     app.close();
   });
 

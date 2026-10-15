@@ -31,14 +31,23 @@ function show(viewId: string): void {
 
 const fullView = document.getElementById("full-view")!;
 const compactView = document.getElementById("compact-view")!;
-let isCompact = false;
+const miniView = document.getElementById("mini-view")!;
+
+type WindowMode = "full" | "compact" | "mini";
+let windowMode: WindowMode = "full";
+
+function setMode(mode: WindowMode, centre = false): void {
+  if (mode === windowMode) return;
+  windowMode = mode;
+  fullView.hidden = mode !== "full";
+  compactView.hidden = mode !== "compact";
+  miniView.hidden = mode !== "mini";
+  document.body.classList.toggle("is-mini", mode === "mini");
+  void window.api.windowControls.setMode(mode, centre);
+}
 
 function setCompact(compact: boolean): void {
-  if (compact === isCompact) return;
-  isCompact = compact;
-  fullView.hidden = compact;
-  compactView.hidden = !compact;
-  void window.api.windowControls.setCompact(compact);
+  setMode(compact ? "compact" : "full");
 }
 
 document.getElementById("minimise-button")!.addEventListener("click", () => {
@@ -92,6 +101,29 @@ document.getElementById("compact-button")!.addEventListener("click", () => {
 });
 document.getElementById("expand-button")!.addEventListener("click", () => {
   setCompact(false);
+});
+
+document.getElementById("compact-shrink")!.addEventListener("click", () => {
+  setMode("mini");
+});
+document.getElementById("mini-expand")!.addEventListener("click", () => {
+  setMode("compact");
+});
+
+const compactPin = document.getElementById("compact-pin")!;
+
+function showPinState(pinned: boolean): void {
+  compactPin.setAttribute("aria-pressed", String(pinned));
+  compactPin.classList.toggle("is-on", pinned);
+  compactPin.title = pinned ? "Keep in front: on" : "Keep in front: off";
+}
+
+void window.api.windowControls.compactAlwaysOnTop().then(showPinState);
+
+compactPin.addEventListener("click", () => {
+  const pinned = compactPin.getAttribute("aria-pressed") !== "true";
+  showPinState(pinned);
+  void window.api.windowControls.setCompactAlwaysOnTop(pinned);
 });
 
 const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
@@ -441,6 +473,13 @@ const compactTimerToggle = document.getElementById(
 const compactTimerTogglePath = document.getElementById(
   "compact-timer-toggle-path",
 ) as unknown as Element;
+const miniTimerEl = document.getElementById("mini-timer")!;
+const miniTimerToggle = document.getElementById(
+  "mini-timer-toggle",
+) as HTMLButtonElement;
+const miniTimerTogglePath = document.getElementById(
+  "mini-timer-toggle-path",
+) as unknown as Element;
 const currentTaskLabelEl = document.getElementById("current-task-label")!;
 const timerDisplay = document.getElementById("timer-display")!;
 const trackingError = document.getElementById("tracking-error")!;
@@ -728,6 +767,7 @@ function tick(): void {
       trackingProjectNameEl.textContent = "";
       compactProjectNameEl.textContent = "Stopped";
       compactTimerEl.textContent = formatElapsed(0);
+      miniTimerEl.textContent = formatElapsed(0);
       return;
     }
     const name = projectNameFor(projectId);
@@ -737,6 +777,7 @@ function tick(): void {
     timerDisplay.textContent = formatted;
     compactProjectNameEl.textContent = `${name} · Stopped`;
     compactTimerEl.textContent = formatted;
+    miniTimerEl.textContent = formatted;
     return;
   }
 
@@ -754,6 +795,7 @@ function tick(): void {
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatted;
   compactTimerEl.textContent = formatted;
+  miniTimerEl.textContent = formatted;
 
   const activeTotal = projectTotalElements.get(runningEntry.projectId);
   if (activeTotal) activeTotal.textContent = formatHoursMinutes(seconds);
@@ -807,6 +849,7 @@ function setRunning(entry: TimeEntry | null): void {
   for (const [button, path] of [
     [timerToggle, timerTogglePath],
     [compactTimerToggle, compactTimerTogglePath],
+    [miniTimerToggle, miniTimerTogglePath],
   ] as const) {
     path.setAttribute("d", isRunning ? STOP_PATH : PLAY_PATH);
     button.setAttribute("aria-label", toggleLabel);
@@ -814,6 +857,7 @@ function setRunning(entry: TimeEntry | null): void {
   }
   timerCard.classList.toggle("is-running", isRunning);
   compactView.classList.toggle("is-running", isRunning);
+  miniView.classList.toggle("is-running", isRunning);
   timerStateEl.hidden = isRunning;
   timerStateLabelEl.textContent = isPaused ? "Paused" : "Stopped";
   renderProjects();
@@ -1623,10 +1667,12 @@ timerToggle.addEventListener("click", () => {
   })();
 });
 
-// The compact bar's button does exactly what the full window's does.
-compactTimerToggle.addEventListener("click", () => {
-  if (!timerToggle.disabled) timerToggle.click();
-});
+// Both bars' buttons do exactly what the full window's does.
+for (const button of [compactTimerToggle, miniTimerToggle]) {
+  button.addEventListener("click", () => {
+    if (!timerToggle.disabled) timerToggle.click();
+  });
+}
 
 switchButton.addEventListener("click", () => {
   void (async () => {
@@ -1790,14 +1836,20 @@ function hideTrackingReminder(): void {
 reminderDismissButton.addEventListener("click", hideTrackingReminder);
 reminderStartButton.addEventListener("click", () => {
   hideTrackingReminder();
-  // The same path the main toggle takes, so the reminder can never start a
-  // timer the button itself would have refused.
+  // The main toggle's own path, so this can never start a timer it
+  // would have refused.
   if (!timerToggle.disabled) timerToggle.click();
 });
 
 window.api.windowControls.onTrackingReminder((message) => {
+  // The banner lives in the tracking view, which the smaller sizes
+  // hide; centred, because growing from a corner runs off screen.
+  setMode("full", true);
   reminderBannerMessage.textContent = message;
   reminderBanner.hidden = false;
+  // Again now the resize is done: main raises before any of this runs,
+  // and going full drops the always-on-top the smaller views hold.
+  void window.api.windowControls.show();
 });
 
 window.api.windowControls.onTrackingNotice((notice) => {

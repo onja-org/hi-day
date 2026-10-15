@@ -13,6 +13,7 @@ interface SetupState {
   closeAction?: CloseAction;
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
+  compactAlwaysOnTop?: boolean;
 }
 
 /**
@@ -68,12 +69,8 @@ export function markWaylandScreenshotGranted(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
 }
 
-/**
- * The last reminder settings the server sent. Kept so a signed-out agent
- * can still say "open Hi Day and log in" on a morning nobody started a
- * timer — settings arrive over an authenticated poll, so without this a
- * signed-out machine is silent exactly when the nudge is most useful.
- */
+/** Kept so a signed-out agent can still nudge: settings arrive over an
+ * authenticated poll, and silence is worst on exactly that morning. */
 export function cachedReminderSettings(
   userDataDir: string,
 ): ReminderSettings | null {
@@ -85,6 +82,22 @@ export function cacheReminderSettings(
   settings: ReminderSettings,
 ): void {
   write(userDataDir, { ...read(userDataDir), reminderSettings: settings });
+}
+
+/**
+ * Whether the compact bar floats; the smallest view always does. A
+ * machine preference, not an account one. Defaults on, because the bar
+ * has always floated and dropping that silently would surprise.
+ */
+export function compactAlwaysOnTop(userDataDir: string): boolean {
+  return read(userDataDir).compactAlwaysOnTop !== false;
+}
+
+export function setCompactAlwaysOnTop(
+  userDataDir: string,
+  pinned: boolean,
+): void {
+  write(userDataDir, { ...read(userDataDir), compactAlwaysOnTop: pinned });
 }
 
 function write(userDataDir: string, state: SetupState): void {

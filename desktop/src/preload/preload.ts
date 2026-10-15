@@ -253,14 +253,24 @@ const api = {
     // Hides to the tray; tracking keeps running.
     close: (): Promise<void> =>
       ipcRenderer.invoke("window:close") as Promise<void>,
-    setCompact: (compact: boolean): Promise<void> =>
-      ipcRenderer.invoke("window:setCompact", compact) as Promise<void>,
+    /** `centre` puts the full window in the middle of its display. */
+    setMode: (
+      mode: "full" | "compact" | "mini",
+      centre?: boolean,
+    ): Promise<void> =>
+      ipcRenderer.invoke("window:setMode", mode, centre) as Promise<void>,
+    compactAlwaysOnTop: (): Promise<boolean> =>
+      ipcRenderer.invoke("window:compactAlwaysOnTop") as Promise<boolean>,
+    setCompactAlwaysOnTop: (pinned: boolean): Promise<void> =>
+      ipcRenderer.invoke(
+        "window:setCompactAlwaysOnTop",
+        pinned,
+      ) as Promise<void>,
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
         listener(notice),
       );
     },
-    /** A reminder that the timer is not running — see tracking-reminder.ts. */
     onTrackingReminder: (listener: (message: string) => void): void => {
       ipcRenderer.on("tracking:reminder", (_event, message: string) =>
         listener(message),

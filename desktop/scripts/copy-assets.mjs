@@ -29,11 +29,11 @@ copyInto(
   ['BricolageGrotesque-Variable.woff2', 'Figtree-Variable.woff2', 'JetBrainsMono-Variable.woff2'],
 );
 
-// The window icon BrowserWindow loads from main.ts's own __dirname.
+// The window and tray icons main.ts loads from its own __dirname.
 copyInto(
   join(rootDir, 'src', 'main', 'assets'),
   join(rootDir, 'dist', 'main', 'assets'),
-  ['icon.png'],
+  ['icon.png', 'icon-idle.png', 'icon-recording.png'],
 );
 
 // The browser registry (docs/url-tracking-plan.md Step 2) is data, not code —
