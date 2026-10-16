@@ -201,11 +201,13 @@ function launch(scenario: Scenario) {
             (byProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
           );
         }
+        const workedSeconds = completed.reduce(
+          (sum, entry) => sum + (entry.durationSeconds ?? 0),
+          0,
+        );
         return ok({
-          workedSeconds: completed.reduce(
-            (sum, entry) => sum + (entry.durationSeconds ?? 0),
-            0,
-          ),
+          workedSeconds,
+          deviceSeconds: workedSeconds,
           projects: [...byProject].map(([projectId, seconds]) => ({
             projectId,
             seconds,

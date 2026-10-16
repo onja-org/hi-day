@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { allowedAppsNotice } from "@/lib/allowedAppsNotice";
+import { unionActiveSeconds } from "@/lib/unionActiveSeconds";
 import { startTimeEntry } from "@/lib/startTimeEntry";
 import { webTimerConstraint } from "@/lib/webTimerConstraint";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
@@ -10,7 +11,7 @@ import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboard
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
 import { useProjectsEnabled } from "./useProjectsEnabled";
 import { useMyProjects } from "./useMyProjects";
-import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
+import { TIME_ENTRIES_QUERY_KEY_PREFIX, useTimeEntries } from "./useTimeEntries";
 
 /**
  * All the state and actions a timer control needs — shared by the
@@ -147,13 +148,13 @@ export function useRunningTimer(organisationId: string) {
   }, [entry, isPaused]);
 
   /**
-   * Two figures. `elapsedMs` is the big clock and matches the desktop app: the
-   * running Project's whole day, so stopping and starting again carries on
-   * from the total rather than from 00:00:00. `workedTodayMs` is the day's
-   * total across every Project and device, shown beside it.
+   * `elapsedMs` is the web timer's own time today — its entries only, so
+   * time tracked on a desktop never shows up here — and it carries on from
+   * that total when the timer is stopped and started again. Time the web
+   * entries share is counted once (`unionActiveSeconds`).
    *
-   * Both tick from the local clock corrected against the server's reading,
-   * so a skewed machine cannot drift either.
+   * Ticks from the local clock corrected against the server's reading, so a
+   * skewed machine cannot drift it.
    */
   const serverNow = currentQuery.data?.now;
   const serverOffsetMs =
@@ -162,53 +163,33 @@ export function useRunningTimer(organisationId: string) {
       : 0;
   const correctedNowMs = localNowMs + serverOffsetMs;
 
-  // The summary's figures already include the running entry as of the fetch,
-  // so only the time since then is added on top.
-  const sinceSummaryMs =
-    entry && !isPaused && dashboardQuery.dataUpdatedAt
-      ? Math.max(0, localNowMs - dashboardQuery.dataUpdatedAt)
-      : 0;
-
-  const entryElapsedMs = entry
-    ? Math.max(
-        0,
-        (entry.pausedAt
-          ? new Date(entry.pausedAt).getTime()
-          : correctedNowMs) -
-          new Date(entry.startedAt).getTime() -
-          entry.pausedSeconds * 1000,
-      )
-    : 0;
-
-  const workedTodayMs =
-    (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 + sinceSummaryMs;
-
-  // With Projects off there is one bucket for the day. Until the summary
-  // loads, fall back to this entry alone rather than flashing a bare 0.
-  const elapsedMs = !entry
-    ? 0
-    : !dashboardQuery.data
-      ? entryElapsedMs
-      : projectsEnabled
-        ? Math.max(
-            entryElapsedMs,
-            (projectSecondsToday.get(entry.projectId ?? "") ?? 0) * 1000 +
-              sinceSummaryMs,
-          )
-        : workedTodayMs;
-
-  // Like the desktop app, a stopped timer keeps showing the Project it last
-  // tracked and that Project's day total, rather than dropping to 00:00:00.
-  const [lastTrackedProjectId, setLastTrackedProjectId] = useState<string | null>(
-    null,
+  const dayKey = new Date(localNowMs).toDateString();
+  const todayRange = useMemo(() => {
+    const from = new Date(dayKey);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    return { from, to };
+  }, [dayKey]);
+  const todayEntriesQuery = useTimeEntries(organisationId, todayRange);
+  const webEntriesToday = useMemo(
+    () =>
+      (todayEntriesQuery.data ?? []).filter((item) => item.source === "web"),
+    [todayEntriesQuery.data],
   );
-  if (entry?.projectId && entry.projectId !== lastTrackedProjectId) {
-    setLastTrackedProjectId(entry.projectId);
-  }
-  const stoppedProjectId = lastTrackedProjectId ?? (projectId || null);
-  const stoppedElapsedMs = projectsEnabled
-    ? (projectSecondsToday.get(stoppedProjectId ?? "") ?? 0) * 1000
-    : (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000;
+  const elapsedMs =
+    unionActiveSeconds(
+      webEntriesToday,
+      entry ? new Date(correctedNowMs) : null,
+    ) * 1000;
+
+  // The day's total across every Project and device, shown beside the clock.
+  // The summary already includes the running entry as of its fetch, so only
+  // the time since then is added on top.
+  const workedTodayMs =
+    (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 +
+    (entry && !isPaused && dashboardQuery.dataUpdatedAt
+      ? Math.max(0, localNowMs - dashboardQuery.dataUpdatedAt)
+      : 0);
 
   return {
     limitReached,
@@ -224,11 +205,9 @@ export function useRunningTimer(organisationId: string) {
     projectsEnabled,
     entry: entry,
     activeProject,
-    /** The running Project's whole day — 0 when nothing is running. */
+    /** The web timer's own time today, running or not. */
     elapsedMs,
-    /** What the clock reads while nothing is running. */
-    stoppedElapsedMs,
-    /** Everything worked today, across every project and device. */
+    /** Everything worked today, across every Project and device. */
     workedTodayMs,
     projects: projectsQuery.data ?? [],
     /** Non-null while a device is tracking: the only Project the web may

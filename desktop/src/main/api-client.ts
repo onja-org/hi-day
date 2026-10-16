@@ -78,6 +78,8 @@ export interface TimeEntry {
 /** Time worked beyond what the open entries cover; the live clock adds those. */
 export interface CompletedTotals {
   workedSeconds: number;
+  /** This device's own entries alone, on the same baseline. */
+  deviceSeconds: number;
   projects: { projectId: string; seconds: number }[];
 }
 

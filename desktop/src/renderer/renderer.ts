@@ -199,6 +199,7 @@ function showLoginView(errorMessage?: string): void {
   setRunning(null);
   // After the stop, which folds the live entry into the totals.
   todaySecondsByProject = new Map();
+  deviceSecondsToday = 0;
   clearTrackingError();
   timerDisplay.hidden = true;
   projectSearch.value = "";
@@ -595,6 +596,12 @@ function projectKey(projectId: string | null): string {
 }
 
 let todaySecondsByProject = new Map<string, number>();
+/**
+ * What this machine alone tracked today, beyond its running entry: the big
+ * clock shows this, while "Today" below it is the whole day across the web
+ * and every device. Time tracked elsewhere never appears in the big clock.
+ */
+let deviceSecondsToday = 0;
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
 let todaySecondsDayStart: number | null = null;
 /** Completed entries already folded into the totals, so a later read adds
@@ -795,7 +802,7 @@ function tick(): void {
       return;
     }
     const name = projectNameFor(projectId);
-    const formatted = formatElapsed(displayedSecondsFor(projectId) * 1000);
+    const formatted = formatElapsed(deviceTodaySeconds() * 1000);
     trackingProjectNameEl.textContent = name;
     timerDisplay.hidden = false;
     timerDisplay.textContent = formatted;
@@ -811,11 +818,12 @@ function tick(): void {
     ? `${name} · Paused`
     : name;
 
-  // Shows the Project's whole day, not just this entry: switching away and
-  // back ends one entry and opens another, and the person tracking time
-  // thinks of that as one continuous total, not two.
+  // The big clock is this machine's whole day, not just this entry:
+  // stopping and starting again ends one entry and opens another, and the
+  // person tracking time thinks of that as one continuous total, not two.
+  // `seconds` stays the Project's own day, for its row in the list.
   const seconds = displayedSecondsFor(runningEntry.projectId);
-  const formatted = formatElapsed(seconds * 1000);
+  const formatted = formatElapsed(deviceTodaySeconds() * 1000);
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatted;
   compactTimerEl.textContent = formatted;
@@ -839,6 +847,7 @@ function setRunning(entry: TimeEntry | null): void {
         projectKey(previous.projectId),
         displayedSecondsFor(previous.projectId),
       );
+      deviceSecondsToday += Math.floor(ownElapsedMs(previous) / 1000);
       // Counted here, so the server's copy of this same entry is not
       // folded in again by `mergeNewTodayEntries`.
       countedEntryIds.add(previous.id);
@@ -1016,6 +1025,23 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleSeconds, idleStartedAtIso);
 }
 
+/** What this machine's own entry has run for, frozen while it is paused. */
+function ownElapsedMs(entry: TimeEntry): number {
+  const end = entry.pausedAt
+    ? new Date(entry.pausedAt).getTime()
+    : Date.now() + serverOffsetMs;
+  return Math.max(
+    0,
+    end - new Date(entry.startedAt).getTime() - entry.pausedSeconds * 1000,
+  );
+}
+
+/** This machine's time today: finished entries plus its running one. */
+function deviceTodaySeconds(): number {
+  const live = runningEntry ? Math.floor(ownElapsedMs(runningEntry) / 1000) : 0;
+  return deviceSecondsToday + live;
+}
+
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
 function displayedSecondsFor(projectId: string | null): number {
   const recorded = todaySecondsByProject.get(projectKey(projectId)) ?? 0;
@@ -1057,9 +1083,11 @@ async function refreshTodayTotals(): Promise<void> {
 }
 
 /**
- * Today's finished seconds per Project. The server counts a stretch the web
- * and this machine both tracked once; summing each entry's own duration would
- * count it twice. Falls back to that sum only if the server can't answer.
+ * Today's finished seconds per Project, and (as a side effect) this
+ * machine's own. The server counts a stretch the web and this machine both
+ * tracked once; summing each entry's own duration would count it twice.
+ * Falls back to that sum only if the server can't answer, leaving this
+ * machine's own figure as it was.
  * A running entry is excluded either way: tick() adds its time live.
  */
 async function completedTotalsByProject(
@@ -1070,6 +1098,7 @@ async function completedTotalsByProject(
   const totals = new Map<string, number>();
   const result = await window.api.tracking.completedTotals(from, to);
   if (result.ok) {
+    deviceSecondsToday = result.data.deviceSeconds;
     // Without Projects the day is a single bucket, so the union is the figure.
     if (!projectsEnabled) {
       totals.set(projectKey(null), result.data.workedSeconds);

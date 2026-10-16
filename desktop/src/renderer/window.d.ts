@@ -50,6 +50,8 @@ declare global {
 
   interface CompletedTotals {
     workedSeconds: number;
+    /** This device's own entries alone, on the same baseline. */
+    deviceSeconds: number;
     projects: { projectId: string; seconds: number }[];
   }
 

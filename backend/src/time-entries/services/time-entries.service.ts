@@ -429,14 +429,19 @@ export class TimeEntriesService {
    *
    * Per Project the same subtraction is applied to the attributed figures,
    * which is exact in total and clamped so a rank change never goes negative.
+   *
+   * `deviceSeconds` is the same baseline for one Device's own entries alone,
+   * for a clock that shows only what that machine tracked.
    */
   async completedWorkedTotals(
     organisationId: string,
     userId: string,
     from: Date,
     to: Date,
+    deviceId: string | null = null,
   ): Promise<{
     workedSeconds: number;
+    deviceSeconds: number;
     projects: { projectId: string; seconds: number }[];
   }> {
     const membership = await this.getActiveMembership(organisationId, userId);
@@ -452,7 +457,17 @@ export class TimeEntriesService {
 
     const allByProject = attributeProjectSeconds(entries, pauses, now);
     const openByProject = attributeProjectSeconds(open, pauses, now);
+    const ownEntries = entries.filter((entry) => entry.deviceId === deviceId);
+    const ownOpen = ownEntries.filter((entry) => entry.endedAt === null);
     return {
+      deviceSeconds:
+        deviceId === null
+          ? 0
+          : Math.max(
+              0,
+              unionActiveSeconds(ownEntries, pauses, now) -
+                unionActiveSeconds(ownOpen, pauses, now),
+            ),
       workedSeconds: Math.max(
         0,
         unionActiveSeconds(entries, pauses, now) -

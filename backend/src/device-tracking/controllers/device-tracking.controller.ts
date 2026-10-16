@@ -382,6 +382,7 @@ export class DeviceTrackingController {
       request.userId,
       new Date(from),
       new Date(to),
+      request.deviceId,
     );
   }
 

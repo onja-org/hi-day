@@ -3789,6 +3789,29 @@ describe('TimeEntriesService', () => {
       expect(totals.workedSeconds).toBe(30 * 60);
     });
 
+    it("totals one Device's own entries alone, without the web's", async () => {
+      const entries = [
+        { ...entry('web', at('11:00'), at('12:00')), deviceId: null },
+        { ...entry('desktop', at('11:30'), at('12:30')), deviceId: 'device-1' },
+      ] as TimeEntry[];
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue(entries),
+        }),
+      });
+
+      const totals = await service.completedWorkedTotals(
+        'org-1',
+        'user-1',
+        at('00:00'),
+        at('23:59'),
+        'device-1',
+      );
+
+      expect(totals.deviceSeconds).toBe(60 * 60);
+      expect(totals.workedSeconds).toBe(90 * 60);
+    });
+
     it('applies the same rule per Project', async () => {
       const totals = await totalsFor([
         entry('web', at('11:00'), at('12:00'), 'project-1'),
