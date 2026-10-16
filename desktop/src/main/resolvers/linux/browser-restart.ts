@@ -136,16 +136,40 @@ function unquote(token: string): string {
  * as a URL. Running the Exec verbatim also carries the activation prefix,
  * which is what brings the tree back.
  */
+/**
+ * Which profile a running browser was on, taken from its own argument
+ * vector. The launcher entry cannot say: a second Chrome profile exists
+ * only as `--profile-directory` on the live process, so relaunching from
+ * the entry alone reopens the default profile — or shows the profile
+ * picker — and the other window's tabs are gone.
+ *
+ * Reads the split vector, never a joined string: a profile directory is
+ * routinely `Profile 1`, and the space makes a joined command line
+ * impossible to split back correctly.
+ */
+export function profileArguments(cmdline: string[], command: string): string[] {
+  if (isGeckoBrowser(command)) {
+    const flag = cmdline.findIndex((arg) => arg === '-P' || arg === '--profile');
+    const value = flag === -1 ? undefined : cmdline[flag + 1];
+    return value === undefined ? [] : ['--profile', value];
+  }
+  return cmdline.filter(
+    (arg) =>
+      arg.startsWith('--profile-directory=') || arg.startsWith('--user-data-dir='),
+  );
+}
+
 export function relaunchCommand(
   activatedExec: string,
   command: string,
+  cmdline: string[] = [],
 ): { command: string; args: string[] } | null {
   const tokens = (activatedExec.match(/"[^"]*"|'[^']*'|\S+/g) ?? [])
     .map(unquote)
     .filter((token) => !LAUNCHER_PLACEHOLDERS.test(token));
   if (tokens.length === 0) return null;
 
-  const args = tokens.slice(1);
+  const args = [...tokens.slice(1), ...profileArguments(cmdline, command)];
   if (!isGeckoBrowser(command)) args.push(CHROMIUM_RESTORE_FLAG);
   return { command: tokens[0], args };
 }

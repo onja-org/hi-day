@@ -301,7 +301,11 @@ describe('OrganisationsService', () => {
     it('is off until an admin opts in, and raises the window when it does fire', async () => {
       await expect(
         makeService({}).getTrackingReminders('org-1'),
-      ).resolves.toEqual({ intervalMinutes: 0, delivery: 'alert' });
+      ).resolves.toEqual({
+        intervalMinutes: 0,
+        delivery: 'alert',
+        workingHoursPerDay: 8,
+      });
     });
 
     it('carries the interval and delivery an admin chose', async () => {
@@ -310,7 +314,11 @@ describe('OrganisationsService', () => {
           reminderIntervalMinutes: 15,
           reminderDelivery: 'notification',
         }).getTrackingReminders('org-1'),
-      ).resolves.toEqual({ intervalMinutes: 15, delivery: 'notification' });
+      ).resolves.toEqual({
+        intervalMinutes: 15,
+        delivery: 'notification',
+        workingHoursPerDay: 8,
+      });
     });
   });
 

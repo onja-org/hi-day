@@ -23,7 +23,18 @@ const RENDERER_DIR = join(__dirname, '..', '..', 'renderer');
 const FAST_POLL_MS = 50;
 
 function rendererScript(pollMs: number): string {
-  const source = readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8');
+  // The renderer is a module in the app but is eval'd as a plain script
+  // here, so its one local import is inlined rather than resolved.
+  const imported = readFileSync(
+    join(RENDERER_DIR, 'reminder-message.ts'),
+    'utf8',
+  ).replace(/^export /gm, '');
+  const source =
+    imported +
+    readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8').replace(
+      /^import .*from "\.\/reminder-message\.js";$/m,
+      '',
+    );
   const fastSource = source.replace(
     'const STATUS_POLL_INTERVAL_MS = 15_000;',
     `const STATUS_POLL_INTERVAL_MS = ${pollMs};`,

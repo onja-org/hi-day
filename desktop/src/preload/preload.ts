@@ -160,6 +160,12 @@ export interface ConsentStatus {
   text: string | null;
 }
 
+interface TrackingReminder {
+  untrackedMinutes: number;
+  signedOut: boolean;
+  workingHoursPerDay: number;
+}
+
 const api = {
   getStatus: (): Promise<AuthStatus> =>
     ipcRenderer.invoke("auth:status") as Promise<AuthStatus>,
@@ -290,9 +296,11 @@ const api = {
         listener(notice),
       );
     },
-    onTrackingReminder: (listener: (message: string) => void): void => {
-      ipcRenderer.on("tracking:reminder", (_event, message: string) =>
-        listener(message),
+    onTrackingReminder: (
+      listener: (reminder: TrackingReminder) => void,
+    ): void => {
+      ipcRenderer.on("tracking:reminder", (_event, reminder: TrackingReminder) =>
+        listener(reminder),
       );
     },
     onReopened: (listener: () => void): void => {

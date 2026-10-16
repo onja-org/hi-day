@@ -21,6 +21,7 @@ import type { WorkTimeLimits } from '../work-time-limits';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
 import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
+import { DEFAULT_WORKING_HOURS_PER_DAY } from '../working-hours-policy';
 import {
   DEFAULT_REMINDER_DELIVERY,
   DEFAULT_REMINDER_INTERVAL_MINUTES,
@@ -483,6 +484,8 @@ export class OrganisationsService {
       intervalMinutes:
         settings.reminderIntervalMinutes ?? DEFAULT_REMINDER_INTERVAL_MINUTES,
       delivery: settings.reminderDelivery ?? DEFAULT_REMINDER_DELIVERY,
+      workingHoursPerDay:
+        settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_PER_DAY,
     };
   }
 

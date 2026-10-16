@@ -213,6 +213,14 @@ interface CapturePermissionStatus {
 // "new" device.
 app.setName("Hi Day");
 
+// A dev run gets its own userData, so it never competes with an installed
+// build for the single-instance lock. Without this, `pnpm dev` loses the
+// lock to the packaged app autostarted at login and merely raises that
+// window — which looks exactly like the dev build failing to start.
+if (!app.isPackaged) {
+  app.setPath("userData", join(app.getPath("appData"), "Hi Day (dev)"));
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /**
@@ -971,39 +979,31 @@ async function registerIpcHandlers(): Promise<void> {
    * timer stopping, or the last reminder. */
   let untrackedSince = new Date();
 
-  function describeLateness(minutes: number): string {
-    if (minutes < 60) return `${minutes} minutes`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    const hoursPart = `${hours} hour${hours === 1 ? "" : "s"}`;
-    return rest === 0 ? hoursPart : `${hoursPart} ${rest} min`;
-  }
-
   function deliverReminder(
-    delivery: string,
+    settings: ReminderSettings,
     untrackedMinutes: number,
     signedOut: boolean,
   ): void {
-    const how = describeLateness(untrackedMinutes);
-    const body = signedOut
-      ? `Open Hi Day and log in to start tracking — ${how} untracked.`
-      : `You have not started tracking — ${how} untracked.`;
-
-    if (delivery === "alert") {
-      // The modal is the interruption; raising is only what puts it in
-      // front of the person.
-      mainWindow?.webContents.send("tracking:reminder", body);
+    if (settings.delivery === "alert") {
+      // The renderer composes the wording: only it knows how much was
+      // tracked today, which decides what the reminder can honestly say.
+      mainWindow?.webContents.send("tracking:reminder", {
+        untrackedMinutes,
+        signedOut,
+        workingHoursPerDay: settings.workingHoursPerDay,
+      });
       raiseWindowInsistently();
       return;
     }
 
     if (!Notification.isSupported()) return;
-    // Never steals focus, but still opens the app when clicked — a
-    // reminder nobody can act on is no reminder at all.
+    // One line, so the tray popup says the one thing that matters.
     trackingNotification?.close();
     trackingNotification = new Notification({
       title: "Not tracking time",
-      body,
+      body: signedOut
+        ? "Open Hi Day and log in to start tracking."
+        : "You're not tracking time.",
     });
     trackingNotification.on("click", showMainWindow);
     trackingNotification.show();
@@ -1031,7 +1031,7 @@ async function registerIpcHandlers(): Promise<void> {
       (now.getTime() - untrackedSince.getTime()) / 60_000,
     );
     untrackedSince = now;
-    deliverReminder(settings.delivery, untrackedMinutes, signedOut);
+    deliverReminder(settings, untrackedMinutes, signedOut);
   }
 
   const captureSettingsGate = new CaptureSettingsGate(

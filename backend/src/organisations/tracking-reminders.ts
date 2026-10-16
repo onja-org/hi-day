@@ -17,6 +17,8 @@ export interface TrackingReminderSettings {
   /** `notification` is a system tray popup; `alert` also raises the app
    * window, which is the point of the feature. */
   delivery: TrackingReminderDelivery;
+  /** So the reminder can say how much of the day is left to track. */
+  workingHoursPerDay: number;
 }
 
 /** Hubstaff's floor, and ours — anything tighter is nagging, not reminding. */

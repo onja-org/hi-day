@@ -4,6 +4,7 @@ import {
   restartWarning,
   firefoxRestoresSession,
   isGeckoBrowser,
+  profileArguments,
   relaunchCommand,
 } from '../browser-restart';
 
@@ -168,5 +169,67 @@ describe('relaunchCommand', () => {
 
   it('returns null when there is nothing to run', () => {
     expect(relaunchCommand('', 'chrome')).toBeNull();
+  });
+});
+
+describe('profileArguments', () => {
+  /**
+   * The reported case: two Chrome windows on different profiles. The
+   * launcher entry knows nothing about either, so relaunching from it
+   * alone reopened the default profile and showed the profile picker —
+   * the second window's tabs were lost.
+   */
+  it("keeps a Chrome window's own profile, space and all", () => {
+    expect(
+      profileArguments(
+        ['/opt/google/chrome/chrome', '--profile-directory=Profile 1'],
+        'chrome',
+      ),
+    ).toEqual(['--profile-directory=Profile 1']);
+  });
+
+  it('keeps a separate user-data-dir, which is a different profile store', () => {
+    expect(
+      profileArguments(
+        ['/opt/google/chrome/chrome', '--user-data-dir=/tmp/work'],
+        'chrome',
+      ),
+    ).toEqual(['--user-data-dir=/tmp/work']);
+  });
+
+  it('has nothing to carry for a default-profile window', () => {
+    expect(profileArguments(['/opt/google/chrome/chrome'], 'chrome')).toEqual([]);
+  });
+
+  it("keeps a Firefox window's named profile, which uses its own flag", () => {
+    expect(
+      profileArguments(['/snap/firefox/firefox', '-P', 'personal'], 'firefox'),
+    ).toEqual(['--profile', 'personal']);
+  });
+
+  it('ignores a Chrome flag on Firefox, and the other way round', () => {
+    expect(
+      profileArguments(
+        ['/snap/firefox/firefox', '--profile-directory=Profile 1'],
+        'firefox',
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('relaunchCommand with profiles', () => {
+  const activatedExec =
+    'env GNOME_ACCESSIBILITY=1 /usr/bin/google-chrome-stable --force-renderer-accessibility=basic %U';
+
+  it('restores the window to the profile it was on, not the default', () => {
+    const relaunch = relaunchCommand(activatedExec, 'chrome', [
+      '/opt/google/chrome/chrome',
+      '--profile-directory=Profile 1',
+    ])!;
+
+    expect(relaunch.args).toContain('--profile-directory=Profile 1');
+    // Still activated, and still restoring that profile's own session.
+    expect(relaunch.args).toContain('--force-renderer-accessibility=basic');
+    expect(relaunch.args).toContain('--restore-last-session');
   });
 });
