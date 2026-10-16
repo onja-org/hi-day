@@ -8,8 +8,26 @@ releases repo for updates. They don't care where a file was built.
 
 Everything goes through [`scripts/release.sh`](scripts/release.sh). Every
 command is safe to re-run: if one fails, fix the cause and run the same command
-again. In Claude Code, `/release-desktop <version>` runs the whole thing for you
-and stops to ask only before it publishes.
+again.
+
+## With Claude Code (easiest)
+
+Open Claude Code in your `hi-day` clone on **each** build machine (Linux PC,
+Mac, Windows PC) and run:
+
+```
+/release-desktop 0.3.4
+```
+
+Each machine does its own part, in any order:
+
+- The **first one** opens the version bump PR, asks you once before merging it,
+  then tags `main` and creates the draft release.
+- **Every machine** builds and uploads what only it can build.
+- The **last one** sees all 15 files are in, asks you once, and publishes.
+
+Run it on a machine again at any point and it carries on from where things
+are. The manual steps below do the same thing by hand.
 
 The examples below release **0.3.4**. Replace it with your version everywhere.
 
@@ -28,7 +46,7 @@ The examples below release **0.3.4**. Replace it with your version everywhere.
 | --- | --- | --- |
 | Linux PC | Linux (and Windows, see below) | Node 22.13+, pnpm 11.1.3, Docker (your user in the `docker` group), `gh` |
 | Mac (Intel or Apple Silicon) | macOS, both chip types | Node 22.13+, pnpm 11.1.3, Xcode command line tools (`xcode-select --install`), `gh` |
-| Windows PC | Windows, for now (see below) | Node 22, pnpm 11.1.3, .NET 8 SDK, git, `gh` |
+| Windows PC | Windows, for now (see below) | Node 22.13+, pnpm 11.1.3, .NET 8 SDK, Git for Windows (Git Bash), `gh`; Visual Studio Build Tools ("Desktop development with C++") if `better-sqlite3` has to compile |
 
 - Whoever uploads needs **write access to `onja-org/hi-day-releases`**: log in
   with `gh auth login`, or `export GH_TOKEN=<fine-grained token>` limited to
@@ -74,7 +92,17 @@ desktop/scripts/release.sh prepare 0.3.4
 desktop/scripts/release.sh build 0.3.4 mac
 ```
 
-### 4. Build Windows (Windows PC, PowerShell), only while `main` uses `better-sqlite3`
+### 4. Build Windows (Windows PC), only while `main` uses `better-sqlite3`
+
+In **Git Bash** (comes with Git for Windows):
+
+```bash
+git checkout main && git pull
+desktop/scripts/release.sh prepare 0.3.4
+desktop/scripts/release.sh build 0.3.4 auto
+```
+
+Or by hand in PowerShell, if the script won't run there:
 
 ```powershell
 cd <your hi-day clone>

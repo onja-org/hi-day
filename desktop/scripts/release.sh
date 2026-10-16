@@ -13,8 +13,10 @@
 #   release.sh publish  <version> [--yes]      refuse unless all 15 are there
 #   release.sh verify   <version>              published latest*.yml show <version>
 #
-# `build` takes --no-upload (build only, e.g. to test a platform) and `auto`
-# means linux+win on Linux, mac on macOS. Every command is safe to re-run.
+# `build` takes --no-upload (build only, e.g. to test a platform). `auto` means
+# linux (+ win when it can be cross-built) on Linux, mac on macOS, and win on
+# Windows, run from Git Bash (what Claude Code uses there). Every command is
+# safe to re-run.
 #
 # Environment overrides: RELEASES_REPO, RELEASE_WORKTREE (default
 # ../hiday-release-<version> next to this clone), and RELEASE_REF — build some
@@ -45,11 +47,17 @@ MAC_FILES=(
 )
 ALL_FILES=("${LINUX_FILES[@]}" "${WIN_FILES[@]}" "${MAC_FILES[@]}")
 
+is_windows() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac; return 1; }
+
+# Paths handed to node: under Git Bash they look like /c/Users/..., which
+# Windows-native node can't open, so they go through cygpath first.
+npath() { if is_windows; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 ok() { printf '\033[32m✔ %s\033[0m\n' "$*"; }
 die() { printf '\033[31m✘ %s\033[0m\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-1}"; }
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit "${1:-1}"; }
 
 # --- checks -----------------------------------------------------------------
 
@@ -132,7 +140,7 @@ ensure_worktree() {
   fi
 
   local pkg_version
-  pkg_version="$(node -p "require('$WORKTREE/desktop/package.json').version")"
+  pkg_version="$(node -p "require('$(npath "$WORKTREE")/desktop/package.json').version")"
   [ "$pkg_version" = "$VERSION" ] || die "desktop/package.json at $REF says $pkg_version, not $VERSION. The tag is on the wrong commit."
 
   step "Installing dependencies (frozen lockfile)"
@@ -147,7 +155,7 @@ lint_and_test() {
   (cd "$WORKTREE" && pnpm --filter desktop lint)
   # While desktop still uses better-sqlite3, vitest needs it built for plain
   # Node's ABI; the dist:* scripts rebuild it for Electron's again afterwards.
-  if node -e "process.exit(require('$WORKTREE/desktop/package.json').scripts?.['rebuild:node'] ? 0 : 1)"; then
+  if node -e "process.exit(require('$(npath "$WORKTREE")/desktop/package.json').scripts?.['rebuild:node'] ? 0 : 1)"; then
     (cd "$WORKTREE" && pnpm --filter desktop rebuild:node)
   fi
   (cd "$WORKTREE" && pnpm --filter desktop test)
@@ -191,13 +199,13 @@ build_linux() {
 # them, so the Windows installer would carry a Linux .node that fails to load.
 # better-sqlite3 was one (main before the node:sqlite switch); refuse up front.
 win_cross_buildable() {
-  ! node -e "process.exit(require('$WORKTREE/desktop/package.json').dependencies?.['better-sqlite3'] ? 0 : 1)"
+  ! node -e "process.exit(require('$(npath "$WORKTREE")/desktop/package.json').dependencies?.['better-sqlite3'] ? 0 : 1)"
 }
 
 check_win_cross_buildable() {
   if ! win_cross_buildable; then
     die "This commit still depends on better-sqlite3, which can't be built for Windows from Linux.
-  Build Windows on a Windows PC instead (pnpm --filter desktop dist:win, then upload ${WIN_FILES[*]}),
+  Build Windows on a Windows PC instead: '$0 build $VERSION win' from Git Bash there,
   or release once the node:sqlite change (chore/desktop-node-sqlite) is on main."
   fi
 }
@@ -216,8 +224,20 @@ $bad
 # dotnet on the host: one publishes win-resolver.exe (EnableWindowsTargeting lets
 # the Linux SDK build a net8.0-windows project), one runs electron-builder under
 # Wine. Nothing in the worktree is left root-owned afterwards.
+# On a Windows PC: the package's own dist:win, exactly what CI's windows-latest
+# job ran (better-sqlite3 and win-resolver.exe both build natively here).
+build_win_native() {
+  command -v dotnet >/dev/null || die "dotnet not found. Install the .NET 8 SDK."
+  step "Building the Windows installer (native dist:win)"
+  rm -rf "$WORKTREE/desktop/release"
+  (cd "$WORKTREE" && pnpm --filter desktop dist:win)
+  check_outputs latest.yml "${WIN_FILES[@]}"
+  upload "${WIN_FILES[@]}"
+}
+
 build_win() {
-  [ "$(uname -s)" = "Linux" ] || die "This script builds Windows from Linux. On Windows itself run: pnpm --filter desktop dist:win"
+  if is_windows; then build_win_native; return; fi
+  [ "$(uname -s)" = "Linux" ] || die "Windows installers are built on Windows, or from Linux in Docker."
   command -v docker >/dev/null || die "docker not found."
   docker info >/dev/null 2>&1 || die "Can't talk to Docker. Is it running, and are you in the docker group?"
 
@@ -328,14 +348,14 @@ cmd_build() {
             platforms=(linux win)
           else
             platforms=(linux)
-            echo "Note: this commit still uses better-sqlite3, so 'auto' builds Linux only. Build Windows on a Windows PC (see the release doc)."
+            echo "Note: this commit still uses better-sqlite3, so 'auto' builds Linux only. Build Windows on a Windows PC: '$0 build $VERSION auto' there."
           fi ;;
         Darwin) platforms=(mac) ;;
-        *) die "Unsupported OS $(uname -s) for 'auto'." ;;
+        *) is_windows && platforms=(win) || die "Unsupported OS $(uname -s) for 'auto'." ;;
       esac ;;
     *) die "Platform must be linux, win, mac or auto." ;;
   esac
-  [[ " ${platforms[*]} " != *" win "* ]] || check_win_cross_buildable
+  [[ " ${platforms[*]} " != *" win "* ]] || is_windows || check_win_cross_buildable
   lint_and_test
   for p in "${platforms[@]}"; do "build_$p"; done
   [ "$NO_UPLOAD" = 1 ] || cmd_status || true
