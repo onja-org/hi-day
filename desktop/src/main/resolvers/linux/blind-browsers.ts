@@ -19,6 +19,8 @@ export interface BlindBrowser {
   pid: number;
   /** `comm` from /proc — the executable name, e.g. "firefox" or "chrome". */
   command: string;
+  /** Its own arguments, so a restart can put it back on the same profile. */
+  cmdline: string[];
 }
 
 export interface BrowserProcess {
@@ -102,6 +104,7 @@ export function selectRunningBrowsers(
   return mainBrowserProcesses(processes, tokens).map((process) => ({
     pid: process.pid,
     command: process.command,
+    cmdline: process.cmdline,
   }));
 }
 
@@ -112,7 +115,11 @@ export function selectBlindBrowsers(
 ): BlindBrowser[] {
   return mainBrowserProcesses(processes, tokens)
     .filter((process) => !process.cmdline.some((arg) => arg.startsWith(ACTIVATION_FLAG.split('=')[0])))
-    .map((process) => ({ pid: process.pid, command: process.command }));
+    .map((process) => ({
+      pid: process.pid,
+      command: process.command,
+      cmdline: process.cmdline,
+    }));
 }
 
 /**

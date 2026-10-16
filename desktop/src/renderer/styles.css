@@ -363,15 +363,6 @@ input::placeholder {
   overflow-y: auto;
 }
 
-/* The idle prompt takes the whole panel until it's answered. By id, not
-   by class: the reminder below shares the look but must not blank the
-   controls it is asking someone to use. */
-.tracking-view:has(#idle-banner:not([hidden])) .timer-section,
-.tracking-view:has(#idle-banner:not([hidden])) .search-section,
-.tracking-view:has(#idle-banner:not([hidden])) .projects-section {
-  display: none;
-}
-
 /* --- Timer card --------------------------------------------------------- */
 
 .timer-section {
@@ -1000,11 +991,13 @@ input::placeholder {
   color: var(--ink);
 }
 
-.mini-square.is-running .mini-square-timer,
-.mini-square.is-running .mini-square-toggle path,
-.mini-square.is-running .mini-square-expand path {
+/* The glyph stays ink on Volt, as the compact bar's own toggle does —
+   only the small text and icon need lifting off the blue. */
+.mini-square.is-running .mini-square-timer {
   color: var(--chalk);
-  fill: var(--chalk);
+}
+
+.mini-square.is-running .mini-square-expand path {
   stroke: var(--chalk);
 }
 

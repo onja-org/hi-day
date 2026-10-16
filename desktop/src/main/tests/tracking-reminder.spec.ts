@@ -3,7 +3,7 @@ import { shouldRemind, type ReminderInput } from '../tracking-reminder';
 
 function input(overrides: Partial<ReminderInput> = {}): ReminderInput {
   return {
-    settings: { intervalMinutes: 10, delivery: 'alert' },
+    settings: { intervalMinutes: 10, delivery: 'alert', workingHoursPerDay: 8 },
     now: new Date('2026-10-14T09:10:00'),
     isTracking: false,
     idleSeconds: 0,
@@ -33,7 +33,7 @@ describe('shouldRemind', () => {
 
   it('is off entirely when the interval is zero', () => {
     expect(
-      shouldRemind(input({ settings: { intervalMinutes: 0, delivery: 'alert' } })),
+      shouldRemind(input({ settings: { intervalMinutes: 0, delivery: 'alert', workingHoursPerDay: 8 } })),
     ).toBe(false);
   });
 

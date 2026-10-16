@@ -148,38 +148,6 @@
             </button>
             <p id="idle-notice" class="banner" role="status" hidden></p>
 
-            <div id="idle-banner" class="idle-screen" role="alert" hidden>
-              <span class="centred-icon" aria-hidden="true">
-                <svg viewBox="0 0 256 256" width="24" height="24">
-                  <path
-                    d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37.13,104,104,0,0,0,144.8,144.8,104.84,104.84,0,0,0,37.13-52.91A8,8,0,0,0,233.54,142.23Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </span>
-              <h2 class="centred-title">You were away</h2>
-              <p id="idle-banner-message" class="centred-message"></p>
-              <div class="idle-stats">
-                <div class="idle-stat-box">
-                  <span class="stat-label">Idle for</span>
-                  <span id="idle-duration" class="stat-value">00:00:00</span>
-                </div>
-                <div class="idle-stat-box">
-                  <span class="stat-label">Since</span>
-                  <span id="idle-since" class="stat-value">--:--</span>
-                </div>
-              </div>
-              <button id="idle-discard-button" type="button" class="button button-primary">
-                Discard idle time &amp; resume
-              </button>
-              <button id="idle-keep-button" type="button" class="button button-secondary">
-                Keep it — I was working
-              </button>
-              <button id="idle-assign-toggle" type="button" class="link-button">
-                Assign to another project…
-              </button>
-              <ul id="idle-assign-list" class="idle-assign-list" hidden></ul>
-            </div>
 
             <div class="timer-section">
               <div id="timer-card" class="timer-card">
@@ -340,6 +308,41 @@
         </svg>
       </button>
     </div>
+    <div id="idle-prompt" class="close-prompt" hidden>
+      <div id="idle-banner" class="idle-screen" role="alert">
+        <span class="centred-icon" aria-hidden="true">
+          <svg viewBox="0 0 256 256" width="24" height="24">
+            <path
+              d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37.13,104,104,0,0,0,144.8,144.8,104.84,104.84,0,0,0,37.13-52.91A8,8,0,0,0,233.54,142.23Z"
+              fill="currentColor"
+            />
+          </svg>
+        </span>
+        <h2 class="centred-title">You were away</h2>
+        <p id="idle-banner-message" class="centred-message"></p>
+        <div class="idle-stats">
+          <div class="idle-stat-box">
+            <span class="stat-label">Idle for</span>
+            <span id="idle-duration" class="stat-value">00:00:00</span>
+          </div>
+          <div class="idle-stat-box">
+            <span class="stat-label">Since</span>
+            <span id="idle-since" class="stat-value">--:--</span>
+          </div>
+        </div>
+        <button id="idle-discard-button" type="button" class="button button-primary">
+          Discard idle time &amp; resume
+        </button>
+        <button id="idle-keep-button" type="button" class="button button-secondary">
+          Keep it — I was working
+        </button>
+        <button id="idle-assign-toggle" type="button" class="link-button">
+          Assign to another project…
+        </button>
+        <ul id="idle-assign-list" class="idle-assign-list" hidden></ul>
+      </div>
+    </div>
+
     <div id="reminder-banner" class="close-prompt" hidden>
       <div
         class="close-prompt-card reminder-card"

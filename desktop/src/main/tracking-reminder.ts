@@ -10,6 +10,8 @@ export interface ReminderSettings {
   /** `0` switches reminders off. */
   intervalMinutes: number;
   delivery: ReminderDelivery;
+  /** So the reminder can say how much of the day is left to track. */
+  workingHoursPerDay: number;
 }
 
 export interface ReminderInput {

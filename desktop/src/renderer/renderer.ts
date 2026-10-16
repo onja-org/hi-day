@@ -1,3 +1,5 @@
+import { reminderMessage } from "./reminder-message.js";
+
 export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
@@ -498,7 +500,7 @@ const timerTogglePath = document.getElementById(
 const switchButton = document.getElementById(
   "switch-button",
 ) as HTMLButtonElement;
-const idleBanner = document.getElementById("idle-banner")!;
+const idlePrompt = document.getElementById("idle-prompt")!;
 const reminderBanner = document.getElementById("reminder-banner")!;
 const reminderBannerMessage = document.getElementById(
   "reminder-banner-message",
@@ -938,14 +940,14 @@ function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
 function showIdleBanner(idleSeconds: number, idleStartedAtIso: string): void {
   pendingIdleDiscardAt = idleStartedAtIso;
   updateIdleStats(idleSeconds, idleStartedAtIso);
-  idleBanner.hidden = false;
+  idlePrompt.hidden = false;
   // Needs an answer, so it can't wait behind the compact bar or in the tray.
   setCompact(false);
   void window.api.windowControls.show();
 }
 
 function hideIdleBanner(): void {
-  idleBanner.hidden = true;
+  idlePrompt.hidden = true;
   idleAssignList.hidden = true;
   pendingIdleDiscardAt = null;
   idleEndedAtMs = null;
@@ -978,7 +980,7 @@ async function checkIdle(): Promise<void> {
   const inputResumed = idleSeconds < lastIdleSeconds;
   lastIdleSeconds = idleSeconds;
 
-  if (!idleBanner.hidden) {
+  if (!idlePrompt.hidden) {
     // Stays open until answered, even after input resumes (like Hubstaff);
     // the timer keeps running meanwhile.
     if (inputResumed && idleEndedAtMs === null) {
@@ -1982,11 +1984,14 @@ reminderStartButton.addEventListener("click", () => {
   if (!timerToggle.disabled) timerToggle.click();
 });
 
-window.api.windowControls.onTrackingReminder((message) => {
+window.api.windowControls.onTrackingReminder((reminder) => {
   // The banner lives in the tracking view, which the smaller sizes
   // hide; centred, because growing from a corner runs off screen.
   setMode("full", true);
-  reminderBannerMessage.textContent = message;
+  reminderBannerMessage.textContent = reminderMessage({
+    ...reminder,
+    trackedTodaySeconds: todayTotalSeconds(),
+  });
   reminderBanner.hidden = false;
   // Again now the resize is done: main raises before any of this runs,
   // and going full drops the always-on-top the smaller views hold.

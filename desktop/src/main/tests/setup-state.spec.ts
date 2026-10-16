@@ -165,6 +165,7 @@ describe('cached reminder settings', () => {
   const SETTINGS: ReminderSettings = {
     intervalMinutes: 10,
     delivery: 'alert',
+    workingHoursPerDay: 8,
   };
 
   let userDataDir: string;
