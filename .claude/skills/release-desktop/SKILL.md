@@ -72,6 +72,13 @@ After `build`, the script prints which files are still missing.
   Then wait for the upload with Monitor, polling every 2 minutes:
   `until desktop/scripts/release.sh status <v> >/dev/null 2>&1; do sleep 120; done`.
 - **On a Mac, Linux/Windows files missing:** same, the other way round (`build <v> auto` on Linux).
+- **Windows files missing because `auto` printed "builds Linux only"** (the commit still uses
+  `better-sqlite3`): someone builds on a Windows PC with Node 22, pnpm 11.1.3, .NET 8 SDK, git
+  and `gh`, in PowerShell from their clone:
+  `git fetch --tags; git checkout desktop-v<v>; pnpm install --frozen-lockfile; pnpm --filter desktop dist:win`,
+  checks `Get-Content desktop\release\latest.yml -First 1` says `version: <v>`, then
+  `gh release upload desktop-v<v> desktop\release\hiday-win-x64.exe desktop\release\hiday-win-x64.exe.blockmap desktop\release\latest.yml --repo onja-org/hi-day-releases --clobber`.
+  Give the user those lines and wait for the upload the same way.
 
 ## 5. Publish — the only step that needs the user's yes
 

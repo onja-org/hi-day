@@ -190,8 +190,12 @@ build_linux() {
 # come out built for this Linux host, and with npmRebuild: false nothing swaps
 # them, so the Windows installer would carry a Linux .node that fails to load.
 # better-sqlite3 was one (main before the node:sqlite switch); refuse up front.
+win_cross_buildable() {
+  ! node -e "process.exit(require('$WORKTREE/desktop/package.json').dependencies?.['better-sqlite3'] ? 0 : 1)"
+}
+
 check_win_cross_buildable() {
-  if node -e "process.exit(require('$WORKTREE/desktop/package.json').dependencies?.['better-sqlite3'] ? 0 : 1)"; then
+  if ! win_cross_buildable; then
     die "This commit still depends on better-sqlite3, which can't be built for Windows from Linux.
   Build Windows on a Windows PC instead (pnpm --filter desktop dist:win, then upload ${WIN_FILES[*]}),
   or release once the node:sqlite change (chore/desktop-node-sqlite) is on main."
@@ -319,7 +323,13 @@ cmd_build() {
     linux|win|mac) platforms=("$PLATFORM") ;;
     auto)
       case "$(uname -s)" in
-        Linux) platforms=(linux win) ;;
+        Linux)
+          if win_cross_buildable; then
+            platforms=(linux win)
+          else
+            platforms=(linux)
+            echo "Note: this commit still uses better-sqlite3, so 'auto' builds Linux only. Build Windows on a Windows PC (see the release doc)."
+          fi ;;
         Darwin) platforms=(mac) ;;
         *) die "Unsupported OS $(uname -s) for 'auto'." ;;
       esac ;;
