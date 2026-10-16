@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cacheReminderSettings,
+  compactAlwaysOnTop,
+  setCompactAlwaysOnTop,
   cachedReminderSettings,
   hasSeenBrowserRestartPrompt,
   hasWaylandScreenshotGrant,
@@ -197,5 +199,41 @@ describe('cached reminder settings', () => {
     writeFileSync(join(userDataDir, 'setup-state.json'), '{ not json', 'utf-8');
 
     expect(cachedReminderSettings(userDataDir)).toBeNull();
+  });
+});
+
+describe('compact always on top', () => {
+  let userDataDir: string;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-compact-pin-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('floats by default, since the bar always has', () => {
+    expect(compactAlwaysOnTop(userDataDir)).toBe(true);
+  });
+
+  it('stays off once someone turns it off', () => {
+    setCompactAlwaysOnTop(userDataDir, false);
+
+    expect(compactAlwaysOnTop(userDataDir)).toBe(false);
+  });
+
+  it('can be turned back on', () => {
+    setCompactAlwaysOnTop(userDataDir, false);
+    setCompactAlwaysOnTop(userDataDir, true);
+
+    expect(compactAlwaysOnTop(userDataDir)).toBe(true);
+  });
+
+  it('leaves the other remembered answers alone', () => {
+    rememberCloseAction(userDataDir, 'quit');
+    setCompactAlwaysOnTop(userDataDir, false);
+
+    expect(rememberedCloseAction(userDataDir)).toBe('quit');
   });
 });

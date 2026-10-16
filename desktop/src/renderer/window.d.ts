@@ -172,7 +172,12 @@ declare global {
         minimise: () => Promise<void>;
         show: () => Promise<void>;
         close: () => Promise<void>;
-        setCompact: (compact: boolean) => Promise<void>;
+        setMode: (
+          mode: "full" | "compact" | "mini",
+          centre?: boolean,
+        ) => Promise<void>;
+        compactAlwaysOnTop: () => Promise<boolean>;
+        setCompactAlwaysOnTop: (pinned: boolean) => Promise<void>;
         /** Fires when the window comes back from being closed to the tray. */
         onTrackingNotice: (listener: (notice: string | null) => void) => void;
         onTrackingReminder: (listener: (message: string) => void) => void;

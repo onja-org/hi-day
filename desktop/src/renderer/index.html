@@ -238,24 +238,6 @@
               <p id="project-list-empty" class="empty-text" hidden>No projects match.</p>
             </div>
 
-            <div id="reminder-banner" class="idle-screen reminder-screen" role="alert" hidden>
-              <span class="centred-icon" aria-hidden="true">
-                <svg viewBox="0 0 256 256" width="24" height="24">
-                  <path
-                    d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,104a8,8,0,0,1-8,8H72a8,8,0,0,1,0-16h48V72a8,8,0,0,1,16,0Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </span>
-              <h2 class="centred-title">You're not tracking time</h2>
-              <p id="reminder-banner-message" class="centred-message"></p>
-              <button id="reminder-start-button" type="button" class="button button-primary">
-                Start timer
-              </button>
-              <button id="reminder-dismiss-button" type="button" class="button button-secondary">
-                Not now
-              </button>
-            </div>
           </div>
 
           <footer class="statusbar">
@@ -327,12 +309,66 @@
           <path id="compact-timer-toggle-path" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="#121117" />
         </svg>
       </button>
+      <span class="compact-actions">
+      <button id="compact-shrink" type="button" class="compact-expand" aria-label="Shrink to the smallest bar" title="Smallest bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F8F6F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 9H4m5 0V4m0 5L3 3m12 6h5m-5 0V4m0 5l6-6M9 15H4m5 0v5m0-5l-6 6m12-6h5m-5 0v5m0-5l6 6" />
+        </svg>
+      </button>
+      <button id="compact-pin" type="button" class="compact-expand" aria-pressed="false" aria-label="Keep in front of other windows" title="Keep in front">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F8F6F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+        </svg>
+      </button>
       <button id="expand-button" type="button" class="compact-expand" aria-label="Open full window" title="Full window">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F8F6F1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />
         </svg>
       </button>
+      </span>
     </div>
+    <div id="mini-view" class="mini-square" hidden>
+      <button id="mini-timer-toggle" type="button" class="mini-square-toggle" aria-label="Start timer">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+          <path id="mini-timer-toggle-path" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="#121117" />
+        </svg>
+      </button>
+      <span id="mini-timer" class="mini-square-timer">00:00:00</span>
+      <button id="mini-expand" type="button" class="mini-square-expand" aria-label="Back to the compact bar" title="Bigger">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#121117" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 4h6v6M20 4l-8 8" />
+        </svg>
+      </button>
+    </div>
+    <div id="reminder-banner" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card reminder-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="reminder-title"
+        aria-describedby="reminder-banner-message"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="reminder-title" class="close-prompt-title">
+          You&rsquo;re not tracking time
+        </h2>
+        <p id="reminder-banner-message" class="close-prompt-message"></p>
+        <div class="close-prompt-actions">
+          <button id="reminder-start-button" type="button" class="button button-sun">
+            Start timer
+          </button>
+          <button id="reminder-dismiss-button" type="button" class="button button-ghost">
+            Not now
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="timer-blocked" class="close-prompt" hidden>
       <div
         class="close-prompt-card timer-blocked-card"
