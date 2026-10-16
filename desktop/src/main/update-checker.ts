@@ -1,4 +1,4 @@
-const RELEASES_REPO = 'onja-org/workfoce-monitoring-app-releases';
+const RELEASES_REPO = 'onja-org/hi-day-releases';
 const GITHUB_API_URL = `https://api.github.com/repos/${RELEASES_REPO}/releases/latest`;
 
 // The public releases repo (see docs — desktop-v* tags publish here, not
