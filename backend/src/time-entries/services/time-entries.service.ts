@@ -27,6 +27,7 @@ import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
+import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
@@ -84,12 +85,19 @@ const LIST_LIMIT = 200;
 const DAY_BOUNDARY_SPLIT_BATCH_SIZE = 200;
 
 /**
- * How long a Device may go unheard before its running timer is treated as
- * abandoned. Generous on purpose: the entry is ended at `lastSeenAt`
- * whatever the wait, so a longer grace costs no accuracy and buys immunity
- * from a dropped wifi connection closing a timer somebody is still using.
+ * How long a Device or a browser may go unheard before its running timer is
+ * treated as abandoned. Generous on purpose: the entry is ended at
+ * `lastSeenAt` whatever the wait, so a longer grace costs no accuracy and
+ * buys immunity from a dropped wifi connection closing a timer somebody is
+ * still using.
  */
-const ABANDONED_DEVICE_GRACE_MS = 30 * 60 * 1000;
+const ABANDONED_TIMER_GRACE_MS = 30 * 60 * 1000;
+
+/**
+ * How often a web timer's `lastSeenAt` is rewritten. The browser polls every
+ * 15s, and a write per poll buys nothing against a 30-minute grace.
+ */
+const WEB_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 const ABANDONED_ENTRY_BATCH_SIZE = 200;
 
@@ -351,6 +359,7 @@ export class TimeEntriesService {
       : running;
 
     const own = live.find((entry) => entry.deviceId === null) ?? null;
+    if (own) await this.recordWebHeartbeat(own);
     const onADevice = live.find((entry) => entry.deviceId !== null) ?? null;
 
     return {
@@ -362,20 +371,98 @@ export class TimeEntriesService {
     };
   }
 
+  /**
+   * This poll is the web timer's heartbeat: a browser has no Device to
+   * report for it, so being asked "what is running?" is the only sign the
+   * page is still open. Throttled, and conditional on the entry still being
+   * open so a poll racing a stop cannot touch a finished row.
+   */
+  private async recordWebHeartbeat(entry: TimeEntry): Promise<void> {
+    const now = new Date();
+    if (
+      entry.lastSeenAt &&
+      now.getTime() - entry.lastSeenAt.getTime() < WEB_HEARTBEAT_INTERVAL_MS
+    ) {
+      return;
+    }
+    await this.timeEntries.update(
+      { id: entry.id, endedAt: IsNull() },
+      { lastSeenAt: now },
+    );
+  }
+
   /** Union of the active time across these entries; see time-entry-union.util. */
   private async unionWorkedSeconds(entries: TimeEntry[]): Promise<number> {
     if (entries.length === 0) return 0;
+    return unionActiveSeconds(
+      entries,
+      await this.pausesByEntry(entries),
+      new Date(),
+    );
+  }
+
+  private async pausesByEntry(
+    entries: TimeEntry[],
+  ): Promise<Map<string, TimeEntryPause[]>> {
+    const byEntry = new Map<string, TimeEntryPause[]>();
+    if (entries.length === 0) return byEntry;
     const pauses = await this.timeEntryPauses.find({
       where: { timeEntryId: In(entries.map((entry) => entry.id)) },
     });
-    const byEntry = new Map<string, TimeEntryPause[]>();
     for (const pause of pauses) {
       byEntry.set(pause.timeEntryId, [
         ...(byEntry.get(pause.timeEntryId) ?? []),
         pause,
       ]);
     }
-    return unionActiveSeconds(entries, byEntry, new Date());
+    return byEntry;
+  }
+
+  /**
+   * The day's baseline for a client that ticks the running time up itself:
+   * what has been worked in the window *beyond* what the open entries cover.
+   * The client adds the union of the open entries on top (`workedSeconds` of
+   * the current timer), so baseline plus live equals the dashboard's union
+   * over every entry, running ones included (ADR-0022). Time two entries
+   * share counts once, so a finished web entry overlapping a running Device
+   * is not added to the live clock a second time.
+   *
+   * Per Project the same subtraction is applied to the attributed figures,
+   * which is exact in total and clamped so a rank change never goes negative.
+   */
+  async completedWorkedTotals(
+    organisationId: string,
+    userId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{
+    workedSeconds: number;
+    projects: { projectId: string; seconds: number }[];
+  }> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const entries = await this.timeEntries.find({
+      where: {
+        membershipId: membership.id,
+        startedAt: Between(from, to),
+      },
+    });
+    const open = entries.filter((entry) => entry.endedAt === null);
+    const pauses = await this.pausesByEntry(entries);
+    const now = new Date();
+
+    const allByProject = attributeProjectSeconds(entries, pauses, now);
+    const openByProject = attributeProjectSeconds(open, pauses, now);
+    return {
+      workedSeconds: Math.max(
+        0,
+        unionActiveSeconds(entries, pauses, now) -
+          unionActiveSeconds(open, pauses, now),
+      ),
+      projects: [...allByProject].map(([projectId, seconds]) => ({
+        projectId,
+        seconds: Math.max(0, seconds - (openByProject.get(projectId) ?? 0)),
+      })),
+    };
   }
 
   /**
@@ -495,6 +582,7 @@ export class TimeEntriesService {
       endedAt: null,
       source,
       deviceId,
+      lastSeenAt: deviceId === null ? new Date() : null,
     });
     const saved = await this.timeEntries.save(entry);
 
@@ -661,6 +749,7 @@ export class TimeEntriesService {
         endedAt: null,
         source,
         deviceId,
+        lastSeenAt: deviceId === null ? new Date() : null,
       });
       const savedEntry = await manager.save(entry);
 
@@ -854,6 +943,7 @@ export class TimeEntriesService {
     // first would leave the half after midnight starting later than that
     // instant and so impossible to close honestly.
     await this.closeEntriesFromDevicesThatWentAway();
+    await this.closeWebEntriesThatWentAway();
 
     const now = new Date();
     // The widest possible boundary, so the query cannot miss an entry whose
@@ -890,10 +980,10 @@ export class TimeEntriesService {
    * Since the agent heartbeats every 60 seconds, `lastSeenAt` marks
    * the last known active time.
    *
-   * Only applies to Devices; browser timers have no heartbeat.
+   * Only applies to Devices; see `closeWebEntriesThatWentAway` for browsers.
    */
   async closeEntriesFromDevicesThatWentAway(now = new Date()): Promise<void> {
-    const goneSince = new Date(now.getTime() - ABANDONED_DEVICE_GRACE_MS);
+    const goneSince = new Date(now.getTime() - ABANDONED_TIMER_GRACE_MS);
 
     const abandoned = await this.timeEntries
       .createQueryBuilder('entry')
@@ -913,58 +1003,99 @@ export class TimeEntriesService {
           .device_lastSeenAt,
       );
 
-      // An entry starting after its Device's last heartbeat spans time the
-      // machine was not alive. Day-boundary splits create these by carrying
-      // abandoned timers past midnight. Since they contain no worked time,
-      // they are deleted rather than closed to avoid empty records.
-      if (lastSeenAt.getTime() <= entry.startedAt.getTime()) {
-        await this.removeEntryHoldingNoWork(entry, lastSeenAt);
-        continue;
-      }
-
-      await this.dataSource.transaction(async (manager) => {
-        // Re-read inside the transaction: the agent may have come back and
-        // stopped it between the query above and here.
-        const fresh = await manager.findOne(TimeEntry, {
-          where: { id: entry.id },
-        });
-        if (!fresh || fresh.endedAt !== null) return;
-
-        fresh.endedAt = lastSeenAt;
-        await manager.save(fresh);
-        await this.closeOpenPause(
-          manager.getRepository(TimeEntryPause),
-          fresh.id,
-          lastSeenAt,
-        );
-
-        await this.auditLogService.record(manager, {
-          action: 'time_entry.closed_device_offline',
-          organisationId: fresh.organisationId,
-          metadata: {
-            timeEntryId: fresh.id,
-            deviceId: fresh.deviceId,
-            endedAt: lastSeenAt.toISOString(),
-          },
-        });
-      });
-
-      this.logger.log(
-        `[abandoned] entry=${entry.id} ended at ${lastSeenAt.toISOString()} — ` +
-          `its device had not reported since then`,
-      );
+      await this.closeAbandonedEntry(entry, lastSeenAt, 'device');
     }
   }
 
   /**
-   * Deletes an entry created by splitting a timer past its Device's lifetime.
-   * No worked time exists to preserve; associated pauses are deleted via the
-   * foreign key, and no captures can reference an entry outside the Device's
-   * runtime.
+   * Ends a web timer at the last time its browser polled.
+   *
+   * A browser can be closed, or its machine switched off, without ever
+   * sending the stop; the entry would then run until somebody noticed.
+   * `currentForAccount` stamps `lastSeenAt` while the page is open, so a
+   * stamp older than the grace period means nobody is there.
+   *
+   * An entry without a stamp is left alone: the migration stamps the ones
+   * already running, and every new one is stamped at start.
+   */
+  async closeWebEntriesThatWentAway(now = new Date()): Promise<void> {
+    const goneSince = new Date(now.getTime() - ABANDONED_TIMER_GRACE_MS);
+
+    const abandoned = await this.timeEntries.find({
+      where: {
+        endedAt: IsNull(),
+        deviceId: IsNull(),
+        lastSeenAt: LessThan(goneSince),
+      },
+      take: ABANDONED_ENTRY_BATCH_SIZE,
+    });
+
+    for (const entry of abandoned) {
+      if (!entry.lastSeenAt) continue;
+      await this.closeAbandonedEntry(entry, entry.lastSeenAt, 'browser');
+    }
+  }
+
+  /**
+   * Closes `entry` at `lastSeenAt`, the last instant its client was alive —
+   * or deletes it when it began after that, which a day-boundary split
+   * produces by carrying an abandoned timer past midnight. Such an entry
+   * holds no worked time, so it is removed rather than kept as an empty
+   * record.
+   */
+  private async closeAbandonedEntry(
+    entry: TimeEntry,
+    lastSeenAt: Date,
+    origin: 'device' | 'browser',
+  ): Promise<void> {
+    if (lastSeenAt.getTime() <= entry.startedAt.getTime()) {
+      await this.removeEntryHoldingNoWork(entry, lastSeenAt, origin);
+      return;
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      // Re-read inside the transaction: the client may have come back and
+      // stopped it between the query and here.
+      const fresh = await manager.findOne(TimeEntry, {
+        where: { id: entry.id },
+      });
+      if (!fresh || fresh.endedAt !== null) return;
+
+      fresh.endedAt = lastSeenAt;
+      await manager.save(fresh);
+      await this.closeOpenPause(
+        manager.getRepository(TimeEntryPause),
+        fresh.id,
+        lastSeenAt,
+      );
+
+      await this.auditLogService.record(manager, {
+        action: `time_entry.closed_${origin}_offline`,
+        organisationId: fresh.organisationId,
+        metadata: {
+          timeEntryId: fresh.id,
+          deviceId: fresh.deviceId,
+          endedAt: lastSeenAt.toISOString(),
+        },
+      });
+    });
+
+    this.logger.log(
+      `[abandoned] entry=${entry.id} ended at ${lastSeenAt.toISOString()} — ` +
+        `its ${origin} had not reported since then`,
+    );
+  }
+
+  /**
+   * Deletes an entry created by splitting a timer past its client's
+   * lifetime. No worked time exists to preserve; associated pauses are
+   * deleted via the foreign key, and no captures can reference an entry
+   * outside the client's runtime.
    */
   private async removeEntryHoldingNoWork(
     entry: TimeEntry,
-    deviceLastSeenAt: Date,
+    lastSeenAt: Date,
+    origin: 'device' | 'browser',
   ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const fresh = await manager.findOne(TimeEntry, {
@@ -973,13 +1104,15 @@ export class TimeEntriesService {
       if (!fresh || fresh.endedAt !== null) return;
 
       await this.auditLogService.record(manager, {
-        action: 'time_entry.removed_device_offline',
+        action: `time_entry.removed_${origin}_offline`,
         organisationId: fresh.organisationId,
         metadata: {
           timeEntryId: fresh.id,
           deviceId: fresh.deviceId,
           startedAt: fresh.startedAt.toISOString(),
-          deviceLastSeenAt: deviceLastSeenAt.toISOString(),
+          ...(origin === 'device'
+            ? { deviceLastSeenAt: lastSeenAt.toISOString() }
+            : { lastSeenAt: lastSeenAt.toISOString() }),
         },
       });
       await manager.delete(TimeEntry, { id: fresh.id });
@@ -987,7 +1120,7 @@ export class TimeEntriesService {
 
     this.logger.log(
       `[abandoned] entry=${entry.id} removed — it began ${entry.startedAt.toISOString()}, ` +
-        `after its device was last seen ${deviceLastSeenAt.toISOString()}, so it holds no worked time`,
+        `after its ${origin} was last seen ${lastSeenAt.toISOString()}, so it holds no worked time`,
     );
   }
 
@@ -1261,6 +1394,7 @@ export class TimeEntriesService {
             endedAt: null,
             source: entry.source,
             deviceId: entry.deviceId,
+            lastSeenAt: entry.lastSeenAt,
           }),
         );
 

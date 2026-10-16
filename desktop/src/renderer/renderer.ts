@@ -1044,20 +1044,48 @@ async function refreshTodayTotals(): Promise<void> {
   const result = await window.api.tracking.entriesBetween(from, to);
   if (!result.ok) return; // transient — keep whatever totals we already had
 
-  const totals = new Map<string, number>();
   const counted = new Set<string>();
   for (const entry of result.data) {
-    // A null duration is the still-running entry; tick() adds its time
-    // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
     counted.add(entry.id);
-    const key = projectKey(entry.projectId);
-    totals.set(key, (totals.get(key) ?? 0) + entry.durationSeconds);
   }
+  const totals = await completedTotalsByProject(result.data, from, to);
   todaySecondsByProject = totals;
   todaySecondsDayStart = startOfToday();
   countedEntryIds = counted;
   todaySecondsReconciledAt = Date.now();
+}
+
+/**
+ * Today's finished seconds per Project. The server counts a stretch the web
+ * and this machine both tracked once; summing each entry's own duration would
+ * count it twice. Falls back to that sum only if the server can't answer.
+ * A running entry is excluded either way: tick() adds its time live.
+ */
+async function completedTotalsByProject(
+  entries: TrackedEntry[],
+  from: string,
+  to: string,
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  const result = await window.api.tracking.completedTotals(from, to);
+  if (result.ok) {
+    // Without Projects the day is a single bucket, so the union is the figure.
+    if (!projectsEnabled) {
+      totals.set(projectKey(null), result.data.workedSeconds);
+    } else {
+      for (const project of result.data.projects) {
+        totals.set(projectKey(project.projectId), project.seconds);
+      }
+    }
+    return totals;
+  }
+  for (const entry of entries) {
+    if (entry.durationSeconds === null) continue;
+    const key = projectKey(entry.projectId);
+    totals.set(key, (totals.get(key) ?? 0) + entry.durationSeconds);
+  }
+  return totals;
 }
 
 /**
@@ -1068,10 +1096,9 @@ async function refreshTodayTotals(): Promise<void> {
  * and this one would show as the display jumping backwards.
  */
 async function mergeNewTodayEntries(): Promise<void> {
-  const result = await window.api.tracking.entriesBetween(
-    new Date(startOfToday()).toISOString(),
-    new Date().toISOString(),
-  );
+  const from = new Date(startOfToday()).toISOString();
+  const to = new Date().toISOString();
+  const result = await window.api.tracking.entriesBetween(from, to);
   if (!result.ok) return; // transient — try again on the next poll
 
   todaySecondsReconciledAt = Date.now();
@@ -1088,17 +1115,14 @@ async function mergeNewTodayEntries(): Promise<void> {
     if (!entry.id) continue;
     if (countedEntryIds.has(entry.id)) continue;
     countedEntryIds.add(entry.id);
-    const key = projectKey(entry.projectId);
-    todaySecondsByProject.set(
-      key,
-      (todaySecondsByProject.get(key) ?? 0) + entry.durationSeconds,
-    );
     added = true;
   }
-  if (added) {
-    renderProjects();
-    tick();
-  }
+  if (!added) return;
+  // Re-derived from the server rather than added to: the new entry may
+  // overlap time already counted (the web running beside this machine).
+  todaySecondsByProject = await completedTotalsByProject(result.data, from, to);
+  renderProjects();
+  tick();
 }
 
 function renderProjects(): void {
@@ -1347,8 +1371,27 @@ function applyProjectsMode(): void {
  */
 async function refreshProjectsSetting(): Promise<void> {
   const setting = await window.api.tracking.projectsSetting();
-  if (!setting.ok || setting.data.projectsEnabled === projectsEnabled) return;
-  await initTracking();
+  if (!setting.ok) return;
+  if (setting.data.projectsEnabled !== projectsEnabled) {
+    await initTracking();
+    return;
+  }
+  if (projectsEnabled) await refreshProjectList();
+}
+
+/**
+ * Picks up Projects created, renamed or removed since setup, which loaded the
+ * list once. Redraws only when something changed, and leaves the task list
+ * alone so a poll never disturbs a picker the person has open.
+ */
+async function refreshProjectList(): Promise<void> {
+  const result = await window.api.tracking.listProjects();
+  if (!result.ok) return;
+  const signature = (list: TrackedProject[]): string =>
+    list.map((project) => `${project.id}:${project.name}`).join("|");
+  if (signature(result.data) === signature(projects)) return;
+  projects = result.data;
+  renderProjects();
 }
 
 function updateCurrentTaskLabel(): void {
@@ -1936,7 +1979,10 @@ window.api.windowControls.onTrackingNotice((notice) => {
 // Closing the window only hides it to the tray, so reopening it doesn't rerun
 // setup — re-read the day's time from the server here instead.
 window.api.windowControls.onReopened(() => {
-  if (pollHandle) void refreshStatus(true);
+  if (pollHandle) {
+    void refreshStatus(true);
+    void refreshProjectsSetting();
+  }
 });
 
 void init();

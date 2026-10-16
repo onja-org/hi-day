@@ -48,6 +48,11 @@ declare global {
     taskId: string | null;
   }
 
+  interface CompletedTotals {
+    workedSeconds: number;
+    projects: { projectId: string; seconds: number }[];
+  }
+
   interface TrackedEntry {
     id: string;
     projectId: string | null;
@@ -156,6 +161,7 @@ declare global {
         resume: () => Promise<TrackingResult<TimeEntry>>;
         lastProject: () => Promise<LastProject | null>;
         entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
+        completedTotals: (from: string, to: string) => Promise<TrackingResult<CompletedTotals>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;

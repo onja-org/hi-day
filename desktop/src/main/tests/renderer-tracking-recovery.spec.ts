@@ -190,6 +190,28 @@ function launch(scenario: Scenario) {
       resume: () => ok(entry),
       lastProject: () => Promise.resolve(null),
       entriesBetween: () => ok(completed),
+      // The server's overlap-aware totals; these scenarios never overlap, so
+      // a plain sum is what it would answer.
+      completedTotals: () => {
+        const byProject = new Map<string, number>();
+        for (const entry of completed) {
+          if (entry.projectId === null || entry.durationSeconds === null) continue;
+          byProject.set(
+            entry.projectId,
+            (byProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
+          );
+        }
+        return ok({
+          workedSeconds: completed.reduce(
+            (sum, entry) => sum + (entry.durationSeconds ?? 0),
+            0,
+          ),
+          projects: [...byProject].map(([projectId, seconds]) => ({
+            projectId,
+            seconds,
+          })),
+        });
+      },
       idlePolicy: () => {
         calls.idlePolicy += 1;
         if (!server.revoked && calls.idlePolicy <= (scenario.failingIdlePolicyLoads ?? 0)) {

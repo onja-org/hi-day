@@ -24,5 +24,9 @@ export function useCurrentTimeEntry(organisationId: string) {
       return result.data;
     },
     refetchInterval: CURRENT_TIME_ENTRY_POLL_INTERVAL_MS,
+    // This poll is also the web timer's heartbeat (see the backend's
+    // `closeWebEntriesThatWentAway`): a tab left behind another window must
+    // keep polling, or a timer somebody is still using would be closed.
+    refetchIntervalInBackground: true,
   });
 }

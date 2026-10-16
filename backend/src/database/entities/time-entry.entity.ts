@@ -110,6 +110,16 @@ export class TimeEntry {
   @JoinColumn({ name: 'deviceId' })
   device: Device | null;
 
+  /**
+   * The last moment the client holding this running entry was heard from.
+   * Only set for a web timer, which has no Device to heartbeat for it: the
+   * browser's poll of `/time-entries/current` stamps it, and the hourly
+   * closer ends an entry whose stamp has gone stale. A Device's entry reads
+   * `Device.lastSeenAt` instead.
+   */
+  @Column({ type: 'timestamptz', precision: 3, nullable: true })
+  lastSeenAt: Date | null;
+
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
 

@@ -66,18 +66,13 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
       >
         {timer.entry ? (
           <>
-            <span
-              className={clsx(
-                "h-2 w-2 rounded-full bg-white",
-                !timer.isPaused && "animate-pulse",
-              )}
-            />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
             <span className="font-data tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
           </>
         ) : (
           <>
             <PlayIcon size={14} weight="fill" aria-hidden="true" />
-            <span className="font-data tabular-nums">{formatElapsed(0)}</span>
+            <span className="font-data tabular-nums">{formatElapsed(timer.stoppedElapsedMs)}</span>
           </>
         )}
         <CaretDownIcon size={12} aria-hidden="true" />

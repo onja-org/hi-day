@@ -1323,6 +1323,12 @@ async function registerIpcHandlers(): Promise<void> {
       callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
   );
 
+  ipcMain.handle(
+    "tracking:completedTotals",
+    (_event, from: string, to: string) =>
+      callDeviceApi((token) => apiClient.getCompletedTotals(token, from, to)),
+  );
+
   ipcMain.handle("tracking:idlePolicy", () =>
     callDeviceApi((token) => apiClient.getIdlePolicy(token)),
   );

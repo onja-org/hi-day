@@ -75,6 +75,12 @@ export interface TimeEntry {
 }
 
 /** One completed/running entry as the agent needs it — just enough to total by Project. */
+/** Time worked beyond what the open entries cover; the live clock adds those. */
+export interface CompletedTotals {
+  workedSeconds: number;
+  projects: { projectId: string; seconds: number }[];
+}
+
 export interface TrackedEntry {
   id: string;
   projectId: string | null;
@@ -352,6 +358,15 @@ export class ApiClient {
   ): Promise<TrackingResult<TrackedEntry[]>> {
     const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     return this.deviceRequest('GET', `/device/time-entries${query}`, deviceToken);
+  }
+
+  getCompletedTotals(
+    deviceToken: string,
+    from: string,
+    to: string,
+  ): Promise<TrackingResult<CompletedTotals>> {
+    const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.deviceRequest('GET', `/device/time-entries/totals${query}`, deviceToken);
   }
 
   postAppEvents(

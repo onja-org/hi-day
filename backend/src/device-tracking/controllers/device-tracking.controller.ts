@@ -365,6 +365,26 @@ export class DeviceTrackingController {
    * `from`/`to` are caller-resolved instants, so "today" is the machine's
    * local day, not the server's.
    */
+  /**
+   * The baseline the agent ticks its running entries up from: time worked in
+   * the window beyond what the open entries cover, shared stretches counted
+   * once. Summing `list`'s durations instead would double the time the web
+   * and a Device both tracked.
+   */
+  @Get('time-entries/totals')
+  totals(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): ReturnType<TimeEntriesService['completedWorkedTotals']> {
+    return this.timeEntriesService.completedWorkedTotals(
+      request.organisationId,
+      request.userId,
+      new Date(from),
+      new Date(to),
+    );
+  }
+
   @Get('time-entries')
   list(
     @Query('from') from: string | undefined,

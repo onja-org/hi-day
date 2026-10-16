@@ -52,6 +52,11 @@ export interface LastProject {
   taskId: string | null;
 }
 
+export interface CompletedTotals {
+  workedSeconds: number;
+  projects: { projectId: string; seconds: number }[];
+}
+
 export interface TrackedEntry {
   id: string;
   projectId: string | null;
@@ -218,6 +223,13 @@ const api = {
     ): Promise<TrackingResult<TrackedEntry[]>> =>
       ipcRenderer.invoke("tracking:entriesBetween", from, to) as Promise<
         TrackingResult<TrackedEntry[]>
+      >,
+    completedTotals: (
+      from: string,
+      to: string,
+    ): Promise<TrackingResult<CompletedTotals>> =>
+      ipcRenderer.invoke("tracking:completedTotals", from, to) as Promise<
+        TrackingResult<CompletedTotals>
       >,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke("tracking:idlePolicy") as Promise<

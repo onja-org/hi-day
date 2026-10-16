@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { allowedAppsNotice } from "@/lib/allowedAppsNotice";
-import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
-import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
 import { startTimeEntry } from "@/lib/startTimeEntry";
 import { webTimerConstraint } from "@/lib/webTimerConstraint";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
@@ -135,16 +133,9 @@ export function useRunningTimer(organisationId: string) {
     },
   });
 
-  const pauseMutation = useMutation({
-    mutationFn: () => pauseTimeEntry(organisationId),
-    onSuccess: invalidate,
-  });
-
-  const resumeMutation = useMutation({
-    mutationFn: () => resumeTimeEntry(organisationId),
-    onSuccess: invalidate,
-  });
-
+  // The web no longer pauses: a break is a stop and a new start. This only
+  // covers an entry paused under the old model that is still open, so its
+  // clock stays frozen until it is stopped.
   const isPaused = entry?.pausedAt != null;
 
   // Ticks once a second so the clocks move between polls.
@@ -156,9 +147,10 @@ export function useRunningTimer(organisationId: string) {
   }, [entry, isPaused]);
 
   /**
-   * Two figures, deliberately separate. `elapsedMs` is *this session* — zero
-   * with nothing running — and `workedTodayMs` is the day's total beside it.
-   * One number serving both meant the timer could never read 00:00:00.
+   * Two figures. `elapsedMs` is the big clock and matches the desktop app: the
+   * running Project's whole day, so stopping and starting again carries on
+   * from the total rather than from 00:00:00. `workedTodayMs` is the day's
+   * total across every Project and device, shown beside it.
    *
    * Both tick from the local clock corrected against the server's reading,
    * so a skewed machine cannot drift either.
@@ -170,7 +162,14 @@ export function useRunningTimer(organisationId: string) {
       : 0;
   const correctedNowMs = localNowMs + serverOffsetMs;
 
-  const elapsedMs = entry
+  // The summary's figures already include the running entry as of the fetch,
+  // so only the time since then is added on top.
+  const sinceSummaryMs =
+    entry && !isPaused && dashboardQuery.dataUpdatedAt
+      ? Math.max(0, localNowMs - dashboardQuery.dataUpdatedAt)
+      : 0;
+
+  const entryElapsedMs = entry
     ? Math.max(
         0,
         (entry.pausedAt
@@ -182,10 +181,34 @@ export function useRunningTimer(organisationId: string) {
     : 0;
 
   const workedTodayMs =
-    (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 +
-    (entry && !isPaused && dashboardQuery.dataUpdatedAt
-      ? Math.max(0, localNowMs - dashboardQuery.dataUpdatedAt)
-      : 0);
+    (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 + sinceSummaryMs;
+
+  // With Projects off there is one bucket for the day. Until the summary
+  // loads, fall back to this entry alone rather than flashing a bare 0.
+  const elapsedMs = !entry
+    ? 0
+    : !dashboardQuery.data
+      ? entryElapsedMs
+      : projectsEnabled
+        ? Math.max(
+            entryElapsedMs,
+            (projectSecondsToday.get(entry.projectId ?? "") ?? 0) * 1000 +
+              sinceSummaryMs,
+          )
+        : workedTodayMs;
+
+  // Like the desktop app, a stopped timer keeps showing the Project it last
+  // tracked and that Project's day total, rather than dropping to 00:00:00.
+  const [lastTrackedProjectId, setLastTrackedProjectId] = useState<string | null>(
+    null,
+  );
+  if (entry?.projectId && entry.projectId !== lastTrackedProjectId) {
+    setLastTrackedProjectId(entry.projectId);
+  }
+  const stoppedProjectId = lastTrackedProjectId ?? (projectId || null);
+  const stoppedElapsedMs = projectsEnabled
+    ? (projectSecondsToday.get(stoppedProjectId ?? "") ?? 0) * 1000
+    : (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000;
 
   return {
     limitReached,
@@ -201,13 +224,12 @@ export function useRunningTimer(organisationId: string) {
     projectsEnabled,
     entry: entry,
     activeProject,
-    /** The displayed timer belongs to a device, so it can be watched but not
-     * stopped, paused or resumed from here. */
-    /** This session only — 0 when nothing is running. */
+    /** The running Project's whole day — 0 when nothing is running. */
     elapsedMs,
+    /** What the clock reads while nothing is running. */
+    stoppedElapsedMs,
     /** Everything worked today, across every project and device. */
     workedTodayMs,
-    isPaused,
     projects: projectsQuery.data ?? [],
     /** Non-null while a device is tracking: the only Project the web may
      * start. The picker greys out the rest rather than hiding them, so a
@@ -225,8 +247,6 @@ export function useRunningTimer(organisationId: string) {
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,
-    isPausing: pauseMutation.isPending,
-    isResuming: resumeMutation.isPending,
     onProjectChange: (id: string) => {
       setProjectId(id);
       setTaskId("");
@@ -235,8 +255,6 @@ export function useRunningTimer(organisationId: string) {
     onStart: () => startMutation.mutate(),
     onStop: () => stopMutation.mutate(),
     onSwitch: () => switchMutation.mutate(),
-    onPause: () => pauseMutation.mutate(),
-    onResume: () => resumeMutation.mutate(),
   };
 }
 

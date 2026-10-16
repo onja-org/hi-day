@@ -31,6 +31,7 @@ describe('TimeEntriesService', () => {
       save: jest.fn((input: Partial<TimeEntry>) =>
         Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
       ),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       // The abandoned-entry closer joins Device from here; nothing abandoned
       // unless a test says so.
       createQueryBuilder: jest.fn(() => ({
@@ -806,6 +807,73 @@ describe('TimeEntriesService', () => {
 
       expect(current.entry).toBeNull();
       expect(current.elsewhere?.id).toBe('on-laptop');
+    });
+
+    describe('heartbeat', () => {
+      function pollWith(entry: Partial<TimeEntry>) {
+        const update = jest.fn().mockResolvedValue({ affected: 1 });
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            find: jest.fn().mockResolvedValue([{ ...runningEntry, ...entry }]),
+            update,
+          }),
+        });
+        return {
+          update,
+          poll: () => service.currentForAccount('org-1', 'user-1'),
+        };
+      }
+
+      it("stamps the web's own timer when it has never been stamped", async () => {
+        const { update, poll } = pollWith({
+          id: 'on-web',
+          deviceId: null,
+          lastSeenAt: null,
+        });
+
+        await poll();
+
+        expect(update).toHaveBeenCalledWith(
+          { id: 'on-web', endedAt: expect.anything() as unknown },
+          { lastSeenAt: expect.any(Date) as unknown },
+        );
+      });
+
+      it('stamps again once the last stamp is a minute old', async () => {
+        const { update, poll } = pollWith({
+          id: 'on-web',
+          deviceId: null,
+          lastSeenAt: new Date(Date.now() - 61_000),
+        });
+
+        await poll();
+
+        expect(update).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not write on every 15s poll', async () => {
+        const { update, poll } = pollWith({
+          id: 'on-web',
+          deviceId: null,
+          lastSeenAt: new Date(Date.now() - 15_000),
+        });
+
+        await poll();
+
+        expect(update).not.toHaveBeenCalled();
+      });
+
+      it("never stamps a device's timer: its heartbeat is the Device's", async () => {
+        const { update, poll } = pollWith({
+          id: 'on-laptop',
+          deviceId: 'device-a',
+          lastSeenAt: null,
+        });
+
+        await poll();
+
+        expect(update).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -3672,6 +3740,168 @@ describe('TimeEntriesService', () => {
 
       expect(closer).toHaveBeenCalled();
       expect(tx.saved.endedAt).toEqual(lastSeenAt);
+    });
+  });
+
+  describe('completedWorkedTotals', () => {
+    const at = (time: string) => new Date(`2026-10-16T${time}:00.000Z`);
+    function entry(
+      id: string,
+      startedAt: Date,
+      endedAt: Date | null,
+      projectId: string | null = null,
+    ): TimeEntry {
+      return { id, projectId, startedAt, endedAt } as TimeEntry;
+    }
+
+    async function totalsFor(entries: TimeEntry[]) {
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue(entries),
+        }),
+      });
+      return service.completedWorkedTotals(
+        'org-1',
+        'user-1',
+        at('00:00'),
+        at('23:59'),
+      );
+    }
+
+    it('counts time two finished entries share once', async () => {
+      const totals = await totalsFor([
+        entry('web', at('11:00'), at('12:00')),
+        entry('desktop', at('11:30'), at('12:30')),
+      ]);
+
+      expect(totals.workedSeconds).toBe(90 * 60);
+    });
+
+    it('leaves out what a still-open entry covers, so the live clock is not added to it twice', async () => {
+      // The web finished 11:00-12:00; the desktop has run since 11:30. The
+      // client ticks the desktop's own time from 11:30, so the baseline is
+      // only the 30 minutes before it.
+      const totals = await totalsFor([
+        entry('web', at('11:00'), at('12:00')),
+        entry('desktop', at('11:30'), null),
+      ]);
+
+      expect(totals.workedSeconds).toBe(30 * 60);
+    });
+
+    it('applies the same rule per Project', async () => {
+      const totals = await totalsFor([
+        entry('web', at('11:00'), at('12:00'), 'project-1'),
+        entry('desktop', at('11:30'), null, 'project-1'),
+      ]);
+
+      expect(totals.projects).toEqual([
+        { projectId: 'project-1', seconds: 30 * 60 },
+      ]);
+    });
+  });
+
+  describe('closeWebEntriesThatWentAway', () => {
+    function webEntry(startedAt: Date, lastSeenAt: Date | null): TimeEntry {
+      return {
+        id: 'entry-web',
+        organisationId: 'org-1',
+        membershipId: 'm-1',
+        projectId: 'project-1',
+        taskId: null,
+        startedAt,
+        endedAt: null,
+        source: TimeEntrySource.WEB,
+        deviceId: null,
+        lastSeenAt,
+      } as TimeEntry;
+    }
+
+    function transactionOver(entry: TimeEntry) {
+      const saved = { ...entry };
+      const deleted: unknown[] = [];
+      const manager = {
+        findOne: jest.fn().mockResolvedValue(saved),
+        delete: jest.fn((_entity: unknown, criteria: unknown) => {
+          deleted.push(criteria);
+          return Promise.resolve({ affected: 1 });
+        }),
+        save: jest.fn((row: TimeEntry) => {
+          Object.assign(saved, row);
+          return Promise.resolve(saved);
+        }),
+        getRepository: jest.fn(() => ({
+          findOne: jest.fn().mockResolvedValue(null),
+          save: jest.fn(),
+        })),
+      };
+      return {
+        saved,
+        deleted,
+        dataSource: {
+          transaction: jest.fn((cb: (m: unknown) => unknown) => cb(manager)),
+        },
+      };
+    }
+
+    /** The reported case: the machine was switched off with the timer running. */
+    it('ends the entry where its browser was last heard from', async () => {
+      const lastSeenAt = new Date('2026-10-08T15:51:40.000Z');
+      const entry = webEntry(new Date('2026-10-08T15:00:00.000Z'), lastSeenAt);
+      const tx = transactionOver(entry);
+      const find = jest.fn().mockResolvedValue([entry]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        dataSource: tx.dataSource,
+      });
+
+      await service.closeWebEntriesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      expect(tx.saved.endedAt).toEqual(lastSeenAt);
+    });
+
+    it('only looks at open entries with no device, unheard of for the grace period', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+      });
+
+      await service.closeWebEntriesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      const where = (
+        find.mock.calls[0] as [{ where: Record<string, unknown> }]
+      )[0].where;
+      expect(where).toEqual({
+        endedAt: expect.anything() as unknown,
+        deviceId: expect.anything() as unknown,
+        lastSeenAt: expect.anything() as unknown,
+      });
+    });
+
+    /** What a midnight split leaves behind when it carries an abandoned timer. */
+    it('removes an entry that began after its browser went', async () => {
+      const entry = webEntry(
+        new Date('2026-10-09T00:00:00.000Z'),
+        new Date('2026-10-08T15:51:40.000Z'),
+      );
+      const tx = transactionOver(entry);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([entry]),
+        }),
+        dataSource: tx.dataSource,
+      });
+
+      await service.closeWebEntriesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      expect(tx.deleted).toEqual([{ id: 'entry-web' }]);
+      expect(tx.saved.endedAt).toBeNull();
     });
   });
 
