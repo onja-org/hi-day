@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { MinusIcon, PlusIcon } from "@phosphor-icons/react";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { UrlSessionDomainGroup } from "@/lib/groupUrlSessionsByDomain";
 import { Table } from "@/components/ui/table/Table";
@@ -24,39 +26,41 @@ export function UrlActivityDomainRow({
   domain,
 }: UrlActivityDomainRowProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const projectsEnabled = useProjectsEnabled();
+
+  // The expander sits in the first cell: the Project's, or — with Projects
+  // off and no such column — the Site's.
+  const toggle = (label: ReactNode) => (
+    <button
+      type="button"
+      onClick={() => setIsOpen((open) => !open)}
+      aria-expanded={isOpen}
+      className="flex w-full cursor-pointer items-center gap-2 text-left"
+    >
+      {isOpen ? (
+        <MinusIcon size={14} aria-hidden="true" className="shrink-0 text-primary" />
+      ) : (
+        <PlusIcon size={14} aria-hidden="true" className="shrink-0 text-primary" />
+      )}
+      {label}
+    </button>
+  );
+  const siteName = <span className="truncate">{domain.domain}</span>;
 
   return (
     <>
       <TableRow>
-        <TableCell>
-          <button
-            type="button"
-            onClick={() => setIsOpen((open) => !open)}
-            aria-expanded={isOpen}
-            className="flex w-full cursor-pointer items-center gap-2 text-left"
-          >
-            {isOpen ? (
-              <MinusIcon
-                size={14}
-                aria-hidden="true"
-                className="shrink-0 text-primary"
-              />
-            ) : (
-              <PlusIcon
-                size={14}
-                aria-hidden="true"
-                className="shrink-0 text-primary"
-              />
+        {projectsEnabled && (
+          <TableCell>
+            {toggle(
+              <ProjectNameOrUntracked
+                organisationId={organisationId}
+                projectId={projectId}
+              />,
             )}
-            <ProjectNameOrUntracked
-              organisationId={organisationId}
-              projectId={projectId}
-            />
-          </button>
-        </TableCell>
-        <TableCell>
-          <span className="truncate">{domain.domain}</span>
-        </TableCell>
+          </TableCell>
+        )}
+        <TableCell>{projectsEnabled ? siteName : toggle(siteName)}</TableCell>
         <TableCell align="right">
           {formatElapsed(domain.totalActiveMs)}
         </TableCell>
@@ -64,7 +68,7 @@ export function UrlActivityDomainRow({
 
       {isOpen && (
         <TableRow>
-          <TableCell colSpan={3}>
+          <TableCell colSpan={projectsEnabled ? 3 : 2}>
             <Table bare>
               <TableHeader>
                 <TableRow>

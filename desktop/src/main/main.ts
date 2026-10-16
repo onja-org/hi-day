@@ -1227,6 +1227,10 @@ async function registerIpcHandlers(): Promise<void> {
   };
   setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 
+  ipcMain.handle("tracking:projectsSetting", () =>
+    callDeviceApi((token) => apiClient.getProjectsSetting(token)),
+  );
+
   ipcMain.handle("tracking:listProjects", () =>
     callDeviceApi((token) => apiClient.listProjects(token)),
   );
@@ -1242,14 +1246,16 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:start",
     async (
       _event,
-      projectId: string,
+      projectId: string | null,
       taskId: string | null,
       startedAt?: string,
     ) => {
       const result = await callDeviceApi((token) =>
         pendingOps.start(token, projectId, taskId, apiClient, startedAt),
       );
-      if (result.ok) authStore.rememberProject(projectId, taskId);
+      if (result.ok && projectId !== null) {
+        authStore.rememberProject(projectId, taskId);
+      }
       // Instant local feedback for window tracking rather than waiting on
       // TimerStatusGate's poll; the periodic poll still covers a timer
       // started or stopped elsewhere.
@@ -1260,11 +1266,13 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle(
     "tracking:switch",
-    async (_event, projectId: string, taskId: string | null) => {
+    async (_event, projectId: string | null, taskId: string | null) => {
       const result = await callDeviceApi((token) =>
         pendingOps.switchTo(token, projectId, taskId, apiClient),
       );
-      if (result.ok) authStore.rememberProject(projectId, taskId);
+      if (result.ok && projectId !== null) {
+        authStore.rememberProject(projectId, taskId);
+      }
       void timerStatusGate.pollOnce();
       return result;
     },
@@ -1313,6 +1321,12 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:entriesBetween",
     (_event, from: string, to: string) =>
       callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+  );
+
+  ipcMain.handle(
+    "tracking:completedTotals",
+    (_event, from: string, to: string) =>
+      callDeviceApi((token) => apiClient.getCompletedTotals(token, from, to)),
   );
 
   ipcMain.handle("tracking:idlePolicy", () =>

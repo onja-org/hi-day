@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { getTimeEntries } from "@/lib/getTimeEntries";
+import { hideEntryProjects } from "@/lib/hideEntryProjects";
 import type { GetTimeEntriesFilter } from "@/lib/getTimeEntries";
 
 // Matches every timesheet query for this org regardless of which member or
@@ -31,6 +33,8 @@ export function useTimeEntries(
   filter: GetTimeEntriesFilter = {},
   options: { enabled?: boolean } = {},
 ) {
+  const projectsEnabled = useProjectsEnabled();
+
   return useQuery({
     queryKey: TIME_ENTRIES_QUERY_KEY(organisationId, filter),
     queryFn: async () => {
@@ -40,6 +44,9 @@ export function useTimeEntries(
       }
       return result.entries;
     },
+    // Applied on the way out, so the cache keeps the real entries and a
+    // change of the setting needs no refetch.
+    select: (entries) => (projectsEnabled ? entries : hideEntryProjects(entries)),
     enabled: options.enabled ?? true,
   });
 }

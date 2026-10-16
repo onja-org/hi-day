@@ -86,18 +86,20 @@ export function DashboardSections() {
           <RecentTimesheetWidget organisationId={organisationId} />
         </section>
 
-        <section className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-primary-dark">Project Activity</h2>
-            <Link
-              href={`/organisations/${organisationId}/projects`}
-              className="text-sm text-primary underline-offset-2 hover:underline"
-            >
-              View projects →
-            </Link>
-          </div>
-          <CurrentProjectActivity organisationId={organisationId} />
-        </section>
+        {organisationQuery.data.projectsEnabled && (
+          <section className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-primary-dark">Project Activity</h2>
+              <Link
+                href={`/organisations/${organisationId}/projects`}
+                className="text-sm text-primary underline-offset-2 hover:underline"
+              >
+                View projects →
+              </Link>
+            </div>
+            <CurrentProjectActivity organisationId={organisationId} />
+          </section>
+        )}
 
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">

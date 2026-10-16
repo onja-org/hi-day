@@ -79,8 +79,8 @@ export function TimeEntryTimeFields({
 
       {isTicking ? (
         <p className="text-sm text-slate-900/60">
-          This timer is still running, so it has no end time yet — pause or
-          stop it to set one.
+          This timer is still running, so it has no end time yet — stop it
+          to set one.
         </p>
       ) : (
         <DateAndTimeField

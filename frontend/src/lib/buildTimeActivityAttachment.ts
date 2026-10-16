@@ -17,6 +17,8 @@ type AttachmentSource = {
   title: string;
   /** So an exported file groups weeks as the screen does. */
   weekStart: WeekStart;
+  /** Off, the file has no project column or grouping. */
+  projectsEnabled?: boolean;
 };
 
 /**
@@ -26,10 +28,10 @@ type AttachmentSource = {
  */
 export async function buildTimeActivityAttachment(
   fileType: SendReportFileType,
-  { entries, grouping, teamNames, idleMembers, zone, title, weekStart }: AttachmentSource,
+  { entries, grouping, teamNames, idleMembers, zone, title, weekStart, projectsEnabled = true }: AttachmentSource,
 ): Promise<string> {
-  if (fileType === "csv") return encodeCsvAttachment(entriesToCsv(entries, zone));
-  const columns = timeActivityColumns(grouping);
+  if (fileType === "csv") return encodeCsvAttachment(entriesToCsv(entries, zone, projectsEnabled));
+  const columns = timeActivityColumns(grouping, projectsEnabled);
   const rows = buildTimeActivityRows(entries, grouping, {
     sumDates: false,
     teamNames,

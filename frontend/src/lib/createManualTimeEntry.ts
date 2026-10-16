@@ -12,7 +12,9 @@ export async function createManualTimeEntry(
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/projects/${input.projectId}/time-entries`,
+      input.projectId
+        ? `${API_URL}/organisations/${organisationId}/projects/${input.projectId}/time-entries`
+        : `${API_URL}/organisations/${organisationId}/time-entries`,
       {
         method: "POST",
         credentials: "include",

@@ -9,7 +9,7 @@ import {
 type DailyTotalsEntry = Pick<
   ReportEntry,
   'startedAt' | 'projectName' | 'durationSeconds'
-> & { projectId: string };
+> & { projectId: string | null };
 
 export interface DailyTotalsTable {
   header: string[];
@@ -58,12 +58,13 @@ export function buildDailyTotalsTable(
     const key = zonedParts(entry.startedAt, zone).dateKey;
     if (!dayKeys.includes(key)) continue;
     const seconds = entry.durationSeconds ?? 0;
-    const project = projects.get(entry.projectId) ?? {
-      name: entry.projectName,
+    const projectKey = entry.projectId ?? '';
+    const project = projects.get(projectKey) ?? {
+      name: entry.projectName ?? 'No project',
       days: new Map<string, number>(),
     };
     project.days.set(key, (project.days.get(key) ?? 0) + seconds);
-    projects.set(entry.projectId, project);
+    projects.set(projectKey, project);
     totals.set(key, (totals.get(key) ?? 0) + seconds);
   }
 

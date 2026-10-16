@@ -3,6 +3,7 @@
 import { useAppActivityDay } from "@/hooks/useAppActivityDay";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { appActivityToCsv } from "@/lib/appActivityToCsv";
 import { appActivityToPdf } from "@/lib/appActivityToPdf";
 import { AppActivityTable } from "@/components/AppActivityTable";
@@ -25,6 +26,7 @@ export function AppActivityPageContent({
     membershipId,
     projectId,
   });
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const day = dayQuery.data;
   const projects = projectsQuery.data ?? [];
@@ -38,10 +40,10 @@ export function AppActivityPageContent({
           canViewOthers={canViewOthers}
         />
         <ExportButtons
-          csv={day ? appActivityToCsv(day, projects) : ""}
+          csv={day ? appActivityToCsv(day, projects, projectsEnabled) : ""}
           buildPdf={
             day
-              ? () => appActivityToPdf(`App activity — ${date}`, day, projects)
+              ? () => appActivityToPdf(`App activity — ${date}`, day, projects, projectsEnabled)
               : () => new Blob()
           }
           filenameBase={`app-activity-${date}`}

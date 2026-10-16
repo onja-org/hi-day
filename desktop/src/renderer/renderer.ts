@@ -199,6 +199,7 @@ function showLoginView(errorMessage?: string): void {
   setRunning(null);
   // After the stop, which folds the live entry into the totals.
   todaySecondsByProject = new Map();
+  deviceSecondsToday = 0;
   clearTrackingError();
   timerDisplay.hidden = true;
   projectSearch.value = "";
@@ -453,6 +454,8 @@ document.getElementById("logout-button")!.addEventListener("click", () => {
 
 // --- Time tracking -----------------------------------------------------
 
+const searchSection = document.getElementById("search-section")!;
+const projectsSection = document.getElementById("projects-section")!;
 const projectList = document.getElementById("project-list") as HTMLUListElement;
 const projectListEmpty = document.getElementById("project-list-empty")!;
 const projectCountEl = document.getElementById("project-count")!;
@@ -571,12 +574,34 @@ let accountWorkedMs = 0;
 let accountWorkedMsAt: number | null = null;
 /** The account total frozen at the instant this device paused. */
 let pausedAtWorkedMs = 0;
-let pendingSwitch: { projectId: string; taskId: string | null } | null = null;
+let pendingSwitch: { projectId: string | null; taskId: string | null } | null = null;
 let projects: TrackedProject[] = [];
 /** False until a project list has actually come back — an empty `projects` alone can't tell "none" from "not loaded". */
 let projectsLoaded = false;
+/**
+ * Whether this organisation tracks time against Projects. Off, there is no
+ * list to pick from: the timer is one button and entries carry no Project.
+ */
+let projectsEnabled = true;
+
+/**
+ * Entries with no Project share one bucket in the per-Project totals. So do
+ * all entries while Projects are off, including ones tracked back when they
+ * were on: their Project is hidden, not gone, and counting them apart would
+ * split one day's time across buckets nobody can see.
+ */
+const NO_PROJECT_KEY = "";
+function projectKey(projectId: string | null): string {
+  return projectsEnabled ? (projectId ?? NO_PROJECT_KEY) : NO_PROJECT_KEY;
+}
 
 let todaySecondsByProject = new Map<string, number>();
+/**
+ * What this machine alone tracked today, beyond its running entry: the big
+ * clock shows this, while "Today" below it is the whole day across the web
+ * and every device. Time tracked elsewhere never appears in the big clock.
+ */
+let deviceSecondsToday = 0;
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
 let todaySecondsDayStart: number | null = null;
 /** Completed entries already folded into the totals, so a later read adds
@@ -724,7 +749,7 @@ function formatHoursMinutes(seconds: number): string {
 /** Every Project's time today, the live entry included. */
 function todayTotalSeconds(): number {
   const projectIds = new Set(todaySecondsByProject.keys());
-  if (runningEntry) projectIds.add(runningEntry.projectId);
+  if (runningEntry) projectIds.add(projectKey(runningEntry.projectId));
   let total = 0;
   for (const projectId of projectIds) total += displayedSecondsFor(projectId);
   return total;
@@ -747,7 +772,8 @@ function updateSyncStatus(): void {
       : `Synced ${Math.floor(ageMs / 60_000)} min ago`;
 }
 
-function projectNameFor(projectId: string): string {
+function projectNameFor(projectId: string | null): string {
+  if (!projectsEnabled || projectId === null) return "Tracking time";
   return (
     projects.find((project) => project.id === projectId)?.name ?? projectId
   );
@@ -762,7 +788,12 @@ function tick(): void {
 
   if (!runningEntry) {
     const projectId = lastTrackedProjectId;
-    if (!projectId || !projects.some((project) => project.id === projectId)) {
+    // With Projects off there is no Project to remember; the day's single
+    // bucket is what a paused timer should keep showing.
+    const hasTrackedTime = projectsEnabled
+      ? !!projectId && projects.some((project) => project.id === projectId)
+      : displayedSecondsFor(null) > 0;
+    if (!hasTrackedTime) {
       timerDisplay.hidden = true;
       trackingProjectNameEl.textContent = "";
       compactProjectNameEl.textContent = "Stopped";
@@ -771,7 +802,7 @@ function tick(): void {
       return;
     }
     const name = projectNameFor(projectId);
-    const formatted = formatElapsed(displayedSecondsFor(projectId) * 1000);
+    const formatted = formatElapsed(deviceTodaySeconds() * 1000);
     trackingProjectNameEl.textContent = name;
     timerDisplay.hidden = false;
     timerDisplay.textContent = formatted;
@@ -787,17 +818,18 @@ function tick(): void {
     ? `${name} · Paused`
     : name;
 
-  // Shows the Project's whole day, not just this entry: switching away and
-  // back ends one entry and opens another, and the person tracking time
-  // thinks of that as one continuous total, not two.
+  // The big clock is this machine's whole day, not just this entry:
+  // stopping and starting again ends one entry and opens another, and the
+  // person tracking time thinks of that as one continuous total, not two.
+  // `seconds` stays the Project's own day, for its row in the list.
   const seconds = displayedSecondsFor(runningEntry.projectId);
-  const formatted = formatElapsed(seconds * 1000);
+  const formatted = formatElapsed(deviceTodaySeconds() * 1000);
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatted;
   compactTimerEl.textContent = formatted;
   miniTimerEl.textContent = formatted;
 
-  const activeTotal = projectTotalElements.get(runningEntry.projectId);
+  const activeTotal = projectTotalElements.get(projectKey(runningEntry.projectId));
   if (activeTotal) activeTotal.textContent = formatHoursMinutes(seconds);
 }
 
@@ -812,9 +844,10 @@ function setRunning(entry: TimeEntry | null): void {
     // doesn't jump to whatever the server booked.
     if (previous) {
       todaySecondsByProject.set(
-        previous.projectId,
+        projectKey(previous.projectId),
         displayedSecondsFor(previous.projectId),
       );
+      deviceSecondsToday += Math.floor(ownElapsedMs(previous) / 1000);
       // Counted here, so the server's copy of this same entry is not
       // folded in again by `mergeNewTodayEntries`.
       countedEntryIds.add(previous.id);
@@ -992,10 +1025,29 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleSeconds, idleStartedAtIso);
 }
 
+/** What this machine's own entry has run for, frozen while it is paused. */
+function ownElapsedMs(entry: TimeEntry): number {
+  const end = entry.pausedAt
+    ? new Date(entry.pausedAt).getTime()
+    : Date.now() + serverOffsetMs;
+  return Math.max(
+    0,
+    end - new Date(entry.startedAt).getTime() - entry.pausedSeconds * 1000,
+  );
+}
+
+/** This machine's time today: finished entries plus its running one. */
+function deviceTodaySeconds(): number {
+  const live = runningEntry ? Math.floor(ownElapsedMs(runningEntry) / 1000) : 0;
+  return deviceSecondsToday + live;
+}
+
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
-function displayedSecondsFor(projectId: string): number {
-  const recorded = todaySecondsByProject.get(projectId) ?? 0;
-  if (!runningEntry || runningEntry.projectId !== projectId) return recorded;
+function displayedSecondsFor(projectId: string | null): number {
+  const recorded = todaySecondsByProject.get(projectKey(projectId)) ?? 0;
+  if (!runningEntry || projectKey(runningEntry.projectId) !== projectKey(projectId)) {
+    return recorded;
+  }
   return recorded + Math.max(0, Math.floor(liveElapsedMs() / 1000));
 }
 
@@ -1018,22 +1070,51 @@ async function refreshTodayTotals(): Promise<void> {
   const result = await window.api.tracking.entriesBetween(from, to);
   if (!result.ok) return; // transient — keep whatever totals we already had
 
-  const totals = new Map<string, number>();
   const counted = new Set<string>();
   for (const entry of result.data) {
-    // A null duration is the still-running entry; tick() adds its time
-    // live, so counting it here too would double it.
     if (entry.durationSeconds === null) continue;
     counted.add(entry.id);
-    totals.set(
-      entry.projectId,
-      (totals.get(entry.projectId) ?? 0) + entry.durationSeconds,
-    );
   }
+  const totals = await completedTotalsByProject(result.data, from, to);
   todaySecondsByProject = totals;
   todaySecondsDayStart = startOfToday();
   countedEntryIds = counted;
   todaySecondsReconciledAt = Date.now();
+}
+
+/**
+ * Today's finished seconds per Project, and (as a side effect) this
+ * machine's own. The server counts a stretch the web and this machine both
+ * tracked once; summing each entry's own duration would count it twice.
+ * Falls back to that sum only if the server can't answer, leaving this
+ * machine's own figure as it was.
+ * A running entry is excluded either way: tick() adds its time live.
+ */
+async function completedTotalsByProject(
+  entries: TrackedEntry[],
+  from: string,
+  to: string,
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  const result = await window.api.tracking.completedTotals(from, to);
+  if (result.ok) {
+    deviceSecondsToday = result.data.deviceSeconds;
+    // Without Projects the day is a single bucket, so the union is the figure.
+    if (!projectsEnabled) {
+      totals.set(projectKey(null), result.data.workedSeconds);
+    } else {
+      for (const project of result.data.projects) {
+        totals.set(projectKey(project.projectId), project.seconds);
+      }
+    }
+    return totals;
+  }
+  for (const entry of entries) {
+    if (entry.durationSeconds === null) continue;
+    const key = projectKey(entry.projectId);
+    totals.set(key, (totals.get(key) ?? 0) + entry.durationSeconds);
+  }
+  return totals;
 }
 
 /**
@@ -1044,10 +1125,9 @@ async function refreshTodayTotals(): Promise<void> {
  * and this one would show as the display jumping backwards.
  */
 async function mergeNewTodayEntries(): Promise<void> {
-  const result = await window.api.tracking.entriesBetween(
-    new Date(startOfToday()).toISOString(),
-    new Date().toISOString(),
-  );
+  const from = new Date(startOfToday()).toISOString();
+  const to = new Date().toISOString();
+  const result = await window.api.tracking.entriesBetween(from, to);
   if (!result.ok) return; // transient — try again on the next poll
 
   todaySecondsReconciledAt = Date.now();
@@ -1064,16 +1144,14 @@ async function mergeNewTodayEntries(): Promise<void> {
     if (!entry.id) continue;
     if (countedEntryIds.has(entry.id)) continue;
     countedEntryIds.add(entry.id);
-    todaySecondsByProject.set(
-      entry.projectId,
-      (todaySecondsByProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
-    );
     added = true;
   }
-  if (added) {
-    renderProjects();
-    tick();
-  }
+  if (!added) return;
+  // Re-derived from the server rather than added to: the new entry may
+  // overlap time already counted (the web running beside this machine).
+  todaySecondsByProject = await completedTotalsByProject(result.data, from, to);
+  renderProjects();
+  tick();
 }
 
 function renderProjects(): void {
@@ -1272,6 +1350,24 @@ accessibilitySettingsButton.addEventListener("click", () => {
  * still empty — callers chaining further tracking setup should stop either way.
  */
 async function loadProjects(): Promise<"ok" | "failed" | "signedOut"> {
+  const setting = await window.api.tracking.projectsSetting();
+  // A server that predates the setting answers 404, and every organisation it
+  // serves has Projects — carrying on as before beats retrying forever.
+  if (!setting.ok && setting.status !== 404) {
+    handleTrackingFailure(setting);
+    return setting.unauthorized ? "signedOut" : "failed";
+  }
+  projectsEnabled = setting.ok ? setting.data.projectsEnabled : true;
+  applyProjectsMode();
+
+  if (!projectsEnabled) {
+    projects = [];
+    projectsLoaded = true;
+    await refreshTodayTotals();
+    renderProjects();
+    return "ok";
+  }
+
   const result = await window.api.tracking.listProjects();
   if (!result.ok) {
     handleTrackingFailure(result);
@@ -1287,6 +1383,44 @@ async function loadProjects(): Promise<"ok" | "failed" | "signedOut"> {
     await loadTasks(projects[0].id);
   }
   return "ok";
+}
+
+/** With Projects off there is nothing to search, list, pick a task from or move idle time to. */
+function applyProjectsMode(): void {
+  searchSection.hidden = !projectsEnabled;
+  projectsSection.hidden = !projectsEnabled;
+  taskTrigger.hidden = !projectsEnabled;
+  idleAssignToggle.hidden = !projectsEnabled;
+}
+
+/**
+ * Picks up an admin switching Projects on or off while the app is open, by
+ * rerunning setup — which re-reads the setting and the list. Quiet on any
+ * failure: the status poll already reports an unreachable server.
+ */
+async function refreshProjectsSetting(): Promise<void> {
+  const setting = await window.api.tracking.projectsSetting();
+  if (!setting.ok) return;
+  if (setting.data.projectsEnabled !== projectsEnabled) {
+    await initTracking();
+    return;
+  }
+  if (projectsEnabled) await refreshProjectList();
+}
+
+/**
+ * Picks up Projects created, renamed or removed since setup, which loaded the
+ * list once. Redraws only when something changed, and leaves the task list
+ * alone so a poll never disturbs a picker the person has open.
+ */
+async function refreshProjectList(): Promise<void> {
+  const result = await window.api.tracking.listProjects();
+  if (!result.ok) return;
+  const signature = (list: TrackedProject[]): string =>
+    list.map((project) => `${project.id}:${project.name}`).join("|");
+  if (signature(result.data) === signature(projects)) return;
+  projects = result.data;
+  renderProjects();
 }
 
 function updateCurrentTaskLabel(): void {
@@ -1551,6 +1685,7 @@ function startPolling(): void {
   void refreshStatus();
   pollHandle = setInterval(() => {
     void refreshStatus();
+    void refreshProjectsSetting();
     void refreshCapturePermissionBanner();
   }, STATUS_POLL_INTERVAL_MS);
   tickHandle = setInterval(tick, 1000);
@@ -1600,23 +1735,29 @@ async function startTracking(): Promise<void> {
     if (!projectsLoaded || runningEntry) return;
   }
   clearTrackingError();
-  const resolved = await resolveProjectToTrack();
+  const resolved: { projectId: string | null; taskId: string | null } | null =
+    projectsEnabled
+      ? await resolveProjectToTrack()
+      : { projectId: null, taskId: null };
   if (!resolved) {
     showTrackingError("No projects are available to track time against.");
     return;
   }
   const target =
+    resolved.projectId !== null &&
     pendingTaskChoice?.projectId === resolved.projectId
       ? pendingTaskChoice
       : resolved;
   pendingTaskChoice = null;
 
-  void loadTasks(target.projectId).then(() => {
-    if (target.taskId) {
-      selectedTaskId = target.taskId;
-      updateCurrentTaskLabel();
-    }
-  });
+  if (target.projectId !== null) {
+    void loadTasks(target.projectId).then(() => {
+      if (target.taskId) {
+        selectedTaskId = target.taskId;
+        updateCurrentTaskLabel();
+      }
+    });
+  }
 
   const result = await window.api.tracking.start(
     target.projectId,
@@ -1811,7 +1952,7 @@ async function runInitTracking(): Promise<void> {
   // Never starts the timer: quitting stopped it, and only the person
   // pressing play starts it again. Shows what play would resume instead,
   // with that Project's time so far today.
-  if (!runningEntry && !lastTrackedProjectId) {
+  if (projectsEnabled && !runningEntry && !lastTrackedProjectId) {
     const target = await resolveProjectToTrack();
     if (target && !runningEntry) {
       lastTrackedProjectId = target.projectId;
@@ -1867,7 +2008,10 @@ window.api.windowControls.onTrackingNotice((notice) => {
 // Closing the window only hides it to the tray, so reopening it doesn't rerun
 // setup — re-read the day's time from the server here instead.
 window.api.windowControls.onReopened(() => {
-  if (pollHandle) void refreshStatus(true);
+  if (pollHandle) {
+    void refreshStatus(true);
+    void refreshProjectsSetting();
+  }
 });
 
 void init();

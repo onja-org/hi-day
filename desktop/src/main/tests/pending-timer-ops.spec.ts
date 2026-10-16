@@ -117,4 +117,20 @@ describe('PendingTimerOps', () => {
     ).toBe(true);
     expect(stopTimer).not.toHaveBeenCalled();
   });
+
+  it('queues and replays a start that has no project', async () => {
+    const ops = new PendingTimerOps(dir);
+
+    const result = await ops.start('t', null, null, client());
+
+    expect(result.ok && result.data.projectId).toBeNull();
+    expect(new PendingTimerOps(dir).load()).toEqual([
+      { type: 'start', at: expect.any(String) as string, projectId: null, taskId: null },
+    ]);
+
+    const startTimer = vi.fn(() => Promise.resolve(ok));
+    await new PendingTimerOps(dir).flush('t', client({ startTimer }));
+
+    expect(startTimer).toHaveBeenCalledWith('t', null, null, expect.any(String));
+  });
 });

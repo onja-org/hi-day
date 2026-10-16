@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
@@ -25,6 +29,7 @@ import type {
   TrackingReminderDelivery,
   TrackingReminderSettings,
 } from '../tracking-reminders';
+import { DEFAULT_PROJECTS_ENABLED } from '../projects-setting';
 import type { Industry, WeekStart } from '../company-profile';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import {
@@ -88,6 +93,8 @@ export interface OrganisationProfile {
   /** Falls back to UTC, the value every Organisation was created with. */
   timezone: string;
   weekStartsOn: WeekStart;
+  /** Whether time is tracked against Projects; off unless an admin enabled it. */
+  projectsEnabled: boolean;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -103,6 +110,7 @@ interface OrganisationSettings {
   taxId?: string | null;
   website?: string | null;
   weekStartsOn?: WeekStart;
+  projectsEnabled?: boolean;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
@@ -318,6 +326,19 @@ export class OrganisationsService {
       where: { id: organisationId },
     });
 
+    const wasEnabled =
+      (organisation.settings as OrganisationSettings).projectsEnabled ??
+      DEFAULT_PROJECTS_ENABLED;
+    if (dto.projectsEnabled === false && wasEnabled) {
+      const running =
+        await this.timeEntriesService.countRunningOnProjects(organisationId);
+      if (running > 0) {
+        throw new ConflictException(
+          `Can't turn Projects off while ${running === 1 ? '1 timer is' : `${running} timers are`} running on a project. Ask ${running === 1 ? 'that person' : 'those people'} to stop ${running === 1 ? 'it' : 'them'}, then try again.`,
+        );
+      }
+    }
+
     if (dto.name !== undefined) {
       organisation.name = dto.name;
     }
@@ -338,6 +359,9 @@ export class OrganisationsService {
         : {}),
       ...(dto.weekStartsOn !== undefined
         ? { weekStartsOn: dto.weekStartsOn }
+        : {}),
+      ...(dto.projectsEnabled !== undefined
+        ? { projectsEnabled: dto.projectsEnabled }
         : {}),
       ...(dto.idleHandling !== undefined
         ? { idleHandling: dto.idleHandling }
@@ -524,6 +548,17 @@ export class OrganisationsService {
     return settings.weekStartsOn ?? DEFAULT_WEEK_START;
   }
 
+  /** Narrow, like `getWeekStart`: time-entry and project routes gate on it
+   * without needing the whole `OrganisationProfile`. */
+  async getProjectsEnabled(organisationId: string): Promise<boolean> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED;
+  }
+
   /**
    * Read by other services (e.g. the dashboard summary) that need the
    * daily-hours target without depending on the full `OrganisationProfile`
@@ -686,6 +721,7 @@ export class OrganisationsService {
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       timezone: settings.timezone ?? DEFAULT_TIMEZONE,
       weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
+      projectsEnabled: settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED,
       userId,
       isOwner: organisation.ownerUserId === userId,
       deletionScheduledFor:

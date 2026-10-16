@@ -212,19 +212,20 @@ export class AppEventsService {
     let previousAppName: string | null = null;
 
     for (const row of rows) {
-      const projectId =
-        findEntryCovering(coveringEntries, row.sampledAt)?.projectId ?? null;
+      const covering = findEntryCovering(coveringEntries, row.sampledAt);
       // Samples no Time entry covers are hidden, not deleted: the capture
       // happened, but without an entry behind it there is nothing to
       // attribute it to. Shorten an entry and its samples drop out of view;
       // put the time back and they return, because coverage is recomputed on
-      // every read.
-      if (projectId === null) {
+      // every read. Covered is not the same as having a Project: an entry
+      // from an Organisation without Projects covers its samples all the same.
+      if (covering === undefined) {
         // Reset the session run too — the covered samples either side of a
         // hidden stretch aren't one continuous session.
         previousAppName = null;
         continue;
       }
+      const projectId = covering.projectId;
       const hourStart = new Date(
         Math.floor(row.sampledAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
       ).toISOString();

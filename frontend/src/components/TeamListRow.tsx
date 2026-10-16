@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { getInitials } from "@/lib/getInitials";
 import type { TeamOverview } from "@/types/team";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { ActionsMenu } from "./ActionsMenu";
 import { AvatarStack } from "./AvatarStack";
 import { EditIconButton } from "./EditIconButton";
@@ -26,6 +27,7 @@ export function TeamListRow({
   canManageMembers,
   onDelete,
 }: TeamListRowProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [editingMembers, setEditingMembers] = useState(false);
   const [editingTeam, setEditingTeam] = useState(false);
   const teamHref = `/organisations/${organisationId}/teams/${team.id}`;
@@ -64,7 +66,9 @@ export function TeamListRow({
           )}
         </div>
       </td>
-      <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{team.projectCount}</td>
+      {projectsEnabled && (
+        <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{team.projectCount}</td>
+      )}
       <td className="px-4 py-3 text-right whitespace-nowrap">
         <ActionsMenu
           items={[

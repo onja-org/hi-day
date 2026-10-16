@@ -5,6 +5,7 @@ import { CaretDownIcon, PlayIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useRunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
+import { HeaderTimerStoppedSummary } from "./HeaderTimerStoppedSummary";
 import { HeaderTimerRunningPanel } from "./HeaderTimerRunningPanel";
 import { Spinner } from "./Spinner";
 import { TimerPicker } from "./TimerPicker";
@@ -66,18 +67,13 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
       >
         {timer.entry ? (
           <>
-            <span
-              className={clsx(
-                "h-2 w-2 rounded-full bg-white",
-                !timer.isPaused && "animate-pulse",
-              )}
-            />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
             <span className="font-data tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
           </>
         ) : (
           <>
             <PlayIcon size={14} weight="fill" aria-hidden="true" />
-            <span className="font-data tabular-nums">{formatElapsed(0)}</span>
+            <span className="font-data tabular-nums">{formatElapsed(timer.elapsedMs)}</span>
           </>
         )}
         <CaretDownIcon size={12} aria-hidden="true" />
@@ -88,8 +84,11 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
           {timer.entry ? (
             <HeaderTimerRunningPanel timer={timer} />
           ) : (
+            <div className="flex flex-col gap-4">
+            <HeaderTimerStoppedSummary timer={timer} />
             <TimerPicker
               organisationId={organisationId}
+              projectsEnabled={timer.projectsEnabled}
               projects={timer.projects}
               projectId={timer.projectId}
               taskId={timer.taskId}
@@ -106,6 +105,7 @@ export function HeaderTimerWidget({ organisationId }: HeaderTimerWidgetProps) {
               onSwitch={timer.onSwitch}
               layout="stacked"
             />
+            </div>
           )}
         </div>
       )}

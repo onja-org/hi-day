@@ -47,7 +47,7 @@ const NOTHING_PRUNED: PrunedCaptures = {
  * attributed to a Membership and a moment, and the read side works out which
  * entry covered them. Delete or shorten an entry and the captures it caused
  * survive, stripped of the context that gave them meaning — the Activity
- * views then label them "Untracked".
+ * views then label them "No project".
  *
  * Coverage is recomputed from whatever entries remain, so a capture inside
  * another, overlapping entry is kept. That's what makes this safe to run

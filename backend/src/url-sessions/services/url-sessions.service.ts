@@ -246,11 +246,12 @@ export class UrlSessionsService {
     // Keyed by `${hourStart}|${projectId ?? 'untracked'}|${url}`.
     const cells = new Map<string, UrlHourBucketPage & { hourStart: string }>();
     for (const row of rows) {
-      const projectId =
-        findEntryCovering(coveringEntries, row.startedAt)?.projectId ?? null;
+      const covering = findEntryCovering(coveringEntries, row.startedAt);
       // Hidden, not deleted, while no Time entry covers it — see
-      // AppEventsService for the reasoning.
-      if (projectId === null) continue;
+      // AppEventsService for the reasoning, including why having no Project
+      // is not the same as having no entry.
+      if (covering === undefined) continue;
+      const projectId = covering.projectId;
       const hourStart = new Date(
         Math.floor(row.startedAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
       ).toISOString();

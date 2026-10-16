@@ -4,7 +4,8 @@ import type { TimeEntryActionResult } from "@/types/timeEntry";
 
 export async function switchTimeEntry(
   organisationId: string,
-  projectId: string,
+  /** null when the organisation doesn't track time against Projects. */
+  projectId: string | null,
   taskId: string | null,
 ): Promise<TimeEntryActionResult> {
   let response: Response;
@@ -15,7 +16,10 @@ export async function switchTimeEntry(
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskId ? { projectId, taskId } : { projectId }),
+        body: JSON.stringify({
+          ...(projectId ? { projectId } : {}),
+          ...(taskId ? { taskId } : {}),
+        }),
       },
     );
   } catch {

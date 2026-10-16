@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
 import { describeSplit, midpointOf } from "@/lib/describeSplit";
+import { entryTitle } from "@/lib/entryProjectDisplay";
 import { formatClockTime } from "@/lib/formatClockTime";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { splitTimeEntry } from "@/lib/splitTimeEntry";
@@ -52,7 +53,7 @@ export function TimeEntrySplitModal({
     <Modal title="Split time entry" onClose={onClose}>
       <div className="flex w-full max-w-lg flex-col gap-5">
         <p className="text-sm text-slate-900">
-          {entry.projectName} · {formatClockTime(entry.startedAt)} –{" "}
+          {entryTitle(entry)} · {formatClockTime(entry.startedAt)} –{" "}
           {formatClockTime(endedAt)}
         </p>
 

@@ -16,6 +16,8 @@ type ParseMemberImportOptions = {
   projects: NamedItem[];
   /** Only an admin may invite admins — see InvitationsService.createMany. */
   canInviteAdmins: boolean;
+  /** Off, a "projects" column is ignored: there are no projects to name. */
+  projectsEnabled?: boolean;
 };
 
 const INVITABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
@@ -45,7 +47,7 @@ function lookupByName(items: NamedItem[]): Map<string, string> {
  */
 export function parseMemberImportRows(
   rows: string[][],
-  { teams, projects, canInviteAdmins }: ParseMemberImportOptions,
+  { teams, projects, canInviteAdmins, projectsEnabled = true }: ParseMemberImportOptions,
 ): { rows: MemberImportRow[]; headerError: string | null } {
   const [header, ...body] = rows;
   const columns = (header ?? []).map((cell) => cell.trim().toLowerCase());
@@ -56,7 +58,7 @@ export function parseMemberImportRows(
   const roleColumn = columns.indexOf("role");
   // "teams" is the documented header; "team" (singular) still works.
   const teamColumn = columns.includes("teams") ? columns.indexOf("teams") : columns.indexOf("team");
-  const projectsColumn = columns.indexOf("projects");
+  const projectsColumn = projectsEnabled ? columns.indexOf("projects") : -1;
 
   const teamIds = lookupByName(teams);
   const projectIds = lookupByName(projects);

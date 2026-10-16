@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { updateMembership } from "@/lib/updateMembership";
 import type { ActiveMemberListItem, MembershipRole } from "@/types/membership";
 import { ActionsMenu } from "./ActionsMenu";
@@ -25,6 +26,7 @@ const ADMIN_ASSIGNABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
 const MANAGER_ASSIGNABLE_ROLES: MembershipRole[] = ["manager", "member"];
 
 export function MemberRowActions({ organisationId, member, callerRole, isSelf }: MemberRowActionsProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const invalidate = useInvalidateTeams(organisationId);
   const close = () => setOpenModal(null);
@@ -63,7 +65,7 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
         items={[
           { label: "Edit member", onSelect: () => setOpenModal("name"), ...locked(canModify || canEditOwnDetails) },
           { label: "Edit role", onSelect: () => setOpenModal("role"), ...locked(canModify) },
-          { label: "Edit teams & projects", onSelect: () => setOpenModal("assignments"), ...locked(canModify || isAdmin) },
+          { label: projectsEnabled ? "Edit teams & projects" : "Edit teams", onSelect: () => setOpenModal("assignments"), ...locked(canModify || isAdmin) },
           { label: "Send password reset", onSelect: () => setOpenModal("reset"), ...locked(canModify) },
           { label: "Remove member", onSelect: () => setOpenModal("remove"), tone: "danger" as const, ...locked(canModify) },
         ]}

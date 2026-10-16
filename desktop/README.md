@@ -9,7 +9,10 @@
 > `LEGACY_ACTIVATION_MARKERS` in `resolvers/linux/browser-activation.ts`).
 
 The downloadable desktop agent. It handles login, device registration,
-starting/stopping a timer against a Project (and optional Task), idle
+starting/stopping a timer against a Project (and optional Task) — or, for an
+organisation that has Projects turned off, with no Project at all, as a single
+play button and none of the Project list, search or Task picker (the agent
+reads `GET /device/projects-setting` at setup and on every status poll) — idle
 detection/handling, active window tracking (the foreground app's name and
 window title, sampled every 5s), and — as of this pass — screenshot
 capture (the primary display, captured at an org-configurable frequency

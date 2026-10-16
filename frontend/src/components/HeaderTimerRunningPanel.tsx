@@ -1,6 +1,6 @@
 "use client";
 
-import { PauseIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
+import { StopIcon } from "@phosphor-icons/react";
 import type { RunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ProjectColourBadge } from "./ProjectColourBadge";
@@ -28,31 +28,7 @@ export function HeaderTimerRunningPanel({ timer }: HeaderTimerRunningPanelProps)
       <p className="text-center text-xs text-slate-900/60">
         Today: {formatElapsed(timer.workedTodayMs)}
       </p>
-      {timer.isPaused && (
-        <p className="text-center text-xs text-secondary">Paused</p>
-      )}
       <div className="flex items-center gap-2">
-        {timer.isPaused ? (
-          <button
-            type="button"
-            onClick={timer.onResume}
-            disabled={timer.isResuming}
-            className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
-          >
-            <PlayIcon size={18} weight="fill" aria-hidden="true" />
-            Resume
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={timer.onPause}
-            disabled={timer.isPausing}
-            className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-brand-sm border-2 border-ink font-semibold px-4 h-11 text-primary-dark transition-colors duration-150 hover:bg-primary-dark/5 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <PauseIcon size={18} weight="fill" aria-hidden="true" />
-            Pause
-          </button>
-        )}
         <button
           type="button"
           onClick={timer.onStop}

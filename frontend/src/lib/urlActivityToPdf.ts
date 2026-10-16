@@ -10,15 +10,18 @@ import type { Project } from "@/types/project";
 // table (see toPdfBlob's own doc comment).
 const URL_COLUMN_INDEX = 2;
 const TITLE_COLUMN_INDEX = 3;
+// With Projects off the Project column is gone and both shift left by one.
 
 export function urlActivityToPdf(
   title: string,
   day: UrlActivityDay,
   projects: Pick<Project, "id" | "name">[],
+  projectsEnabled = true,
 ): Blob {
-  const { header, rows } = urlActivityRows(day, projects);
+  const { header, rows } = urlActivityRows(day, projects, projectsEnabled);
+  const shift = projectsEnabled ? 0 : 1;
   return toPdfBlob(title, header, rows, {
-    [URL_COLUMN_INDEX]: 55,
-    [TITLE_COLUMN_INDEX]: 45,
+    [URL_COLUMN_INDEX - shift]: 55,
+    [TITLE_COLUMN_INDEX - shift]: 45,
   });
 }

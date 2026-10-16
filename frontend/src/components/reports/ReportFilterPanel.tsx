@@ -6,6 +6,7 @@ import { XIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { EMPTY_REPORT_FILTERS, countReportFilters } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
 import type { ReportFilterOption } from "@/types/reportFilterOption";
@@ -35,6 +36,7 @@ export function ReportFilterPanel({
   teamOptions,
   onClose,
 }: ReportFilterPanelProps) {
+  const projectsEnabled = useProjectsEnabled();
   const panelRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(true, [panelRef], onClose);
 
@@ -91,15 +93,17 @@ export function ReportFilterPanel({
         />
       )}
 
-      <MultiSelectFilter
-        label="Projects"
-        placeholder="All projects"
-        options={projectOptions}
-        selected={filters.projectIds}
-        onChange={(projectIds) => onChange({ ...filters, projectIds })}
-        searchable
-        emptyLabel="There are no projects to filter by."
-      />
+      {projectsEnabled && (
+        <MultiSelectFilter
+          label="Projects"
+          placeholder="All projects"
+          options={projectOptions}
+          selected={filters.projectIds}
+          onChange={(projectIds) => onChange({ ...filters, projectIds })}
+          searchable
+          emptyLabel="There are no projects to filter by."
+        />
+      )}
 
       <button
         type="button"

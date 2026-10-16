@@ -18,7 +18,7 @@ describe("entryEditBlockedReason", () => {
   });
 
   it("blocks an entry whose timer is still ticking", () => {
-    expect(entryEditBlockedReason(RUNNING)).toContain("Pause or stop");
+    expect(entryEditBlockedReason(RUNNING)).toContain("Stop the timer");
   });
 
   // Nothing accrues while paused, so its project, task and start are as

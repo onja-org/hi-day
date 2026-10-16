@@ -7,20 +7,20 @@ const FILE_NAME = 'pending-timer-ops.json';
 
 export type PendingOp =
   | { type: 'stop'; at: string }
-  | { type: 'start'; at: string; projectId: string; taskId: string | null };
+  | { type: 'start'; at: string; projectId: string | null; taskId: string | null };
 
 export interface PendingTimerClient {
   pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>>;
   stopTimer(deviceToken: string, endedAt?: string): Promise<TrackingResult<TimeEntry>>;
   startTimer(
     deviceToken: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | null,
     startedAt?: string,
   ): Promise<TrackingResult<TimeEntry>>;
   switchTimer(
     deviceToken: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | null,
   ): Promise<TrackingResult<TimeEntry>>;
 }
@@ -75,7 +75,7 @@ export class PendingTimerOps {
     this.current = entry;
   }
 
-  private localEntry(projectId: string, taskId: string | null, at: string): TimeEntry {
+  private localEntry(projectId: string | null, taskId: string | null, at: string): TimeEntry {
     return {
       id: `offline-${randomUUID()}`,
       projectId,
@@ -134,7 +134,7 @@ export class PendingTimerOps {
 
   async start(
     deviceToken: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | null,
     client: PendingTimerClient,
     startedAt?: string,
@@ -147,7 +147,7 @@ export class PendingTimerOps {
     return isOffline(result) ? this.queueStart(projectId, taskId, at) : result;
   }
 
-  private queueStart(projectId: string, taskId: string | null, at: string): TrackingResult<TimeEntry> {
+  private queueStart(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
     this.save([...this.load(), { type: 'start', at, projectId, taskId }]);
     this.current = this.localEntry(projectId, taskId, at);
     return { ok: true, data: this.current };
@@ -155,7 +155,7 @@ export class PendingTimerOps {
 
   async switchTo(
     deviceToken: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | null,
     client: PendingTimerClient,
   ): Promise<TrackingResult<TimeEntry>> {
@@ -168,7 +168,7 @@ export class PendingTimerOps {
   }
 
   /** An offline switch is a stop and a start at the same instant. */
-  private queueSwitch(projectId: string, taskId: string | null, at: string): TrackingResult<TimeEntry> {
+  private queueSwitch(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
     if (!this.current) return this.queueStart(projectId, taskId, at);
     this.save([
       ...this.load(),

@@ -4,7 +4,7 @@ import { filterAppsUrlsItems } from "@/lib/filterAppsUrlsItems";
 import type { AppsUrlsItem } from "@/types/appsUrlsReport";
 
 function item(dateKey: string, projectId: string | null, label: string, seconds: number): AppsUrlsItem {
-  return { dateKey, projectId, projectName: projectId ?? "Untracked", label, kind: "app", seconds, memberId: "m1", memberName: "Ana" };
+  return { dateKey, projectId, projectName: projectId ?? "No project", label, kind: "app", seconds, memberId: "m1", memberName: "Ana" };
 }
 
 const items = [
@@ -57,5 +57,13 @@ describe("filterAppsUrlsItems", () => {
     expect(filterAppsUrlsItems(items, ["p2"], "")).toHaveLength(1);
     expect(filterAppsUrlsItems(items, [], "slack")).toHaveLength(2);
     expect(filterAppsUrlsItems(items, [], "")).toHaveLength(4);
+  });
+});
+
+describe("buildAppsUrlsRows with Projects off", () => {
+  it("leaves the project out of the detail rows", () => {
+    const [first] = buildAppsUrlsRows(items, "date", false);
+    expect(first.subRows?.every((row) => !("project" in row.cells))).toBe(true);
+    expect(first.subRows?.map((row) => row.cells.app)).toEqual(["Slack", "Code"]);
   });
 });

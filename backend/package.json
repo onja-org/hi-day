@@ -21,6 +21,7 @@
     "migration:run": "pnpm typeorm migration:run",
     "migration:revert": "pnpm typeorm migration:revert",
     "prune:orphaned-captures": "ts-node -r tsconfig-paths/register src/scripts/prune-orphaned-captures.ts",
+    "remove:organisation-projects": "ts-node -r tsconfig-paths/register src/scripts/remove-organisation-projects.ts",
     "seed:test-accounts": "ts-node -r tsconfig-paths/register src/scripts/seed-test-accounts.ts"
   },
   "dependencies": {

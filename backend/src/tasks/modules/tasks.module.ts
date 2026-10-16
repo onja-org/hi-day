@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { Membership } from '../../database/entities/membership.entity';
+import { ProjectsEnabledGuard } from '../../projects/guards/projects-enabled.guard';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
@@ -27,7 +28,12 @@ import { TasksService } from '../services/tasks.service';
     JwtAuthModule,
   ],
   controllers: [TasksController],
-  providers: [TasksService, ProjectRoleGuard, ProjectMemberGuard],
+  providers: [
+    TasksService,
+    ProjectRoleGuard,
+    ProjectMemberGuard,
+    ProjectsEnabledGuard,
+  ],
   exports: [TasksService],
 })
 export class TasksModule {}

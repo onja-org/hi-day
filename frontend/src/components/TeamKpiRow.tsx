@@ -1,6 +1,7 @@
 "use client";
 
 import { useTeamDashboardSummary } from "@/hooks/useTeamDashboardSummary";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { DashboardKpiTile } from "./DashboardKpiTile";
 import { ErrorMessage } from "./ErrorMessage";
@@ -11,6 +12,7 @@ type TeamKpiRowProps = {
 };
 
 export function TeamKpiRow({ organisationId }: TeamKpiRowProps) {
+  const projectsEnabled = useProjectsEnabled();
   const summaryQuery = useTeamDashboardSummary(organisationId);
 
   if (summaryQuery.isLoading) {
@@ -40,13 +42,15 @@ export function TeamKpiRow({ organisationId }: TeamKpiRowProps) {
         )}
         delta={summary.workedThisWeekDeltaSeconds}
       />
-      <DashboardKpiTile
-        dotClassName="bg-primary"
-        label="Active projects"
-        value={String(summary.projectsWorkedThisWeek)}
-        deltaLabel={String(Math.abs(summary.projectsWorkedDelta))}
-        delta={summary.projectsWorkedDelta}
-      />
+      {projectsEnabled && (
+        <DashboardKpiTile
+          dotClassName="bg-primary"
+          label="Active projects"
+          value={String(summary.projectsWorkedThisWeek)}
+          deltaLabel={String(Math.abs(summary.projectsWorkedDelta))}
+          delta={summary.projectsWorkedDelta}
+        />
+      )}
       <DashboardKpiTile
         dotClassName="bg-primary"
         label="Team members"

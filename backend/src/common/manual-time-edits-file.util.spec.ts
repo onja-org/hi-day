@@ -47,3 +47,13 @@ describe('buildManualTimeEditsTable', () => {
     expect(csv.startsWith('Member,')).toBe(true);
   });
 });
+
+describe('buildManualTimeEditsTable without projects', () => {
+  it('drops the project column and its cell together', () => {
+    const table = buildManualTimeEditsTable([edit], 'UTC', false);
+
+    expect(table.header).not.toContain('Project / Work order');
+    expect(table.body[0]).toHaveLength(table.header.length);
+    expect(table.body[0]).not.toContain('Website');
+  });
+});

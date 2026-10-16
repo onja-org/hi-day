@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { allowedAppsNotice } from "@/lib/allowedAppsNotice";
-import { pauseTimeEntry } from "@/lib/pauseTimeEntry";
-import { resumeTimeEntry } from "@/lib/resumeTimeEntry";
+import { unionActiveSeconds } from "@/lib/unionActiveSeconds";
 import { startTimeEntry } from "@/lib/startTimeEntry";
 import { webTimerConstraint } from "@/lib/webTimerConstraint";
 import { stopTimeEntry } from "@/lib/stopTimeEntry";
@@ -10,8 +9,9 @@ import { switchTimeEntry } from "@/lib/switchTimeEntry";
 import { CURRENT_TIME_ENTRY_QUERY_KEY, useCurrentTimeEntry } from "./useCurrentTimeEntry";
 import { DASHBOARD_SUMMARY_QUERY_KEY, useDashboardSummary } from "./useDashboardSummary";
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
+import { useProjectsEnabled } from "./useProjectsEnabled";
 import { useMyProjects } from "./useMyProjects";
-import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
+import { TIME_ENTRIES_QUERY_KEY_PREFIX, useTimeEntries } from "./useTimeEntries";
 
 /**
  * All the state and actions a timer control needs — shared by the
@@ -23,6 +23,8 @@ import { TIME_ENTRIES_QUERY_KEY_PREFIX } from "./useTimeEntries";
 export function useRunningTimer(organisationId: string) {
   const queryClient = useQueryClient();
   const currentQuery = useCurrentTimeEntry(organisationId);
+  const organisationQuery = useCurrentOrganisation();
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useMyProjects(organisationId);
   const dashboardQuery = useDashboardSummary(organisationId);
 
@@ -35,7 +37,7 @@ export function useRunningTimer(organisationId: string) {
   const [canSwitch, setCanSwitch] = useState(false);
   // Shown instead of offering a Start button the server would refuse.
   const trackingNotice = allowedAppsNotice(
-    useCurrentOrganisation().data?.allowedApps ?? "all",
+    organisationQuery.data?.allowedApps ?? "all",
   );
   const [localNowMs, setLocalNowMs] = useState(() => Date.now());
 
@@ -52,7 +54,10 @@ export function useRunningTimer(organisationId: string) {
   const { requiredProjectId } = webTimerConstraint(
     currentQuery.data?.elsewhere ?? null,
   );
-  const effectiveProjectId = requiredProjectId ?? projectId;
+  // With Projects off there is nothing to pick, and the server refuses one.
+  const effectiveProjectId = projectsEnabled
+    ? (requiredProjectId ?? projectId)
+    : "";
   const activeProject = entry
     ? (projectsQuery.data?.find(
         (project) => project.id === entry.projectId,
@@ -93,7 +98,11 @@ export function useRunningTimer(organisationId: string) {
 
   const startMutation = useMutation({
     mutationFn: () =>
-      startTimeEntry(organisationId, effectiveProjectId, taskId || null),
+      startTimeEntry(
+        organisationId,
+        projectsEnabled ? effectiveProjectId : null,
+        taskId || null,
+      ),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -112,7 +121,11 @@ export function useRunningTimer(organisationId: string) {
 
   const switchMutation = useMutation({
     mutationFn: () =>
-      switchTimeEntry(organisationId, effectiveProjectId, taskId || null),
+      switchTimeEntry(
+        organisationId,
+        projectsEnabled ? effectiveProjectId : null,
+        taskId || null,
+      ),
     onSuccess: (result) => {
       if (result.ok) {
         setConflictMessage(null);
@@ -121,16 +134,9 @@ export function useRunningTimer(organisationId: string) {
     },
   });
 
-  const pauseMutation = useMutation({
-    mutationFn: () => pauseTimeEntry(organisationId),
-    onSuccess: invalidate,
-  });
-
-  const resumeMutation = useMutation({
-    mutationFn: () => resumeTimeEntry(organisationId),
-    onSuccess: invalidate,
-  });
-
+  // The web no longer pauses: a break is a stop and a new start. This only
+  // covers an entry paused under the old model that is still open, so its
+  // clock stays frozen until it is stopped.
   const isPaused = entry?.pausedAt != null;
 
   // Ticks once a second so the clocks move between polls.
@@ -142,12 +148,13 @@ export function useRunningTimer(organisationId: string) {
   }, [entry, isPaused]);
 
   /**
-   * Two figures, deliberately separate. `elapsedMs` is *this session* — zero
-   * with nothing running — and `workedTodayMs` is the day's total beside it.
-   * One number serving both meant the timer could never read 00:00:00.
+   * `elapsedMs` is the web timer's own time today — its entries only, so
+   * time tracked on a desktop never shows up here — and it carries on from
+   * that total when the timer is stopped and started again. Time the web
+   * entries share is counted once (`unionActiveSeconds`).
    *
-   * Both tick from the local clock corrected against the server's reading,
-   * so a skewed machine cannot drift either.
+   * Ticks from the local clock corrected against the server's reading, so a
+   * skewed machine cannot drift it.
    */
   const serverNow = currentQuery.data?.now;
   const serverOffsetMs =
@@ -156,17 +163,28 @@ export function useRunningTimer(organisationId: string) {
       : 0;
   const correctedNowMs = localNowMs + serverOffsetMs;
 
-  const elapsedMs = entry
-    ? Math.max(
-        0,
-        (entry.pausedAt
-          ? new Date(entry.pausedAt).getTime()
-          : correctedNowMs) -
-          new Date(entry.startedAt).getTime() -
-          entry.pausedSeconds * 1000,
-      )
-    : 0;
+  const dayKey = new Date(localNowMs).toDateString();
+  const todayRange = useMemo(() => {
+    const from = new Date(dayKey);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    return { from, to };
+  }, [dayKey]);
+  const todayEntriesQuery = useTimeEntries(organisationId, todayRange);
+  const webEntriesToday = useMemo(
+    () =>
+      (todayEntriesQuery.data ?? []).filter((item) => item.source === "web"),
+    [todayEntriesQuery.data],
+  );
+  const elapsedMs =
+    unionActiveSeconds(
+      webEntriesToday,
+      entry ? new Date(correctedNowMs) : null,
+    ) * 1000;
 
+  // The day's total across every Project and device, shown beside the clock.
+  // The summary already includes the running entry as of its fetch, so only
+  // the time since then is added on top.
   const workedTodayMs =
     (dashboardQuery.data?.workedTodaySeconds ?? 0) * 1000 +
     (entry && !isPaused && dashboardQuery.dataUpdatedAt
@@ -176,17 +194,21 @@ export function useRunningTimer(organisationId: string) {
   return {
     limitReached,
     dismissLimitReached: () => setLimitReached(null),
-    isLoading: currentQuery.isLoading || projectsQuery.isLoading,
-    isError: currentQuery.isError || projectsQuery.isError || !projectsQuery.data,
+    isLoading:
+      currentQuery.isLoading ||
+      organisationQuery.isLoading ||
+      projectsQuery.isLoading,
+    isError:
+      currentQuery.isError ||
+      organisationQuery.isError ||
+      (projectsEnabled && (projectsQuery.isError || !projectsQuery.data)),
+    projectsEnabled,
     entry: entry,
     activeProject,
-    /** The displayed timer belongs to a device, so it can be watched but not
-     * stopped, paused or resumed from here. */
-    /** This session only — 0 when nothing is running. */
+    /** The web timer's own time today, running or not. */
     elapsedMs,
-    /** Everything worked today, across every project and device. */
+    /** Everything worked today, across every Project and device. */
     workedTodayMs,
-    isPaused,
     projects: projectsQuery.data ?? [],
     /** Non-null while a device is tracking: the only Project the web may
      * start. The picker greys out the rest rather than hiding them, so a
@@ -204,8 +226,6 @@ export function useRunningTimer(organisationId: string) {
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isSwitching: switchMutation.isPending,
-    isPausing: pauseMutation.isPending,
-    isResuming: resumeMutation.isPending,
     onProjectChange: (id: string) => {
       setProjectId(id);
       setTaskId("");
@@ -214,8 +234,6 @@ export function useRunningTimer(organisationId: string) {
     onStart: () => startMutation.mutate(),
     onStop: () => stopMutation.mutate(),
     onSwitch: () => switchMutation.mutate(),
-    onPause: () => pauseMutation.mutate(),
-    onResume: () => resumeMutation.mutate(),
   };
 }
 

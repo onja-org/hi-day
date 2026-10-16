@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { createNote } from "@/lib/createNote";
 import { SelectField } from "@/components/ui/form/SelectField";
 import { TextField } from "@/components/ui/form/TextField";
@@ -20,6 +21,7 @@ export function NoteComposer({
   noteDate,
   onCreated,
 }: NoteComposerProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [projectId, setProjectId] = useState("");
   const queryClient = useQueryClient();
   const projectsQuery = useProjects(organisationId, { status: "active" });
@@ -68,19 +70,21 @@ export function NoteComposer({
           required
           className="flex-1"
         />
-        <SelectField
-          label="Project (optional)"
-          compact
-          value={projectId}
-          onChange={(event) => setProjectId(event.target.value)}
-        >
-          <option value="">No project</option>
-          {projectsQuery.data?.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </SelectField>
+        {projectsEnabled && (
+          <SelectField
+            label="Project (optional)"
+            compact
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+          >
+            <option value="">No project</option>
+            {projectsQuery.data?.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </SelectField>
+        )}
         <button
           type="submit"
           disabled={createMutation.isPending}

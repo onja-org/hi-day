@@ -57,11 +57,20 @@ export function formatDuration(seconds: number | null): string {
 }
 
 /** One text row per entry, read on the organisation's clock. */
-export function reportRows(entries: ReportEntry[], zone: string): string[][] {
+/** The header, without its Project column when the Organisation has Projects off. */
+export function reportHeader(includeProject = true): string[] {
+  return includeProject ? HEADER : HEADER.filter((name) => name !== 'Project');
+}
+
+export function reportRows(
+  entries: ReportEntry[],
+  zone: string,
+  includeProject = true,
+): string[][] {
   return entries.map((entry) => [
     formatDate(entry.startedAt, zone),
     entry.memberName ?? entry.memberEmail ?? '',
-    entry.projectName,
+    ...(includeProject ? [entry.projectName ?? ''] : []),
     entry.taskName ?? '',
     formatTime(entry.startedAt, zone),
     entry.endedAt ? formatTime(entry.endedAt, zone) : 'In progress',
@@ -108,14 +117,27 @@ export function buildTablePdf(
   return Buffer.from(doc.output('arraybuffer'));
 }
 
-export function buildReportCsv(entries: ReportEntry[], zone: string): string {
-  return buildCsv(HEADER, reportRows(entries, zone));
+export function buildReportCsv(
+  entries: ReportEntry[],
+  zone: string,
+  includeProject = true,
+): string {
+  return buildCsv(
+    reportHeader(includeProject),
+    reportRows(entries, zone, includeProject),
+  );
 }
 
 export function buildReportPdf(
   title: string,
   entries: ReportEntry[],
   zone: string,
+  includeProject = true,
 ): Buffer {
-  return buildTablePdf(title, HEADER, reportRows(entries, zone), 8);
+  return buildTablePdf(
+    title,
+    reportHeader(includeProject),
+    reportRows(entries, zone, includeProject),
+    8,
+  );
 }

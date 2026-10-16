@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RequireProjectsEnabled } from "@/components/RequireProjectsEnabled";
 import { TasksPageContent } from "@/components/TasksPageContent";
 
 export const metadata: Metadata = {
@@ -12,5 +13,9 @@ type TasksPageProps = {
 export default async function TasksPage({ params }: TasksPageProps) {
   const { organisationId } = await params;
 
-  return <TasksPageContent organisationId={organisationId} />;
+  return (
+    <RequireProjectsEnabled>
+      <TasksPageContent organisationId={organisationId} />
+    </RequireProjectsEnabled>
+  );
 }

@@ -58,12 +58,14 @@ export function TeamDashboardSections() {
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">
-            Current project activity
-          </h2>
-          <TeamProjectActivity organisationId={organisationId} />
-        </section>
+        {organisationQuery.data.projectsEnabled && (
+          <section className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">
+              Current project activity
+            </h2>
+            <TeamProjectActivity organisationId={organisationId} />
+          </section>
+        )}
 
         <section className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold text-primary-dark">

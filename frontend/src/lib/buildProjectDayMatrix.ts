@@ -2,6 +2,7 @@ import { attributeProjectSeconds } from "@/lib/attributeProjectSeconds";
 import type { ProjectColour } from "@/types/project";
 import { dateKeyInZone, detectTimezone } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryProjectName } from "@/lib/entryProjectDisplay";
 
 export type ProjectDayMatrixRow = {
   projectId: string;
@@ -65,7 +66,8 @@ export function buildProjectDayMatrix(
   const allEntries: TimeEntryListItem[] = [];
 
   for (const entry of entries) {
-    if (entry.durationSeconds === null) continue;
+    // The matrix is rows of Projects, so an entry with none has no row.
+    if (entry.durationSeconds === null || entry.projectId === null) continue;
     const dayIndex = dayIndexOf(entry, weekStart, zone);
     if (dayIndex < 0 || dayIndex >= DAYS_PER_WEEK) continue;
 
@@ -73,8 +75,8 @@ export function buildProjectDayMatrix(
     if (!row) {
       row = {
         projectId: entry.projectId,
-        projectName: entry.projectName,
-        projectColour: entry.projectColour,
+        projectName: entryProjectName(entry),
+        projectColour: entryProjectColour(entry),
         dailySeconds: new Array<number>(DAYS_PER_WEEK).fill(0),
         totalSeconds: 0,
       };

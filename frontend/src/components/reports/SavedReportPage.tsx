@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { RequireProjectsEnabled } from "@/components/RequireProjectsEnabled";
 import { useSavedReports } from "@/hooks/useSavedReports";
 import { AppsUrlsReportPage } from "./AppsUrlsReportPage";
 import { DailyTotalsReportPage } from "./DailyTotalsReportPage";
@@ -51,7 +52,9 @@ export function SavedReportPage({ organisationId, savedReportId }: SavedReportPa
 
   if (savedReport.reportType === "daily-totals") {
     return (
-      <DailyTotalsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />
+      <RequireProjectsEnabled>
+        <DailyTotalsReportPage key={savedReport.id} organisationId={organisationId} savedReport={savedReport} />
+      </RequireProjectsEnabled>
     );
   }
 

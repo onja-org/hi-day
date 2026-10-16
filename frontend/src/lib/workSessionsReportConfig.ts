@@ -10,9 +10,17 @@ export const WORK_SESSIONS_GROUPINGS: { value: WorkSessionsGrouping; label: stri
   { value: "member", label: "Member" },
 ];
 
+/** Without Projects there is no project to group by. */
+export function workSessionsGroupings(projectsEnabled: boolean): typeof WORK_SESSIONS_GROUPINGS {
+  return projectsEnabled ? WORK_SESSIONS_GROUPINGS : WORK_SESSIONS_GROUPINGS.filter((option) => option.value !== "project");
+}
+
 /** A saved report may hold a grouping this report doesn't offer; it falls back to the date. */
-export function isWorkSessionsGrouping(value: TimeActivityGrouping): value is WorkSessionsGrouping {
-  return WORK_SESSIONS_GROUPINGS.some((option) => option.value === value);
+export function isWorkSessionsGrouping(
+  value: TimeActivityGrouping,
+  projectsEnabled = true,
+): value is WorkSessionsGrouping {
+  return workSessionsGroupings(projectsEnabled).some((option) => option.value === value);
 }
 
 const DETAIL_COLUMNS: ReportTableColumn[] = [
@@ -27,7 +35,10 @@ const DETAIL_COLUMNS: ReportTableColumn[] = [
 ];
 
 /** The grouping names the first column, so its own detail column is left out of the rest. */
-export function workSessionsColumns(grouping: WorkSessionsGrouping): ReportTableColumn[] {
+export function workSessionsColumns(grouping: WorkSessionsGrouping, projectsEnabled = true): ReportTableColumn[] {
   const label = WORK_SESSIONS_GROUPINGS.find((option) => option.value === grouping)!.label;
-  return [{ key: "group", header: label }, ...DETAIL_COLUMNS.filter((column) => column.key !== grouping)];
+  return [
+    { key: "group", header: label },
+    ...DETAIL_COLUMNS.filter((column) => column.key !== grouping && (projectsEnabled || column.key !== "project")),
+  ];
 }

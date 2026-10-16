@@ -7,6 +7,7 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { memberImportTemplateCsv } from "@/lib/memberImportTemplateCsv";
 import { parseMemberImportRows } from "@/lib/parseMemberImportRows";
@@ -29,6 +30,7 @@ type ImportMembersModalProps = {
 const INVITES_PER_REQUEST = 200;
 
 export function ImportMembersModal({ organisationId, onClose }: ImportMembersModalProps) {
+  const projectsEnabled = useProjectsEnabled();
   const queryClient = useQueryClient();
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
@@ -58,6 +60,7 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         teams,
         projects: projectsQuery.data ?? [],
         canInviteAdmins: organisationQuery.data?.role === "admin",
+        projectsEnabled,
       });
       if (parsed.headerError) setFileError(parsed.headerError);
       else if (parsed.rows.length === 0) setFileError("That file has no member rows.");
@@ -105,8 +108,14 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         <p className="text-sm text-slate-900">
           Upload a <strong>.csv</strong> or <strong>.xlsx</strong> file. The first row names the
           columns: <code>email</code> (required), <code>role</code> (admin, manager or member),{" "}
-          <code>teams</code> and <code>projects</code> (names, several separated by{" "}
-          <code>;</code>). Everyone listed gets an invite email.
+          {projectsEnabled ? (
+            <>
+              <code>teams</code> and <code>projects</code>
+            </>
+          ) : (
+            <code>teams</code>
+          )}{" "}
+          (names, several separated by <code>;</code>). Everyone listed gets an invite email.
         </p>
         <ImportTemplateButton
           filename="members-import-template.csv"
@@ -114,6 +123,7 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
             memberImportTemplateCsv(
               teams.map((team) => team.name),
               (projectsQuery.data ?? []).map((project) => project.name),
+              projectsEnabled,
             )
           }
         />

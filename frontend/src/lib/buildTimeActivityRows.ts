@@ -7,6 +7,7 @@ import type { WeekStart } from "@/types/organisation";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryTitle } from "@/lib/entryProjectDisplay";
 
 type RowOptions = {
   /** Skip the per-day level under project/member/team groups. */
@@ -114,7 +115,7 @@ function leafRows(
       id: path ? `${path}|${key}` : key,
       sortKey: Math.min(...merged.map((entry) => new Date(entry.startedAt).getTime())),
       cells: {
-        date: grouping === "member" ? first.projectName : memberLabelOf(first),
+        date: grouping === "member" ? entryTitle(first) : memberLabelOf(first),
         when: entryDayLabel(first, zone),
         ...entryCells(merged),
         ...(isTopLevel ? {} : { team: team ?? "-" }),
@@ -127,8 +128,9 @@ function leafRows(
 /**
  * The report's table rows. "Date per day"/"week" go group → rows. Project,
  * member and team go group → day → rows, or group → rows when
- * `sumDates` is on. "None" is a flat list of rows. A group's "(n)" counts
- * the merged rows beneath it, not raw timer sessions.
+ * `sumDates` is on. "None" is a flat list of rows. A group is labelled with
+ * its name alone: a count beside it could only be of merged rows, which reads
+ * as sessions or people and is neither.
  */
 export function buildTimeActivityRows(
   entries: TimeEntryListItem[],
@@ -150,20 +152,17 @@ export function buildTimeActivityRows(
   const rows = groupEntriesBy(entries, grouping, teamNames, weekStart, zone).map((group) => {
     const onlyTeam = grouping === "team" ? group.label : undefined;
     const days = splitsByDay ? groupEntriesBy(group.entries, "day", teamNames, weekStart, zone) : [];
-    const count = splitsByDay
-      ? days.reduce((sum, day) => sum + mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams, zone).length, 0)
-      : mergeEntries(group.entries, leavesPerDay, teamNames, onlyTeam, splitTeams, zone).length;
     return {
       id: group.id,
       sortKey: group.sortKey,
-      cells: { date: `${group.label} (${count})`, ...entryCells(group.entries) },
+      cells: { date: group.label, ...entryCells(group.entries) },
       teams: teamsOf(group.entries, teamNames),
       subRows: splitsByDay
         ? days.map((day) => ({
             id: `${group.id}|${day.id}`,
             sortKey: day.sortKey,
             cells: {
-              date: `${day.label} (${mergeEntries(day.entries, false, teamNames, onlyTeam, splitTeams, zone).length})`,
+              date: day.label,
               ...entryCells(day.entries),
               team: teamsOf(day.entries, teamNames).join(", ") || "-",
             },
@@ -180,7 +179,7 @@ export function buildTimeActivityRows(
     .map((member) => ({
       id: member.id,
       sortKey: member.label,
-      cells: { date: `${member.label} (0)`, ...entryCells([]) },
+      cells: { date: member.label, ...entryCells([]) },
       teams: teamNames.get(member.id) ?? [],
     }));
   return [...rows, ...idleRows];

@@ -6,7 +6,8 @@ import type { Project } from "@/types/project";
 export function appActivityToCsv(
   day: AppActivityDay,
   projects: Pick<Project, "id" | "name">[],
+  projectsEnabled = true,
 ): string {
-  const { header, rows } = appActivityRows(day, projects);
+  const { header, rows } = appActivityRows(day, projects, projectsEnabled);
   return toCsvString(header, rows);
 }

@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActivitySamplesModule } from '../../activity-samples/modules/activity-samples.module';
 import { AppEventsModule } from '../../app-events/modules/app-events.module';
 import { DeviceSession } from '../../database/entities/device-session.entity';
+import { Organisation } from '../../database/entities/organisation.entity';
+import { ProjectsEnabledGuard } from '../../projects/guards/projects-enabled.guard';
 import { Membership } from '../../database/entities/membership.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
 import { ProjectTeam } from '../../database/entities/project-team.entity';
@@ -22,6 +24,7 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     TypeOrmModule.forFeature([
       DeviceSession,
       Membership,
+      Organisation,
       ProjectMembership,
       ProjectTeam,
     ]),
@@ -36,6 +39,10 @@ import { DeviceTrackingController } from '../controllers/device-tracking.control
     DisclosureModule,
   ],
   controllers: [DeviceTrackingController],
-  providers: [DeviceSessionGuard, DeviceProjectMemberGuard],
+  providers: [
+    DeviceSessionGuard,
+    DeviceProjectMemberGuard,
+    ProjectsEnabledGuard,
+  ],
 })
 export class DeviceTrackingModule {}

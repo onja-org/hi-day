@@ -18,7 +18,7 @@ import { UrlSessionsService } from '../url-sessions.service';
 
 type FakeCoveringEntry = {
   id: string;
-  projectId: string;
+  projectId: string | null;
   startedAt: Date;
   endedAt: Date | null;
 };
@@ -395,6 +395,38 @@ describe('UrlSessionsService', () => {
 
     // Sessions outside every entry are dropped rather than labelled
     // "untracked", so widening an entry brings them back on the next read.
+    it('keeps a session covered by an entry that has no project', async () => {
+      const rows = [
+        makeSessionRow({
+          url: 'https://tracked.example/',
+          host: 'tracked.example',
+          startedAt: new Date('2026-09-08T09:00:00.000Z'),
+        }),
+      ];
+      const service = makeService({
+        urlSessionsRepo: makeUrlSessionsRepo({
+          find: jest.fn().mockResolvedValue(rows),
+        }),
+        timeEntriesService: makeTimeEntriesService([
+          {
+            id: 'te-1',
+            projectId: null,
+            startedAt: new Date('2026-09-08T08:00:00.000Z'),
+            endedAt: new Date('2026-09-08T10:00:00.000Z'),
+          },
+        ]),
+      });
+
+      const day = await service.getDayGroupedByUrl(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+      );
+
+      expect(day.buckets).toHaveLength(1);
+      expect(day.buckets[0].pages[0].projectId).toBeNull();
+    });
+
     it('omits a session no entry covers', async () => {
       const rows = [
         makeSessionRow({

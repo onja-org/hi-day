@@ -3,6 +3,7 @@
 import { useAppActivityDay } from "@/hooks/useAppActivityDay";
 import { useCurrentTimeEntry } from "@/hooks/useCurrentTimeEntry";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { sumAppSeconds } from "@/lib/sumAppSeconds";
 import { todayProjectTimes } from "@/lib/todayProjectTimes";
 import { BrandStatCard } from "./BrandStatCard";
@@ -21,6 +22,7 @@ export function MyGlanceCards({ organisationId }: MyGlanceCardsProps) {
   const summaryQuery = useDashboardSummary(organisationId);
   const appsQuery = useAppActivityDay(organisationId);
   const currentQuery = useCurrentTimeEntry(organisationId);
+  const projectsEnabled = useProjectsEnabled();
 
   if (summaryQuery.isLoading) {
     return (
@@ -44,16 +46,18 @@ export function MyGlanceCards({ organisationId }: MyGlanceCardsProps) {
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-      <BrandStatCard
-        title="Today by project"
-        totalSeconds={summary.workedTodaySeconds}
-        emptyText="Nothing tracked yet today."
-        rows={today.slice(0, ROW_LIMIT).map((project) => ({
-          key: project.projectId,
-          label: project.projectName,
-          seconds: project.seconds,
-        }))}
-      />
+      {projectsEnabled && (
+        <BrandStatCard
+          title="Today by project"
+          totalSeconds={summary.workedTodaySeconds}
+          emptyText="Nothing tracked yet today."
+          rows={today.slice(0, ROW_LIMIT).map((project) => ({
+            key: project.projectId,
+            label: project.projectName,
+            seconds: project.seconds,
+          }))}
+        />
+      )}
       <BrandStatCard
         title="Today's top apps"
         totalSeconds={apps.reduce((sum, app) => sum + app.seconds, 0)}
@@ -68,16 +72,18 @@ export function MyGlanceCards({ organisationId }: MyGlanceCardsProps) {
           seconds: app.seconds,
         }))}
       />
-      <BrandStatCard
-        title="This week by project"
-        totalSeconds={summary.workedThisWeekSeconds}
-        emptyText="No projects worked on this week yet."
-        rows={summary.projectsThisWeek.slice(0, ROW_LIMIT).map((project) => ({
-          key: project.projectId,
-          label: project.projectName,
-          seconds: project.seconds,
-        }))}
-      />
+      {projectsEnabled && (
+        <BrandStatCard
+          title="This week by project"
+          totalSeconds={summary.workedThisWeekSeconds}
+          emptyText="No projects worked on this week yet."
+          rows={summary.projectsThisWeek.slice(0, ROW_LIMIT).map((project) => ({
+            key: project.projectId,
+            label: project.projectName,
+            seconds: project.seconds,
+          }))}
+        />
+      )}
       <BrandStatCard
         title="This week"
         totalSeconds={summary.workedThisWeekSeconds}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { INVITE_LINKS_QUERY_KEY } from "@/hooks/useInviteLinks";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildInviteLinkUrl } from "@/lib/buildInviteLinkUrl";
 import { deleteInviteLink } from "@/lib/deleteInviteLink";
 import { formatInviteLinkUsage } from "@/lib/formatInviteLinkUsage";
@@ -24,6 +25,7 @@ type InviteLinkRowProps = {
 };
 
 export function InviteLinkRow({ organisationId, link, teamNames }: InviteLinkRowProps) {
+  const projectsEnabled = useProjectsEnabled();
   const queryClient = useQueryClient();
   const [openModal, setOpenModal] = useState<"edit" | "delete" | null>(null);
   const invalidate = () =>
@@ -65,7 +67,9 @@ export function InviteLinkRow({ organisationId, link, teamNames }: InviteLinkRow
           })}
         />
       </td>
-      <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{link.projectIds.length}</td>
+      {projectsEnabled && (
+        <td className="hidden px-4 py-3 text-slate-900 md:table-cell">{link.projectIds.length}</td>
+      )}
       <td className="hidden px-4 py-3 whitespace-nowrap text-slate-900 lg:table-cell">
         {link.expiresAt ? formatShortDate(link.expiresAt) : <span className="text-slate-900/60">No expiration</span>}
       </td>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { DashboardKpiTile } from "./DashboardKpiTile";
 import { ErrorMessage } from "./ErrorMessage";
@@ -12,6 +13,7 @@ type DashboardKpiRowProps = {
 
 export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
   const summaryQuery = useDashboardSummary(organisationId);
+  const projectsEnabled = useProjectsEnabled();
 
   if (summaryQuery.isLoading) {
     return (
@@ -50,12 +52,14 @@ export function DashboardKpiRow({ organisationId }: DashboardKpiRowProps) {
             : undefined
         }
       />
-      <DashboardKpiTile
-        dotClassName="bg-primary"
-        label="Active projects"
-        value={String(summary.projectsWorkedThisWeek)}
-        subLabel={soleProject?.projectName}
-      />
+      {projectsEnabled && (
+        <DashboardKpiTile
+          dotClassName="bg-primary"
+          label="Active projects"
+          value={String(summary.projectsWorkedThisWeek)}
+          subLabel={soleProject?.projectName}
+        />
+      )}
     </div>
   );
 }

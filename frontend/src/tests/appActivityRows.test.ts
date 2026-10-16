@@ -45,7 +45,7 @@ describe("appActivityRows", () => {
     expect(rows[0]).toContain("4");
   });
 
-  it("resolves a null projectId to 'Untracked'", () => {
+  it("resolves a null projectId to 'No project'", () => {
     const day = makeDay({
       buckets: [
         {
@@ -55,7 +55,7 @@ describe("appActivityRows", () => {
       ],
     });
 
-    expect(appActivityRows(day, projects).rows[0]).toContain("Untracked");
+    expect(appActivityRows(day, projects).rows[0]).toContain("No project");
   });
 
   it("returns no rows for a day with no buckets", () => {
@@ -77,5 +77,23 @@ describe("appActivityRows", () => {
     });
 
     expect(appActivityRows(day, projects).rows).toHaveLength(2);
+  });
+});
+
+describe("appActivityRows with Projects off", () => {
+  it("has no Project column, so nothing reads as No project", () => {
+    const day = makeDay({
+      buckets: [
+        {
+          hourStart: "2026-09-18T09:00:00.000Z",
+          items: [{ projectId: null, appName: "Code Editor", secondsSpent: 60, sessionCount: 1 }],
+        },
+      ],
+    });
+    const { header, rows } = appActivityRows(day, projects, false);
+
+    expect(header).toEqual(["Hour", "App", "Time spent", "Sessions"]);
+    expect(rows[0]).not.toContain("No project");
+    expect(rows[0]).toHaveLength(4);
   });
 });

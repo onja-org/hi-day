@@ -9,6 +9,7 @@ import {
   entrySplitBlockedReason,
 } from "@/lib/entryEditBlockedReason";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 import { Modal } from "./Modal";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { TimeEntryDeleteModal } from "./TimeEntryDeleteModal";
@@ -69,11 +70,11 @@ export function TimeEntryDetailModal({
   }
 
   return (
-    <Modal title={entry.projectName} onClose={onClose}>
+    <Modal title={entryTitle(entry)} onClose={onClose}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <span className="flex items-center gap-3">
-            <ProjectAvatar name={entry.projectName} colour={entry.projectColour} />
+            <ProjectAvatar name={entryTitle(entry)} colour={entryProjectColour(entry)} />
             <span className="flex flex-col">
               <span className="text-sm text-slate-900">
                 {organisationQuery.data?.name ?? ""}

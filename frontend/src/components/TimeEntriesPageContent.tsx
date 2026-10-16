@@ -7,6 +7,7 @@ import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useMyProjects } from "@/hooks/useMyProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useReportTimezone } from "@/hooks/useReportTimezone";
 import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
@@ -86,6 +87,7 @@ export function TimeEntriesPageContent({
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();
   useReportTimezone(profileQuery.data?.timezone);
+  const projectsEnabled = useProjectsEnabled();
   const myProjectsQuery = useMyProjects(organisationId);
   const ownLabel = profileQuery.data?.name ?? profileQuery.data?.email ?? "Me";
   const otherMembers = (membersQuery.data ?? []).filter(
@@ -251,9 +253,9 @@ export function TimeEntriesPageContent({
             )}
           </button>
           <ExportButtons
-            csv={entriesToCsv(activeEntries ?? [], activeZone)}
+            csv={entriesToCsv(activeEntries ?? [], activeZone, projectsEnabled)}
             buildPdf={() =>
-              entriesToPdf(exportTitle, activeEntries ?? [], activeZone)
+              entriesToPdf(exportTitle, activeEntries ?? [], activeZone, projectsEnabled)
             }
             filenameBase={activeFilenameBase}
             disabled={(activeEntries ?? []).length === 0}
@@ -266,23 +268,26 @@ export function TimeEntriesPageContent({
         aria-label="View mode"
         className="flex gap-1 border-b border-input-border"
       >
-        {Object.entries(VIEW_MODE_LABELS).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={viewMode === value}
-            onClick={() => setViewMode(value as TimesheetViewMode)}
-            className={clsx(
-              "cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150",
-              viewMode === value
-                ? "border-primary text-primary"
-                : "border-transparent text-slate-900 hover:text-primary-dark",
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        {Object.entries(VIEW_MODE_LABELS)
+          // The weekly view is a grid of Projects, so it has no rows without them.
+          .filter(([value]) => projectsEnabled || value !== "weekly")
+          .map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={viewMode === value}
+              onClick={() => setViewMode(value as TimesheetViewMode)}
+              className={clsx(
+                "cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150",
+                viewMode === value
+                  ? "border-primary text-primary"
+                  : "border-transparent text-slate-900 hover:text-primary-dark",
+              )}
+            >
+              {label}
+            </button>
+          ))}
       </nav>
 
       {viewMode === "daily" && (

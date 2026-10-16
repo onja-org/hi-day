@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { matchesSearch } from "@/lib/matchesSearch";
 import { ErrorMessage } from "./ErrorMessage";
 import { MemberRow } from "./MemberRow";
@@ -15,6 +16,7 @@ type MembersTabProps = {
 };
 
 export function MembersTab({ organisationId }: MembersTabProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [search, setSearch] = useState("");
   const membersQuery = useActiveMembers(organisationId);
   const organisationQuery = useCurrentOrganisation();
@@ -75,7 +77,9 @@ export function MembersTab({ organisationId }: MembersTabProps) {
             <th className="px-4 py-3 font-semibold">Member</th>
             <th className="hidden px-4 py-3 font-semibold lg:table-cell">Status</th>
             <th className="hidden px-4 py-3 font-semibold sm:table-cell">Role</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            {projectsEnabled && (
+              <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            )}
             <th className="hidden px-4 py-3 font-semibold md:table-cell">Teams</th>
             <th className="hidden px-4 py-3 font-semibold lg:table-cell">Date added</th>
             <th className="px-4 py-3 font-semibold">
@@ -96,7 +100,7 @@ export function MembersTab({ organisationId }: MembersTabProps) {
           ))}
           {members.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-slate-900">
+              <td colSpan={projectsEnabled ? 7 : 6} className="px-4 py-8 text-center text-slate-900">
                 {search.trim() ? "No members match your search." : "No active members yet."}
               </td>
             </tr>
