@@ -781,7 +781,12 @@ function tick(): void {
 
   if (!runningEntry) {
     const projectId = lastTrackedProjectId;
-    if (!projectId || !projects.some((project) => project.id === projectId)) {
+    // With Projects off there is no Project to remember; the day's single
+    // bucket is what a paused timer should keep showing.
+    const hasTrackedTime = projectsEnabled
+      ? !!projectId && projects.some((project) => project.id === projectId)
+      : displayedSecondsFor(null) > 0;
+    if (!hasTrackedTime) {
       timerDisplay.hidden = true;
       trackingProjectNameEl.textContent = "";
       compactProjectNameEl.textContent = "Stopped";
