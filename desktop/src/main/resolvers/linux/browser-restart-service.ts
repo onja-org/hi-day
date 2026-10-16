@@ -8,6 +8,7 @@ import {
   type BlindBrowser,
   type BrowserProcess,
 } from './blind-browsers';
+import { readOpenProfiles } from './browser-profiles';
 import type { DiscoveredBrowser } from './browser-activation';
 import {
   activationTargetDirectory,
@@ -18,7 +19,7 @@ import {
   firefoxRestoresSession,
   readActivatedExec,
   readFirefoxPrefs,
-  relaunchCommand,
+  relaunchCommands,
   restartWarning,
   type RestartOutcome,
 } from './browser-restart';
@@ -68,6 +69,9 @@ function entryFor(
  * never came back.
  */
 const SHUTDOWN_GRACE_MS = 20_000;
+
+/** How long the first launch gets to come up before the rest are sent to it. */
+const START_GRACE_MS = 10_000;
 
 /**
  * Finds browsers running without an accessibility tree, and restarts them on
@@ -157,8 +161,13 @@ export class BrowserRestartService {
 
     for (const browser of browsers) {
       const exec = readActivatedExec(browser.desktopFileName, targetDirectory);
-      const relaunch = exec ? relaunchCommand(exec, browser.command) : null;
-      if (!relaunch) {
+      // Read while it is still running: the open files are what name the
+      // profiles, and they are gone the moment the process is.
+      const open = readOpenProfiles(browser.pid);
+      const relaunches = exec
+        ? relaunchCommands(exec, browser.command, browser.cmdline, open)
+        : [];
+      if (relaunches.length === 0) {
         outcomes.push({
           pid: browser.pid,
           command: browser.command,
@@ -197,12 +206,27 @@ export class BrowserRestartService {
       }
 
       try {
-        // Detached, so the browser outlives this agent rather than dying
-        // with it — it is the person's browser, not our child process.
-        spawn(relaunch.command, relaunch.args, {
-          detached: true,
-          stdio: 'ignore',
-        }).unref();
+        // One launch per profile, never at once: the first starts the
+        // browser, and the rest only reach it through the singleton lock it
+        // writes on the way up. Fired together they race that lock, and the
+        // losers exit without ever opening their window.
+        const before = pidsNamed(browser.command);
+        for (const [index, relaunch] of relaunches.entries()) {
+          if (index > 0 && !(await waitForStart(browser.command, before, START_GRACE_MS))) {
+            break;
+          }
+          // Detached, so the browser outlives this agent rather than dying
+          // with it — it is the person's browser, not our child process.
+          spawn(relaunch.command, relaunch.args, {
+            detached: true,
+            stdio: 'ignore',
+          }).unref();
+        }
+        if (relaunches.length > 1) {
+          this.log(
+            `[browser-restart] ${browser.command}#${browser.pid} reopened ${relaunches.length} profiles: ${open.profiles.join(', ')}`,
+          );
+        }
         outcomes.push({ pid: browser.pid, command: browser.command, restarted: true });
       } catch (error) {
         outcomes.push({
@@ -231,6 +255,41 @@ export class BrowserRestartService {
 
 /** Resolves once the process is gone, or when the grace period runs out. */
 /** Whether the process actually went, rather than merely being asked to. */
+/**
+ * Whether the browser we just launched is up and holding the singleton the
+ * next launch needs to reach it.
+ *
+ * Keyed on a process that was not there before, not merely on the name: a
+ * second browser sharing the name would answer yes on the spot, and the
+ * profiles behind it would race the lock they were waiting for.
+ */
+async function waitForStart(
+  command: string,
+  before: Set<number>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const started = readBrowserProcesses().some(
+      (process) =>
+        process.command === command &&
+        !before.has(process.pid) &&
+        !process.cmdline.some((arg) => arg.startsWith('--type=')),
+    );
+    if (started) return true;
+  }
+  return false;
+}
+
+function pidsNamed(command: string): Set<number> {
+  return new Set(
+    readBrowserProcesses()
+      .filter((process) => process.command === command)
+      .map((process) => process.pid),
+  );
+}
+
 async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

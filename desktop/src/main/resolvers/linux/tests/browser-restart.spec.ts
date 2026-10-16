@@ -4,8 +4,9 @@ import {
   restartWarning,
   firefoxRestoresSession,
   isGeckoBrowser,
-  profileArguments,
+  geckoProfileArguments,
   relaunchCommand,
+  relaunchCommands,
 } from '../browser-restart';
 
 describe('firefoxRestoresSession', () => {
@@ -172,64 +173,67 @@ describe('relaunchCommand', () => {
   });
 });
 
-describe('profileArguments', () => {
-  /**
-   * The reported case: two Chrome windows on different profiles. The
-   * launcher entry knows nothing about either, so relaunching from it
-   * alone reopened the default profile and showed the profile picker —
-   * the second window's tabs were lost.
-   */
-  it("keeps a Chrome window's own profile, space and all", () => {
-    expect(
-      profileArguments(
-        ['/opt/google/chrome/chrome', '--profile-directory=Profile 1'],
-        'chrome',
-      ),
-    ).toEqual(['--profile-directory=Profile 1']);
-  });
-
-  it('keeps a separate user-data-dir, which is a different profile store', () => {
-    expect(
-      profileArguments(
-        ['/opt/google/chrome/chrome', '--user-data-dir=/tmp/work'],
-        'chrome',
-      ),
-    ).toEqual(['--user-data-dir=/tmp/work']);
-  });
-
-  it('has nothing to carry for a default-profile window', () => {
-    expect(profileArguments(['/opt/google/chrome/chrome'], 'chrome')).toEqual([]);
-  });
-
+describe('geckoProfileArguments', () => {
   it("keeps a Firefox window's named profile, which uses its own flag", () => {
     expect(
-      profileArguments(['/snap/firefox/firefox', '-P', 'personal'], 'firefox'),
+      geckoProfileArguments(['/snap/firefox/firefox', '-P', 'personal']),
     ).toEqual(['--profile', 'personal']);
   });
 
-  it('ignores a Chrome flag on Firefox, and the other way round', () => {
-    expect(
-      profileArguments(
-        ['/snap/firefox/firefox', '--profile-directory=Profile 1'],
-        'firefox',
-      ),
-    ).toEqual([]);
+  it('has nothing to carry for a default-profile window', () => {
+    expect(geckoProfileArguments(['/snap/firefox/firefox'])).toEqual([]);
   });
 });
 
-describe('relaunchCommand with profiles', () => {
+describe('relaunchCommands', () => {
   const activatedExec =
     'env GNOME_ACCESSIBILITY=1 /usr/bin/google-chrome-stable --force-renderer-accessibility=basic %U';
 
-  it('restores the window to the profile it was on, not the default', () => {
-    const relaunch = relaunchCommand(activatedExec, 'chrome', [
-      '/opt/google/chrome/chrome',
-      '--profile-directory=Profile 1',
-    ])!;
+  /**
+   * The reported case: two Chrome windows on different profiles. Chromium
+   * runs both inside one process and names neither in its argv, so a single
+   * relaunch reopened one and showed the profile picker for the rest.
+   */
+  it('launches once per open profile, each one named', () => {
+    const commands = relaunchCommands(activatedExec, 'chrome', [], {
+      userDataDir: '/home/sam/.config/google-chrome',
+      profiles: ['Default', 'Profile 3'],
+    });
 
-    expect(relaunch.args).toContain('--profile-directory=Profile 1');
-    // Still activated, and still restoring that profile's own session.
-    expect(relaunch.args).toContain('--force-renderer-accessibility=basic');
-    expect(relaunch.args).toContain('--restore-last-session');
+    expect(commands.map((entry) => entry.args.at(-1))).toEqual([
+      '--profile-directory=Default',
+      '--profile-directory=Profile 3',
+    ]);
+    // Still activated, and still restoring each profile's own session.
+    for (const { args } of commands) {
+      expect(args).toContain('--force-renderer-accessibility=basic');
+      expect(args).toContain(CHROMIUM_RESTORE_FLAG);
+    }
+  });
+
+  it('carries a user-data-dir only when they chose one themselves', () => {
+    const open = { userDataDir: '/tmp/work', profiles: ['Default'] };
+
+    expect(relaunchCommands(activatedExec, 'chrome', [], open)[0].args).not.toContain(
+      '--user-data-dir=/tmp/work',
+    );
+    expect(
+      relaunchCommands(activatedExec, 'chrome', ['--user-data-dir=/tmp/work'], open)[0]
+        .args,
+    ).toContain('--user-data-dir=/tmp/work');
+  });
+
+  it('falls back to a single plain launch when no profile is known', () => {
+    expect(relaunchCommands(activatedExec, 'chrome')).toHaveLength(1);
+  });
+
+  it('leaves Firefox a single launch, since its profiles are separate processes', () => {
+    const commands = relaunchCommands('/usr/bin/firefox %u', 'firefox', [], {
+      userDataDir: null,
+      profiles: ['Default', 'Profile 3'],
+    });
+
+    expect(commands).toHaveLength(1);
+    expect(commands[0].args).not.toContain('--profile-directory=Default');
   });
 });

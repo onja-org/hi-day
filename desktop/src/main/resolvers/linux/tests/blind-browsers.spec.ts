@@ -112,7 +112,7 @@ describe('isBrowserProcess', () => {
 describe('selectBlindBrowsers', () => {
   it('finds a browser started without the activation flag', () => {
     expect(selectBlindBrowsers([chrome()], tokens)).toEqual([
-      { pid: 5614, command: 'chrome' },
+      { pid: 5614, command: 'chrome', cmdline: ['/opt/google/chrome/chrome'] },
     ]);
   });
 
@@ -195,7 +195,11 @@ describe('selectRunningBrowsers', () => {
 
     expect(selectBlindBrowsers([activated], tokens)).toEqual([]);
     expect(selectRunningBrowsers([activated], tokens)).toEqual([
-      { pid: 5614, command: 'chrome' },
+      {
+        pid: 5614,
+        command: 'chrome',
+        cmdline: ['/opt/google/chrome/chrome', ACTIVATED],
+      },
     ]);
   });
 
@@ -207,7 +211,7 @@ describe('selectRunningBrowsers', () => {
     });
 
     expect(selectRunningBrowsers([main, renderer], tokens)).toEqual([
-      { pid: 5614, command: 'chrome' },
+      { pid: 5614, command: 'chrome', cmdline: ['/opt/google/chrome/chrome'] },
     ]);
   });
 
