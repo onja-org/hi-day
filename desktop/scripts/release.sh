@@ -144,7 +144,13 @@ ensure_worktree() {
 
 lint_and_test() {
   step "Lint and test desktop"
-  (cd "$WORKTREE" && pnpm --filter desktop lint && pnpm --filter desktop test)
+  (cd "$WORKTREE" && pnpm --filter desktop lint)
+  # While desktop still uses better-sqlite3, vitest needs it built for plain
+  # Node's ABI; the dist:* scripts rebuild it for Electron's again afterwards.
+  if node -e "process.exit(require('$WORKTREE/desktop/package.json').scripts?.['rebuild:node'] ? 0 : 1)"; then
+    (cd "$WORKTREE" && pnpm --filter desktop rebuild:node)
+  fi
+  (cd "$WORKTREE" && pnpm --filter desktop test)
 }
 
 # Fails if any expected file is missing or a latest*.yml is for another version
