@@ -29,11 +29,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
-          if gh release view "${{ github.ref_name }}" --repo onja-org/workfoce-monitoring-app-releases >/dev/null 2>&1; then
+          if gh release view "${{ github.ref_name }}" --repo onja-org/hi-day-releases >/dev/null 2>&1; then
             echo "Release ${{ github.ref_name }} already exists, reusing it"
           else
             gh release create "${{ github.ref_name }}" \
-              --repo onja-org/workfoce-monitoring-app-releases \
+              --repo onja-org/hi-day-releases \
               --title "Desktop ${{ github.ref_name }}" \
               --generate-notes \
               --draft
@@ -120,7 +120,7 @@ jobs:
             exit 1
           fi
           gh release upload "${{ github.ref_name }}" "${files[@]}" \
-            --repo onja-org/workfoce-monitoring-app-releases \
+            --repo onja-org/hi-day-releases \
             --clobber
 
       # Manual dispatch only — a tag push uploads to the release above
@@ -178,7 +178,7 @@ jobs:
   # matrix above has built and uploaded successfully — takes the draft that
   # `prepare` created out of draft, which is the moment it becomes visible.
   # It lives in the separate *public*
-  # onja-org/workfoce-monitoring-app-releases repo (this source repo is
+  # onja-org/hi-day-releases repo (this source repo is
   # private, and GitHub never serves private-repo release assets to
   # unauthenticated users, so a public download link has to point at a
   # public repo). The landing page links to
@@ -206,6 +206,6 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
           gh release edit "${{ github.ref_name }}" \
-            --repo onja-org/workfoce-monitoring-app-releases \
+            --repo onja-org/hi-day-releases \
             --draft=false \
             --latest

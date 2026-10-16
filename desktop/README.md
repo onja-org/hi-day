@@ -316,6 +316,9 @@ auto-update yet, see **Known limitations** below).
 
 ## Building installers
 
+To cut a release that reaches users, follow [RELEASING.md](RELEASING.md). The
+commands below only build installers locally.
+
 ```bash
 pnpm --filter desktop dist:linux   # AppImage + .deb — works on Ubuntu, Pop!_OS, and most Debian-based distros
 pnpm --filter desktop dist:win     # NSIS installer — build on Windows (or CI); needs the .NET 8 SDK on PATH
