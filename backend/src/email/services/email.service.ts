@@ -169,6 +169,34 @@ export class EmailService {
   }
 
   /**
+   * Tells an organisation's owner their trial is nearly up. `daysLeft` is
+   * already rounded the way the in-app banner rounds it, so the email and the
+   * banner never disagree about how long is left; `1` is the final day.
+   */
+  async sendTrialReminderEmail(
+    to: string,
+    organisationName: string,
+    organisationPublicId: number,
+    daysLeft: number,
+  ): Promise<void> {
+    const billingUrl = `${this.frontendUrl}/organisations/${organisationPublicId}/settings/billing/subscription`;
+    const when = `ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `Your ${APP_NAME} trial ${when}`,
+      html: `<p>Your free trial of ${APP_NAME} for <strong>${escapeHtml(organisationName)}</strong> ${when}. Add a payment method to keep your team tracking without interruption.</p>${this.button(billingUrl, 'Add payment')}<p>Nothing is locked during the trial, and you have not been charged.</p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send trial reminder to ${to}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Emails a report file on behalf of a member. Unlike the account emails
    * above, the caller is waiting on this one, so it reports whether it went
    * out instead of swallowing the failure. The sender's own text is escaped
