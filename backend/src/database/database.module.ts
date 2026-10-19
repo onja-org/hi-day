@@ -22,6 +22,7 @@ import { ProjectTeam } from './entities/project-team.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { SavedReport } from './entities/saved-report.entity';
 import { Screenshot } from './entities/screenshot.entity';
+import { Subscription } from './entities/subscription.entity';
 import { Task } from './entities/task.entity';
 import { Team } from './entities/team.entity';
 import { TeamMembership } from './entities/team-membership.entity';
@@ -69,6 +70,7 @@ import { User } from './entities/user.entity';
           ConsentRecord,
           Note,
           SavedReport,
+          Subscription,
         ],
         synchronize: false,
       }),

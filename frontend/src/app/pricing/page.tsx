@@ -9,13 +9,13 @@ import { PricingFaq } from "@/components/pricing/PricingFaq";
 import { PricingHero } from "@/components/pricing/PricingHero";
 import { PricingIncluded } from "@/components/pricing/PricingIncluded";
 import { isAuthenticated } from "@/lib/isAuthenticated";
+import { CLOUD_PRICE_PER_PERSON, TRIAL_DAYS } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   // Absolute, like the landing page's: this is the other half of the
   // pre-login marketing site, not an app screen.
   title: { absolute: "Pricing — Hi Day" },
-  description:
-    "One price, everything included: $3.50 per person a month, with a 14-day free trial. Or self-host Hi Day free forever.",
+  description: `One price, everything included: ${CLOUD_PRICE_PER_PERSON.annual} per person a month, with a ${TRIAL_DAYS}-day free trial. Or self-host Hi Day free forever.`,
 };
 
 export default async function Pricing() {
