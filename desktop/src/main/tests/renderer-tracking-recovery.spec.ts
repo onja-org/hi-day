@@ -79,6 +79,8 @@ interface Scenario {
   serverShortfallSeconds?: number;
   /** Whether the organisation tracks time against Projects; on unless a test says otherwise. */
   projectsEnabled?: boolean;
+  /** A daily/weekly work time limit the server reports as already reached. */
+  limitReached?: { kind: 'daily' | 'weekly'; limitHours: number };
 }
 
 function launch(scenario: Scenario) {
@@ -111,6 +113,8 @@ function launch(scenario: Scenario) {
     idlePolicy: 0,
     /** The project each start named, in order. */
     startedWith: [] as (string | null)[],
+    /** Bodies passed to main's raise-the-window alert. */
+    trackingAlerts: [] as string[],
   };
   const entry = {
     id: 'e1',
@@ -140,12 +144,22 @@ function launch(scenario: Scenario) {
             (scenario.serverShortfallSeconds ?? 0),
         )
       : 0;
-  /** Flip `revoked` mid-test to sign the device out server-side. */
-  const server = { revoked: false };
+  /** Flip `revoked` mid-test to sign the device out server-side, and set
+   * `limitReached` mid-test to have the next poll report a work limit. */
+  const server = {
+    revoked: false,
+    limitReached: scenario.limitReached ?? null as
+      | { kind: 'daily' | 'weekly'; limitHours: number }
+      | null,
+  };
   const ok = <T>(data: T) =>
     Promise.resolve(server.revoked ? SIGNED_OUT : { ok: true, data });
 
   window.api = {
+    trackingAlert: (body: string) => {
+      calls.trackingAlerts.push(body);
+      return Promise.resolve();
+    },
     getStatus: () =>
       Promise.resolve({ loggedIn: true, email: 'a@b.c', name: 'A', organisationName: 'Org' }),
     auth: {
@@ -183,6 +197,7 @@ function launch(scenario: Scenario) {
           entry: running,
           now: new Date(now()).toISOString(),
           workedSeconds: serverWorkedSeconds(),
+          ...(server.limitReached ? { limitReached: server.limitReached } : {}),
         });
       },
       // Pausing ends the entry, as the backend does now.
@@ -300,12 +315,20 @@ function launch(scenario: Scenario) {
     reopen: () => reopenListeners.forEach((listener) => listener()),
     remind: (message: string) =>
       reminderListeners.forEach((listener) => listener(message)),
+    /** The server starts reporting a reached work limit from the next poll. */
+    reportLimitReached: (limit: { kind: 'daily' | 'weekly'; limitHours: number }) => {
+      server.limitReached = limit;
+    },
     shrinkToSmallest: () => {
       document.getElementById('compact-button')!.click();
       document.getElementById('compact-shrink')!.click();
     },
     reminderVisible: () =>
       !document.getElementById('reminder-banner')!.hidden &&
+      !document.getElementById('full-view')!.hidden,
+    /** Same contract as `reminderVisible`: shown, and in the full window. */
+    limitDialogVisible: () =>
+      !document.getElementById('timer-blocked')!.hidden &&
       !document.getElementById('full-view')!.hidden,
     isRunning: () => running !== null,
     projectCount: () => document.getElementById('project-count')!.textContent,
@@ -465,6 +488,18 @@ describe('renderer tracking setup recovers from a failed first load', () => {
     app.remind('You have not started tracking — 10 minutes untracked.');
 
     expect(app.reminderVisible()).toBe(true);
+    app.close();
+  });
+
+  it('shows the work-limit dialog at full size even from the smallest view', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+    app.shrinkToSmallest();
+
+    app.reportLimitReached({ kind: 'daily', limitHours: 8 });
+    await waitFor(() => app.limitDialogVisible());
+
+    expect(app.limitDialogVisible()).toBe(true);
     app.close();
   });
 

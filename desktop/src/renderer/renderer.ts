@@ -692,6 +692,7 @@ const timerBlockedDismiss = document.getElementById(
  * to miss while looking at the Play button.
  */
 function showTimerBlocked(message: string): void {
+  setMode("full", true);
   timerBlockedMessage.textContent = message;
   timerBlocked.hidden = false;
   timerBlockedDismiss.focus();
