@@ -2,6 +2,7 @@
 
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useUrlActivityDay } from "@/hooks/useUrlActivityDay";
 import { urlActivityToCsv } from "@/lib/urlActivityToCsv";
 import { urlActivityToPdf } from "@/lib/urlActivityToPdf";
@@ -26,6 +27,7 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
     membershipId,
     projectId,
   });
+  const projectsEnabled = useProjectsEnabled();
   const projectsQuery = useProjects(organisationId, { status: "all" });
   const day = dayQuery.data;
   const projects = projectsQuery.data ?? [];
@@ -36,10 +38,10 @@ export function UrlActivityPageContent({ organisationId }: UrlActivityPageConten
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ActivityFilterToolbar organisationId={organisationId} canViewOthers={canViewOthers} />
         <ExportButtons
-          csv={day ? urlActivityToCsv(day, projects) : ""}
+          csv={day ? urlActivityToCsv(day, projects, projectsEnabled) : ""}
           buildPdf={
             day
-              ? () => urlActivityToPdf(`Website activity — ${date}`, day, projects)
+              ? () => urlActivityToPdf(`Website activity — ${date}`, day, projects, projectsEnabled)
               : () => new Blob()
           }
           filenameBase={`url-activity-${date}`}

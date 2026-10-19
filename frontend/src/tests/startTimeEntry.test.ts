@@ -80,4 +80,19 @@ describe("startTimeEntry", () => {
       message: "Something went wrong. Please try again.",
     });
   });
+
+  it("starts without a project on the organisation's own route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ entry: { id: "te-1", projectId: null } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await startTimeEntry("org-1", null, null);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/backend/organisations/org-1/time-entries/start",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({}) }),
+    );
+  });
 });

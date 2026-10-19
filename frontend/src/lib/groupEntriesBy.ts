@@ -4,6 +4,7 @@ import { formatReportDay } from "@/lib/formatReportDay";
 import type { WeekStart } from "@/types/organisation";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectName } from "@/lib/entryProjectDisplay";
 
 export type EntryGroup = {
   id: string;
@@ -60,7 +61,7 @@ function describeGroups(
       ];
     }
     case "project":
-      return [byLabel(entry.projectId, entry.projectName)];
+      return [byLabel(entry.projectId ?? "", entryProjectName(entry))];
     case "member":
       return [byLabel(entry.membershipId, memberLabelOf(entry))];
     case "team": {

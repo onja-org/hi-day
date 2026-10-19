@@ -7,7 +7,7 @@ export function projectNameOrUntracked(
   projectId: string | null,
 ): string {
   if (!projectId) {
-    return "Untracked";
+    return "No project";
   }
-  return projects.find((project) => project.id === projectId)?.name ?? "Untracked";
+  return projects.find((project) => project.id === projectId)?.name ?? "No project";
 }

@@ -1,3 +1,4 @@
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatHourLabel } from "@/lib/formatHourLabel";
 import type { AppHourBucket } from "@/types/appActivity";
@@ -16,22 +17,26 @@ export function AppActivityHourSection({
   organisationId,
   bucket,
 }: AppActivityHourSectionProps) {
+  const projectsEnabled = useProjectsEnabled();
+
   return (
     <TableBody>
       <ActivityHourSectionRow
         label={formatHourLabel(bucket.hourStart)}
-        colSpan={4}
+        colSpan={projectsEnabled ? 4 : 3}
       />
       {bucket.items.map((item, index) => (
         <TableRow
           key={`${item.projectId ?? "untracked"}-${item.appName}-${index}`}
         >
-          <TableCell>
-            <ProjectNameOrUntracked
-              organisationId={organisationId}
-              projectId={item.projectId}
-            />
-          </TableCell>
+          {projectsEnabled && (
+            <TableCell>
+              <ProjectNameOrUntracked
+                organisationId={organisationId}
+                projectId={item.projectId}
+              />
+            </TableCell>
+          )}
           <TableCell>{item.appName}</TableCell>
           <TableCell align="right">
             {formatElapsed(item.secondsSpent * 1000)}

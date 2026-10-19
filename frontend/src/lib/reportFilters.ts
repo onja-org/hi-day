@@ -37,7 +37,8 @@ export function filterReportEntries(
         (teamIdsByMember.get(entry.membershipId) ?? []).some((teamId) =>
           filters.teamIds.includes(teamId),
         )) &&
-      (filters.projectIds.length === 0 || filters.projectIds.includes(entry.projectId)),
+      (filters.projectIds.length === 0 ||
+        (entry.projectId !== null && filters.projectIds.includes(entry.projectId))),
   );
 }
 

@@ -11,11 +11,11 @@ describe("projectNameOrUntracked", () => {
     expect(projectNameOrUntracked(projects, "p-1")).toBe("Website");
   });
 
-  it("returns 'Untracked' for a null projectId", () => {
-    expect(projectNameOrUntracked(projects, null)).toBe("Untracked");
+  it("returns 'No project' for a null projectId", () => {
+    expect(projectNameOrUntracked(projects, null)).toBe("No project");
   });
 
-  it("returns 'Untracked' for a projectId not found in the given list", () => {
-    expect(projectNameOrUntracked(projects, "does-not-exist")).toBe("Untracked");
+  it("returns 'No project' for a projectId not found in the given list", () => {
+    expect(projectNameOrUntracked(projects, "does-not-exist")).toBe("No project");
   });
 });

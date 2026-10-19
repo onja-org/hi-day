@@ -23,6 +23,7 @@ export interface CaptureSettingsValue {
 const OFF_REMINDERS: ReminderSettings = {
   intervalMinutes: 0,
   delivery: "alert",
+  workingHoursPerDay: 8,
 };
 
 // consent.required defaults true (not false, unlike every other field here):
@@ -112,14 +113,16 @@ export class CaptureSettingsGate {
     deviceToken: string,
   ): Promise<CaptureSettingsValue | null> {
     const result = await this.apiClient.getCaptureSettings(deviceToken);
-    // Normalised, not trusted: the type describes what a current server
-    // sends, and a server older than this agent omits `reminders`
-    // entirely. A missing field must leave reminders off, never take the
-    // app down with it.
+    // Normalised field by field, not trusted: the type describes what a
+    // current server sends, and an older one omits `reminders` entirely
+    // or sends it without the newest field. A gap must fall back to a
+    // default, never reach the renderer as undefined — that is how the
+    // "remaining in your work day" line went silently missing.
     if (result.ok && result.data) {
-      return result.data.reminders
-        ? result.data
-        : { ...result.data, reminders: OFF_REMINDERS };
+      return {
+        ...result.data,
+        reminders: { ...OFF_REMINDERS, ...(result.data.reminders ?? {}) },
+      };
     }
     if (result.unauthorized) return OFF_SETTINGS;
     return null;
@@ -130,7 +133,8 @@ export class CaptureSettingsGate {
     const mine = this.lastSettings.reminders;
     return (
       mine.intervalMinutes === other.intervalMinutes &&
-      mine.delivery === other.delivery
+      mine.delivery === other.delivery &&
+      mine.workingHoursPerDay === other.workingHoursPerDay
     );
   }
 

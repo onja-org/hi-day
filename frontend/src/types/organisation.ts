@@ -93,6 +93,8 @@ export type OrganisationProfile = {
   timezone: string;
   /** 'monday' until an admin changes it. */
   weekStartsOn: WeekStart;
+  /** Whether time is tracked against Projects. Off unless an admin turns it on. */
+  projectsEnabled: boolean;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -138,6 +140,7 @@ export type UpdateOrganisationInput = {
   taxId?: string;
   website?: string;
   weekStartsOn?: WeekStart;
+  projectsEnabled?: boolean;
   timezone?: string;
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;

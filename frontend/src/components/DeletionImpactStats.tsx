@@ -1,5 +1,6 @@
 import { formatDuration } from "@/lib/formatDuration";
 import type { OrganisationDeletionStatus } from "@/types/organisation";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 
 type DeletionImpactStatsProps = {
   impact: OrganisationDeletionStatus["impact"];
@@ -7,9 +8,10 @@ type DeletionImpactStatsProps = {
 
 /** The four counts of what deleting would remove, so the owner sees the scale before confirming. */
 export function DeletionImpactStats({ impact }: DeletionImpactStatsProps) {
+  const projectsEnabled = useProjectsEnabled();
   const stats = [
     { value: String(impact.people), label: "people" },
-    { value: String(impact.projects), label: "projects" },
+    ...(projectsEnabled ? [{ value: String(impact.projects), label: "projects" }] : []),
     {
       value: formatDuration(Math.round(impact.trackedSeconds / 60)),
       label: "tracked time",

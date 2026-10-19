@@ -95,3 +95,18 @@ describe('shared file helpers', () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 });
+
+describe('report-file.util without projects', () => {
+  it('leaves the project out of the header and every row', () => {
+    const csv = buildReportCsv([entry()], 'UTC', false);
+
+    expect(csv.split('\r\n')[0]).not.toContain('Project');
+    expect(csv).not.toContain('Alpha');
+  });
+
+  it('keeps the project while projects are on', () => {
+    expect(buildReportCsv([entry()], 'UTC').split('\r\n')[0]).toContain(
+      'Project',
+    );
+  });
+});

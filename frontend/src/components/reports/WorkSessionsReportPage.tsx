@@ -8,6 +8,7 @@ import { useTimeActivityReportControls } from "@/hooks/useTimeActivityReportCont
 import { useTimeActivityReportData } from "@/hooks/useTimeActivityReportData";
 import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
 import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildWorkSessionsRows } from "@/lib/buildWorkSessionsRows";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
@@ -40,8 +41,9 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
     useTimeActivityReportControls(savedReport?.settings, organisationQuery.data?.timezone);
   const { canViewOthers, showsEveryone, activeFilters, members, teams, projectOptions, entries, isLoading, error } =
     useTimeActivityReportData(organisationId, scope, range, filters, !organisationQuery.isLoading);
-  const grouping = isWorkSessionsGrouping(chosenGrouping) ? chosenGrouping : "day";
-  const columns = workSessionsColumns(grouping);
+  const projectsEnabled = useProjectsEnabled();
+  const grouping = isWorkSessionsGrouping(chosenGrouping, projectsEnabled) ? chosenGrouping : "day";
+  const columns = workSessionsColumns(grouping, projectsEnabled);
   const weekStart = useOrganisationWeekStart();
   const rows = entries
     ? buildWorkSessionsRows(entries, grouping, zone, weekStart)

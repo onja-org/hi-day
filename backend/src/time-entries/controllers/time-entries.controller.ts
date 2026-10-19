@@ -15,8 +15,10 @@ import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
+import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
 import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
+import { StartTimeEntryDto } from '../dto/start-time-entry.dto';
 import { StopTimeEntryDto } from '../dto/stop-time-entry.dto';
 import { SwitchTimeEntryDto } from '../dto/switch-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
@@ -62,6 +64,40 @@ export class TimeEntriesController {
       request.organisationId!,
       request.userId,
     );
+  }
+
+  // The project-less counterparts of ProjectTimeEntriesController's `start`
+  // and manual create, for Organisations that don't use Projects. With
+  // Projects enabled the service refuses them, so there's one way to track
+  // time per Organisation, not two.
+  @Post('start')
+  async start(
+    @Body() dto: StartTimeEntryDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.start(
+      request.organisationId!,
+      request.userId,
+      null,
+      dto.taskId,
+      TimeEntrySource.WEB,
+      null,
+    );
+    return { entry, message: 'Timer started' };
+  }
+
+  @Post()
+  async createManual(
+    @Body() dto: CreateManualTimeEntryDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entry: TimeEntrySummary; message: string }> {
+    const entry = await this.timeEntriesService.createManual(
+      request.organisationId!,
+      request.userId,
+      null,
+      dto,
+    );
+    return { entry, message: 'Time entry created' };
   }
 
   @Post('stop')
@@ -137,7 +173,7 @@ export class TimeEntriesController {
     const entry = await this.timeEntriesService.switchTo(
       request.organisationId!,
       request.userId,
-      dto.projectId,
+      dto.projectId ?? null,
       dto.taskId,
       TimeEntrySource.WEB,
       null,

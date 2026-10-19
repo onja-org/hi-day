@@ -4,6 +4,7 @@ import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Membership } from '../../database/entities/membership.entity';
+import { ProjectsEnabledGuard } from '../guards/projects-enabled.guard';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
 import { ProjectMembership } from '../../database/entities/project-membership.entity';
@@ -34,7 +35,13 @@ import { ProjectsService } from '../services/projects.service';
     TimeEntriesModule,
   ],
   controllers: [ProjectsController],
-  providers: [ProjectsService, RoleGuard, ProjectRoleGuard, ProjectViewGuard],
+  providers: [
+    ProjectsService,
+    RoleGuard,
+    ProjectRoleGuard,
+    ProjectViewGuard,
+    ProjectsEnabledGuard,
+  ],
   exports: [ProjectsService],
 })
 export class ProjectsModule {}

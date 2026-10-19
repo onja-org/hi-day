@@ -1,5 +1,6 @@
 "use client";
 
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { useTeamDashboardSummary } from "@/hooks/useTeamDashboardSummary";
 import { BrandStatCard } from "./BrandStatCard";
 import { ErrorMessage } from "./ErrorMessage";
@@ -15,6 +16,7 @@ type TeamGlanceCardsProps = {
 /** Everyone in scope's week as ink stat cards — the same cards the landing page's #features shows. */
 export function TeamGlanceCards({ organisationId }: TeamGlanceCardsProps) {
   const summaryQuery = useTeamDashboardSummary(organisationId);
+  const projectsEnabled = useProjectsEnabled();
 
   if (summaryQuery.isLoading) {
     return (
@@ -48,16 +50,18 @@ export function TeamGlanceCards({ organisationId }: TeamGlanceCardsProps) {
           seconds: team.seconds,
         }))}
       />
-      <BrandStatCard
-        title="This week by project"
-        totalSeconds={summary.workedThisWeekSeconds}
-        emptyText="No projects worked on this week yet."
-        rows={summary.projectsThisWeek.slice(0, ROW_LIMIT).map((project) => ({
-          key: project.projectId,
-          label: project.projectName,
-          seconds: project.seconds,
-        }))}
-      />
+      {projectsEnabled && (
+        <BrandStatCard
+          title="This week by project"
+          totalSeconds={summary.workedThisWeekSeconds}
+          emptyText="No projects worked on this week yet."
+          rows={summary.projectsThisWeek.slice(0, ROW_LIMIT).map((project) => ({
+            key: project.projectId,
+            label: project.projectName,
+            seconds: project.seconds,
+          }))}
+        />
+      )}
     </div>
   );
 }

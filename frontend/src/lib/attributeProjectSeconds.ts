@@ -27,11 +27,15 @@ export function attributeProjectSeconds(
   entries: TimeEntryListItem[],
   now: Date | null = null,
 ): Map<string, number> {
+  // An entry with no Project has none to credit, and claiming a stretch for
+  // nobody would shrink the figure of a real Project it overlaps.
   const intervals: ProjectInterval[] = entries.flatMap((entry) =>
-    activeIntervals(entry, now).map((interval) => ({
-      ...interval,
-      projectId: entry.projectId,
-    })),
+    entry.projectId === null
+      ? []
+      : activeIntervals(entry, now).map((interval) => ({
+          ...interval,
+          projectId: entry.projectId as string,
+        })),
   );
 
   const seconds = new Map<string, number>();

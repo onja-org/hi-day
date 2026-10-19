@@ -12,7 +12,7 @@ import clsx from "clsx";
 // always resolves to the newest release's matching asset — no landing
 // page change needed when a new version ships.
 const RELEASE_DOWNLOAD_BASE =
-  "https://github.com/onja-org/workfoce-monitoring-app-releases/releases/latest/download";
+  "https://github.com/onja-org/hi-day-releases/releases/latest/download";
 
 type Download = {
   label: string;

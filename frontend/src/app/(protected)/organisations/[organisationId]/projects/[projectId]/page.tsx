@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RequireProjectsEnabled } from "@/components/RequireProjectsEnabled";
 import { ProjectDetailContent } from "@/components/ProjectDetailContent";
 
 export const metadata: Metadata = {
@@ -12,5 +13,9 @@ type ProjectDetailPageProps = {
 export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { organisationId, projectId } = await params;
 
-  return <ProjectDetailContent organisationId={organisationId} projectId={projectId} />;
+  return (
+    <RequireProjectsEnabled>
+      <ProjectDetailContent organisationId={organisationId} projectId={projectId} />
+    </RequireProjectsEnabled>
+  );
 }

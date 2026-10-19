@@ -2,7 +2,7 @@ import { formatTimeOfDay } from "./formatTimeOfDay";
 
 type DeletableScreenshot = {
   capturedAt: string;
-  /** null = no covering TimeEntry, shown as "Untracked" in the gallery. */
+  /** null = no covering TimeEntry, shown as "No project" in the gallery. */
   projectId: string | null;
 };
 

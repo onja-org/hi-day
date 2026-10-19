@@ -20,7 +20,7 @@ describe('CaptureSettingsGate', () => {
       // comment on it. Informational only now (drives the disclosure
       // banner), never gates capture.
       consent: { required: true },
-      reminders: { intervalMinutes: 0, delivery: 'alert' },
+      reminders: { intervalMinutes: 0, delivery: 'alert', workingHoursPerDay: 8 },
       ...overrides,
     };
   }
@@ -247,7 +247,7 @@ describe('CaptureSettingsGate', () => {
   it('reports every reminder change to a running agent, and only real ones', async () => {
     const seen: number[] = [];
     const withInterval = (intervalMinutes: number) =>
-      settings({ reminders: { intervalMinutes, delivery: 'alert' } });
+      settings({ reminders: { intervalMinutes, delivery: 'alert', workingHoursPerDay: 8 } });
     const client: CaptureSettingsClient = {
       getCaptureSettings: vi
         .fn()
@@ -268,6 +268,24 @@ describe('CaptureSettingsGate', () => {
     expect(seen).toEqual([10, 5, 0]);
   });
 
+  it('fills in a reminder field an older server does not send', async () => {
+    const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
+    const partial = settings({ windowTrackingEnabled: true });
+    delete (partial.reminders as Partial<typeof partial.reminders>)
+      .workingHoursPerDay;
+    const gate = new CaptureSettingsGate(
+      makeSession('token'),
+      makeClient({ ok: true, data: partial }),
+      onChange,
+    );
+
+    await gate.pollOnce();
+
+    // Undefined here reached the renderer as NaN and silently dropped the
+    // "remaining in your work day" line.
+    expect(onChange.mock.calls[0][0].reminders.workingHoursPerDay).toBe(8);
+  });
+
   it('survives a server too old to send reminders at all', async () => {
     const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
     const withoutReminders = settings({ windowTrackingEnabled: true });
@@ -283,6 +301,7 @@ describe('CaptureSettingsGate', () => {
     expect(onChange.mock.calls[0][0].reminders).toEqual({
       intervalMinutes: 0,
       delivery: 'alert',
+      workingHoursPerDay: 8,
     });
   });
 });

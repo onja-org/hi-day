@@ -5,8 +5,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { filterReports } from "@/lib/filterReports";
-import { REPORT_SECTIONS, REPORTS } from "@/lib/reportCatalog";
+import { REPORT_SECTIONS, reportsFor } from "@/lib/reportCatalog";
 import { ReportsCard } from "./ReportsCard";
 import { ReportsSection } from "./ReportsSection";
 import { SavedReportCard } from "./SavedReportCard";
@@ -17,12 +18,13 @@ type AllReportsPageContentProps = {
 };
 
 export function AllReportsPageContent({ organisationId }: AllReportsPageContentProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [query, setQuery] = useState("");
   const { favouriteIds, toggleFavourite } = useFavouriteReports(organisationId);
   const { reports: savedReports, deleteReport } = useSavedReports(String(organisationId));
   const [deleting, setDeleting] = useState<SavedReport | null>(null);
   const [deleteError, setDeleteError] = useState<string | undefined>();
-  const visibleReports = filterReports(REPORTS, query);
+  const visibleReports = filterReports(reportsFor(projectsEnabled), query);
 
   return (
     <div className="flex flex-col gap-8">

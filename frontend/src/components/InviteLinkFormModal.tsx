@@ -7,6 +7,7 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { INVITE_LINKS_QUERY_KEY } from "@/hooks/useInviteLinks";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjects } from "@/hooks/useProjects";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { saveInviteLink } from "@/lib/saveInviteLink";
 import { fromInviteLinkExpiry, toInviteLinkExpiry } from "@/lib/toInviteLinkExpiry";
 import type { InviteLink, InviteLinkRole } from "@/types/inviteLink";
@@ -27,6 +28,7 @@ type InviteLinkFormModalProps = {
 const DEFAULT_EXPIRY_DAYS = 7;
 
 export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLinkFormModalProps) {
+  const projectsEnabled = useProjectsEnabled();
   const queryClient = useQueryClient();
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
@@ -112,13 +114,15 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
             onChange={setTeamIds}
             emptyText={teamsQuery.isLoading ? "Loading teams…" : "No teams to choose from."}
           />
-          <AssignmentChecklist
-            title="Projects"
-            items={(projectsQuery.data ?? []).map((project) => ({ id: project.id, name: project.name }))}
-            selectedIds={projectIds}
-            onChange={setProjectIds}
-            emptyText={projectsQuery.isLoading ? "Loading projects…" : "No active projects to choose from."}
-          />
+          {projectsEnabled && (
+            <AssignmentChecklist
+              title="Projects"
+              items={(projectsQuery.data ?? []).map((project) => ({ id: project.id, name: project.name }))}
+              selectedIds={projectIds}
+              onChange={setProjectIds}
+              emptyText={projectsQuery.isLoading ? "Loading projects…" : "No active projects to choose from."}
+            />
+          )}
         </div>
 
         <InviteLinkLimitFields

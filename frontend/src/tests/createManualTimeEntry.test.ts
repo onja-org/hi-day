@@ -138,4 +138,22 @@ describe("createManualTimeEntry", () => {
       message: "Something went wrong. Please try again.",
     });
   });
+
+  it("posts to the organisation's own collection when there is no project", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ entry: { id: "te-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createManualTimeEntry("org-1", {
+      startedAt: "2026-01-01T09:00",
+      endedAt: "2026-01-01T10:00",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/backend/organisations/org-1/time-entries",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

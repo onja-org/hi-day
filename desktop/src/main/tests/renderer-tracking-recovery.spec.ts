@@ -23,7 +23,18 @@ const RENDERER_DIR = join(__dirname, '..', '..', 'renderer');
 const FAST_POLL_MS = 50;
 
 function rendererScript(pollMs: number): string {
-  const source = readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8');
+  // The renderer is a module in the app but is eval'd as a plain script
+  // here, so its one local import is inlined rather than resolved.
+  const imported = readFileSync(
+    join(RENDERER_DIR, 'reminder-message.ts'),
+    'utf8',
+  ).replace(/^export /gm, '');
+  const source =
+    imported +
+    readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8').replace(
+      /^import .*from "\.\/reminder-message\.js";$/m,
+      '',
+    );
   const fastSource = source.replace(
     'const STATUS_POLL_INTERVAL_MS = 15_000;',
     `const STATUS_POLL_INTERVAL_MS = ${pollMs};`,
@@ -66,6 +77,8 @@ interface Scenario {
   pollMs?: number;
   /** How far the server's count of each entry falls short of this device's clock. */
   serverShortfallSeconds?: number;
+  /** Whether the organisation tracks time against Projects; on unless a test says otherwise. */
+  projectsEnabled?: boolean;
 }
 
 function launch(scenario: Scenario) {
@@ -91,10 +104,17 @@ function launch(scenario: Scenario) {
     }
   } as DateConstructor;
 
-  const calls = { listProjects: 0, start: 0, status: 0, idlePolicy: 0 };
+  const calls = {
+    listProjects: 0,
+    start: 0,
+    status: 0,
+    idlePolicy: 0,
+    /** The project each start named, in order. */
+    startedWith: [] as (string | null)[],
+  };
   const entry = {
     id: 'e1',
-    projectId: PROJECT.id,
+    projectId: PROJECT.id as string | null,
     taskId: null,
     startedAt: new Date().toISOString(),
     endedAt: null,
@@ -104,10 +124,11 @@ function launch(scenario: Scenario) {
   let running: typeof entry | null = scenario.runningElsewhere ? entry : null;
   let entrySeq = 1;
   const reopenListeners: (() => void)[] = [];
+  const reminderListeners: ((message: string) => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
   const completed: {
     id: string;
-    projectId: string;
+    projectId: string | null;
     durationSeconds: number;
   }[] = [];
   /** Seconds the running entry has on the server's books. */
@@ -133,6 +154,7 @@ function launch(scenario: Scenario) {
     },
     logout: () => Promise.resolve({ loggedIn: false }),
     tracking: {
+      projectsSetting: () => ok({ projectsEnabled: scenario.projectsEnabled ?? true }),
       listProjects: () => {
         calls.listProjects += 1;
         if (!server.revoked && calls.listProjects <= scenario.failingProjectLoads) {
@@ -141,10 +163,12 @@ function launch(scenario: Scenario) {
         return ok(scenario.projects ?? [PROJECT]);
       },
       listTasks: () => ok({ tasks: [] }),
-      start: () => {
+      start: (projectId: string | null) => {
         calls.start += 1;
+        calls.startedWith.push(projectId);
         const started = {
           ...entry,
+          projectId,
           id: `e${++entrySeq}`,
           startedAt: new Date(now()).toISOString(),
         };
@@ -177,6 +201,30 @@ function launch(scenario: Scenario) {
       resume: () => ok(entry),
       lastProject: () => Promise.resolve(null),
       entriesBetween: () => ok(completed),
+      // The server's overlap-aware totals; these scenarios never overlap, so
+      // a plain sum is what it would answer.
+      completedTotals: () => {
+        const byProject = new Map<string, number>();
+        for (const entry of completed) {
+          if (entry.projectId === null || entry.durationSeconds === null) continue;
+          byProject.set(
+            entry.projectId,
+            (byProject.get(entry.projectId) ?? 0) + entry.durationSeconds,
+          );
+        }
+        const workedSeconds = completed.reduce(
+          (sum, entry) => sum + (entry.durationSeconds ?? 0),
+          0,
+        );
+        return ok({
+          workedSeconds,
+          deviceSeconds: workedSeconds,
+          projects: [...byProject].map(([projectId, seconds]) => ({
+            projectId,
+            seconds,
+          })),
+        });
+      },
       idlePolicy: () => {
         calls.idlePolicy += 1;
         if (!server.revoked && calls.idlePolicy <= (scenario.failingIdlePolicyLoads ?? 0)) {
@@ -203,9 +251,13 @@ function launch(scenario: Scenario) {
       minimise: async () => {},
       show: async () => {},
       close: async () => {},
-      setCompact: async () => {},
+      setMode: async () => {},
+      compactAlwaysOnTop: () => Promise.resolve(true),
+      setCompactAlwaysOnTop: async () => {},
       onTrackingNotice: () => {},
-      onTrackingReminder: () => {},
+      onTrackingReminder: (listener: (message: string) => void) => {
+        reminderListeners.push(listener);
+      },
       onReopened: (listener: () => void) => {
         reopenListeners.push(listener);
       },
@@ -246,8 +298,22 @@ function launch(scenario: Scenario) {
     closePromptVisible: () => !document.getElementById('close-prompt')!.hidden,
     /** Main's signal that the window came back from the tray. */
     reopen: () => reopenListeners.forEach((listener) => listener()),
+    remind: (message: string) =>
+      reminderListeners.forEach((listener) => listener(message)),
+    shrinkToSmallest: () => {
+      document.getElementById('compact-button')!.click();
+      document.getElementById('compact-shrink')!.click();
+    },
+    reminderVisible: () =>
+      !document.getElementById('reminder-banner')!.hidden &&
+      !document.getElementById('full-view')!.hidden,
     isRunning: () => running !== null,
     projectCount: () => document.getElementById('project-count')!.textContent,
+    projectSectionsHidden: () =>
+      document.getElementById('search-section')!.hidden &&
+      document.getElementById('projects-section')!.hidden,
+    taskTriggerHidden: () => document.getElementById('task-trigger')!.hidden,
+    trackingName: () => document.getElementById('tracking-project-name')!.textContent,
     /** What the project row shows as tracked today. */
     projectTotal: (name: string) =>
       [...document.querySelectorAll('#project-list li')]
@@ -388,6 +454,17 @@ describe('renderer tracking setup recovers from a failed first load', () => {
 
     expect(app.projectCount()).toBe('1');
     expect(app.calls.start).toBe(0);
+    app.close();
+  });
+
+  it('shows the not-tracking reminder even from the smallest view', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+    app.shrinkToSmallest();
+
+    app.remind('You have not started tracking — 10 minutes untracked.');
+
+    expect(app.reminderVisible()).toBe(true);
     app.close();
   });
 
@@ -577,6 +654,56 @@ describe('renderer close prompt', () => {
     app.requestClose();
 
     expect(app.closePromptVisible()).toBe(true);
+    app.close();
+  });
+});
+
+describe('renderer with Projects turned off', () => {
+  /** There is no list to wait on, so setup is the first status poll answering. */
+  async function waitForSetupWithoutProjects(app: ReturnType<typeof launch>): Promise<void> {
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+  }
+
+  it('hides the project list, search and task picker', async () => {
+    const app = launch({ failingProjectLoads: 0, projectsEnabled: false });
+    await waitForSetupWithoutProjects(app);
+
+    expect(app.projectSectionsHidden()).toBe(true);
+    expect(app.taskTriggerHidden()).toBe(true);
+    expect(app.calls.listProjects).toBe(0);
+    app.close();
+  });
+
+  it('starts a timer with no project when play is pressed', async () => {
+    const app = launch({ failingProjectLoads: 0, projectsEnabled: false });
+    await waitForSetupWithoutProjects(app);
+    app.clickPlay();
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    expect(app.calls.startedWith).toEqual([null]);
+    expect(app.isRunning()).toBe(true);
+    expect(app.trackingError()).toBeNull();
+    app.close();
+  });
+
+  it('still shows the list and starts on a project when they are on', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await startTimer(app);
+
+    expect(app.projectSectionsHidden()).toBe(false);
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  it('names a timer that still carries an old project "Tracking time", never its id', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      projectsEnabled: false,
+      runningElsewhere: true,
+    });
+    await waitFor(() => app.isRunning() && !!app.trackingName());
+
+    expect(app.trackingName()).toBe('Tracking time');
     app.close();
   });
 });

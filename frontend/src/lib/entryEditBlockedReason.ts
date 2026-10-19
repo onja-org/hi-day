@@ -19,7 +19,7 @@ export function entryEditBlockedReason(entry: Gateable): string | undefined {
     return NO_MODIFY_TIME;
   }
   if (entry.endedAt === null && !entry.pausedAt) {
-    return "Pause or stop the timer first to edit this entry.";
+    return "Stop the timer first to edit this entry.";
   }
   return undefined;
 }

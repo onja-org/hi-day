@@ -72,14 +72,18 @@ function timeChange(seconds: number): string {
 export function buildManualTimeEditsTable(
   edits: ManualTimeEditFileRow[],
   zone: string,
+  /** Off for an Organisation without Projects: no project column. */
+  includeProject = true,
 ): ManualTimeEditsTable {
   return {
-    header: HEADER,
+    header: includeProject
+      ? HEADER
+      : HEADER.filter((name) => name !== 'Project / Work order'),
     body: edits.map((edit) => {
       const changedAt = new Date(edit.changedAt);
       return [
         edit.memberName ?? edit.memberEmail ?? '-',
-        edit.projectName ?? '-',
+        ...(includeProject ? [edit.projectName ?? '-'] : []),
         edit.taskName ?? '-',
         ACTION_LABELS[edit.action],
         timespan(edit.startedAt, edit.endedAt, zone),

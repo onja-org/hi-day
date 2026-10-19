@@ -1,6 +1,6 @@
 import { describeTimezone, detectTimezone } from "@/lib/timezone";
 import {
-  TIMESHEET_EXPORT_HEADER,
+  timesheetExportHeader,
   timesheetExportRows,
 } from "@/lib/timesheetExportRows";
 import { toPdfBlob } from "@/lib/toPdfBlob";
@@ -12,6 +12,8 @@ import type { TimeEntryListItem } from "@/types/timeEntry";
  * to a sliver. See `toPdfBlob`.
  */
 const WIDE_COLUMN_WIDTHS = { 1: 34, 2: 34 };
+/** With Projects off the Project column is gone, leaving only Task to pin. */
+const WIDE_COLUMN_WIDTHS_WITHOUT_PROJECTS = { 1: 34 };
 
 /**
  * The same rows as the CSV, with the zone named once in the title rather
@@ -22,11 +24,12 @@ export function entriesToPdf(
   title: string,
   entries: TimeEntryListItem[],
   zone: string = detectTimezone(),
+  projectsEnabled = true,
 ): Blob {
   return toPdfBlob(
     `${title} — times in ${describeTimezone(zone)}`,
-    TIMESHEET_EXPORT_HEADER,
-    timesheetExportRows(entries, zone),
-    WIDE_COLUMN_WIDTHS,
+    timesheetExportHeader(projectsEnabled),
+    timesheetExportRows(entries, zone, projectsEnabled),
+    projectsEnabled ? WIDE_COLUMN_WIDTHS : WIDE_COLUMN_WIDTHS_WITHOUT_PROJECTS,
   );
 }

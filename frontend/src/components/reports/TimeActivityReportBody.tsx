@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CaretUpIcon, ClockIcon, CreditCardIcon } from "@phosphor-icons/react";
 import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildTimeActivityChartRows } from "@/lib/buildTimeActivityChartRows";
 import { buildTimeActivityRows, totalEntrySeconds } from "@/lib/buildTimeActivityRows";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -42,6 +43,7 @@ function renderTeamCell(row: ReportTableRow) {
 }
 
 export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembers, zone }: TimeActivityReportBodyProps) {
+  const projectsEnabled = useProjectsEnabled();
   const [sumDates, setSumDates] = useState(false);
   const weekStart = useOrganisationWeekStart();
 
@@ -81,7 +83,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
 
       <ReportsTable
         key={grouping}
-        columns={timeActivityColumns(grouping).map((column) =>
+        columns={timeActivityColumns(grouping, projectsEnabled).map((column) =>
           column.key === "team" ? { ...column, renderCell: renderTeamCell } : column,
         )}
         rows={buildTimeActivityRows(entries, grouping, {

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { displayName } from './blind-browsers';
+import type { OpenProfiles } from './browser-profiles';
 
 /**
  * Restarting a blind browser so it comes back with an accessibility tree.
@@ -129,6 +130,18 @@ function unquote(token: string): string {
 }
 
 /**
+ * Which profile a Gecko browser was on, taken from its own argument vector.
+ * Firefox runs one process per profile and names it with `-P`, so unlike
+ * Chromium the live argv does say — see browser-profiles.ts for why the two
+ * engines need different answers.
+ */
+export function geckoProfileArguments(cmdline: string[]): string[] {
+  const flag = cmdline.findIndex((arg) => arg === '-P' || arg === '--profile');
+  const value = flag === -1 ? undefined : cmdline[flag + 1];
+  return value === undefined ? [] : ['--profile', value];
+}
+
+/**
  * The command line that relaunches a browser from its *activated* entry.
  *
  * Built from the override's own `Exec=`, not handed to `gio launch`, which
@@ -139,6 +152,7 @@ function unquote(token: string): string {
 export function relaunchCommand(
   activatedExec: string,
   command: string,
+  cmdline: string[] = [],
 ): { command: string; args: string[] } | null {
   const tokens = (activatedExec.match(/"[^"]*"|'[^']*'|\S+/g) ?? [])
     .map(unquote)
@@ -146,8 +160,41 @@ export function relaunchCommand(
   if (tokens.length === 0) return null;
 
   const args = tokens.slice(1);
-  if (!isGeckoBrowser(command)) args.push(CHROMIUM_RESTORE_FLAG);
+  if (isGeckoBrowser(command)) args.push(...geckoProfileArguments(cmdline));
+  else args.push(CHROMIUM_RESTORE_FLAG);
   return { command: tokens[0], args };
+}
+
+/**
+ * Every launch needed to put a browser back the way it was — one per open
+ * Chromium profile, and a single launch for everything else.
+ *
+ * Naming a profile is what stops the picker appearing: Chromium opens the
+ * profile it was given and asks nothing. The second and later launches are
+ * not new browsers — they reach the instance the first one started through
+ * its own singleton, which opens a window for that profile.
+ */
+export function relaunchCommands(
+  activatedExec: string,
+  command: string,
+  cmdline: string[] = [],
+  open: OpenProfiles = { userDataDir: null, profiles: [] },
+): { command: string; args: string[] }[] {
+  const base = relaunchCommand(activatedExec, command, cmdline);
+  if (!base) return [];
+  if (isGeckoBrowser(command) || open.profiles.length === 0) return [base];
+
+  // Only when they chose the location themselves: the path read back from
+  // /proc is the one the browser actually resolved, which for a snap or
+  // flatpak is not the one it would resolve again from inside its sandbox.
+  const args = cmdline.some((arg) => arg.startsWith('--user-data-dir=')) && open.userDataDir
+    ? [...base.args, `--user-data-dir=${open.userDataDir}`]
+    : base.args;
+
+  return open.profiles.map((profile) => ({
+    command: base.command,
+    args: [...args, `--profile-directory=${profile}`],
+  }));
 }
 
 /** The `Exec=` of an activated entry, or null when it has none. */

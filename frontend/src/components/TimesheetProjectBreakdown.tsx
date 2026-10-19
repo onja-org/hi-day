@@ -5,6 +5,7 @@ import { formatElapsed } from "@/lib/formatElapsed";
 import { fractionClass } from "@/lib/fractionClass";
 import type { ProjectColour } from "@/types/project";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { entryProjectColour, entryProjectName } from "@/lib/entryProjectDisplay";
 import { PROJECT_COLOUR_BG_CLASSES } from "./ProjectColourBadge";
 
 type TimesheetProjectBreakdownProps = {
@@ -21,15 +22,15 @@ type ProjectTotal = {
 export function TimesheetProjectBreakdown({ entries }: TimesheetProjectBreakdownProps) {
   const byProject = new Map<string, ProjectTotal>();
   for (const entry of entries) {
-    if (entry.durationSeconds === null) continue;
+    if (entry.durationSeconds === null || entry.projectId === null) continue;
     const existing = byProject.get(entry.projectId);
     if (existing) {
       existing.seconds += entry.durationSeconds;
     } else {
       byProject.set(entry.projectId, {
         projectId: entry.projectId,
-        projectName: entry.projectName,
-        projectColour: entry.projectColour,
+        projectName: entryProjectName(entry),
+        projectColour: entryProjectColour(entry),
         seconds: entry.durationSeconds,
       });
     }

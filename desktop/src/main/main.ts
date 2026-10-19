@@ -9,6 +9,7 @@ import {
   nativeImage,
   Notification,
   powerMonitor,
+  screen,
   shell,
   systemPreferences,
   Tray,
@@ -30,6 +31,7 @@ import { PendingTimerOps } from "./pending-timer-ops";
 import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
+import { recordingIndicatorFor } from "./recording-indicator";
 import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
 import { shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
@@ -69,6 +71,8 @@ import {
   markWaylandScreenshotGranted,
   rememberCloseAction,
   cacheReminderSettings,
+  compactAlwaysOnTop,
+  setCompactAlwaysOnTop,
   cachedReminderSettings,
   rememberedCloseAction,
 } from "./setup-state";
@@ -209,6 +213,14 @@ interface CapturePermissionStatus {
 // "new" device.
 app.setName("Hi Day");
 
+// A dev run gets its own userData, so it never competes with an installed
+// build for the single-instance lock. Without this, `pnpm dev` loses the
+// lock to the packaged app autostarted at login and merely raises that
+// window — which looks exactly like the dev build failing to start.
+if (!app.isPackaged) {
+  app.setPath("userData", join(app.getPath("appData"), "Hi Day (dev)"));
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /**
@@ -221,6 +233,9 @@ let isQuitting = false;
 /** The tracker's two fixed sizes: the full window and the compact bar. */
 const FULL_WINDOW_SIZE = { width: 360, height: 600 };
 const COMPACT_WINDOW_SIZE = { width: 360, height: 72 };
+const MINI_WINDOW_SIZE = { width: 68, height: 68 };
+
+type WindowMode = "full" | "compact" | "mini";
 let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -443,7 +458,13 @@ function createWindow(): void {
     fullscreenable: false,
     // The renderer draws its own title bar (drag region, minimise, close).
     frame: false,
-    backgroundColor: "#f8f6f1",
+    // Lets the smallest view be a rounded square with nothing behind
+    // its corners; every other view paints its own background.
+    transparent: true,
+    backgroundColor: "#00000000",
+    // A shadow is drawn round the window box, not the rounded square
+    // inside it, which would ring the smallest view in grey.
+    hasShadow: false,
     // Window/taskbar icon. Only Linux reads it — Windows and macOS take the
     // packaged app's icon (electron-builder.yml) — but setting it always
     // also gives `pnpm dev` the right icon instead of Electron's default.
@@ -471,6 +492,21 @@ function createWindow(): void {
   });
 }
 
+/**
+ * `focus()` is refused from a process that does not own the foreground —
+ * the tray-click case — leaving the window restored but behind
+ * everything; an always-on-top pass is what actually raises it. Restores
+ * whatever pinning was in force, since the smaller bars pin on purpose.
+ */
+function forceToFront(): void {
+  if (!mainWindow) return;
+  const pinned = mainWindow.isAlwaysOnTop();
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.moveTop();
+  if (!pinned) mainWindow.setAlwaysOnTop(false);
+  mainWindow.focus();
+}
+
 function showMainWindow(): void {
   if (!mainWindow) {
     createWindow();
@@ -478,7 +514,7 @@ function showMainWindow(): void {
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
-  mainWindow.focus();
+  forceToFront();
 }
 
 /**
@@ -513,16 +549,89 @@ function applyCloseAction(action: CloseAction): void {
   else mainWindow?.hide();
 }
 
-/** Swaps between the full window and the always-on-top compact bar. */
-function setCompactWindow(compact: boolean): void {
+const WINDOW_SIZES = {
+  full: FULL_WINDOW_SIZE,
+  compact: COMPACT_WINDOW_SIZE,
+  mini: MINI_WINDOW_SIZE,
+} as const;
+
+let windowMode: WindowMode = "full";
+
+/** `setContentSize` keeps the top-left fixed, so shrinking must put the
+ * widget back where they had it, not where the big window sat. */
+let smallViewPosition: { x: number; y: number } | null = null;
+
+function clampToDisplay(x: number, y: number, width: number, height: number) {
+  const area = screen.getDisplayMatching({ x, y, width, height }).workArea;
+  return {
+    x: Math.round(
+      Math.min(Math.max(x, area.x), Math.max(area.x, area.x + area.width - width)),
+    ),
+    y: Math.round(
+      Math.min(Math.max(y, area.y), Math.max(area.y, area.y + area.height - height)),
+    ),
+  };
+}
+
+function setWindowMode(mode: WindowMode, centre = false): void {
+  const leavingSmallView = windowMode !== "full" && mode === "full";
+  if (leavingSmallView && mainWindow) {
+    const [x, y] = mainWindow.getPosition();
+    smallViewPosition = { x, y };
+  }
+
+  windowMode = mode;
   if (!mainWindow) return;
-  const size = compact ? COMPACT_WINDOW_SIZE : FULL_WINDOW_SIZE;
+  const size = WINDOW_SIZES[mode];
   // Some window managers ignore a programmatic resize on a non-resizable
   // window, so it is unlocked just for the resize.
   mainWindow.setResizable(true);
   mainWindow.setContentSize(size.width, size.height);
   mainWindow.setResizable(false);
-  mainWindow.setAlwaysOnTop(compact, "floating");
+  positionForMode(mode, centre);
+  // A resize can leave a platform repainting the creation colour behind
+  // the page, framing the rounded square in chalk.
+  mainWindow.setBackgroundColor(mode === "mini" ? "#00000000" : "#f8f6f1");
+  applyPinning();
+}
+
+function positionForMode(mode: WindowMode, centre: boolean): void {
+  if (!mainWindow) return;
+  const [x, y] = mainWindow.getPosition();
+  const { width, height } = mainWindow.getBounds();
+
+  if (mode === "full" && centre) {
+    // Centred on the display the widget was on, not the primary one.
+    const area = screen.getDisplayMatching({ x, y, width, height }).workArea;
+    const placed = clampToDisplay(
+      area.x + Math.round((area.width - width) / 2),
+      area.y + Math.round((area.height - height) / 2),
+      width,
+      height,
+    );
+    mainWindow.setPosition(placed.x, placed.y);
+    return;
+  }
+
+  if (mode !== "full" && smallViewPosition) {
+    const placed = clampToDisplay(
+      smallViewPosition.x,
+      smallViewPosition.y,
+      width,
+      height,
+    );
+    mainWindow.setPosition(placed.x, placed.y);
+  }
+}
+
+/** The smallest view is always on top — lost behind an editor it is no
+ * use at all. The compact bar asks; the full window never pins. */
+function applyPinning(): void {
+  if (!mainWindow) return;
+  const pinned =
+    windowMode === "mini" ||
+    (windowMode === "compact" && compactAlwaysOnTop(app.getPath("userData")));
+  mainWindow.setAlwaysOnTop(pinned, "floating");
 }
 
 /**
@@ -533,12 +642,41 @@ function setCompactWindow(compact: boolean): void {
 function createTray(): void {
   const iconSize = process.platform === "win32" ? 16 : 22;
   const image = nativeImage
-    .createFromPath(join(__dirname, "assets/icon.png"))
+    .createFromPath(join(__dirname, "assets/icon-idle.png"))
     .resize({ width: iconSize, height: iconSize });
   tray = new Tray(image);
   tray.setToolTip("Hi Day");
   refreshTrayMenu();
   tray.on("click", reopenMainWindow);
+}
+
+/** Best-effort: an icon that will not load must never take the app
+ * down with it. */
+function applyRecordingIndicator(isRecording: boolean): void {
+  const indicator = recordingIndicatorFor(process.platform, isRecording);
+  const load = (file: string) =>
+    nativeImage.createFromPath(join(__dirname, "assets", file));
+
+  try {
+    if (tray) {
+      const size = process.platform === "win32" ? 16 : 22;
+      tray.setImage(
+        load(indicator.trayIcon).resize({ width: size, height: size }),
+      );
+      tray.setToolTip(indicator.tooltip);
+    }
+    if (mainWindow && process.platform === "win32") {
+      mainWindow.setOverlayIcon(
+        indicator.overlayIcon
+          ? load(indicator.overlayIcon).resize({ width: 16, height: 16 })
+          : null,
+        indicator.tooltip,
+      );
+    }
+    if (process.platform === "darwin") app.dock?.setBadge(indicator.dockBadge);
+  } catch (error) {
+    console.log(`[recording-indicator] skipped: ${String(error)}`);
+  }
 }
 
 function refreshTrayMenu(): void {
@@ -802,17 +940,12 @@ async function registerIpcHandlers(): Promise<void> {
    * plain `show()` is ignored; and a flashing taskbar entry as the last
    * resort, cleared once the window is actually looked at.
    */
-  /**
-   * A brief always-on-top pass, which is what actually raises the window
-   * when a plain `show()` is ignored, and a flashing taskbar entry as the
-   * last resort — a window manager is free to refuse either.
-   */
+  /** showMainWindow already fights for the foreground; this adds a
+   * flashing taskbar entry for the manager that refuses even that. */
   function raiseWindowInsistently(): void {
     showMainWindow();
     if (!mainWindow) return;
 
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setAlwaysOnTop(false);
     mainWindow.flashFrame(true);
 
     // Deferred: raising the window above fires `focus` itself, and
@@ -846,39 +979,31 @@ async function registerIpcHandlers(): Promise<void> {
    * timer stopping, or the last reminder. */
   let untrackedSince = new Date();
 
-  function describeLateness(minutes: number): string {
-    if (minutes < 60) return `${minutes} minutes`;
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-    const hoursPart = `${hours} hour${hours === 1 ? "" : "s"}`;
-    return rest === 0 ? hoursPart : `${hoursPart} ${rest} min`;
-  }
-
   function deliverReminder(
-    delivery: string,
+    settings: ReminderSettings,
     untrackedMinutes: number,
     signedOut: boolean,
   ): void {
-    const how = describeLateness(untrackedMinutes);
-    const body = signedOut
-      ? `Open Hi Day and log in to start tracking — ${how} untracked.`
-      : `You have not started tracking — ${how} untracked.`;
-
-    if (delivery === "alert") {
-      // The modal is the interruption; raising is only what puts it in
-      // front of the person.
-      mainWindow?.webContents.send("tracking:reminder", body);
+    if (settings.delivery === "alert") {
+      // The renderer composes the wording: only it knows how much was
+      // tracked today, which decides what the reminder can honestly say.
+      mainWindow?.webContents.send("tracking:reminder", {
+        untrackedMinutes,
+        signedOut,
+        workingHoursPerDay: settings.workingHoursPerDay,
+      });
       raiseWindowInsistently();
       return;
     }
 
     if (!Notification.isSupported()) return;
-    // Never steals focus, but still opens the app when clicked — a
-    // reminder nobody can act on is no reminder at all.
+    // One line, so the tray popup says the one thing that matters.
     trackingNotification?.close();
     trackingNotification = new Notification({
       title: "Not tracking time",
-      body,
+      body: signedOut
+        ? "Open Hi Day and log in to start tracking."
+        : "You're not tracking time.",
     });
     trackingNotification.on("click", showMainWindow);
     trackingNotification.show();
@@ -906,7 +1031,7 @@ async function registerIpcHandlers(): Promise<void> {
       (now.getTime() - untrackedSince.getTime()) / 60_000,
     );
     untrackedSince = now;
-    deliverReminder(settings.delivery, untrackedMinutes, signedOut);
+    deliverReminder(settings, untrackedMinutes, signedOut);
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
@@ -933,6 +1058,7 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      applyRecordingIndicator(running);
       // Restart the reminder clock on any change, so stopping for lunch
       // buys a full interval of quiet rather than a nudge seconds later.
       untrackedSince = new Date();
@@ -1101,6 +1227,10 @@ async function registerIpcHandlers(): Promise<void> {
   };
   setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 
+  ipcMain.handle("tracking:projectsSetting", () =>
+    callDeviceApi((token) => apiClient.getProjectsSetting(token)),
+  );
+
   ipcMain.handle("tracking:listProjects", () =>
     callDeviceApi((token) => apiClient.listProjects(token)),
   );
@@ -1116,14 +1246,16 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:start",
     async (
       _event,
-      projectId: string,
+      projectId: string | null,
       taskId: string | null,
       startedAt?: string,
     ) => {
       const result = await callDeviceApi((token) =>
         pendingOps.start(token, projectId, taskId, apiClient, startedAt),
       );
-      if (result.ok) authStore.rememberProject(projectId, taskId);
+      if (result.ok && projectId !== null) {
+        authStore.rememberProject(projectId, taskId);
+      }
       // Instant local feedback for window tracking rather than waiting on
       // TimerStatusGate's poll; the periodic poll still covers a timer
       // started or stopped elsewhere.
@@ -1134,11 +1266,13 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle(
     "tracking:switch",
-    async (_event, projectId: string, taskId: string | null) => {
+    async (_event, projectId: string | null, taskId: string | null) => {
       const result = await callDeviceApi((token) =>
         pendingOps.switchTo(token, projectId, taskId, apiClient),
       );
-      if (result.ok) authStore.rememberProject(projectId, taskId);
+      if (result.ok && projectId !== null) {
+        authStore.rememberProject(projectId, taskId);
+      }
       void timerStatusGate.pollOnce();
       return result;
     },
@@ -1187,6 +1321,12 @@ async function registerIpcHandlers(): Promise<void> {
     "tracking:entriesBetween",
     (_event, from: string, to: string) =>
       callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+  );
+
+  ipcMain.handle(
+    "tracking:completedTotals",
+    (_event, from: string, to: string) =>
+      callDeviceApi((token) => apiClient.getCompletedTotals(token, from, to)),
   );
 
   ipcMain.handle("tracking:idlePolicy", () =>
@@ -1362,9 +1502,25 @@ async function registerIpcHandlers(): Promise<void> {
     },
   );
 
-  ipcMain.handle("window:setCompact", (_event, compact: boolean): void => {
-    setCompactWindow(compact);
-  });
+  ipcMain.handle(
+    "window:compactAlwaysOnTop",
+    (): boolean => compactAlwaysOnTop(app.getPath("userData")),
+  );
+
+  ipcMain.handle(
+    "window:setCompactAlwaysOnTop",
+    (_event, pinned: boolean): void => {
+      setCompactAlwaysOnTop(app.getPath("userData"), pinned);
+      applyPinning();
+    },
+  );
+
+  ipcMain.handle(
+    "window:setMode",
+    (_event, mode: WindowMode, centre?: boolean): void => {
+      setWindowMode(mode, centre === true);
+    },
+  );
 
   ipcMain.handle(
     "setup:browserRestartPrompt",

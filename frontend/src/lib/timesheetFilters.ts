@@ -3,6 +3,7 @@ import type {
   TimeEntrySource,
   TimeEntryType,
 } from "@/types/timeEntry";
+import { entryProjectName } from "@/lib/entryProjectDisplay";
 
 /**
  * Everything the filter panel narrows a timesheet by, other than the member
@@ -67,7 +68,8 @@ export function filterTimeEntries(
   return entries.filter(
     (entry) =>
       (filters.projectIds.length === 0 ||
-        filters.projectIds.includes(entry.projectId)) &&
+        (entry.projectId !== null &&
+          filters.projectIds.includes(entry.projectId))) &&
       (filters.sources.length === 0 || filters.sources.includes(entry.source)) &&
       (filters.timeTypes.length === 0 || filters.timeTypes.includes(entry.type)) &&
       matchesActivity(entry, filters.minActivePercentage),
@@ -95,8 +97,8 @@ export function projectFilterOptions(
   for (const entry of entries) {
     // Only when absent: the assigned list is the authoritative name, and an
     // entry's copy could be stale after a rename.
-    if (!byId.has(entry.projectId)) {
-      byId.set(entry.projectId, entry.projectName);
+    if (entry.projectId !== null && !byId.has(entry.projectId)) {
+      byId.set(entry.projectId, entryProjectName(entry));
     }
   }
   return [...byId.entries()]

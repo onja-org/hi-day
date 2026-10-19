@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { formatShortDate } from "@/lib/formatShortDate";
 import { getInitials } from "@/lib/getInitials";
@@ -20,6 +21,7 @@ type InvitationRowProps = {
 };
 
 export function InvitationRow({ organisationId, invitation, teamNames }: InvitationRowProps) {
+  const projectsEnabled = useProjectsEnabled();
   const queryClient = useQueryClient();
 
   function invalidate() {
@@ -63,9 +65,11 @@ export function InvitationRow({ organisationId, invitation, teamNames }: Invitat
           })}
         />
       </td>
-      <td className="hidden px-4 py-3 text-slate-900 md:table-cell">
-        {invitation.projectIds.length}
-      </td>
+      {projectsEnabled && (
+        <td className="hidden px-4 py-3 text-slate-900 md:table-cell">
+          {invitation.projectIds.length}
+        </td>
+      )}
       <td className="hidden px-4 py-3 whitespace-nowrap text-slate-900 lg:table-cell">
         {formatShortDate(invitation.createdAt)}
       </td>

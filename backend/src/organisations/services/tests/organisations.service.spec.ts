@@ -48,9 +48,10 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Membership>;
   }
 
-  function makeTimeEntriesService(): TimeEntriesService {
+  function makeTimeEntriesService(runningOnProjects = 0): TimeEntriesService {
     return {
       stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
+      countRunningOnProjects: jest.fn().mockResolvedValue(runningOnProjects),
     } as unknown as TimeEntriesService;
   }
 
@@ -204,6 +205,7 @@ describe('OrganisationsService', () => {
         weekStartsOn: 'monday',
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
+        projectsEnabled: false,
         workTimeLimits: {
           expectedWorkDays: [1, 2, 3, 4, 5],
           trackingDisabledDays: [],
@@ -299,7 +301,11 @@ describe('OrganisationsService', () => {
     it('is off until an admin opts in, and raises the window when it does fire', async () => {
       await expect(
         makeService({}).getTrackingReminders('org-1'),
-      ).resolves.toEqual({ intervalMinutes: 0, delivery: 'alert' });
+      ).resolves.toEqual({
+        intervalMinutes: 0,
+        delivery: 'alert',
+        workingHoursPerDay: 8,
+      });
     });
 
     it('carries the interval and delivery an admin chose', async () => {
@@ -308,7 +314,11 @@ describe('OrganisationsService', () => {
           reminderIntervalMinutes: 15,
           reminderDelivery: 'notification',
         }).getTrackingReminders('org-1'),
-      ).resolves.toEqual({ intervalMinutes: 15, delivery: 'notification' });
+      ).resolves.toEqual({
+        intervalMinutes: 15,
+        delivery: 'notification',
+        workingHoursPerDay: 8,
+      });
     });
   });
 
@@ -605,6 +615,92 @@ describe('OrganisationsService', () => {
       expect(profile.taxId).toBe('GB123456789');
       expect(profile.weekStartsOn).toBe('sunday');
       expect(profile.timezone).toBe('Africa/Nairobi');
+    });
+
+    it('reads projects as off until an admin enables them', async () => {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: {},
+      } as unknown as Organisation;
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+      );
+
+      expect(await service.getProjectsEnabled('org-1')).toBe(false);
+
+      const profile = await service.updateProfile('org-1', 'user-1', {
+        projectsEnabled: true,
+      });
+
+      expect(profile.projectsEnabled).toBe(true);
+      expect(await service.getProjectsEnabled('org-1')).toBe(true);
+    });
+
+    describe('turning projects off', () => {
+      function serviceFor(settings: object, running: number) {
+        const organisation = {
+          id: 'org-1',
+          publicId: 100000,
+          name: 'Acme Inc',
+          settings,
+        } as unknown as Organisation;
+        const save = jest.fn((entity: unknown) => Promise.resolve(entity));
+        const service = new OrganisationsService(
+          makeOrganisationsRepo({
+            findOneOrFail: jest.fn().mockResolvedValue(organisation),
+            save,
+          } as unknown as Partial<Repository<Organisation>>),
+          makeMembershipsRepo(),
+          makeTeamsRepo(),
+          makeAuditLogService().auditLogService,
+          makeTimeEntriesService(running),
+        );
+        return { service, save };
+      }
+
+      it('refuses while a timer is still running on a project', async () => {
+        const { service, save } = serviceFor({ projectsEnabled: true }, 2);
+
+        await expect(
+          service.updateProfile('org-1', 'user-1', { projectsEnabled: false }),
+        ).rejects.toThrow(/2 timers are running/);
+        expect(save).not.toHaveBeenCalled();
+      });
+
+      it('turns them off once nothing is running on one', async () => {
+        const { service } = serviceFor({ projectsEnabled: true }, 0);
+
+        const profile = await service.updateProfile('org-1', 'user-1', {
+          projectsEnabled: false,
+        });
+
+        expect(profile.projectsEnabled).toBe(false);
+      });
+
+      it('does not check when they are already off, or being turned on', async () => {
+        const alreadyOff = serviceFor({}, 3);
+        await expect(
+          alreadyOff.service.updateProfile('org-1', 'user-1', {
+            projectsEnabled: false,
+          }),
+        ).resolves.toBeDefined();
+
+        const turningOn = serviceFor({ projectsEnabled: false }, 3);
+        await expect(
+          turningOn.service.updateProfile('org-1', 'user-1', {
+            projectsEnabled: true,
+          }),
+        ).resolves.toBeDefined();
+      });
     });
 
     it('clears an optional profile field when sent an empty value', async () => {

@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { deleteTeam } from "@/lib/deleteTeam";
 import { matchesSearch } from "@/lib/matchesSearch";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -18,6 +19,7 @@ type TeamsListProps = {
 };
 
 export function TeamsList({ organisationId, search }: TeamsListProps) {
+  const projectsEnabled = useProjectsEnabled();
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
   const invalidate = useInvalidateTeams(organisationId);
@@ -63,7 +65,9 @@ export function TeamsList({ organisationId, search }: TeamsListProps) {
           <tr className="border-b border-input-border text-primary-dark">
             <th className="px-4 py-3 font-semibold">Name</th>
             <th className="hidden px-4 py-3 font-semibold sm:table-cell">Members</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            {projectsEnabled && (
+              <th className="hidden px-4 py-3 font-semibold md:table-cell">Projects</th>
+            )}
             <th className="px-4 py-3 font-semibold">
               <span className="sr-only">Actions</span>
             </th>
@@ -85,7 +89,7 @@ export function TeamsList({ organisationId, search }: TeamsListProps) {
           ))}
           {teams.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-8 text-center text-slate-900">
+              <td colSpan={projectsEnabled ? 4 : 3} className="px-4 py-8 text-center text-slate-900">
                 {teamsQuery.data.length === 0 ? "No teams yet." : "No teams match your search."}
               </td>
             </tr>

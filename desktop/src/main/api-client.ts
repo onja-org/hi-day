@@ -63,7 +63,8 @@ export interface TrackedTask {
 
 export interface TimeEntry {
   id: string;
-  projectId: string;
+  /** null when the organisation doesn't track time against Projects. */
+  projectId: string | null;
   taskId: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -74,9 +75,17 @@ export interface TimeEntry {
 }
 
 /** One completed/running entry as the agent needs it — just enough to total by Project. */
+/** Time worked beyond what the open entries cover; the live clock adds those. */
+export interface CompletedTotals {
+  workedSeconds: number;
+  /** This device's own entries alone, on the same baseline. */
+  deviceSeconds: number;
+  projects: { projectId: string; seconds: number }[];
+}
+
 export interface TrackedEntry {
   id: string;
-  projectId: string;
+  projectId: string | null;
   durationSeconds: number | null;
 }
 
@@ -255,6 +264,13 @@ export class ApiClient {
     }
   }
 
+  /** Whether to offer a Project picker, or just a timer. */
+  getProjectsSetting(
+    deviceToken: string,
+  ): Promise<TrackingResult<{ projectsEnabled: boolean }>> {
+    return this.deviceRequest('GET', '/device/projects-setting', deviceToken);
+  }
+
   listProjects(deviceToken: string): Promise<TrackingResult<TrackedProject[]>> {
     return this.deviceRequest('GET', '/device/projects', deviceToken);
   }
@@ -272,14 +288,17 @@ export class ApiClient {
 
   startTimer(
     deviceToken: string,
-    projectId: string,
+    /** null when the organisation doesn't track time against Projects. */
+    projectId: string | null,
     taskId: string | null,
     /** When start was really pressed, for a start made while offline. */
     startedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest(
       'POST',
-      `/device/projects/${projectId}/time-entries/start`,
+      projectId === null
+        ? '/device/time-entries/start'
+        : `/device/projects/${projectId}/time-entries/start`,
       deviceToken,
       { ...(taskId ? { taskId } : {}), ...(startedAt ? { startedAt } : {}) },
     );
@@ -287,11 +306,11 @@ export class ApiClient {
 
   switchTimer(
     deviceToken: string,
-    projectId: string,
+    projectId: string | null,
     taskId: string | null,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest('POST', '/device/time-entries/switch', deviceToken, {
-      projectId,
+      ...(projectId ? { projectId } : {}),
       ...(taskId ? { taskId } : {}),
     });
   }
@@ -341,6 +360,15 @@ export class ApiClient {
   ): Promise<TrackingResult<TrackedEntry[]>> {
     const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
     return this.deviceRequest('GET', `/device/time-entries${query}`, deviceToken);
+  }
+
+  getCompletedTotals(
+    deviceToken: string,
+    from: string,
+    to: string,
+  ): Promise<TrackingResult<CompletedTotals>> {
+    const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.deviceRequest('GET', `/device/time-entries/totals${query}`, deviceToken);
   }
 
   postAppEvents(

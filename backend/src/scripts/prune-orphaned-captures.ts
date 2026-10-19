@@ -7,7 +7,7 @@ import dataSource from '../database/data-source';
  * attributed to a Membership and a moment, and the read side works out which
  * entry covered them. Entries deleted or shortened before
  * `CaptureCleanupService` was added therefore left captures behind, which
- * the Activity views label "Untracked".
+ * the Activity views label "No project".
  *
  * Reports counts and exits unless `--apply` is passed. Run it, read the
  * numbers, then run it again to delete:

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { XIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import {
   ACTIVITY_LEVEL_THRESHOLDS,
   EMPTY_TIMESHEET_FILTERS,
@@ -81,6 +82,7 @@ export function TimesheetFilterPanel({
   canViewOthers,
   onClose,
 }: TimesheetFilterPanelProps) {
+  const projectsEnabled = useProjectsEnabled();
   const panelRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(true, [panelRef], onClose);
 
@@ -133,15 +135,17 @@ export function TimesheetFilterPanel({
         </div>
       )}
 
-      <MultiSelectFilter
-        label="Project / work order"
-        placeholder="All projects / work orders"
-        options={projectOptions}
-        selected={filters.projectIds}
-        onChange={(projectIds) => onChange({ ...filters, projectIds })}
-        searchable
-        emptyLabel="You're not assigned to any projects."
-      />
+      {projectsEnabled && (
+        <MultiSelectFilter
+          label="Project / work order"
+          placeholder="All projects / work orders"
+          options={projectOptions}
+          selected={filters.projectIds}
+          onChange={(projectIds) => onChange({ ...filters, projectIds })}
+          searchable
+          emptyLabel="You're not assigned to any projects."
+        />
+      )}
 
       <MultiSelectFilter
         label="Time type"

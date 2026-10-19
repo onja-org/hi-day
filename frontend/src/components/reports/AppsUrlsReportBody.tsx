@@ -2,7 +2,8 @@
 
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { SelectField } from "@/components/ui/form/SelectField";
-import { APPS_URLS_GROUPINGS, appsUrlsColumns } from "@/lib/appsUrlsReportConfig";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
+import { appsUrlsColumns, appsUrlsGroupings } from "@/lib/appsUrlsReportConfig";
 import type { AppsUrlsGrouping } from "@/types/appsUrlsReport";
 import type { ReportTableRow } from "@/types/reportTable";
 import { PercentUsedCell } from "./PercentUsedCell";
@@ -23,7 +24,8 @@ export function AppsUrlsReportBody({
   search,
   onSearchChange,
 }: AppsUrlsReportBodyProps) {
-  const columns = appsUrlsColumns(grouping).map((column) =>
+  const projectsEnabled = useProjectsEnabled();
+  const columns = appsUrlsColumns(grouping, projectsEnabled).map((column) =>
     column.key === "percent"
       ? { ...column, renderCell: (row: ReportTableRow) => <PercentUsedCell value={row.cells.percent as string | undefined} /> }
       : column,
@@ -38,20 +40,20 @@ export function AppsUrlsReportBody({
           onChange={(event) => onGroupingChange(event.target.value as AppsUrlsGrouping)}
           className="w-fit"
         >
-          {APPS_URLS_GROUPINGS.map((option) => (
+          {appsUrlsGroupings(projectsEnabled).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </SelectField>
         <label className="relative flex items-center">
-          <span className="sr-only">Search apps and sites</span>
+          <span className="sr-only">{projectsEnabled ? "Search apps, sites or projects" : "Search apps and sites"}</span>
           <MagnifyingGlassIcon size={16} aria-hidden="true" className="absolute left-3 text-icon" />
           <input
             type="search"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search"
+            placeholder={projectsEnabled ? "Search apps, sites or projects" : "Search apps and sites"}
             className="h-11 w-full rounded-full border-2 border-ink bg-white pr-4 pl-9 text-sm text-slate-900 sm:w-64"
           />
         </label>

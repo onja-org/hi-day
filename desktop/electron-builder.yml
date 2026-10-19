@@ -197,4 +197,4 @@ deb:
 publish:
   provider: github
   owner: onja-org
-  repo: workfoce-monitoring-app-releases
+  repo: hi-day-releases

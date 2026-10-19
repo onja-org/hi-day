@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ExportButtons } from "@/components/ExportButtons";
 import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildTimeActivityAttachment } from "@/lib/buildTimeActivityAttachment";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
@@ -63,6 +64,7 @@ export function TimeActivityReportActions({
   savedReport,
   onPersist,
 }: TimeActivityReportActionsProps) {
+  const projectsEnabled = useProjectsEnabled();
   // Set while the schedule modal is open, carrying the name already typed in the save modal.
   const [scheduleFor, setScheduleFor] = useState<{ name: string } | null>(null);
   const weekStart = useOrganisationWeekStart();
@@ -76,14 +78,14 @@ export function TimeActivityReportActions({
       filenameBase,
       isEmpty: !entries || entries.length === 0,
       buildContent: (fileType, title) =>
-        buildTimeActivityAttachment(fileType, { entries: entries ?? [], grouping, teamNames, idleMembers, zone, title, weekStart }),
+        buildTimeActivityAttachment(fileType, { entries: entries ?? [], grouping, teamNames, idleMembers, zone, title, weekStart, projectsEnabled }),
     });
   }
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <ExportButtons
-        csv={entriesToCsv(entries ?? [], zone)}
+        csv={entriesToCsv(entries ?? [], zone, projectsEnabled)}
         filenameBase={filenameBase}
         disabled={(entries ?? []).length === 0}
       />

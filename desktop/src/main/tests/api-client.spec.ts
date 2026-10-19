@@ -131,3 +131,46 @@ describe('ApiClient device requests — unauthorized detection', () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe('ApiClient timers without a project', () => {
+  function stubOk() {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'e1' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('starts on the project-less route when no project is given', async () => {
+    const fetchMock = stubOk();
+
+    await new ApiClient(BASE_URL).startTimer('t', null, null);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/device/time-entries/start`);
+  });
+
+  it('still starts on the project route when one is given', async () => {
+    const fetchMock = stubOk();
+
+    await new ApiClient(BASE_URL).startTimer('t', 'p1', null);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/device/projects/p1/time-entries/start`);
+  });
+
+  it('leaves the project out of a switch body when there is none', async () => {
+    const fetchMock = stubOk();
+
+    await new ApiClient(BASE_URL).switchTimer('t', null, null);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify({}));
+  });
+
+  it('reads the projects setting from its own endpoint', async () => {
+    const fetchMock = stubOk();
+
+    await new ApiClient(BASE_URL).getProjectsSetting('t');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/device/projects-setting`);
+  });
+});

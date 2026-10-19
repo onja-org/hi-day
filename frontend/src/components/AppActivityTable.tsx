@@ -1,3 +1,4 @@
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import type { AppHourBucket } from "@/types/appActivity";
 import { ActivityBucketTable } from "@/components/ActivityBucketTable";
 import { AppActivityHourSection } from "@/components/AppActivityHourSection";
@@ -16,10 +17,12 @@ export function AppActivityTable({
   organisationId,
   buckets,
 }: AppActivityTableProps) {
+  const projectsEnabled = useProjectsEnabled();
+
   return (
     <ActivityBucketTable
       columns={[
-        { label: "Project" },
+        ...(projectsEnabled ? [{ label: "Project" }] : []),
         { label: "App" },
         { label: "Time spent", align: "right" },
         { label: "Sessions", align: "right" },

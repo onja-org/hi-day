@@ -1,6 +1,8 @@
 import { useQueries } from "@tanstack/react-query";
 import { TIME_ENTRIES_QUERY_KEY } from "@/hooks/useTimeEntries";
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { getTimeEntries } from "@/lib/getTimeEntries";
+import { hideEntryProjects } from "@/lib/hideEntryProjects";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
 /**
@@ -16,6 +18,8 @@ export function useAllMembersTimeEntries(
   range: { from: Date; to: Date },
   enabled: boolean,
 ) {
+  const projectsEnabled = useProjectsEnabled();
+
   return useQueries({
     queries: membershipIds.map((membershipId) => ({
       queryKey: TIME_ENTRIES_QUERY_KEY(organisationId, { membershipId, ...range }),
@@ -25,6 +29,8 @@ export function useAllMembersTimeEntries(
         return result.entries;
       },
       enabled,
+      select: (entries: TimeEntryListItem[]) =>
+        projectsEnabled ? entries : hideEntryProjects(entries),
     })),
     combine: (results) => ({
       data: results.every((result) => result.data)
