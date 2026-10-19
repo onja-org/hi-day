@@ -8,15 +8,18 @@ import {
 } from '../linux-scheme-handler';
 
 describe('registerAppImageSchemeHandler', () => {
+  const originalPlatform = process.platform;
   let dataHome: string;
   let env: NodeJS.ProcessEnv;
 
   beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
     dataHome = mkdtempSync(join(tmpdir(), 'hiday-scheme-'));
     env = { XDG_DATA_HOME: dataHome, APPIMAGE: '/home/someone/Hi Day.AppImage' };
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
     rmSync(dataHome, { recursive: true, force: true });
   });
 
