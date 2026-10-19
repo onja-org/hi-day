@@ -1,10 +1,17 @@
 import { EyeIcon, ProhibitIcon, UsersIcon } from "@phosphor-icons/react/dist/ssr";
 import { LandingTransparencyCard } from "./LandingTransparencyCard";
 
-// Matches the product's defaults: app/website tracking and activity level
-// are on but only while the timer runs, screenshots are off until an admin
-// enables them, and idle time is flagged rather than removed (see
-// backend/src/organisations/capture-settings.ts and idle-policy.ts).
+// Matches the product's defaults: window/app tracking (including window
+// titles, see desktop/src/main/window-sample.ts) and activity level are on
+// but only while the timer runs, screenshots are off until an admin enables
+// them and then run at the interval the org sets
+// (backend/src/organisations/capture-settings.ts), and idle time follows the
+// org's idle policy (backend/src/organisations/idle-policy.ts).
+//
+// Deliberately absent: any blanket "private browser windows aren't
+// recorded" claim. Only macOS detects private windows; on Linux and Windows
+// private-window URLs are captured (see URL_TRACKING_CONTEXT.md, "private
+// === null is now the norm"), so a blanket claim here would be false.
 export function LandingTransparency() {
   return (
     <section id="monitoring" className="border-b-3 border-ink bg-sun">
@@ -16,8 +23,7 @@ export function LandingTransparency() {
           </h2>
           <p className="text-lg">
             We know monitoring isn&apos;t everyone&apos;s favourite topic, but we also know it helps.
-            Hi Day gives managers what they need without getting in people&apos;s way. This is
-            what&apos;s recorded, what isn&apos;t, and who gets to see it.
+            This is what&apos;s recorded, what isn&apos;t, and who gets to see it.
           </p>
         </div>
         <div className="grid gap-6 md:grid-cols-3">
@@ -27,9 +33,9 @@ export function LandingTransparency() {
             title="What's recorded"
             items={[
               "Time on the timer",
-              "Which apps and websites are in use, while the timer runs",
+              "Which apps, window titles and websites are in use, while the timer runs",
               "How active each stretch of time was, never what you type",
-              "Screenshots, only if your team switches them on",
+              "Screenshots, at an interval your team sets, or none at all",
             ]}
           />
           <LandingTransparencyCard
@@ -45,8 +51,7 @@ export function LandingTransparency() {
             items={[
               "You see everything recorded about you",
               "Your manager sees the same, no more",
-              "Pause any time; idle time is flagged, not deleted",
-              "Admins can publish a plain-language notice the app shows you",
+              "Pause any time, and idle time follows your team's idle policy",
             ]}
           />
         </div>

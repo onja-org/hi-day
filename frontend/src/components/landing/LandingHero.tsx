@@ -18,11 +18,20 @@ export function LandingHero() {
           </p>
           <div className="flex flex-wrap gap-3.5">
             <LandingButtonLink href="/signup">Get started</LandingButtonLink>
-            <LandingButtonLink href="#download" tone="white">
+            <LandingButtonLink href="/pricing#download" tone="white">
               Get the desktop app
             </LandingButtonLink>
           </div>
-          <span className="text-sm text-ink-muted">Set up your organisation in minutes.</span>
+          <p className="text-sm text-ink-muted">
+            Hi Day Cloud from $3.50 per person / month, or{" "}
+            <a
+              href="#open-source"
+              className="underline underline-offset-4 hover:text-volt focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-volt"
+            >
+              self-host the open-source version free
+            </a>
+            .
+          </p>
         </div>
 
         <div className="relative flex min-h-110 items-center justify-center">
