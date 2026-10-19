@@ -1,3 +1,4 @@
+import { CLOUD_PRICE_PER_PERSON } from "@/lib/pricing";
 import { LandingButtonLink } from "./LandingButtonLink";
 import { LandingTimerCard } from "./LandingTimerCard";
 
@@ -23,7 +24,7 @@ export function LandingHero() {
             </LandingButtonLink>
           </div>
           <p className="text-sm text-ink-muted">
-            Hi Day Cloud from $3.50 per person / month, or{" "}
+            Hi Day Cloud from {CLOUD_PRICE_PER_PERSON.annual} per person / month, or{" "}
             <a
               href="#open-source"
               className="underline underline-offset-4 hover:text-volt focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-volt"

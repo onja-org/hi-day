@@ -3,6 +3,7 @@ import {
   BuildingsIcon,
   ChartLineUpIcon,
   FolderSimpleIcon,
+  CreditCardIcon,
   UsersIcon,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon } from "@phosphor-icons/react";
@@ -17,6 +18,7 @@ const GROUP_ICONS: Record<string, Icon> = {
   organization: BuildingsIcon,
   members: UsersIcon,
   projects: FolderSimpleIcon,
+  billing: CreditCardIcon,
   tracking: ChartLineUpIcon,
 };
 
