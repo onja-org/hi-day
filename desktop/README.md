@@ -2,7 +2,7 @@
 
 > **Renamed from "Workforce Monitor".** The app ID (`io.hiday.app`), Linux
 > package/executable (`hiday`) and installer names (`hiday-*`) all changed
-> with it, so the OS treats Hi Day as a *new* app: an existing Workforce
+> with it, so the OS treats Hi Day as a _new_ app: an existing Workforce
 > Monitor install stays alongside it until uninstalled, users sign in and
 > pair the device again, and macOS asks for its permissions again. Browser
 > launcher overrides the old app wrote are still recognised (see
@@ -70,7 +70,7 @@ Both window-tracking and screenshot uploads go through an **offline
 queue** (`OfflineQueue`/`OfflineQueueStore`, `desktop/src/main/offline-queue*.ts`):
 every sample/capture is persisted to a local SQLite database
 (`offline-queue.db`, in the same `userData` directory as the session file)
-*before* any network request is attempted, and drained in batches on a
+_before_ any network request is attempted, and drained in batches on a
 periodic, jittered tick (matching the batched-ingest cadence in
 `docs/TECH_DESIGN.md` §4). A dropped connection just leaves data queued
 rather than losing it, and a batch that fails to send (network down,
@@ -96,6 +96,11 @@ quit, so tracking keeps running. Quit from the tray menu ("Quit Hi Day"),
 which goes through the usual pause-on-quit path. Stock GNOME shows no tray
 icons without the AppIndicator extension; there, launching Hi Day again
 brings the hidden window back (single-instance lock → `showMainWindow`).
+**Pinning to the taskbar / dock** Right-click the running icon: _Pin to taskbar_ (Windows),
+_Options → Keep in Dock_ (macOS), _Add to Favorites_ (GNOME). Clicking the
+pinned icon while the window is hidden brings it back (single-instance lock /
+macOS `activate`). On Windows `app.setAppUserModelId("io.hiday.app")` makes the
+pinned shortcut and the running window one icon rather than two.
 The status bar's compact button shrinks the window to a 360×72
 always-on-top bar with just the timer and start/stop; an idle prompt or a
 tracking error expands it back automatically.
@@ -114,7 +119,7 @@ using a UUID generated on first run and persisted under Electron's
    ```
 
    It listens on `http://localhost:3001` by default — that's what a
-   *dev-mode* desktop app (`pnpm dev`, i.e. `electron .`) talks to. See
+   _dev-mode_ desktop app (`pnpm dev`, i.e. `electron .`) talks to. See
    "Which backend the app talks to" below for how a packaged/installed
    build picks its URL instead.
 
@@ -130,7 +135,7 @@ using a UUID generated on first run and persisted under Electron's
    Electron needs a display to run — it won't launch headless in a
    container with no X server. If you're developing inside one, run the
    build (`pnpm --filter desktop build`) and unit tests (`pnpm --filter
-   desktop test`) to verify, and defer launching the actual window to a
+desktop test`) to verify, and defer launching the actual window to a
    machine with a desktop session.
 
 3. **Log in.** You'll also need the web console running
@@ -163,7 +168,7 @@ using a UUID generated on first run and persisted under Electron's
    manual action needed.
 
 7. **Test session persistence**: quit and re-run `pnpm --filter desktop
-   dev` — it should skip straight to the logged-in screen instead of
+dev` — it should skip straight to the logged-in screen instead of
    showing the login view again.
 
 8. **Test time tracking**: once logged in, press play — or click a
@@ -171,9 +176,9 @@ using a UUID generated on first run and persisted under Electron's
    and the elapsed time should start ticking, polling
    `GET /device/time-entries/current` every 15s to stay in sync with
    whatever's actually running server-side. The one play/stop button ends
-   the entry when pressed again (pausing *is* stopping now — see
+   the entry when pressed again (pausing _is_ stopping now — see
    `pending-timer-ops.ts`); clicking a different Project switches to it.
-   Starting a *second* timer while one is already
+   Starting a _second_ timer while one is already
    running (e.g. from the web console's own start action, on the
    `organisations/:id/projects/:projectId/time-entries/start` route) shows
    the conflict and a **Stop the other timer and start this one** button
@@ -183,7 +188,7 @@ using a UUID generated on first run and persisted under Electron's
    anyone else needs their own Project membership).
 
 9. **Test window tracking**: toggle **Track window titles (desktop agent)**
-   in the web console's org settings (`OrganisationSettingsForm`), *and*
+   in the web console's org settings (`OrganisationSettingsForm`), _and_
    **Start timer** in this app (step 8) — both must be true for sampling to
    run; window tracking follows being clocked in, not merely being logged
    in. `CaptureSettingsGate` polls `GET /device/capture-settings` every 15s
@@ -221,7 +226,7 @@ using a UUID generated on first run and persisted under Electron's
 
 11. **Test the update notice**: temporarily lower the `version` in
     `desktop/package.json` (e.g. to `0.0.1`), then `pnpm --filter desktop
-    dev` — since that's older than the latest `desktop-v*` release on
+dev` — since that's older than the latest `desktop-v*` release on
     GitHub, a banner should appear under the title reading "Version X.Y.Z
     is available." with a **View update** button (opens the releases page)
     and a dismiss (**×**). Revert the version change afterward — this
@@ -233,7 +238,7 @@ using a UUID generated on first run and persisted under Electron's
     below can only be tested from a real packaged build against a real newer
     release, not from `pnpm dev`.
 
-10. **Test screenshot capture**: toggle **Enable screenshots** in the web
+12. **Test screenshot capture**: toggle **Enable screenshots** in the web
     console's org settings (same form as step 8's window-tracking toggle),
     set a short frequency (e.g. 1 minute) to avoid a long wait, and
     **Start timer** — both must be true, same Hubstaff-style rule as
@@ -256,7 +261,7 @@ using a UUID generated on first run and persisted under Electron's
     one dialog once and every later tick captures silently — verified live
     against a real GNOME/Wayland session — with no repeat prompt.
 
-12. **Test the passive disclosure notice** (see `docs/adr/0015-...`): in
+13. **Test the passive disclosure notice** (see `docs/adr/0015-...`): in
     the web console's **Settings → Consent & disclosure** page, write some
     disclosure text and click **Publish**. With a capture setting already
     on (step 9 or 10), window tracking/screenshots/activity should already
@@ -268,11 +273,11 @@ using a UUID generated on first run and persisted under Electron's
     should disappear, and confirm `POST /device/consent` recorded a
     `granted` `ConsentRecord` and a `device_consent.granted` `AuditLog`
     entry — purely for the record, since capture was already running
-    throughout. Publish a *new* version while this device stays logged
+    throughout. Publish a _new_ version while this device stays logged
     in: on its next 15s poll the banner should reappear with the new text
     (capture keeps running uninterrupted the whole time).
 
-13. **Test auto-launch at login**: install a packaged build (`dist:linux`/
+14. **Test auto-launch at login**: install a packaged build (`dist:linux`/
     `dist:win`/`dist:mac`, or a real installer on Windows/macOS — see
     **Building installers** below) and launch it once. On Windows, check
     Task Manager's **Startup apps** tab; on macOS, **System Settings →
@@ -285,12 +290,12 @@ using a UUID generated on first run and persisted under Electron's
     out and back in (or reboot) to confirm the app actually launches on its
     own. `pnpm dev` never touches any of this (`app.isPackaged` guards it).
 
-14. **Test the renderer-crash recovery**: with the app running
+15. **Test the renderer-crash recovery**: with the app running
     (`pnpm --filter desktop dev`), open DevTools (renderer) and run
     `process.crash()` in its console. The window should disappear and a
     fresh one reopen within a second or two, back on whatever screen
     (logged-in/login) you were on — check the terminal for a `[renderer]
-    gone: crashed` log line. A running timer should still show as running
+gone: crashed` log line. A running timer should still show as running
     once the new window loads (it was never touched — only the window
     itself died, not the main process).
 
@@ -310,7 +315,7 @@ base URL in this order:
    (`https://workfoce-monitoring-api.up.railway.app`); `electron .` (dev
    mode) defaults to `http://localhost:3001`.
 
-This matters because an *installed* app has no way to inherit a
+This matters because an _installed_ app has no way to inherit a
 developer's shell environment — an env-var-only default would leave every
 real user's copy silently trying (and failing) to reach `localhost`. If
 the production API URL ever changes, update `PRODUCTION_API_URL` in
@@ -408,8 +413,8 @@ dist:linux`, unpacking the resulting asar, and executing
 `@paymoapp/active-window`'s `getActiveWindow()` directly from the packaged
 output — not just assumed from source-mode success):
 
-- **`asarUnpack: ['node_modules/@paymoapp/active-window/**/*']`** in
-  `electron-builder.yml` — a native `.node` addon can't be `require()`d
+- **`asarUnpack: ['node_modules/@paymoapp/active-window/**/\*']`** in
+`electron-builder.yml`— a native`.node`addon can't be`require()`d
   from inside an asar archive.
 - **`node-gyp-build` is a direct dependency of `desktop/package.json`**,
   even though nothing in this app's own code imports it — it's
@@ -419,7 +424,7 @@ output — not just assumed from source-mode success):
   `node_modules` on its own under this repo's pnpm-workspace layout,
   leaving a packaged build silently failing to load
   `@paymoapp/active-window` at all (`Cannot find module
-  'node-gyp-build'`) despite working fine under `pnpm dev`. Declaring it
+'node-gyp-build'`) despite working fine under `pnpm dev`. Declaring it
   directly resolves it, the same fix shape as `get-windows`'
   `@mapbox/node-pre-gyp` issue before it, if for a different underlying
   reason — see `docs/adr/0011-...` for the full story.
@@ -459,7 +464,7 @@ output — not just assumed from source-mode success):
   electron-updater's own: a downloaded update is verified against the
   release's published sha512 before it's ever applied, so a corrupt or
   tampered download is discarded rather than installed — there's no
-  automatic *rollback* of a release that passed that check but turns out to
+  automatic _rollback_ of a release that passed that check but turns out to
   be broken behaviorally, though; that's a "cut a new release" problem, not
   something the client can undo on its own. Unverified against a real
   Windows/macOS CI run — only exercised locally on Linux so far.
@@ -490,7 +495,7 @@ output — not just assumed from source-mode success):
   OfflineQueueStore, and the pause-before-quit flow). What this **can't**
   catch is a hard native crash (a segfault inside V8, Node, or a native
   addon) — that kills the process before any JS handler gets a chance to
-  run, and nothing here supervises the process from *outside* it (no
+  run, and nothing here supervises the process from _outside_ it (no
   systemd/launchd/Scheduled-Task wrapper). That gap is a known, accepted
   limitation of this pass, not something silently assumed away.
 - **`package.json`'s `author`/`homepage` are placeholders** (electron-builder
@@ -501,7 +506,7 @@ output — not just assumed from source-mode success):
   `safeStorage.isEncryptionAvailable()` covers the common case but isn't
   guaranteed everywhere.
 - **`better-sqlite3` (used by url-capture's local store) is a native addon,
-  and `pnpm test` and `pnpm dev`/packaging need it built for two *different*
+  and `pnpm test` and `pnpm dev`/packaging need it built for two _different_
   Node ABIs** — plain Node for vitest, Electron's own bundled Node for the
   app. `pnpm install` leaves it built for plain Node (so `pnpm test` works
   out of the box); `pnpm dev` rebuilds it for Electron automatically as
@@ -554,7 +559,7 @@ output — not just assumed from source-mode success):
   Recording permission, not Accessibility, but that pass checked/prompted
   for Accessibility only. The migration to `@paymoapp/active-window`
   (`docs/adr/0011-...`) fixed this as a side effect — that library's own
-  permission model *is* Screen Recording (`requestPermissions()`), so the
+  permission model _is_ Screen Recording (`requestPermissions()`), so the
   banner, "Grant Access" prompt, and status check all target the right
   permission now. Still unverified on real macOS hardware — nobody on this
   project has a Mac — so treat "does title actually populate once granted"
@@ -566,7 +571,7 @@ output — not just assumed from source-mode success):
   `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) now fills this via
   AT-SPI2 instead, verified live against a real GNOME Wayland session — a
   sample only falls back to `{ appName: null, title: null,
-  titleUnavailableReason: 'not-exposed' }` before the first window
+titleUnavailableReason: 'not-exposed' }` before the first window
   activation this session has seen, or on a non-GNOME Wayland session (or
   one with no working accessibility bus at all), where this remains an
   accepted gap matching this app's existing "Linux best-effort" support
