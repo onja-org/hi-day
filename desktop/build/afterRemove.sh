@@ -1,5 +1,6 @@
 #!/bin/sh
-# Removes the browser .desktop overrides the agent wrote, on uninstall.
+# Removes the browser .desktop overrides the agent wrote, on uninstall only
+# — never on upgrade; see the guard below.
 #
 # browser-activation.ts shadows each browser's launcher so it starts with
 # accessibility active — the only way to read an address bar over AT-SPI. Those
@@ -18,6 +19,17 @@
 # Only files carrying the marker are touched, so a vendor entry or a launcher
 # the user wrote themselves is never removed.
 set -eu
+
+# dpkg runs this on upgrade as well as removal, passing the reason as $1. An
+# upgrade must leave the overrides alone: deleting them orphans every open
+# browser window from its launcher and stops URL tracking until the new
+# version's first launch writes them again. Only a real uninstall should
+# clean up. No argument means a hand-run, which is taken as a removal.
+case "${1:-remove}" in
+    upgrade | failed-upgrade | abort-install | abort-upgrade | disappear)
+        exit 0
+        ;;
+esac
 
 MARKER='# Written by Hi Day to enable website tracking.'
 LEGACY_MARKER='# Written by Workforce Monitor to enable website tracking.'
