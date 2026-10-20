@@ -79,6 +79,15 @@ export class UpdateMembershipDto {
   @IsIn(APP_URL_TRACKING_VALUES)
   appUrlTracking?: AppUrlTracking | null;
 
+  /**
+   * Per-member override of the Organisation's Projects default, either
+   * direction. `null` clears it and inherits again.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  projectsEnabled?: boolean | null;
+
   /** `null` clears the override and inherits the Organisation default. */
   @IsOptional()
   @ValidateIf((_, value: AllowedApps | null) => value !== null)

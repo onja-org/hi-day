@@ -31,7 +31,7 @@ import { isValidTimezone } from '../../common/timezone.util';
 import { addDaysToKey, zonedParts } from '../../common/zoned-time.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
-import { DEFAULT_PROJECTS_ENABLED } from '../../organisations/projects-setting';
+import { resolveProjectsEnabled } from '../../organisations/projects-setting';
 import { Project } from '../../database/entities/project.entity';
 import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailService } from '../../email/services/email.service';
@@ -165,10 +165,11 @@ export class ScheduledReportsService {
       const fromKey = dayKey(range.from, zone);
       const toKey = dayKey(range.to, zone);
       const title = `${report.name} — ${fromKey} to ${toKey}`;
-      // Off for an Organisation without Projects: no report names one.
-      const projectsEnabled =
-        (organisation.settings?.projectsEnabled as boolean | undefined) ??
-        DEFAULT_PROJECTS_ENABLED;
+      // Off for someone without Projects: no report names one.
+      const projectsEnabled = resolveProjectsEnabled(
+        organisation.settings?.projectsEnabled as boolean | undefined,
+        membership.projectsEnabled,
+      );
       let content: Buffer;
       if (report.reportType === 'apps-and-urls') {
         content = await this.buildAppsUrlsContent(

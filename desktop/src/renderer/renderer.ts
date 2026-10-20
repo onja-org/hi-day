@@ -201,7 +201,7 @@ function showLoginView(errorMessage?: string): void {
   setRunning(null);
   // After the stop, which folds the live entry into the totals.
   todaySecondsByProject = new Map();
-  deviceSecondsToday = 0;
+  todayWorkedBaselineSeconds = null;
   clearTrackingError();
   timerDisplay.hidden = true;
   projectSearch.value = "";
@@ -460,6 +460,7 @@ const searchSection = document.getElementById("search-section")!;
 const projectsSection = document.getElementById("projects-section")!;
 const projectList = document.getElementById("project-list") as HTMLUListElement;
 const projectListEmpty = document.getElementById("project-list-empty")!;
+const projectListLoading = document.getElementById("project-list-loading")!;
 const projectCountEl = document.getElementById("project-count")!;
 const projectSearch = document.getElementById(
   "project-search",
@@ -599,11 +600,11 @@ function projectKey(projectId: string | null): string {
 
 let todaySecondsByProject = new Map<string, number>();
 /**
- * What this machine alone tracked today, beyond its running entry: the big
- * clock shows this, while "Today" below it is the whole day across the web
- * and every device. Time tracked elsewhere never appears in the big clock.
+ * The day's finished seconds as the server's union counts them — the figure
+ * the dashboard quotes. Entries with no Project belong to no Project's total,
+ * so only this has them. Null until the server has answered.
  */
-let deviceSecondsToday = 0;
+let todayWorkedBaselineSeconds: number | null = null;
 /** The day `todaySecondsByProject` was read for, so a new day re-reads it. */
 let todaySecondsDayStart: number | null = null;
 /** Completed entries already folded into the totals, so a later read adds
@@ -692,6 +693,7 @@ const timerBlockedDismiss = document.getElementById(
  * to miss while looking at the Play button.
  */
 function showTimerBlocked(message: string): void {
+  setMode("full", true);
   timerBlockedMessage.textContent = message;
   timerBlocked.hidden = false;
   timerBlockedDismiss.focus();
@@ -750,6 +752,12 @@ function formatHoursMinutes(seconds: number): string {
 
 /** Every Project's time today, the live entry included. */
 function todayTotalSeconds(): number {
+  if (todayWorkedBaselineSeconds !== null) {
+    const live = runningEntry
+      ? Math.max(0, Math.floor(liveElapsedMs() / 1000))
+      : 0;
+    return todayWorkedBaselineSeconds + live;
+  }
   const projectIds = new Set(todaySecondsByProject.keys());
   if (runningEntry) projectIds.add(projectKey(runningEntry.projectId));
   let total = 0;
@@ -804,7 +812,7 @@ function tick(): void {
       return;
     }
     const name = projectNameFor(projectId);
-    const formatted = formatElapsed(deviceTodaySeconds() * 1000);
+    const formatted = formatElapsed(displayedSecondsFor(projectId) * 1000);
     trackingProjectNameEl.textContent = name;
     timerDisplay.hidden = false;
     timerDisplay.textContent = formatted;
@@ -820,12 +828,11 @@ function tick(): void {
     ? `${name} · Paused`
     : name;
 
-  // The big clock is this machine's whole day, not just this entry:
-  // stopping and starting again ends one entry and opens another, and the
-  // person tracking time thinks of that as one continuous total, not two.
-  // `seconds` stays the Project's own day, for its row in the list.
+  // The big clock is the running Project's own day, matching its row in the
+  // list: restarting the same Project carries on from its total, and
+  // switching to another starts from that Project's own.
   const seconds = displayedSecondsFor(runningEntry.projectId);
-  const formatted = formatElapsed(deviceTodaySeconds() * 1000);
+  const formatted = formatElapsed(seconds * 1000);
   timerDisplay.hidden = false;
   timerDisplay.textContent = formatted;
   compactTimerEl.textContent = formatted;
@@ -849,10 +856,15 @@ function setRunning(entry: TimeEntry | null): void {
         projectKey(previous.projectId),
         displayedSecondsFor(previous.projectId),
       );
-      deviceSecondsToday += Math.floor(ownElapsedMs(previous) / 1000);
       // Counted here, so the server's copy of this same entry is not
       // folded in again by `mergeNewTodayEntries`.
       countedEntryIds.add(previous.id);
+      if (todayWorkedBaselineSeconds !== null) {
+        todayWorkedBaselineSeconds += Math.max(
+          0,
+          Math.floor(liveElapsedMs() / 1000),
+        );
+      }
     }
     // A new entry counts from now, not from the last poll's baseline — that
     // stale baseline is what made a restarted timer jump ahead, then back.
@@ -1027,23 +1039,6 @@ async function checkIdle(): Promise<void> {
   showIdleBanner(idleSeconds, idleStartedAtIso);
 }
 
-/** What this machine's own entry has run for, frozen while it is paused. */
-function ownElapsedMs(entry: TimeEntry): number {
-  const end = entry.pausedAt
-    ? new Date(entry.pausedAt).getTime()
-    : Date.now() + serverOffsetMs;
-  return Math.max(
-    0,
-    end - new Date(entry.startedAt).getTime() - entry.pausedSeconds * 1000,
-  );
-}
-
-/** This machine's time today: finished entries plus its running one. */
-function deviceTodaySeconds(): number {
-  const live = runningEntry ? Math.floor(ownElapsedMs(runningEntry) / 1000) : 0;
-  return deviceSecondsToday + live;
-}
-
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
 function displayedSecondsFor(projectId: string | null): number {
   const recorded = todaySecondsByProject.get(projectKey(projectId)) ?? 0;
@@ -1100,7 +1095,7 @@ async function completedTotalsByProject(
   const totals = new Map<string, number>();
   const result = await window.api.tracking.completedTotals(from, to);
   if (result.ok) {
-    deviceSecondsToday = result.data.deviceSeconds;
+    todayWorkedBaselineSeconds = result.data.workedSeconds;
     // Without Projects the day is a single bucket, so the union is the figure.
     if (!projectsEnabled) {
       totals.set(projectKey(null), result.data.workedSeconds);
@@ -1111,6 +1106,7 @@ async function completedTotalsByProject(
     }
     return totals;
   }
+  todayWorkedBaselineSeconds = null;
   for (const entry of entries) {
     if (entry.durationSeconds === null) continue;
     const key = projectKey(entry.projectId);
@@ -1159,7 +1155,9 @@ async function mergeNewTodayEntries(): Promise<void> {
 function renderProjects(): void {
   projectList.innerHTML = "";
   projectTotalElements.clear();
-  projectCountEl.textContent = String(projects.length);
+  projectCountEl.textContent = projectsLoaded ? String(projects.length) : "…";
+  // Until the list has come back, an empty one means "not loaded", not "none".
+  projectListLoading.hidden = projectsLoaded;
 
   const query = projectSearch.value.trim().toLowerCase();
   const matches = projects.filter(
@@ -1404,6 +1402,12 @@ async function refreshProjectsSetting(): Promise<void> {
   const setting = await window.api.tracking.projectsSetting();
   if (!setting.ok) return;
   if (setting.data.projectsEnabled !== projectsEnabled) {
+    // Show the list's loading state at once, rather than leaving the space
+    // empty until setup has fetched the projects.
+    projectsEnabled = setting.data.projectsEnabled;
+    projectsLoaded = false;
+    applyProjectsMode();
+    renderProjects();
     await initTracking();
     return;
   }

@@ -28,6 +28,8 @@ export type ActiveMember = {
   screenshotFrequencySeconds: number | null;
   /** `null` inherits the organisation's screenshot-deletion setting. */
   canDeleteScreenshots: boolean | null;
+  /** `null` inherits the organisation's Projects default; a boolean overrides it either way. */
+  projectsEnabled: boolean | null;
   /** `null` means inherit the organisation's Allowed apps default. */
   allowedApps: AllowedApps | null;
   /** Work time limit overrides; each `null` inherits the organisation's. */
@@ -71,6 +73,7 @@ export type UpdateMembershipInput = {
   appUrlTracking?: AppUrlTracking | null;
   screenshotFrequencySeconds?: number | null;
   canDeleteScreenshots?: boolean | null;
+  projectsEnabled?: boolean | null;
   allowedApps?: AllowedApps | null;
   expectedWorkDays?: number[] | null;
   trackingDisabledDays?: number[] | null;

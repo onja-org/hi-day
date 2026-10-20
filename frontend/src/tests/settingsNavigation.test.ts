@@ -8,10 +8,11 @@ import {
 const ORG = "org-1";
 
 describe("SETTINGS_GROUPS", () => {
-  it("holds the three groups the epic names, in card order", () => {
+  it("holds the groups in card order", () => {
     expect(SETTINGS_GROUPS.map((group) => group.key)).toEqual([
       "organization",
       "members",
+      "projects",
       "tracking",
     ]);
   });

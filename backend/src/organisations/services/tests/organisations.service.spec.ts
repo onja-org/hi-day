@@ -44,6 +44,7 @@ describe('OrganisationsService', () => {
   ) {
     return {
       findOne: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
       ...overrides,
     } as unknown as Repository<Membership>;
   }
@@ -206,6 +207,8 @@ describe('OrganisationsService', () => {
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
         projectsEnabled: false,
+        projectsDefaultEnabled: false,
+        projectsManageable: false,
         workTimeLimits: {
           expectedWorkDays: [1, 2, 3, 4, 5],
           trackingDisabledDays: [],

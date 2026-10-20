@@ -57,6 +57,14 @@ export class Membership {
   @Column({ type: 'character varying', nullable: true })
   appUrlTracking: AppUrlTracking | null;
 
+  /**
+   * Per-member override of the Organisation's "Track time against Projects"
+   * default, in either direction. `null` inherits (see
+   * `Organisation.settings.projectsEnabled`).
+   */
+  @Column({ type: 'boolean', nullable: true })
+  projectsEnabled: boolean | null;
+
   /** `null` inherits (see `Organisation.settings.allowedApps`). */
   @Column({ type: 'character varying', nullable: true })
   allowedApps: AllowedApps | null;
