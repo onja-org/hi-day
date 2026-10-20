@@ -1,3 +1,4 @@
+import { formatShortDate } from "./formatShortDate";
 import type { TrialStatus } from "@/types/billing";
 
 export type TrialBannerTone = "calm" | "urgent";
@@ -21,6 +22,16 @@ const URGENT_FROM_DAYS_LEFT = 3;
  * to understand or act on their state.
  */
 export function trialBannerCopy(trial: TrialStatus): TrialBannerCopy {
+  // Named date rather than "soon": the whole point of the grace period is
+  // that someone can plan around it, which needs a day they can diary.
+  if (trial.isInGrace) {
+    return {
+      headline: "Your free trial has ended",
+      detail: `Your team can keep working until ${formatShortDate(trial.accessEndsAt)}. Add a payment method before then to carry on.`,
+      tone: "urgent",
+    };
+  }
+
   if (trial.isExpired) {
     return {
       headline: "Your free trial has ended",

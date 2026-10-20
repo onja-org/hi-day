@@ -9,6 +9,8 @@ function trial(overrides: Partial<TrialStatus> = {}): TrialStatus {
     trialEndsAt: "2026-01-15T09:00:00.000Z",
     daysLeft: 14,
     isExpired: false,
+    isInGrace: false,
+    accessEndsAt: "2026-01-18T09:00:00.000Z",
     ...overrides,
   };
 }
@@ -30,6 +32,16 @@ describe("trialBannerCopy", () => {
     expect(trialBannerCopy(trial({ daysLeft: 1 })).headline).toBe(
       "1 day left in your free trial",
     );
+  });
+
+  it("names the date access stops while in the grace period", () => {
+    const copy = trialBannerCopy(
+      trial({ daysLeft: 0, isExpired: true, isInGrace: true }),
+    );
+
+    expect(copy.headline).toBe("Your free trial has ended");
+    expect(copy.detail).toContain("Jan 18, 2026");
+    expect(copy.tone).toBe("urgent");
   });
 
   it("keeps showing a banner once the trial has ended", () => {

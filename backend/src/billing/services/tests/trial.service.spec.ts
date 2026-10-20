@@ -201,6 +201,7 @@ describe('TrialService', () => {
         'owner@acme.test',
         'Acme Inc',
         3,
+        expect.any(String),
       );
       expect(update).toHaveBeenCalledWith('sub-1', {
         trialReminderSentAtDaysLeft: 3,
