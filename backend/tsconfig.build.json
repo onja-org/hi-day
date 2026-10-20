@@ -5,6 +5,7 @@
     "test",
     "dist",
     "**/*spec.ts",
-    "src/scripts/seed-test-accounts.ts"
+    "src/scripts/seed-test-accounts.ts",
+    "src/scripts/trial-dev.ts"
   ]
 }

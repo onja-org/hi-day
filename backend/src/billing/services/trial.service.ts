@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
@@ -37,10 +37,9 @@ export class TrialService {
   ) {}
 
   /**
-   * Starts the 14-day trial for a brand-new Organisation. Takes the caller's
-   * `EntityManager` so it lands in the same transaction that creates the
-   * Organisation — an org that exists without a trial would be an org nobody
-   * can be told the state of.
+   * Takes the caller's `EntityManager` so the trial lands in the same
+   * transaction that creates the Organisation — one can't exist without the
+   * other.
    */
   async startTrial(
     manager: EntityManager,
@@ -83,28 +82,12 @@ export class TrialService {
     };
   }
 
-  async getStatusOrThrow(organisationId: string): Promise<TrialStatus> {
-    const status = await this.findStatus(organisationId);
-
-    if (!status) {
-      throw new NotFoundException(
-        'This organisation is not on a trial. Contact support about a subscription.',
-      );
-    }
-
-    return status;
-  }
-
   /**
-   * Hourly: email the owner as their trial nears its end. Hourly rather than
-   * daily so a milestone is reached within an hour of being due regardless of
-   * what time of day the organisation signed up.
-   *
-   * Only the owner is emailed — they are the one admin who can act on it (see
-   * CONTEXT.md's Owner entry). Each organisation is handled independently so
-   * one failure never blocks the rest, and the milestone is recorded only
-   * after the email is handed off, so a crash mid-sweep retries rather than
-   * silently skipping someone.
+   * Hourly rather than daily, so a milestone is reached within an hour of
+   * being due whatever time the Organisation signed up. Only the owner is
+   * emailed — the one admin who can act on it. Each Organisation is handled
+   * independently, and the milestone is recorded only after the email is
+   * handed off, so a crash mid-sweep retries rather than skipping someone.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async sendDueTrialReminders(): Promise<void> {
@@ -139,10 +122,9 @@ export class TrialService {
   }
 
   /**
-   * False when there is nobody to email — a suspended organisation (its owner
-   * is mid-deletion and has bigger news) or one whose owner's User row is
-   * gone. Returning false rather than recording the milestone leaves the
-   * reminder due if the organisation is later restored.
+   * False when there is nobody to email: a suspended Organisation, or one
+   * whose owner's User row is gone. Not recording the milestone leaves the
+   * reminder due if it is later restored.
    */
   private async sendReminder(
     subscription: Subscription,
@@ -160,7 +142,6 @@ export class TrialService {
     await this.emailService.sendTrialReminderEmail(
       organisation.owner.email,
       organisation.name,
-      organisation.publicId,
       daysLeft,
     );
 

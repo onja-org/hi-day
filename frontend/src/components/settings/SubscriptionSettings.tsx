@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import {
   CLOUD_BILLING_NOTE,
@@ -52,8 +54,10 @@ export function SubscriptionSettings({
 
         {trialQuery.isSuccess && !trialQuery.data && (
           <p className="mt-1 text-sm text-slate-900/60">
-            This organisation isn&apos;t on a {TRIAL_DAYS}-day trial. Get in
-            touch and we&apos;ll sort out a subscription.
+            Your organisation isn&apos;t on a plan. It was created before the
+            {" "}
+            {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
+            running out and nothing to pay.
           </p>
         )}
       </section>
@@ -98,6 +102,13 @@ export function SubscriptionSettings({
           while we finish it — your team keeps every feature, and you
           won&apos;t be charged without choosing a plan first.
         </p>
+
+        <Link
+          href="/pricing"
+          className="mt-4 inline-flex h-11 items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
+        >
+          See pricing
+        </Link>
       </section>
     </div>
   );
