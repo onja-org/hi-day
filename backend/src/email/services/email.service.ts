@@ -169,23 +169,35 @@ export class EmailService {
   }
 
   /**
-   * Tells an organisation's owner their trial is nearly up. `daysLeft` is
-   * already rounded the way the in-app banner rounds it, so the email and the
-   * banner never disagree about how long is left; `1` is the final day.
+   * Tells an organisation's owner their trial is nearly up, or has just run
+   * out. `daysLeft` is rounded the way the in-app banner rounds it, so the
+   * two never disagree: `1` is the final day, `0` means it has ended.
    */
   async sendTrialReminderEmail(
     to: string,
     organisationName: string,
     daysLeft: number,
+    accessEndsOn: string,
   ): Promise<void> {
     const pricingUrl = `${this.frontendUrl}/pricing`;
-    const when = `ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    const name = escapeHtml(organisationName);
+
+    // `0` is the trial having actually run out, which is a different message
+    // from a warning: it names the date access stops rather than asking them
+    // to look at prices at their leisure.
+    const ended = daysLeft === 0;
+    const subject = ended
+      ? `Your ${APP_NAME} trial has ended`
+      : `Your ${APP_NAME} trial ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    const body = ended
+      ? `<p>The free trial of ${APP_NAME} for <strong>${name}</strong> has ended. Your team can carry on working until <strong>${escapeHtml(accessEndsOn)}</strong>; after that, tracking stops until a payment method is added.</p>`
+      : `<p>Your free trial of ${APP_NAME} for <strong>${name}</strong> ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>`;
 
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
-      subject: `Your ${APP_NAME} trial ${when}`,
-      html: `<p>Your free trial of ${APP_NAME} for <strong>${escapeHtml(organisationName)}</strong> ${when}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>${this.button(pricingUrl, 'See pricing')}<p>Nothing is locked during the trial, and you have not been charged.</p>`,
+      subject,
+      html: `${body}${this.button(pricingUrl, 'See pricing')}<p>You have not been charged.</p>`,
     });
 
     if (error) {

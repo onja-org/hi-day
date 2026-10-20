@@ -14,6 +14,10 @@ export type TrialStatus = {
   daysLeft: number;
   /** Nothing is blocked by this yet — paid plans are a later ticket. */
   isExpired: boolean;
+  /** Trial over, access not: everything works, the banner names the date. */
+  isInGrace: boolean;
+  /** ISO timestamp: when access stops, once enforcement exists. */
+  accessEndsAt: string;
 };
 
 /** `trial` is null for an organisation created before trials existed — it
