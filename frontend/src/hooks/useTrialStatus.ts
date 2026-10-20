@@ -28,6 +28,7 @@ export function useTrialStatus(organisationId: number | string) {
       if (!result.ok) {
         throw new Error(result.message);
       }
+      // null, not undefined: react-query treats undefined as "no data yet".
       return result.trial;
     },
   });

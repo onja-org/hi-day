@@ -8,10 +8,8 @@ import type { TrialStatus } from '../services/trial.service';
 import { TrialService } from '../services/trial.service';
 
 /**
- * Billing is admin-only at the API, not merely hidden in the UI: a manager or
- * member has no business knowing what the organisation pays or when its trial
- * runs out, and enforcing that here means the rule holds for every future
- * client too.
+ * Admin-only at the API, not merely hidden in the UI, so the rule holds for
+ * every future client too.
  */
 @Controller('organisations/:id/billing')
 @UseGuards(JwtAuthGuard, RoleGuard)
@@ -19,8 +17,17 @@ import { TrialService } from '../services/trial.service';
 export class BillingController {
   constructor(private readonly trialService: TrialService) {}
 
+  /**
+   * `trial: null` for an Organisation created before trials existed — a
+   * normal state, not a failure, so it answers 200 rather than a 404 the UI
+   * would have to render as an error.
+   */
   @Get('trial')
-  getTrial(@Req() request: AuthenticatedRequest): Promise<TrialStatus> {
-    return this.trialService.getStatusOrThrow(request.organisationId!);
+  async getTrial(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ trial: TrialStatus | null }> {
+    return {
+      trial: await this.trialService.findStatus(request.organisationId!),
+    };
   }
 }

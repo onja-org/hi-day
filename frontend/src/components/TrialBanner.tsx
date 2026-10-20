@@ -4,7 +4,6 @@ import Link from "next/link";
 import { SealPercentIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useTrialStatus } from "@/hooks/useTrialStatus";
-import { settingsHref } from "@/lib/settingsNavigation";
 import { trialBannerCopy } from "@/lib/trialBannerCopy";
 
 type TrialBannerProps = {
@@ -51,7 +50,7 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
       </p>
 
       <Link
-        href={settingsHref(organisationId, "billing", "subscription")}
+        href="/pricing"
         className="flex h-11 items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
       >
         Add payment

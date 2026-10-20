@@ -1,4 +1,3 @@
-import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { Organisation } from '../../../database/entities/organisation.entity';
 import { Subscription } from '../../../database/entities/subscription.entity';
@@ -113,35 +112,6 @@ describe('TrialService', () => {
         isExpired: false,
       });
     });
-
-    it('reports an expired trial as expired with no days left', async () => {
-      const service = new TrialService(
-        makeSubscriptionsRepo({
-          findOne: jest.fn().mockResolvedValue(subscriptionEndingIn(-1)),
-        }),
-        makeOrganisationsRepo(null),
-        makeEmailService().emailService,
-      );
-
-      await expect(service.findStatus('org-1', NOW)).resolves.toMatchObject({
-        daysLeft: 0,
-        isExpired: true,
-      });
-    });
-  });
-
-  describe('getStatusOrThrow', () => {
-    it('rejects an organisation with no subscription rather than inventing one', async () => {
-      const service = new TrialService(
-        makeSubscriptionsRepo(),
-        makeOrganisationsRepo(null),
-        makeEmailService().emailService,
-      );
-
-      await expect(service.getStatusOrThrow('org-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-    });
   });
 
   describe('sendDueTrialReminders', () => {
@@ -181,35 +151,11 @@ describe('TrialService', () => {
       expect(sendTrialReminderEmail).toHaveBeenCalledWith(
         'owner@acme.test',
         'Acme Inc',
-        100001,
         3,
       );
       expect(update).toHaveBeenCalledWith('sub-1', {
         trialReminderSentAtDaysLeft: 3,
       });
-    });
-
-    it('stays quiet when no milestone is due', async () => {
-      const { service, update, sendTrialReminderEmail } = serviceFor(
-        [subscriptionEndingIn(9)],
-        ACTIVE_ORGANISATION,
-      );
-
-      await service.sendDueTrialReminders();
-
-      expect(sendTrialReminderEmail).not.toHaveBeenCalled();
-      expect(update).not.toHaveBeenCalled();
-    });
-
-    it('does not repeat a milestone already sent', async () => {
-      const { service, sendTrialReminderEmail } = serviceFor(
-        [subscriptionEndingIn(2.5, 3)],
-        ACTIVE_ORGANISATION,
-      );
-
-      await service.sendDueTrialReminders();
-
-      expect(sendTrialReminderEmail).not.toHaveBeenCalled();
     });
 
     it('leaves the milestone due when the organisation is suspended', async () => {

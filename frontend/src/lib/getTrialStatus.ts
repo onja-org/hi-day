@@ -17,8 +17,8 @@ export async function getTrialStatus(
   }
 
   if (response.ok) {
-    const trial = (await response.json()) as TrialStatus;
-    return { ok: true, trial };
+    const body = (await response.json()) as { trial: TrialStatus | null };
+    return { ok: true, trial: body.trial };
   }
 
   const data = (await response.json().catch(() => null)) as {

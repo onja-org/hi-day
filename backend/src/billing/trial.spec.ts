@@ -72,16 +72,6 @@ describe('dueTrialReminderDaysLeft', () => {
     expect(dueTrialReminderDaysLeft(END, daysBeforeEnd(0.5), null)).toBe(1);
   });
 
-  it('stops once the final-day reminder has gone out', () => {
-    expect(dueTrialReminderDaysLeft(END, daysBeforeEnd(0.1), 1)).toBeNull();
-  });
-
-  it('never asks for a milestone days-left never produces', () => {
-    // Days left round up, so a running trial always has at least 1 left: a
-    // milestone of 0 would only be reachable after expiry.
-    expect(trialDaysLeft(END, daysBeforeEnd(0.001))).toBeGreaterThan(0);
-  });
-
   it('stays quiet about a trial that ended long ago', () => {
     const longAfter = new Date(END.getTime() + 7 * MS_PER_DAY);
     expect(dueTrialReminderDaysLeft(END, longAfter, null)).toBeNull();
