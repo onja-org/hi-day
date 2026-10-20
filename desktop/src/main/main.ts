@@ -33,7 +33,7 @@ import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { recordingIndicatorFor } from "./recording-indicator";
 import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
-import { shouldRemind } from "./tracking-reminder";
+import { hasTrackedFullWorkDay, shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
@@ -1026,11 +1026,46 @@ async function registerIpcHandlers(): Promise<void> {
     });
     if (!due || !settings) return;
 
+    // Asked only once a reminder is otherwise due, so it costs one call per
+    // reminder rather than one per tick. Signed out there is nobody to ask.
+    if (!signedOut && (await hasTrackedFullWorkDayToday(settings))) {
+      // Spent, not deferred: the day is full now and still will be in ten
+      // minutes, so holding the slot would only fire the moment they log in.
+      untrackedSince = now;
+      return;
+    }
+
     const untrackedMinutes = Math.round(
       (now.getTime() - untrackedSince.getTime()) / 60_000,
     );
     untrackedSince = now;
     deliverReminder(settings, untrackedMinutes, signedOut);
+  }
+
+  /**
+   * Read from the same endpoint the window totals the day with, so the two
+   * cannot disagree. A failed read reminds rather than staying silent: a
+   * nudge too many beats a day of untracked time nobody was told about.
+   */
+  async function hasTrackedFullWorkDayToday(
+    settings: ReminderSettings,
+  ): Promise<boolean> {
+    const now = new Date();
+    const from = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).toISOString();
+
+    const result = await callDeviceApi((token) =>
+      apiClient.getCompletedTotals(token, from, now.toISOString()),
+    );
+    if (!result.ok) return false;
+
+    return hasTrackedFullWorkDay(
+      result.data.workedSeconds,
+      settings.workingHoursPerDay,
+    );
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
