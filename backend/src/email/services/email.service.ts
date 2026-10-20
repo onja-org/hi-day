@@ -176,17 +176,16 @@ export class EmailService {
   async sendTrialReminderEmail(
     to: string,
     organisationName: string,
-    organisationPublicId: number,
     daysLeft: number,
   ): Promise<void> {
-    const billingUrl = `${this.frontendUrl}/organisations/${organisationPublicId}/settings/billing/subscription`;
+    const pricingUrl = `${this.frontendUrl}/pricing`;
     const when = `ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
 
     const { error } = await this.resend.emails.send({
       from: this.emailSender,
       to,
       subject: `Your ${APP_NAME} trial ${when}`,
-      html: `<p>Your free trial of ${APP_NAME} for <strong>${escapeHtml(organisationName)}</strong> ${when}. Add a payment method to keep your team tracking without interruption.</p>${this.button(billingUrl, 'Add payment')}<p>Nothing is locked during the trial, and you have not been charged.</p>`,
+      html: `<p>Your free trial of ${APP_NAME} for <strong>${escapeHtml(organisationName)}</strong> ${when}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>${this.button(pricingUrl, 'See pricing')}<p>Nothing is locked during the trial, and you have not been charged.</p>`,
     });
 
     if (error) {

@@ -16,6 +16,8 @@ export type TrialStatus = {
   isExpired: boolean;
 };
 
+/** `trial` is null for an organisation created before trials existed — it
+ * has never been on one, which is a normal state rather than an error. */
 export type GetTrialStatusResult =
-  | { ok: true; trial: TrialStatus }
+  | { ok: true; trial: TrialStatus | null }
   | { ok: false; message: string };
