@@ -13,8 +13,9 @@ export const trialStatusQueryKey = (organisationId: number | string) => [
  * backend, so the request is never made for anyone else — a manager or member
  * would only earn a 403.
  *
- * `null` where the organisation was created before trials existed: it was
- * never on one, so there is nothing to show.
+ * `trial` is null where the organisation was created before trials existed,
+ * and `isFree` marks one that never pays — either way there is no countdown
+ * to show.
  */
 export function useTrialStatus(organisationId: number | string) {
   const organisationQuery = useCurrentOrganisation();
@@ -28,8 +29,7 @@ export function useTrialStatus(organisationId: number | string) {
       if (!result.ok) {
         throw new Error(result.message);
       }
-      // null, not undefined: react-query treats undefined as "no data yet".
-      return result.trial;
+      return result.status;
     },
   });
 }

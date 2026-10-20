@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { EntityManager, Repository } from 'typeorm';
 import { Organisation } from '../../../database/entities/organisation.entity';
 import { Subscription } from '../../../database/entities/subscription.entity';
@@ -32,6 +33,13 @@ function makeEmailService() {
     emailService: { sendTrialReminderEmail } as unknown as EmailService,
     sendTrialReminderEmail,
   };
+}
+
+/** Config with the given organisations listed as never paying. */
+function makeConfig(freeIds: number[] = []): ConfigService {
+  return {
+    get: () => (freeIds.length > 0 ? freeIds.join(',') : undefined),
+  } as unknown as ConfigService;
 }
 
 /** A trialling subscription whose trial ends `daysFromNow` days from NOW. */
@@ -71,6 +79,7 @@ describe('TrialService', () => {
         makeSubscriptionsRepo(),
         makeOrganisationsRepo(null),
         makeEmailService().emailService,
+        makeConfig(),
       );
 
       await service.startTrial(manager, 'org-1', NOW);
@@ -93,6 +102,7 @@ describe('TrialService', () => {
         makeSubscriptionsRepo(),
         makeOrganisationsRepo(null),
         makeEmailService().emailService,
+        makeConfig(),
       );
 
       await expect(service.findStatus('org-1', NOW)).resolves.toBeNull();
@@ -105,12 +115,50 @@ describe('TrialService', () => {
         }),
         makeOrganisationsRepo(null),
         makeEmailService().emailService,
+        makeConfig(),
       );
 
       await expect(service.findStatus('org-1', NOW)).resolves.toMatchObject({
         daysLeft: 3,
         isExpired: false,
       });
+    });
+  });
+
+  describe('free organisations', () => {
+    it('knows which organisations never pay, by publicId', () => {
+      const service = new TrialService(
+        makeSubscriptionsRepo(),
+        makeOrganisationsRepo(null),
+        makeEmailService().emailService,
+        makeConfig([100001, 100042]),
+      );
+
+      expect(service.isFree(100001)).toBe(true);
+      expect(service.isFree(100042)).toBe(true);
+      expect(service.isFree(100099)).toBe(false);
+    });
+
+    it('never emails one about a trial running out', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const { emailService, sendTrialReminderEmail } = makeEmailService();
+      const service = new TrialService(
+        makeSubscriptionsRepo({
+          find: jest.fn().mockResolvedValue([subscriptionEndingIn(2.5)]),
+          update,
+        }),
+        makeOrganisationsRepo(ACTIVE_ORGANISATION),
+        emailService,
+        // ACTIVE_ORGANISATION's publicId.
+        makeConfig([100001]),
+      );
+
+      await service.sendDueTrialReminders();
+
+      expect(sendTrialReminderEmail).not.toHaveBeenCalled();
+      // The milestone stays unspent: if the organisation is ever taken off
+      // the list, the reminder it was owed is still due.
+      expect(update).not.toHaveBeenCalled();
     });
   });
 
@@ -135,6 +183,7 @@ describe('TrialService', () => {
         }),
         makeOrganisationsRepo(organisation),
         emailService,
+        makeConfig(),
       );
       return { service, update, sendTrialReminderEmail };
     }
@@ -187,6 +236,7 @@ describe('TrialService', () => {
         }),
         makeOrganisationsRepo(ACTIVE_ORGANISATION),
         { sendTrialReminderEmail } as unknown as EmailService,
+        makeConfig(),
       );
 
       await service.sendDueTrialReminders();

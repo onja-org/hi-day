@@ -25,11 +25,13 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
   // No banner while it loads, for a non-admin, or for an organisation that
   // predates trials — and none on failure either: a billing notice nobody
   // asked for is not worth an error message across every page.
-  if (!trialQuery.data) {
+  // Nothing to count down for an organisation that never pays, so no banner
+  // on any page — a payment prompt it can never act on is pure noise.
+  if (!trialQuery.data?.trial || trialQuery.data.isFree) {
     return null;
   }
 
-  const { headline, detail, tone } = trialBannerCopy(trialQuery.data);
+  const { headline, detail, tone } = trialBannerCopy(trialQuery.data.trial);
   const Icon = tone === "urgent" ? WarningCircleIcon : SealPercentIcon;
 
   return (
