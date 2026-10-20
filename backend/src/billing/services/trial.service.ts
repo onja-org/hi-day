@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, IsNull, Repository } from 'typeorm';
@@ -6,6 +7,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
+import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   dueTrialReminderDaysLeft,
   isTrialExpired,
@@ -28,13 +30,30 @@ export interface TrialStatus {
 export class TrialService {
   private readonly logger = new Logger(TrialService.name);
 
+  /**
+   * Read once at startup: this is configuration, not data, and re-reading it
+   * per request would only invite the two answers to differ mid-flight.
+   * Changing it is a restart.
+   */
+  private readonly freeOrganisationIds: Set<number>;
+
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptions: Repository<Subscription>,
     @InjectRepository(Organisation)
     private readonly organisations: Repository<Organisation>,
     private readonly emailService: EmailService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.freeOrganisationIds = parseFreeOrganisationIds(
+      configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
+    );
+  }
+
+  /** Whether this Organisation never pays. See free-organisations.ts. */
+  isFree(publicId: number): boolean {
+    return this.freeOrganisationIds.has(publicId);
+  }
 
   /**
    * Takes the caller's `EntityManager` so the trial lands in the same
@@ -136,6 +155,13 @@ export class TrialService {
     });
 
     if (!organisation?.owner) {
+      return false;
+    }
+
+    // An Organisation that never pays has nothing running out, so telling its
+    // owner their trial is nearly up would be false. Checked here rather than
+    // in the sweep's query because the list is config, not a column.
+    if (this.isFree(organisation.publicId)) {
       return false;
     }
 

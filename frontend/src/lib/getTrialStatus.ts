@@ -1,5 +1,5 @@
 import { API_URL } from "./apiUrl";
-import type { GetTrialStatusResult, TrialStatus } from "@/types/billing";
+import type { BillingStatus, GetTrialStatusResult } from "@/types/billing";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
@@ -17,8 +17,7 @@ export async function getTrialStatus(
   }
 
   if (response.ok) {
-    const body = (await response.json()) as { trial: TrialStatus | null };
-    return { ok: true, trial: body.trial };
+    return { ok: true, status: (await response.json()) as BillingStatus };
   }
 
   const data = (await response.json().catch(() => null)) as {

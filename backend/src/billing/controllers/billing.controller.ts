@@ -21,13 +21,18 @@ export class BillingController {
    * `trial: null` for an Organisation created before trials existed — a
    * normal state, not a failure, so it answers 200 rather than a 404 the UI
    * would have to render as an error.
+   *
+   * `isFree` is read from configuration and wins over any trial: an
+   * Organisation that never pays has nothing counting down, whatever its
+   * subscription row says.
    */
   @Get('trial')
   async getTrial(
     @Req() request: AuthenticatedRequest,
-  ): Promise<{ trial: TrialStatus | null }> {
+  ): Promise<{ trial: TrialStatus | null; isFree: boolean }> {
     return {
       trial: await this.trialService.findStatus(request.organisationId!),
+      isFree: this.trialService.isFree(Number(request.params.id)),
     };
   }
 }
