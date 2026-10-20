@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHROMIUM_RESTORE_FLAG,
-  restartWarning,
   firefoxRestoresSession,
-  isGeckoBrowser,
   geckoProfileArguments,
+  isGeckoBrowser,
   relaunchCommand,
   relaunchCommands,
+  relaunchEnvironment,
+  restartWarning,
 } from '../browser-restart';
 
 describe('firefoxRestoresSession', () => {
@@ -235,5 +236,39 @@ describe('relaunchCommands', () => {
 
     expect(commands).toHaveLength(1);
     expect(commands[0].args).not.toContain('--profile-directory=Default');
+  });
+});
+
+describe('relaunchEnvironment', () => {
+  /**
+   * The bug this exists for: Electron rewrites XDG_CURRENT_DESKTOP to
+   * `Unity` in its own process, a spawned Chromium reads it, and lays its
+   * window out the way Unity did — close button on the top left. A browser
+   * the app restarted looked unlike the same browser launched from the dock.
+   */
+  it('puts the real desktop back when Electron has rewritten it', () => {
+    const env = relaunchEnvironment({
+      XDG_CURRENT_DESKTOP: 'Unity',
+      ORIGINAL_XDG_CURRENT_DESKTOP: 'ubuntu:GNOME',
+      PATH: '/usr/bin',
+    });
+
+    expect(env.XDG_CURRENT_DESKTOP).toBe('ubuntu:GNOME');
+    // Electron's own bookkeeping means nothing to a browser.
+    expect(env.ORIGINAL_XDG_CURRENT_DESKTOP).toBeUndefined();
+    // Everything else is passed through untouched.
+    expect(env.PATH).toBe('/usr/bin');
+  });
+
+  it('leaves an unrewritten environment alone', () => {
+    const env = relaunchEnvironment({ XDG_CURRENT_DESKTOP: 'ubuntu:GNOME' });
+
+    expect(env.XDG_CURRENT_DESKTOP).toBe('ubuntu:GNOME');
+  });
+
+  it('invents nothing when the desktop is unknown', () => {
+    const env = relaunchEnvironment({ PATH: '/usr/bin' });
+
+    expect('XDG_CURRENT_DESKTOP' in env).toBe(false);
   });
 });

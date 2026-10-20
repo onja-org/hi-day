@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { displayName } from './blind-browsers';
 import type { OpenProfiles } from './browser-profiles';
+import { readSessionEnvironment } from './support-gate';
 
 /**
  * Restarting a blind browser so it comes back with an accessibility tree.
@@ -149,6 +150,35 @@ export function geckoProfileArguments(cmdline: string[]): string[] {
  * as a URL. Running the Exec verbatim also carries the activation prefix,
  * which is what brings the tree back.
  */
+/**
+ * The environment a relaunched browser should get.
+ *
+ * Electron overwrites `XDG_CURRENT_DESKTOP` with `Unity` in its own process
+ * and keeps the real value in `ORIGINAL_XDG_CURRENT_DESKTOP` (see
+ * support-gate.ts, where the same rewrite once made a GNOME session report
+ * as unsupported). A browser spawned from here inherits that, reads `Unity`,
+ * and lays its window out accordingly — which on Chromium means the close
+ * button moves to the top *left*, because that is where Unity put it.
+ *
+ * So a browser restarted by the app looked subtly unlike the same browser
+ * launched from the dock. Putting the real value back makes the two
+ * indistinguishable, which is the whole point of offering the restart.
+ */
+export function relaunchEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const { currentDesktop } = readSessionEnvironment(env);
+  if (!currentDesktop) return env;
+
+  const relaunch: NodeJS.ProcessEnv = {
+    ...env,
+    XDG_CURRENT_DESKTOP: currentDesktop,
+  };
+  // Electron's own bookkeeping, which means nothing to a browser.
+  delete relaunch.ORIGINAL_XDG_CURRENT_DESKTOP;
+  return relaunch;
+}
+
 export function relaunchCommand(
   activatedExec: string,
   command: string,

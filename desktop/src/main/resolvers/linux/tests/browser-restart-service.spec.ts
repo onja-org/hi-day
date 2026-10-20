@@ -137,4 +137,35 @@ describe('BrowserRestartService.restart', () => {
     expect(outcomes[0].restarted).toBe(true);
     killed.mockRestore();
   });
+
+  /**
+   * The spawned browser must not inherit Electron's rewritten
+   * XDG_CURRENT_DESKTOP: reading `Unity` makes Chromium put the close button
+   * on the top left, so a browser the app restarted looked unlike the same
+   * browser launched from the dock.
+   */
+  it('hands the relaunched browser the real desktop, not Electron\'s', async () => {
+    env = {
+      ...env,
+      XDG_CURRENT_DESKTOP: 'Unity',
+      ORIGINAL_XDG_CURRENT_DESKTOP: 'ubuntu:GNOME',
+    };
+    const service = new BrowserRestartService({ env });
+    let signalled = false;
+    const killed = vi.spyOn(process, 'kill').mockImplementation(() => {
+      if (!signalled) {
+        signalled = true;
+        return true;
+      }
+      throw new Error('ESRCH: no such process');
+    });
+
+    await service.restart([chrome(4242)]);
+
+    const spawned = spawn.mock.calls[0][2] as { env: NodeJS.ProcessEnv };
+    expect(spawned.env.XDG_CURRENT_DESKTOP).toBe('ubuntu:GNOME');
+    expect(spawned.env.ORIGINAL_XDG_CURRENT_DESKTOP).toBeUndefined();
+    expect(spawned.env.XDG_DATA_HOME).toBe(dataHome);
+    killed.mockRestore();
+  });
 });
