@@ -9,7 +9,9 @@ import { SubscriptionStatus } from '../../database/entities/subscription-status.
 import { EmailService } from '../../email/services/email.service';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
+  accessEndsAfter,
   dueTrialReminderDaysLeft,
+  isInTrialGrace,
   isTrialExpired,
   trialDaysLeft,
   trialEndFrom,
@@ -24,6 +26,13 @@ export interface TrialStatus {
   daysLeft: number;
   /** Nothing is blocked by this yet — see CONTEXT.md's Trial entry. */
   isExpired: boolean;
+  /**
+   * The trial has run out but access has not. Everything still works; the
+   * banner hardens and names the date it stops.
+   */
+  isInGrace: boolean;
+  /** ISO timestamp: when access stops, once enforcement exists. */
+  accessEndsAt: string;
 }
 
 @Injectable()
@@ -98,6 +107,8 @@ export class TrialService {
       trialEndsAt: subscription.trialEndsAt.toISOString(),
       daysLeft: trialDaysLeft(subscription.trialEndsAt, now),
       isExpired: isTrialExpired(subscription.trialEndsAt, now),
+      isInGrace: isInTrialGrace(subscription.trialEndsAt, now),
+      accessEndsAt: accessEndsAfter(subscription.trialEndsAt).toISOString(),
     };
   }
 
@@ -169,6 +180,7 @@ export class TrialService {
       organisation.owner.email,
       organisation.name,
       daysLeft,
+      accessEndsAfter(subscription.trialEndsAt).toDateString(),
     );
 
     return true;

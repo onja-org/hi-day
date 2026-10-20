@@ -72,13 +72,18 @@ describe('dueTrialReminderDaysLeft', () => {
     expect(dueTrialReminderDaysLeft(END, daysBeforeEnd(0.5), null)).toBe(1);
   });
 
-  it('stays quiet about a trial that ended long ago', () => {
-    const longAfter = new Date(END.getTime() + 7 * MS_PER_DAY);
-    expect(dueTrialReminderDaysLeft(END, longAfter, null)).toBeNull();
+  it('sends the trial-has-ended reminder once it runs out', () => {
+    const justAfter = new Date(END.getTime() + 60 * 60 * 1000);
+    expect(dueTrialReminderDaysLeft(END, justAfter, 1)).toBe(0);
   });
 
-  it('still sends the final-day reminder just after expiry, within the grace window', () => {
+  it('stops once the ended reminder has gone out', () => {
     const justAfter = new Date(END.getTime() + 60 * 60 * 1000);
-    expect(dueTrialReminderDaysLeft(END, justAfter, null)).toBe(1);
+    expect(dueTrialReminderDaysLeft(END, justAfter, 0)).toBeNull();
+  });
+
+  it('says nothing once the grace period itself has passed', () => {
+    const afterGrace = new Date(END.getTime() + 4 * MS_PER_DAY);
+    expect(dueTrialReminderDaysLeft(END, afterGrace, null)).toBeNull();
   });
 });
