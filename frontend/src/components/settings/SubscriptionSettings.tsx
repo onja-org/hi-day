@@ -50,19 +50,31 @@ export function SubscriptionSettings({
           </div>
         )}
 
-        {trialQuery.data && <TrialSummary trial={trialQuery.data} />}
+        {trialQuery.data?.trial && !trialQuery.data.isFree && (
+          <TrialSummary trial={trialQuery.data.trial} />
+        )}
 
-        {trialQuery.isSuccess && !trialQuery.data && (
+        {trialQuery.data?.isFree && (
           <p className="mt-1 text-sm text-slate-900/60">
-            Your organisation isn&apos;t on a plan. It was created before the
-            {" "}
-            {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
-            running out and nothing to pay.
+            Your organisation doesn&apos;t pay for Hi Day. There&apos;s nothing
+            running out and nothing to set up.
           </p>
         )}
+
+        {trialQuery.isSuccess &&
+          !trialQuery.data?.trial &&
+          !trialQuery.data?.isFree && (
+            <p className="mt-1 text-sm text-slate-900/60">
+              Your organisation isn&apos;t on a plan. It was created before the
+              {" "}
+              {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
+              running out and nothing to pay.
+            </p>
+          )}
       </section>
 
-      <section className="rounded-brand-sm border-2 border-ink bg-white p-6">
+      {!trialQuery.data?.isFree && (
+        <section className="rounded-brand-sm border-2 border-ink bg-white p-6">
         <h2 className="text-base font-semibold text-primary-dark">
           Hi Day Cloud pricing
         </h2>
@@ -109,7 +121,8 @@ export function SubscriptionSettings({
         >
           See pricing
         </Link>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

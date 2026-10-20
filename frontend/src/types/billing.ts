@@ -18,6 +18,13 @@ export type TrialStatus = {
 
 /** `trial` is null for an organisation created before trials existed — it
  * has never been on one, which is a normal state rather than an error. */
+/** What the billing endpoint answers: the trial, if any, and whether this
+ * organisation is one that never pays (configured server-side). */
+export type BillingStatus = {
+  trial: TrialStatus | null;
+  isFree: boolean;
+};
+
 export type GetTrialStatusResult =
-  | { ok: true; trial: TrialStatus | null }
+  | { ok: true; status: BillingStatus }
   | { ok: false; message: string };
