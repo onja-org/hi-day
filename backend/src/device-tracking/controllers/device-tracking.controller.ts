@@ -87,6 +87,7 @@ export class DeviceTrackingController {
     return {
       projectsEnabled: await this.organisationsService.getProjectsEnabled(
         request.organisationId,
+        request.userId,
       ),
     };
   }

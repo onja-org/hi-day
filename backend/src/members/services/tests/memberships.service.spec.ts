@@ -172,6 +172,7 @@ describe('MembershipsService', () => {
           canDeleteScreenshots: null,
           screenshotFrequencySeconds: null,
           canDeleteScreenshots: null,
+          projectsEnabled: null,
         },
       ]);
     });

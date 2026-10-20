@@ -122,6 +122,22 @@ export class MembershipsController {
     };
   }
 
+  @Post('projects/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetProjectsOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllProjectsEnabledOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Post('screenshot-frequency/reset-overrides')
   @RequireRole(MembershipRole.ADMIN)
   async resetScreenshotFrequencyOverrides(

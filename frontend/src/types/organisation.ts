@@ -93,8 +93,14 @@ export type OrganisationProfile = {
   timezone: string;
   /** 'monday' until an admin changes it. */
   weekStartsOn: WeekStart;
-  /** Whether time is tracked against Projects. Off unless an admin turns it on. */
+  /** Whether *you* track time against Projects: your own override, else the
+   * organisation default. Off unless an admin turns it on. */
   projectsEnabled: boolean;
+  /** The organisation-wide default, whatever your own override is. */
+  projectsDefaultEnabled: boolean;
+  /** Whether the Project and Task pages are worth showing: `projectsEnabled`,
+   * or an admin/manager running Projects others are switched on for. */
+  projectsManageable: boolean;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;

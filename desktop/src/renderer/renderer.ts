@@ -460,6 +460,7 @@ const searchSection = document.getElementById("search-section")!;
 const projectsSection = document.getElementById("projects-section")!;
 const projectList = document.getElementById("project-list") as HTMLUListElement;
 const projectListEmpty = document.getElementById("project-list-empty")!;
+const projectListLoading = document.getElementById("project-list-loading")!;
 const projectCountEl = document.getElementById("project-count")!;
 const projectSearch = document.getElementById(
   "project-search",
@@ -1154,7 +1155,9 @@ async function mergeNewTodayEntries(): Promise<void> {
 function renderProjects(): void {
   projectList.innerHTML = "";
   projectTotalElements.clear();
-  projectCountEl.textContent = String(projects.length);
+  projectCountEl.textContent = projectsLoaded ? String(projects.length) : "…";
+  // Until the list has come back, an empty one means "not loaded", not "none".
+  projectListLoading.hidden = projectsLoaded;
 
   const query = projectSearch.value.trim().toLowerCase();
   const matches = projects.filter(
@@ -1399,6 +1402,12 @@ async function refreshProjectsSetting(): Promise<void> {
   const setting = await window.api.tracking.projectsSetting();
   if (!setting.ok) return;
   if (setting.data.projectsEnabled !== projectsEnabled) {
+    // Show the list's loading state at once, rather than leaving the space
+    // empty until setup has fetched the projects.
+    projectsEnabled = setting.data.projectsEnabled;
+    projectsLoaded = false;
+    applyProjectsMode();
+    renderProjects();
     await initTracking();
     return;
   }

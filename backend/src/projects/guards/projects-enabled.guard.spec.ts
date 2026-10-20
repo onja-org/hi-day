@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { ProjectsEnabledGuard } from './projects-enabled.guard';
 
@@ -11,11 +12,19 @@ describe('ProjectsEnabledGuard', () => {
     } as unknown as ExecutionContext;
   }
 
-  function makeGuard(organisation: unknown) {
+  function makeGuard(
+    organisation: unknown,
+    membership: unknown = null,
+    switchedOn = 0,
+  ) {
     const findOne = jest.fn().mockResolvedValue(organisation);
-    const guard = new ProjectsEnabledGuard({
-      findOne,
-    } as unknown as Repository<Organisation>);
+    const guard = new ProjectsEnabledGuard(
+      { findOne } as unknown as Repository<Organisation>,
+      {
+        findOne: jest.fn().mockResolvedValue(membership),
+        count: jest.fn().mockResolvedValue(switchedOn),
+      } as unknown as Repository<Membership>,
+    );
     return { guard, findOne };
   }
 
@@ -68,5 +77,51 @@ describe('ProjectsEnabledGuard', () => {
         makeContext({ params: { id: '100000' } }),
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe('per-member override', () => {
+    const request = { userId: 'u1', params: { id: '100000' } };
+
+    it('lets someone through whose override is on while the default is off', async () => {
+      const { guard } = makeGuard(
+        { id: 'org-1', settings: { projectsEnabled: false } },
+        { role: 'member', projectsEnabled: true },
+      );
+
+      await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    });
+
+    it('refuses someone whose override is off while the default is on', async () => {
+      const { guard } = makeGuard(
+        { id: 'org-1', settings: { projectsEnabled: true } },
+        { role: 'member', projectsEnabled: false },
+      );
+
+      await expect(
+        guard.canActivate(makeContext(request)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets an admin manage Projects once anyone has been switched on', async () => {
+      const { guard } = makeGuard(
+        { id: 'org-1', settings: { projectsEnabled: false } },
+        { role: 'admin', projectsEnabled: null },
+        1,
+      );
+
+      await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
+    });
+
+    it('keeps an admin out when nobody has Projects', async () => {
+      const { guard } = makeGuard(
+        { id: 'org-1', settings: { projectsEnabled: false } },
+        { role: 'admin', projectsEnabled: null },
+        0,
+      );
+
+      await expect(
+        guard.canActivate(makeContext(request)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 });

@@ -7,7 +7,6 @@ import { ConfirmOrganisationDeletionPrompt } from "@/components/ConfirmOrganisat
 import { DeleteOrganisationSection } from "@/components/DeleteOrganisationSection";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { SettingsSectionRow } from "@/components/SettingsSectionRow";
-import { Toggle } from "@/components/Toggle";
 import type { Industry, WeekStart } from "@/types/organisation";
 
 type CompanyInformationSettingsProps = {
@@ -40,7 +39,6 @@ export function CompanyInformationSettings({
           website: String(formData.get("website") ?? ""),
           timezone: String(formData.get("timezone") ?? ""),
           weekStartsOn: String(formData.get("weekStartsOn") ?? "") as WeekStart,
-          projectsEnabled: formData.get("projectsEnabled") !== null,
         })}
       >
         {(loaded) => (
@@ -57,20 +55,6 @@ export function CompanyInformationSettings({
               description="How dates and weeks are read across the dashboard, timesheets and reports."
             >
               <CompanyRegionalFields organisation={loaded} />
-            </SettingsSectionRow>
-
-            <SettingsSectionRow
-              title="Projects"
-              description="Track time against Projects and Tasks, or just per person. Turning this off hides Projects for everyone; existing Projects and the time logged to them are kept. It can only be turned off once no timer is running on a project."
-            >
-              <div className="rounded-lg border border-input-border bg-white p-5">
-                <Toggle
-                  name="projectsEnabled"
-                  label="Track time against Projects"
-                  description="Off: people start a timer with nothing to choose, and time is tracked per person."
-                  defaultChecked={loaded.projectsEnabled}
-                />
-              </div>
             </SettingsSectionRow>
           </>
         )}

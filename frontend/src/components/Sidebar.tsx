@@ -33,6 +33,7 @@ import type { NavEntry, NavLink } from "@/types/navigation";
 const SETTINGS_GROUP_ICONS: Record<string, Icon> = {
   organization: Buildings,
   members: Users,
+  projects: FolderSimple,
   tracking: ChartLineUp,
 };
 import { MobileSidebarDrawer } from "./MobileSidebarDrawer";
@@ -59,6 +60,8 @@ export function Sidebar({
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
+  const projectsManageable =
+    organisationQuery.data?.projectsManageable ?? false;
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
 
   const teamsLink: NavLink = {
@@ -128,7 +131,7 @@ export function Sidebar({
       href: `/organisations/${organisationId}/activities`,
       icon: ChartLineUp,
     },
-    ...(projectsEnabled ? [projectManagementEntry] : []),
+    ...(projectsManageable ? [projectManagementEntry] : []),
     {
       kind: "group",
       label: "Reports",

@@ -34,6 +34,9 @@ export interface ActiveMemberSummary {
   timezone: string | null;
   /** `null` means inherit the Organisation's default. */
   appUrlTracking: AppUrlTracking | null;
+  /** `null` inherits the Organisation's Projects default; `true`/`false`
+   * override it either way. */
+  projectsEnabled: boolean | null;
   /** `null` means inherit the Organisation's "Allowed apps" default. */
   allowedApps: AllowedApps | null;
   /** Work time limit overrides; each `null` inherits the Organisation's. */
@@ -243,6 +246,9 @@ export class MembershipsService {
 
     if (dto.appUrlTracking !== undefined) {
       membership.appUrlTracking = dto.appUrlTracking;
+    }
+    if (dto.projectsEnabled !== undefined) {
+      membership.projectsEnabled = dto.projectsEnabled;
     }
     if (dto.allowedApps !== undefined) {
       membership.allowedApps = dto.allowedApps;
@@ -462,6 +468,7 @@ export class MembershipsService {
     // the admin chose for the whole organisation.
     if (
       dto.appUrlTracking !== undefined ||
+      dto.projectsEnabled !== undefined ||
       dto.allowedApps !== undefined ||
       dto.timesheetModifyTime !== undefined ||
       dto.timesheetRequireApproval !== undefined
@@ -521,6 +528,8 @@ export class MembershipsService {
       joinedAt: membership.createdAt,
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
+      // `?? null`: a partially-selected row leaves this undefined.
+      projectsEnabled: membership.projectsEnabled ?? null,
       allowedApps: membership.allowedApps,
       // `?? null`, because a partially-selected row leaves these
       // undefined, and the summary promises null for "inherits".
@@ -560,6 +569,32 @@ export class MembershipsService {
       await this.dataSource.transaction((manager) =>
         this.auditLogService.record(manager, {
           action: 'membership.screenshot_delete_overrides_reset',
+          organisationId,
+          actorUserId,
+        }),
+      );
+    }
+    return { cleared };
+  }
+
+  /** "Apply to all" for the Projects setting. */
+  async resetAllProjectsEnabledOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ projectsEnabled: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"projectsEnabled" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.projects_overrides_reset',
           organisationId,
           actorUserId,
         }),

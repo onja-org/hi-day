@@ -30,7 +30,10 @@ import type {
   TrackingReminderDelivery,
   TrackingReminderSettings,
 } from '../tracking-reminders';
-import { DEFAULT_PROJECTS_ENABLED } from '../projects-setting';
+import {
+  DEFAULT_PROJECTS_ENABLED,
+  resolveProjectsEnabled,
+} from '../projects-setting';
 import type { Industry, WeekStart } from '../company-profile';
 import { DEFAULT_IDLE_POLICY, IdleHandling, IdlePolicy } from '../idle-policy';
 import {
@@ -94,8 +97,16 @@ export interface OrganisationProfile {
   /** Falls back to UTC, the value every Organisation was created with. */
   timezone: string;
   weekStartsOn: WeekStart;
-  /** Whether time is tracked against Projects; off unless an admin enabled it. */
+  /** Whether *this person* tracks time against Projects: their own override,
+   * else the organisation default. Off unless an admin enabled it. */
   projectsEnabled: boolean;
+  /** The organisation-wide default, whatever this person's own override is —
+   * what the Projects settings toggle shows. */
+  projectsDefaultEnabled: boolean;
+  /** Whether the Project and Task pages are worth showing: `projectsEnabled`,
+   * or an admin/manager running Projects that others have been switched on
+   * for. */
+  projectsManageable: boolean;
   userId: string;
   /** Only the owner may start or cancel account deletion. */
   isOwner: boolean;
@@ -242,7 +253,27 @@ export class OrganisationsService {
       userId,
       membership.timesheetModifyTime,
       membership.canDeleteScreenshots,
+      await this.projectsContext(
+        membership.organisationId,
+        membership.projectsEnabled,
+      ),
     );
+  }
+
+  /** What `toProfile` needs beyond the organisation to answer the Projects
+   * questions for one person. */
+  private async projectsContext(
+    organisationId: string,
+    override: boolean | null,
+  ): Promise<{ override: boolean | null; anySwitchedOn: boolean }> {
+    const switchedOn = await this.memberships.count({
+      where: {
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+        projectsEnabled: true,
+      },
+    });
+    return { override: override ?? null, anySwitchedOn: switchedOn > 0 };
   }
 
   /**
@@ -438,7 +469,20 @@ export class OrganisationsService {
       await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);
     }
 
-    return this.toProfile(organisation, MembershipRole.ADMIN, userId);
+    const adminMembership = await this.memberships.findOne({
+      where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+    });
+    return this.toProfile(
+      organisation,
+      MembershipRole.ADMIN,
+      userId,
+      adminMembership?.timesheetModifyTime ?? null,
+      adminMembership?.canDeleteScreenshots ?? null,
+      await this.projectsContext(
+        organisationId,
+        adminMembership?.projectsEnabled ?? null,
+      ),
+    );
   }
 
   /**
@@ -552,14 +596,24 @@ export class OrganisationsService {
   }
 
   /** Narrow, like `getWeekStart`: time-entry and project routes gate on it
-   * without needing the whole `OrganisationProfile`. */
-  async getProjectsEnabled(organisationId: string): Promise<boolean> {
+   * without needing the whole `OrganisationProfile`. Per person: their own
+   * override, else the organisation default. */
+  async getProjectsEnabled(
+    organisationId: string,
+    userId: string,
+  ): Promise<boolean> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
     });
     const settings = organisation.settings as OrganisationSettings;
+    const membership = await this.memberships.findOne({
+      where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+    });
 
-    return settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED;
+    return resolveProjectsEnabled(
+      settings.projectsEnabled,
+      membership?.projectsEnabled,
+    );
   }
 
   /**
@@ -652,6 +706,10 @@ export class OrganisationsService {
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
     membershipCanDeleteScreenshots: boolean | null = null,
+    projects: { override: boolean | null; anySwitchedOn: boolean } = {
+      override: null,
+      anySwitchedOn: false,
+    },
   ): OrganisationProfile {
     const settings = organisation.settings as OrganisationSettings;
     const modifyTime =
@@ -724,7 +782,17 @@ export class OrganisationsService {
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       timezone: settings.timezone ?? DEFAULT_TIMEZONE,
       weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
-      projectsEnabled: settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED,
+      projectsEnabled: resolveProjectsEnabled(
+        settings.projectsEnabled,
+        projects.override,
+      ),
+      projectsDefaultEnabled:
+        settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED,
+      projectsManageable:
+        resolveProjectsEnabled(settings.projectsEnabled, projects.override) ||
+        ((role === MembershipRole.ADMIN || role === MembershipRole.MANAGER) &&
+          ((settings.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED) ||
+            projects.anySwitchedOn)),
       userId,
       isOwner: organisation.ownerUserId === userId,
       deletionScheduledFor:
