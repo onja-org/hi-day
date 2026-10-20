@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   BuildingsIcon,
   ChartLineUpIcon,
+  FolderSimpleIcon,
   UsersIcon,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon } from "@phosphor-icons/react";
@@ -15,6 +16,7 @@ type SettingsCardsProps = {
 const GROUP_ICONS: Record<string, Icon> = {
   organization: BuildingsIcon,
   members: UsersIcon,
+  projects: FolderSimpleIcon,
   tracking: ChartLineUpIcon,
 };
 

@@ -22,6 +22,7 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
   dailyLimitHours: null,
   screenshotFrequencySeconds: null,
   canDeleteScreenshots: null,
+  projectsEnabled: null,
   allowedApps: null,
     timesheetModifyTime: null,
     timesheetRequireApproval: null,

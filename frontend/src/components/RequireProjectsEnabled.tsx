@@ -29,12 +29,12 @@ export function RequireProjectsEnabled({ children }: RequireProjectsEnabledProps
     return <ErrorMessage message="Could not load this organisation." />;
   }
 
-  if (!organisationQuery.data.projectsEnabled) {
+  if (!organisationQuery.data.projectsManageable) {
     return (
       <InfoMessage
         message={
           organisationQuery.data.role === "admin"
-            ? "Projects are turned off for this organisation. Turn them on under Settings → Organization → Company information."
+            ? "Projects are turned off for this organisation. Turn them on under Settings → Projects."
             : "Projects are turned off for this organisation. Ask an admin if you need them."
         }
       />

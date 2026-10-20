@@ -1680,6 +1680,12 @@ if (!gotSingleInstanceLock) {
     if (app.isReady()) reopenMainWindow();
   });
 
+  // Windows groups a running window with the taskbar shortcut that shares
+  // its AppUserModelID. Without it (always the case under `pnpm dev`) a
+  // pinned Hi Day and the running one show as two icons. Matches the
+  // installer's appId (electron-builder.yml).
+  if (process.platform === "win32") app.setAppUserModelId("io.hiday.app");
+
   void app.whenReady().then(async () => {
     activateBrowsersOnLinux();
     syncAutoLaunch();

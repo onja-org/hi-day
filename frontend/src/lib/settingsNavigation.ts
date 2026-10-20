@@ -25,6 +25,11 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     sections: [{ key: "work-time-limits", label: "Work time limits" }],
   },
   {
+    key: "projects",
+    label: "Projects",
+    sections: [{ key: "projects", label: "Projects" }],
+  },
+  {
     key: "tracking",
     label: "Activity & tracking",
     sections: [

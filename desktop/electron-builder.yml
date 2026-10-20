@@ -161,6 +161,13 @@ linux:
   # this is belt-and-braces — but it keeps the .desktop launchers self-describing
   # rather than relying on the wrapper alone.
   executableArgs: ["--no-sandbox"]
+  desktop:
+    entry:
+      # Must equal the running window's WM_CLASS (check with `xprop WM_CLASS`),
+      # which Electron takes from app.setName("Hi Day") — not the executable,
+      # which afterPack.mjs renames to hiday-bin. With any other value the dock
+      # can't tie the window to this launcher and offers no "Pin to Dock".
+      StartupWMClass: Hi Day
 
 deb:
   packageName: hiday

@@ -64,7 +64,7 @@ import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Device } from '../../database/entities/device.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { TimeEntryType } from '../../database/entities/time-entry-type.enum';
-import { DEFAULT_PROJECTS_ENABLED } from '../../organisations/projects-setting';
+import { resolveProjectsEnabled } from '../../organisations/projects-setting';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
@@ -2187,21 +2187,25 @@ export class TimeEntriesService {
   }
 
   /**
-   * Time is tracked against a Project exactly when the Organisation has
-   * Projects enabled: on, every entry names one; off, none may. Checked on
-   * the server because hiding the picker is only a courtesy.
+   * Time is tracked against a Project exactly when Projects are enabled for
+   * this person (their own override, else the Organisation's default): on,
+   * every entry names one; off, none may. Checked on the server because
+   * hiding the picker is only a courtesy.
    */
   private async assertProjectChoiceMatchesSetting(
     organisationId: string,
+    membership: Membership,
     projectId: string | null,
     taskId: string | undefined,
   ): Promise<void> {
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
-    const enabled =
+    const enabled = resolveProjectsEnabled(
       (organisation?.settings as { projectsEnabled?: boolean } | undefined)
-        ?.projectsEnabled ?? DEFAULT_PROJECTS_ENABLED;
+        ?.projectsEnabled,
+      membership.projectsEnabled,
+    );
 
     if (enabled && projectId === null) {
       throw new BadRequestException('Choose a project to track time against.');
@@ -2222,6 +2226,7 @@ export class TimeEntriesService {
     const membership = await this.getActiveMembership(organisationId, userId);
     await this.assertProjectChoiceMatchesSetting(
       organisationId,
+      membership,
       projectId,
       taskId,
     );
@@ -2284,6 +2289,7 @@ export class TimeEntriesService {
     }
     await this.assertProjectChoiceMatchesSetting(
       organisationId,
+      caller,
       projectId,
       taskId,
     );
