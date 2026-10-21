@@ -7,12 +7,19 @@ describe('TimerStatusGate', () => {
     return { load: () => (deviceToken ? { deviceToken } : null) };
   }
 
-  function makeClient(
-    result:
-      | { ok: true; data: { entry: { pausedAt?: string | null } | null } }
-      | { ok: false },
-  ): TimerStatusClient {
+  type Result =
+    | { ok: true; data: { entry: { pausedAt?: string | null } | null } }
+    | { ok: false; unauthorized?: boolean };
+
+  function makeClient(result: Result): TimerStatusClient {
     return { getCurrentTimer: vi.fn().mockResolvedValue(result) };
+  }
+
+  /** One result per poll, so a transition can be driven across polls. */
+  function makeSequenceClient(...results: Result[]): TimerStatusClient {
+    const getCurrentTimer = vi.fn();
+    for (const result of results) getCurrentTimer.mockResolvedValueOnce(result);
+    return { getCurrentTimer };
   }
 
   it('does not call onChange when there is no session and it was already not running', async () => {
@@ -124,7 +131,7 @@ describe('TimerStatusGate', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
   });
 
-  it('treats a failed request as not running', async () => {
+  it('leaves a stopped timer stopped when the request fails', async () => {
     const onChange = vi.fn();
     const gate = new TimerStatusGate(
       makeSession('token-1'),
@@ -134,6 +141,80 @@ describe('TimerStatusGate', () => {
 
     await gate.pollOnce();
 
-    expect(onChange).not.toHaveBeenCalled(); // starts false; a failed poll stays false
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // The offline regression: going offline used to report the running timer
+  // as stopped, which stops the window sampler, the activity ticker and URL
+  // capture — all while the time entry keeps running.
+  it('holds a running timer through an unreachable server', async () => {
+    const onChange = vi.fn();
+    const gate = new TimerStatusGate(
+      makeSession('token-1'),
+      makeSequenceClient(
+        { ok: true, data: { entry: {} } },
+        { ok: false },
+        { ok: false },
+      ),
+      onChange,
+    );
+
+    await gate.pollOnce();
+    await gate.pollOnce();
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('reports the stop that happened while offline, once the server answers again', async () => {
+    const onChange = vi.fn();
+    const gate = new TimerStatusGate(
+      makeSession('token-1'),
+      makeSequenceClient(
+        { ok: true, data: { entry: {} } },
+        { ok: false },
+        { ok: true, data: { entry: null } },
+      ),
+      onChange,
+    );
+
+    await gate.pollOnce();
+    await gate.pollOnce();
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenNthCalledWith(1, true);
+    expect(onChange).toHaveBeenNthCalledWith(2, false);
+  });
+
+  // A revoked session is an answer, unlike an unreachable server.
+  it('reports not running when the device session is revoked', async () => {
+    const onChange = vi.fn();
+    const gate = new TimerStatusGate(
+      makeSession('token-1'),
+      makeSequenceClient(
+        { ok: true, data: { entry: {} } },
+        { ok: false, unauthorized: true },
+      ),
+      onChange,
+    );
+
+    await gate.pollOnce();
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenNthCalledWith(2, false);
+  });
+
+  // An older server omitting `entry` used to throw on `.pausedAt`.
+  it('treats a missing entry field as not running rather than throwing', async () => {
+    const onChange = vi.fn();
+    const gate = new TimerStatusGate(
+      makeSession('token-1'),
+      makeClient({ ok: true, data: {} as { entry: null } }),
+      onChange,
+    );
+
+    await expect(gate.pollOnce()).resolves.toBeUndefined();
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
