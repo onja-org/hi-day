@@ -1454,6 +1454,29 @@ async function registerIpcHandlers(): Promise<void> {
   };
   setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 
+  /**
+   * Applies what this app just did to the timer, then asks the server to
+   * confirm it.
+   *
+   * `pollOnce` deliberately holds its last value when the server cannot
+   * answer — one missed poll must not report a running timer as stopped.
+   * That is right for a poll and wrong immediately after this app's own
+   * start or stop, which offline is the one thing it does know: the poll
+   * could not answer, so the gate kept "not running", and a timer started
+   * with no connection left the tray reading "not tracking" and — far
+   * worse, since `timerRunning` is what `recomputeSampling` gates on —
+   * window tracking, screenshots and URL capture all switched off behind
+   * a timer that was visibly counting up.
+   *
+   * Priming first and polling after means the server still wins whenever
+   * it can speak: if it disagrees, its answer lands moments later.
+   */
+  const applyLocalTimerState = (): void => {
+    const current = pendingOps.current();
+    timerStatusGate.prime(current !== null && !current.pausedAt);
+    void timerStatusGate.pollOnce();
+  };
+
   ipcMain.handle("tracking:projectsSetting", () =>
     cachedDeviceRead(
       (token) => apiClient.getProjectsSetting(token),
@@ -1504,7 +1527,7 @@ async function registerIpcHandlers(): Promise<void> {
       // Instant local feedback for window tracking rather than waiting on
       // TimerStatusGate's poll; the periodic poll still covers a timer
       // started or stopped elsewhere.
-      void timerStatusGate.pollOnce();
+      applyLocalTimerState();
       return result;
     },
   );
@@ -1518,7 +1541,7 @@ async function registerIpcHandlers(): Promise<void> {
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);
       }
-      void timerStatusGate.pollOnce();
+      applyLocalTimerState();
       return result;
     },
   );
@@ -1537,7 +1560,11 @@ async function registerIpcHandlers(): Promise<void> {
     const result = await callDeviceApi((token) =>
       apiClient.stopTimer(token, endedAt),
     );
-    void timerStatusGate.pollOnce();
+    // `callDeviceApi` only remembers an entry that is still open, so a
+    // stop leaves the last running one behind it — which would then read
+    // as still running below.
+    if (result.ok) pendingOps.remember(null);
+    applyLocalTimerState();
     return result;
   });
 
@@ -1584,7 +1611,7 @@ async function registerIpcHandlers(): Promise<void> {
     );
     // Instant local feedback rather than waiting on TimerStatusGate's poll —
     // capture must stop as soon as the person pauses, not up to 15s later.
-    void timerStatusGate.pollOnce();
+    applyLocalTimerState();
     return result;
   });
 
