@@ -228,6 +228,21 @@ export class OfflineCache {
     return silent === null || silent > CAPTURE_TRUST_WINDOW_MS;
   }
 
+  /**
+   * Whether capture stopped because settings it *had* went stale — as
+   * opposed to never having had any.
+   *
+   * Only the first is worth telling anybody about. An agent that has not
+   * reached the server yet is also not capturing, but that is a few
+   * seconds at startup before the first poll lands, and announcing it
+   * would put "paused until Hi Day can be reached" on screen every single
+   * launch, next to a status line reading "Synced just now".
+   */
+  captureTrustLapsed(): boolean {
+    const silent = this.silentForMs();
+    return silent !== null && silent > CAPTURE_TRUST_WINDOW_MS;
+  }
+
   /** Forgets everything — a sign-out, so none of it is this machine's to keep. */
   clear(): void {
     this.state = emptyState();

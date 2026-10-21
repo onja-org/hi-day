@@ -2033,6 +2033,9 @@ async function runInitTracking(): Promise<void> {
   }
 
   void refreshCapturePermissionBanner();
+  // The event only fires on a change, so a window opening mid-pause (or
+  // reopening after a renderer crash) has to ask.
+  void window.api.tracking.capturePaused().then(showCapturePaused);
   startPolling();
   // Last: the prompt should land on a screen that has finished drawing,
   // and `refreshStatus` above has already settled what is running.
@@ -2069,6 +2072,23 @@ window.api.windowControls.onTrackingReminder((reminder) => {
   // and going full drops the always-on-top the smaller views hold.
   void window.api.windowControls.show();
 });
+
+const capturePausedBanner = document.getElementById("capture-paused")!;
+
+/**
+ * Capture has stopped because the agent has not been able to confirm its
+ * settings for a week. Purely a notice: it must never disable the timer,
+ * which is why it is not routed through `tracking:notice` — that channel
+ * is for an organisation refusing to accept tracking from this client,
+ * and it blocks the play button on purpose. Tracking time and
+ * photographing a screen are different promises, and only the second one
+ * expires.
+ */
+function showCapturePaused(paused: boolean): void {
+  capturePausedBanner.hidden = !paused;
+}
+
+window.api.windowControls.onCapturePaused(showCapturePaused);
 
 const recoveredTimerPrompt = document.getElementById("recovered-timer")!;
 const recoveredTimerMessage = document.getElementById(

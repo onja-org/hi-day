@@ -170,6 +170,7 @@ declare global {
         status: () => Promise<TrackingResult<CurrentTimer>>;
         pause: () => Promise<TrackingResult<TimeEntry>>;
         resume: () => Promise<TrackingResult<TimeEntry>>;
+        capturePaused: () => Promise<boolean>;
         recoveredTimer: () => Promise<{
           startedAt: string;
           lastSeenAt: string;
@@ -212,6 +213,7 @@ declare global {
             }[],
           ) => void,
         ) => void;
+        onCapturePaused: (listener: (paused: boolean) => void) => void;
         onTrackingNotice: (listener: (notice: string | null) => void) => void;
         onTrackingReminder: (
           listener: (reminder: {

@@ -217,6 +217,9 @@ function launch(scenario: Scenario) {
       lastProject: () => Promise.resolve(null),
       // Nothing was left running by a crash in these scenarios — the
       // recovery prompt has its own tests.
+      // Capture is not paused in these scenarios — the trust window has
+      // its own tests.
+      capturePaused: () => Promise.resolve(false),
       recoveredTimer: () => Promise.resolve(null),
       answerRecoveredTimer: () => Promise.resolve(),
       entriesBetween: () => ok(completed),
@@ -275,6 +278,7 @@ function launch(scenario: Scenario) {
       setCompactAlwaysOnTop: async () => {},
       onTrackingNotice: () => {},
       onRefusedTime: () => {},
+      onCapturePaused: () => {},
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },

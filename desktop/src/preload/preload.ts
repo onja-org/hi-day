@@ -240,6 +240,9 @@ const api = {
      * A timer the app came back to find still running after a crash, if
      * there is one worth asking about — see main's `recoveredTimer`.
      */
+    /** Where capture stands now — asked at startup, since the event only fires on a change. */
+    capturePaused: (): Promise<boolean> =>
+      ipcRenderer.invoke("capture:pausedState") as Promise<boolean>,
     recoveredTimer: (): Promise<RecoveredTimer | null> =>
       ipcRenderer.invoke("tracking:recoveredTimer") as Promise<RecoveredTimer | null>,
     /** `keep` leaves it running; otherwise it ends at the last sign of life. */
@@ -324,6 +327,16 @@ const api = {
     ): void => {
       ipcRenderer.on("tracking:refused", (_event, refused: RefusedTime[]) =>
         listener(refused),
+      );
+    },
+    /**
+     * Capture paused, or resumed, for having been out of touch too long.
+     * Deliberately not `onTrackingNotice`: that one blocks the timer, and
+     * capture pausing must never stop somebody tracking their hours.
+     */
+    onCapturePaused: (listener: (paused: boolean) => void): void => {
+      ipcRenderer.on("capture:paused", (_event, paused: boolean) =>
+        listener(paused),
       );
     },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {

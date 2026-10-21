@@ -214,6 +214,59 @@ describe('offline cache', () => {
     });
   });
 
+  /**
+   * Whether capture stopping is worth *telling somebody about*, which is
+   * not the same question as whether it stopped.
+   *
+   * The bug this pins: before the first poll of every launch there has
+   * been no contact at all, so capture is correctly off — but announcing
+   * it put "paused until Hi Day can be reached" on screen next to a
+   * status line reading "Synced just now", every single time the app
+   * opened.
+   */
+  describe('whether a pause is worth announcing', () => {
+    it('says nothing before the first contact — that is a startup moment, not an outage', () => {
+      const subject = cache();
+
+      expect(subject.captureTrustExpired()).toBe(true);
+      expect(subject.captureTrustLapsed()).toBe(false);
+    });
+
+    it('says nothing while contact is recent', () => {
+      const subject = cache();
+      subject.rememberContact();
+
+      at('2026-10-22T10:00:00.000Z');
+
+      expect(subject.captureTrustLapsed()).toBe(false);
+    });
+
+    it('says so once settings it had have gone stale', () => {
+      const subject = cache();
+      subject.rememberContact();
+
+      at(
+        new Date(clock.getTime() + CAPTURE_TRUST_WINDOW_MS + 1000).toISOString(),
+      );
+
+      expect(subject.captureTrustLapsed()).toBe(true);
+    });
+
+    it('stops saying so once the server answers again', () => {
+      const subject = cache();
+      subject.rememberContact();
+      at(
+        new Date(clock.getTime() + CAPTURE_TRUST_WINDOW_MS + 1000).toISOString(),
+      );
+      expect(subject.captureTrustLapsed()).toBe(true);
+
+      subject.rememberContact();
+
+      // Without this the banner stayed up for the rest of the session.
+      expect(subject.captureTrustLapsed()).toBe(false);
+    });
+  });
+
   it('forgets everything on sign-out', () => {
     const subject = cache();
     subject.readFor('device-1');

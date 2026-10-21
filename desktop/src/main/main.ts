@@ -862,8 +862,8 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
-  /** Whether the person has been told capture stopped for being out of touch. */
-  let captureTrustNoticeShown = false;
+  /** What the renderer was last told about capture being paused. */
+  let capturePauseAnnounced = false;
 
   /**
    * Whether capture may run at all right now. Tracking time has no such
@@ -874,18 +874,26 @@ async function registerIpcHandlers(): Promise<void> {
    * (docs/adr/0025-...). Told, not silent: capture disappearing without
    * explanation is the same opacity this product exists to avoid.
    */
-  function captureAllowed(): boolean {
-    const expired = offlineCache.captureTrustExpired();
-    if (expired && !captureTrustNoticeShown && authStore.load() !== null) {
-      captureTrustNoticeShown = true;
-      mainWindow?.webContents.send(
-        "tracking:notice",
-        "Screenshots and app tracking are paused until Hi Day can be reached again.",
-      );
-    }
-    if (!expired) captureTrustNoticeShown = false;
-    return !expired;
+  function capturePaused(): boolean {
+    return authStore.load() !== null && offlineCache.captureTrustLapsed();
   }
+
+  function captureAllowed(): boolean {
+    const paused = capturePaused();
+    // On the change only, and in both directions — saying it once and
+    // never withdrawing it leaves the banner up for the rest of the
+    // session after the connection comes back.
+    if (paused !== capturePauseAnnounced) {
+      capturePauseAnnounced = paused;
+      mainWindow?.webContents.send("capture:paused", paused);
+    }
+    return !offlineCache.captureTrustExpired();
+  }
+
+  // Asked at startup, and after a renderer crash takes the banner with
+  // it: `captureAllowed` only speaks on a change, so a fresh window needs
+  // to be able to ask where things stand.
+  ipcMain.handle("capture:pausedState", (): boolean => capturePaused());
 
   function recomputeSampling(): void {
     const mayCapture = captureAllowed();
