@@ -7,6 +7,7 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { BillingController } from '../controllers/billing.controller';
+import { StripeService } from '../services/stripe.service';
 import { TrialService } from '../services/trial.service';
 
 @Module({
@@ -16,7 +17,7 @@ import { TrialService } from '../services/trial.service';
     EmailModule,
   ],
   controllers: [BillingController],
-  providers: [TrialService, RoleGuard],
-  exports: [TrialService],
+  providers: [StripeService, TrialService, RoleGuard],
+  exports: [StripeService, TrialService],
 })
 export class BillingModule {}
