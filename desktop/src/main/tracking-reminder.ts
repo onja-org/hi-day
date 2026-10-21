@@ -39,6 +39,21 @@ export interface ReminderInput {
 export const PRESENCE_IDLE_LIMIT_SECONDS = 10 * 60;
 
 /**
+ * Whether the day the reminder talks about is already accounted for. There
+ * is no untracked time left to catch once the hours are in — its own second
+ * line would read "0 minutes remaining in your work day" — and someone
+ * working past them is doing so deliberately. `0` means no day length is
+ * configured, so nothing can be full.
+ */
+export function hasTrackedFullWorkDay(
+  trackedTodaySeconds: number,
+  workingHoursPerDay: number,
+): boolean {
+  if (workingHoursPerDay <= 0) return false;
+  return trackedTodaySeconds >= workingHoursPerDay * 3600;
+}
+
+/**
  * Whether to show a reminder right now. Repeats every `intervalMinutes`
  * while the conditions hold, which is the point: someone who ignores the
  * first nudge and keeps working untracked is exactly who it is for.

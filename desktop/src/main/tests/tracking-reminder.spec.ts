@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { shouldRemind, type ReminderInput } from '../tracking-reminder';
+import {
+  hasTrackedFullWorkDay,
+  shouldRemind,
+  type ReminderInput,
+} from '../tracking-reminder';
 
 function input(overrides: Partial<ReminderInput> = {}): ReminderInput {
   return {
@@ -39,5 +43,28 @@ describe('shouldRemind', () => {
 
   it('does nothing before the settings have arrived', () => {
     expect(shouldRemind(input({ settings: null }))).toBe(false);
+  });
+});
+
+describe('hasTrackedFullWorkDay', () => {
+  const EIGHT_HOURS = 8 * 3600;
+
+  it('is false with hours still to track', () => {
+    expect(hasTrackedFullWorkDay(EIGHT_HOURS - 60, 8)).toBe(false);
+  });
+
+  it('is true the moment the day is met, and past it', () => {
+    expect(hasTrackedFullWorkDay(EIGHT_HOURS, 8)).toBe(true);
+    expect(hasTrackedFullWorkDay(EIGHT_HOURS + 3600, 8)).toBe(true);
+  });
+
+  // Nothing configured means nothing to be full of: a reminder is still the
+  // right answer, rather than every day counting as already done.
+  it('is false when no day length is configured', () => {
+    expect(hasTrackedFullWorkDay(EIGHT_HOURS, 0)).toBe(false);
+  });
+
+  it('is false for a day with nothing tracked', () => {
+    expect(hasTrackedFullWorkDay(0, 8)).toBe(false);
   });
 });

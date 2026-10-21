@@ -1,6 +1,5 @@
 import type { BrowserRestartPrompt } from '../preload/preload';
 import { displayName } from './resolvers/linux/blind-browsers';
-import { hasSeenBrowserRestartPrompt } from './setup-state';
 
 const NO_PROMPT: BrowserRestartPrompt = {
   show: false,
@@ -61,7 +60,6 @@ export function browsersOrphanedBySweep<T extends BlindBrowserReportLike>(
 
 export interface BrowserRestartPromptDeps {
   platform: string;
-  userDataDir: string;
   findBrowsers: () => BlindBrowserReportLike;
   log?: (line: string) => void;
 }
@@ -76,18 +74,26 @@ export interface BrowserRestartPromptDeps {
  * never appear in the blind set, but its windows lost their launcher binding
  * along with everyone else's, and only a restart gives it back.
  *
- * Lives here rather than inline in main.ts so all four ways of answering
- * "no" are testable: off Linux, where the launcher override this
- * compensates for does not exist; once this install has answered; when no
- * browser was open to orphan, which leaves the one showing unspent for a
- * launch that has something to say; and when the scan itself fails, where
- * a missing prompt beats a window that never opens.
+ * Asked per sweep, not once per install. Every sweep that writes a launcher
+ * orphans the windows open at that moment, so every one of them has to be
+ * offered the restart that reseats them — a flag saying "this install has
+ * already answered" silently skipped every orphaning after the first, which
+ * is how a later sweep left open browsers with no dock icon and no screen
+ * explaining why.
+ *
+ * Nothing persisted is needed to keep it from nagging: `browsersOrphanedBySweep`
+ * hands back an empty set unless this launch's sweep actually wrote, which
+ * is what holds the screen to the launches that have something to say.
+ *
+ * Lives here rather than inline in main.ts so the ways of answering "no" are
+ * testable: off Linux, where the launcher override this compensates for does
+ * not exist; when no browser was open to orphan; and when the scan itself
+ * fails, where a missing prompt beats a window that never opens.
  */
 export function browserRestartPrompt(
   deps: BrowserRestartPromptDeps,
 ): BrowserRestartPrompt {
   if (deps.platform !== 'linux') return NO_PROMPT;
-  if (hasSeenBrowserRestartPrompt(deps.userDataDir)) return NO_PROMPT;
 
   try {
     const report = deps.findBrowsers();

@@ -1,6 +1,15 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ACTIVATION_MARKER, LEGACY_ACTIVATION_MARKERS } from '../browser-activation';
 
 /**
@@ -47,5 +56,87 @@ describe('afterRemove.sh', () => {
 
   it('exits successfully, so a cleanup failure cannot block removal', () => {
     expect(script.trimEnd().endsWith('exit 0')).toBe(true);
+  });
+});
+
+/**
+ * Runs the real script, with its hardcoded scan roots pointed at a temp tree
+ * so a test can never reach a real home. Everything else — the guard, the
+ * marker matching, the deletion — is the shipped code.
+ */
+describe('afterRemove.sh, run for real', () => {
+  let root: string;
+  let apps: string;
+  let runnable: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'after-remove-'));
+    apps = join(root, 'home', 'someone', '.local', 'share', 'applications');
+    mkdirSync(apps, { recursive: true });
+
+    writeFileSync(
+      join(apps, 'ours.desktop'),
+      `${ACTIVATION_MARKER}\n[Desktop Entry]\nExec=/usr/bin/chrome\n`,
+      'utf-8',
+    );
+    writeFileSync(
+      join(apps, 'theirs.desktop'),
+      '[Desktop Entry]\nExec=/usr/bin/chrome\n',
+      'utf-8',
+    );
+
+    runnable = join(root, 'afterRemove.sh');
+    writeFileSync(
+      runnable,
+      script.replace('/home/* /root', `${root}/home/* ${root}/nonexistent-root`),
+      'utf-8',
+    );
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const run = (...args: string[]): void => {
+    execFileSync('sh', [runnable, ...args], { stdio: 'ignore' });
+  };
+
+  const ours = (): boolean => existsSync(join(apps, 'ours.desktop'));
+  const theirs = (): boolean => existsSync(join(apps, 'theirs.desktop'));
+
+  it('removes its own overrides on a real uninstall', () => {
+    run('remove');
+
+    expect(ours()).toBe(false);
+    // The whole point of matching on a marker.
+    expect(theirs()).toBe(true);
+  });
+
+  it('removes them on purge too', () => {
+    run('purge');
+
+    expect(ours()).toBe(false);
+  });
+
+  /**
+   * The reason the guard exists. dpkg calls postrm with these while the
+   * package is being *replaced*, and deleting the overrides then orphans
+   * every open browser window and stops URL tracking until the new version
+   * launches — once per update, for every user.
+   */
+  it.each(['upgrade', 'failed-upgrade', 'abort-install', 'abort-upgrade', 'disappear'])(
+    'leaves them alone on %s',
+    (reason) => {
+      run(reason);
+
+      expect(ours()).toBe(true);
+      expect(theirs()).toBe(true);
+    },
+  );
+
+  it('treats a hand-run with no argument as a removal', () => {
+    run();
+
+    expect(ours()).toBe(false);
   });
 });

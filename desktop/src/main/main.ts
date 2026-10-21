@@ -33,7 +33,7 @@ import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
 import { recordingIndicatorFor } from "./recording-indicator";
 import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
-import { shouldRemind } from "./tracking-reminder";
+import { hasTrackedFullWorkDay, shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
@@ -67,7 +67,6 @@ import {
 import {
   type CloseAction,
   hasWaylandScreenshotGrant,
-  markBrowserRestartPromptSeen,
   markWaylandScreenshotGranted,
   rememberCloseAction,
   cacheReminderSettings,
@@ -1027,11 +1026,46 @@ async function registerIpcHandlers(): Promise<void> {
     });
     if (!due || !settings) return;
 
+    // Asked only once a reminder is otherwise due, so it costs one call per
+    // reminder rather than one per tick. Signed out there is nobody to ask.
+    if (!signedOut && (await hasTrackedFullWorkDayToday(settings))) {
+      // Spent, not deferred: the day is full now and still will be in ten
+      // minutes, so holding the slot would only fire the moment they log in.
+      untrackedSince = now;
+      return;
+    }
+
     const untrackedMinutes = Math.round(
       (now.getTime() - untrackedSince.getTime()) / 60_000,
     );
     untrackedSince = now;
     deliverReminder(settings, untrackedMinutes, signedOut);
+  }
+
+  /**
+   * Read from the same endpoint the window totals the day with, so the two
+   * cannot disagree. A failed read reminds rather than staying silent: a
+   * nudge too many beats a day of untracked time nobody was told about.
+   */
+  async function hasTrackedFullWorkDayToday(
+    settings: ReminderSettings,
+  ): Promise<boolean> {
+    const now = new Date();
+    const from = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).toISOString();
+
+    const result = await callDeviceApi((token) =>
+      apiClient.getCompletedTotals(token, from, now.toISOString()),
+    );
+    if (!result.ok) return false;
+
+    return hasTrackedFullWorkDay(
+      result.data.workedSeconds,
+      settings.workingHoursPerDay,
+    );
   }
 
   const captureSettingsGate = new CaptureSettingsGate(
@@ -1527,28 +1561,35 @@ async function registerIpcHandlers(): Promise<void> {
     (): BrowserRestartPrompt =>
       browserRestartPrompt({
         platform: process.platform,
-        userDataDir: app.getPath("userData"),
         findBrowsers: () => browsersOpenBeforeActivation,
         log: (line) => console.log(line),
       }),
   );
 
   ipcMain.handle("setup:continueFromBrowserRestart", async (): Promise<void> => {
-    // Recorded before the restart, not after: the person has given their
-    // answer, and a browser that refuses to die must not buy them the same
-    // screen again on the next launch.
-    markBrowserRestartPromptSeen(app.getPath("userData"));
-    if (process.platform !== "linux") return;
-
-    const service = new BrowserRestartService({
-      logger: (line) => console.log(line),
-    });
     // Exactly what the screen named, not the live set: a browser opened since
     // this launch started from the activated entry and has its launcher
     // binding, so restarting it would cost its tabs and fix nothing. One
     // closed in the meantime has no process left to signal, and `restart`
     // skips it rather than opening it on the person's behalf.
-    await service.restart(browsersOpenBeforeActivation.restartable);
+    const named = browsersOpenBeforeActivation.restartable;
+
+    // Spent before the restart, not after: the person has given their answer,
+    // and a browser that refuses to die must not buy them the same screen
+    // again. Only this launch's set is cleared — a later sweep that orphans
+    // windows afresh fills it again and earns its own screen.
+    browsersOpenBeforeActivation = {
+      restartable: [],
+      manual: [],
+      warnings: [],
+    };
+
+    if (process.platform !== "linux") return;
+
+    const service = new BrowserRestartService({
+      logger: (line) => console.log(line),
+    });
+    await service.restart(named);
   });
 }
 

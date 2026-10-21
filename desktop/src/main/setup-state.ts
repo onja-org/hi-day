@@ -9,7 +9,6 @@ export type CloseAction = 'minimize' | 'quit';
 
 /** One-time steps and remembered answers for this install. */
 interface SetupState {
-  browserRestartPromptSeen?: boolean;
   closeAction?: CloseAction;
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
@@ -41,19 +40,6 @@ function read(userDataDir: string): SetupState {
   }
 }
 
-/** Whether the first-run browser-restart screen has already had its turn. */
-export function hasSeenBrowserRestartPrompt(userDataDir: string): boolean {
-  return read(userDataDir).browserRestartPromptSeen === true;
-}
-
-/**
- * Records that the screen has been shown and acted on, so it never appears
- * again. Written even when the restart itself failed: the person has given
- * their answer, and re-asking on the next launch is not what they agreed to.
- */
-export function markBrowserRestartPromptSeen(userDataDir: string): void {
-  write(userDataDir, { ...read(userDataDir), browserRestartPromptSeen: true });
-}
 
 /**
  * Whether the one-time Linux/Wayland "Grant Access" portal call (see
