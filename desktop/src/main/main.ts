@@ -656,11 +656,29 @@ function createTray(): void {
   tray.setToolTip("Hi Day");
   refreshTrayMenu();
   tray.on("click", reopenMainWindow);
+  // Whatever was decided before this existed — see
+  // `recordingIndicatorState`. Not the idle image above, which is only
+  // the placeholder this is built from.
+  applyRecordingIndicator(recordingIndicatorState);
 }
 
 /** Best-effort: an icon that will not load must never take the app
  * down with it. */
+/**
+ * What the indicator was last told, so a tray that does not exist yet can
+ * catch up when it does.
+ *
+ * The gates are primed from the cache inside `registerIpcHandlers`, which
+ * is awaited two lines before `createTray` — so an app relaunched onto a
+ * timer that was already running announced it to a `tray` still null, the
+ * call did nothing, and the tray was then built with the idle icon
+ * hardcoded. It stayed wrong until the person stopped and started again,
+ * which is the first moment anything spoke to a tray that existed.
+ */
+let recordingIndicatorState = false;
+
 function applyRecordingIndicator(isRecording: boolean): void {
+  recordingIndicatorState = isRecording;
   const indicator = recordingIndicatorFor(process.platform, isRecording);
   const load = (file: string) =>
     nativeImage.createFromPath(join(__dirname, "assets", file));
