@@ -3,6 +3,7 @@
 import { StopIcon } from "@phosphor-icons/react";
 import type { RunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
+import { InfoMessage } from "./InfoMessage";
 import { ProjectColourBadge } from "./ProjectColourBadge";
 
 type HeaderTimerRunningPanelProps = {
@@ -14,6 +15,9 @@ type HeaderTimerRunningPanelProps = {
 export function HeaderTimerRunningPanel({ timer }: HeaderTimerRunningPanelProps) {
   return (
     <div className="flex flex-col gap-4">
+      {timer.entry?.projectId && !timer.projectsEnabled && (
+        <InfoMessage message="Projects are now turned off. Your timer keeps running until you stop it." />
+      )}
       <div className="flex items-center gap-2">
         {timer.activeProject && (
           <ProjectColourBadge colour={timer.activeProject.colour} />

@@ -145,7 +145,7 @@ export function ProjectsSettings() {
       )}
       <OrgDefaultWithOverrides<string>
         title="Track time against Projects"
-        description="Off: people start a timer with nothing to choose, and time is tracked per person. Existing Projects and the time logged to them are kept either way. Turning the default off needs no timer running on a project."
+        description="Off: people start a timer with nothing to choose, and time is tracked per person. Existing Projects and the time logged to them are kept either way. A timer already running on a Project keeps going until it's stopped."
         options={OPTIONS}
         orgValue={toKey(organisation.projectsDefaultEnabled)}
         onOrgChange={(next) => orgMutation.mutate(next)}

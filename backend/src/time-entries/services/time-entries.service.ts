@@ -2700,18 +2700,6 @@ export class TimeEntriesService {
   }
 
   /**
-   * Running timers that are on a Project. Turning Projects off hides the
-   * Project everywhere, so a timer still running on one would carry on with
-   * nobody able to see what it is tracking; the setting refuses to change
-   * while any exist.
-   */
-  async countRunningOnProjects(organisationId: string): Promise<number> {
-    return await this.timeEntries.count({
-      where: { organisationId, endedAt: IsNull(), projectId: Not(IsNull()) },
-    });
-  }
-
-  /**
    * Ends every running entry whose client Allowed apps no longer permits,
    * so a change takes effect at once rather than at the next `start`. The
    * hours already tracked are kept. Pass `membershipId` when one person's
