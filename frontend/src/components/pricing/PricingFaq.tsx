@@ -1,4 +1,4 @@
-import { TRIAL_PROMISE } from "@/lib/pricing";
+import { TRIAL_PROMISE } from "@/lib/pricing.generated";
 
 const QUESTIONS = [
   {

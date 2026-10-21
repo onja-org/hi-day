@@ -7,7 +7,7 @@ import {
   CLOUD_BILLING_NOTE,
   CLOUD_PRICE_PER_PERSON,
   TRIAL_DAYS,
-} from "@/lib/pricing";
+} from "@/lib/pricing.generated";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
 import { TrialSummary } from "./TrialSummary";

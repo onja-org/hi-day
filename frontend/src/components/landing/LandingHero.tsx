@@ -1,4 +1,4 @@
-import { CLOUD_PRICE_PER_PERSON } from "@/lib/pricing";
+import { CLOUD_PRICE_PER_PERSON } from "@/lib/pricing.generated";
 import { LandingButtonLink } from "./LandingButtonLink";
 import { LandingTimerCard } from "./LandingTimerCard";
 

@@ -7,8 +7,8 @@ import {
   BILLING_PERIODS,
   CLOUD_BILLING_NOTE,
   CLOUD_PRICE_PER_PERSON,
-} from "@/lib/pricing";
-import type { BillingPeriod } from "@/lib/pricing";
+} from "@/lib/pricing.generated";
+import type { BillingPeriod } from "@/lib/pricing.generated";
 import { PricingPlanCard } from "./PricingPlanCard";
 
 
