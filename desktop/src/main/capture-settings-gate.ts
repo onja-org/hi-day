@@ -95,6 +95,23 @@ export class CaptureSettingsGate {
     this.handle = null;
   }
 
+  /**
+   * Applies settings remembered from a previous session, before any poll
+   * has had a chance to answer.
+   *
+   * `currentSettings` holds its last value through an unreachable server,
+   * but on a cold start there is no last value to hold — `lastSettings`
+   * begins as `OFF_SETTINGS`, so an agent launched with no connection
+   * captures nothing however long it has been running. Priming also sets
+   * the remembered value, not just the applied one: without that, a later
+   * poll reporting the same settings as the cache would read as "no
+   * change" and never be applied at all.
+   */
+  prime(settings: CaptureSettingsValue): void {
+    this.lastSettings = settings;
+    this.onChange(settings);
+  }
+
   async pollOnce(): Promise<void> {
     const session = this.authStore.load();
     const settings = session

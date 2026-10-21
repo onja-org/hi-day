@@ -427,6 +427,37 @@
       </div>
     </div>
 
+    <div id="recovered-timer" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="recovered-timer-title"
+        aria-describedby="recovered-timer-message"
+      >
+        <h2 id="recovered-timer-title" class="close-prompt-title">
+          Hi Day stopped unexpectedly
+        </h2>
+        <p id="recovered-timer-message" class="close-prompt-message"></p>
+        <div class="close-prompt-actions">
+          <button
+            id="recovered-timer-keep"
+            type="button"
+            class="button button-sun"
+          >
+            Yes, keep tracking
+          </button>
+          <button
+            id="recovered-timer-discard"
+            type="button"
+            class="button button-quiet"
+          >
+            No, stop it there
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="close-prompt" class="close-prompt" hidden>
       <div
         class="close-prompt-card"

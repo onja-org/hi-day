@@ -65,6 +65,19 @@ export interface TrackedEntry {
   durationSeconds: number | null;
 }
 
+/** A timer found still running at startup, after the app stopped unexpectedly. */
+export interface RecoveredTimer {
+  startedAt: string;
+  lastSeenAt: string;
+  silentForMs: number;
+}
+
+/** One queued operation the server refused when it was finally replayed. */
+export interface RefusedTime {
+  op: { type: "start" | "stop"; at: string };
+  message: string;
+}
+
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
@@ -102,7 +115,7 @@ export interface CapturePermissionStatus {
 }
 
 export type TrackingResult<T> =
-  | { ok: true; data: T }
+  | { ok: true; data: T; fromCache?: boolean }
   | {
       ok: false;
       message: string;
@@ -223,6 +236,15 @@ const api = {
       ipcRenderer.invoke("tracking:resume") as Promise<
         TrackingResult<TimeEntry>
       >,
+    /**
+     * A timer the app came back to find still running after a crash, if
+     * there is one worth asking about — see main's `recoveredTimer`.
+     */
+    recoveredTimer: (): Promise<RecoveredTimer | null> =>
+      ipcRenderer.invoke("tracking:recoveredTimer") as Promise<RecoveredTimer | null>,
+    /** `keep` leaves it running; otherwise it ends at the last sign of life. */
+    answerRecoveredTimer: (keep: boolean): Promise<void> =>
+      ipcRenderer.invoke("tracking:answerRecoveredTimer", keep) as Promise<void>,
     lastProject: (): Promise<LastProject | null> =>
       ipcRenderer.invoke("tracking:lastProject") as Promise<LastProject | null>,
     entriesBetween: (
@@ -291,6 +313,19 @@ const api = {
         "window:setCompactAlwaysOnTop",
         pinned,
       ) as Promise<void>,
+    /**
+     * Hours a reconnect handed back and the server would not take — an
+     * archived Project, a limit reached, a start too old to record. The
+     * time is gone either way; this is so the person hears it from the
+     * app rather than finding the gap in their timesheet later.
+     */
+    onRefusedTime: (
+      listener: (refused: RefusedTime[]) => void,
+    ): void => {
+      ipcRenderer.on("tracking:refused", (_event, refused: RefusedTime[]) =>
+        listener(refused),
+      );
+    },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
         listener(notice),

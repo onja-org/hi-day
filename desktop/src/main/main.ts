@@ -17,17 +17,26 @@ import {
 import type {
   AllowedApps,
   AppUrlTracking,
+  CurrentTimer,
   PairingPollResult,
   TimeEntry,
   TrackingResult,
 } from "./api-client";
-import { ApiClient } from "./api-client";
+import { ApiClient, isTransportFailure } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { CRASH_RECOVERY_WINDOW_MS, OfflineCache } from "./offline-cache";
+
+/** A timer the app came back to find still running after a crash. */
+interface RecoveredTimer {
+  startedAt: string;
+  lastSeenAt: string;
+  silentForMs: number;
+}
 import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
@@ -87,7 +96,7 @@ import {
   NullDebugHarness,
   type DebugSink,
 } from "./url-capture/debug-harness";
-import { intervalFromEnv } from "./tuning";
+import { intervalFromEnv, offlineSimulated } from "./tuning";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import type { UploadFn } from "./url-capture/sync-contract";
@@ -729,8 +738,19 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return false;
   };
-  const pendingOps = new PendingTimerOps(app.getPath("userData"));
-  const apiClient = new ApiClient(API_BASE_URL);
+  /**
+   * The last answers the server gave, so this app can still be used when
+   * nobody can answer (docs/adr/0025-...). Everything read through
+   * `cachedDeviceRead` below writes through to it on the way past.
+   */
+  const offlineCache = new OfflineCache(app.getPath("userData"));
+  // Backed by the cache rather than memory, so a timer started offline can
+  // still be stopped after a restart — before this, it could not.
+  const pendingOps = new PendingTimerOps(app.getPath("userData"), {
+    read: () => offlineCache.read().runningEntry,
+    write: (entry) => offlineCache.rememberRunning(entry),
+  });
+  const apiClient = new ApiClient(API_BASE_URL, offlineSimulated);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
   // screenshot is persisted to SQLite before it's sent, and drained in
@@ -842,8 +862,34 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
+  /** Whether the person has been told capture stopped for being out of touch. */
+  let captureTrustNoticeShown = false;
+
+  /**
+   * Whether capture may run at all right now. Tracking time has no such
+   * limit — an outage is no reason to stop paying somebody — but capture
+   * does: these settings say whether this person's screen may be
+   * photographed, and an admin who switches that off is owed an upper
+   * bound on how long a machine that never heard them keeps going
+   * (docs/adr/0025-...). Told, not silent: capture disappearing without
+   * explanation is the same opacity this product exists to avoid.
+   */
+  function captureAllowed(): boolean {
+    const expired = offlineCache.captureTrustExpired();
+    if (expired && !captureTrustNoticeShown && authStore.load() !== null) {
+      captureTrustNoticeShown = true;
+      mainWindow?.webContents.send(
+        "tracking:notice",
+        "Screenshots and app tracking are paused until Hi Day can be reached again.",
+      );
+    }
+    if (!expired) captureTrustNoticeShown = false;
+    return !expired;
+  }
+
   function recomputeSampling(): void {
-    if (appUrlTracking !== "off" && timerRunning) {
+    const mayCapture = captureAllowed();
+    if (appUrlTracking !== "off" && timerRunning && mayCapture) {
       windowSampler.start();
     } else {
       windowSampler.stop();
@@ -866,7 +912,7 @@ async function registerIpcHandlers(): Promise<void> {
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
-    if (screenshotsEnabled && timerRunning) {
+    if (screenshotsEnabled && timerRunning && mayCapture) {
       screenshotSampler.start();
     } else {
       screenshotSampler.stop();
@@ -1083,6 +1129,7 @@ async function registerIpcHandlers(): Promise<void> {
       // session, and caching that would erase the settings this is for.
       if (authStore.load() !== null) {
         cacheReminderSettings(app.getPath("userData"), settings.reminders);
+        offlineCache.remember({ captureSettings: settings });
       }
       recomputeSampling();
     },
@@ -1103,6 +1150,100 @@ async function registerIpcHandlers(): Promise<void> {
       recomputeSampling();
     },
   );
+  /**
+   * What the agent knew when it was last running, applied before any poll
+   * can answer. Launched with no connection — autostart at login before
+   * the network is up, or a relaunch mid-outage — both gates would
+   * otherwise begin at "off" and stay there, so a machine that was
+   * tracking and capturing comes back doing neither.
+   */
+  /**
+   * A timer still marked as running when the app starts means it did not
+   * shut down: every ordinary quit, sleep and system shutdown pauses the
+   * timer first (see the `before-quit` and `powerMonitor` handlers), and
+   * pausing clears this. So what is left here is a crash or a power cut,
+   * and the stretch between the last sign of life and now is time nobody
+   * can account for — the app was not running to observe it.
+   *
+   * Read once, before any poll can overwrite it with the server's own
+   * answer, and offered to the renderer to ask about. Past
+   * `CRASH_RECOVERY_WINDOW_MS` it is not worth asking: the gap is too
+   * long to be plausibly "it crashed and I restarted it", so the entry is
+   * ended where it was last seen alive and nothing is claimed for the
+   * silence.
+   */
+  const recoveredTimer = ((): RecoveredTimer | null => {
+    const session = authStore.load();
+    if (!session) return null;
+    const state = offlineCache.readFor(session.deviceId);
+    if (!state.runningEntry || !state.runningSeenAt) return null;
+    return {
+      startedAt: state.runningEntry.startedAt,
+      lastSeenAt: state.runningSeenAt,
+      // Measured here rather than in the renderer, so both the auto-answer
+      // below and the prompt agree on one reading of the clock.
+      silentForMs: Math.max(
+        0,
+        Date.now() - new Date(state.runningSeenAt).getTime(),
+      ),
+    };
+  })();
+
+  /** Null once answered — by the person, or by the window having closed. */
+  let awaitingRecoveryAnswer = recoveredTimer;
+
+  /** Ends the recovered entry where the app was last known to be running. */
+  const endRecoveredTimerAtLastSeen = async (): Promise<void> => {
+    if (!awaitingRecoveryAnswer) return;
+    const { lastSeenAt } = awaitingRecoveryAnswer;
+    awaitingRecoveryAnswer = null;
+    await callDeviceApi((token) => pendingOps.stopAt(token, lastSeenAt, apiClient));
+    void timerStatusGate.pollOnce();
+  };
+
+  if (recoveredTimer && recoveredTimer.silentForMs > CRASH_RECOVERY_WINDOW_MS) {
+    void endRecoveredTimerAtLastSeen().catch(() => {});
+  }
+
+  /** What the renderer should ask about, if anything. */
+  ipcMain.handle("tracking:recoveredTimer", (): RecoveredTimer | null =>
+    awaitingRecoveryAnswer &&
+    awaitingRecoveryAnswer.silentForMs <= CRASH_RECOVERY_WINDOW_MS
+      ? awaitingRecoveryAnswer
+      : null,
+  );
+
+  /**
+   * `keep` leaves the entry running: the person says they were working
+   * through, and the clock simply resumes. `discard` ends it at the last
+   * sign of life. Either way nothing is invented — the only question is
+   * who the unobserved minutes belong to, and only they can answer it.
+   */
+  ipcMain.handle(
+    "tracking:answerRecoveredTimer",
+    async (_event, keep: boolean): Promise<void> => {
+      if (keep) {
+        awaitingRecoveryAnswer = null;
+        return;
+      }
+      await endRecoveredTimerAtLastSeen();
+    },
+  );
+
+  function primeGatesFromCache(): void {
+    const session = authStore.load();
+    if (!session) return;
+    const cached = offlineCache.readFor(session.deviceId);
+    if (cached.captureSettings) captureSettingsGate.prime(cached.captureSettings);
+    // Only the entry's existence: a paused entry is not running, same rule
+    // the gate's own poll applies.
+    if (cached.runningEntry && !cached.runningEntry.pausedAt) {
+      pendingOps.remember(cached.runningEntry);
+      timerStatusGate.prime(true);
+    }
+  }
+  primeGatesFromCache();
+
   captureSettingsGate.start();
   timerStatusGate.start();
   setInterval(() => void reminderTick(), REMINDER_TICK_MS);
@@ -1197,6 +1338,10 @@ async function registerIpcHandlers(): Promise<void> {
       await pendingOps.pause(session.deviceToken, apiClient);
       await apiClient.logout(session.deviceToken);
       authStore.clear();
+      // Projects, settings and totals all belong to the session that just
+      // ended — none of it is this machine's to keep, or to show whoever
+      // signs in next.
+      offlineCache.clear();
     }
     stopUrlCapture();
     stopHeartbeat();
@@ -1222,6 +1367,9 @@ async function registerIpcHandlers(): Promise<void> {
 
     const result = await call(session.deviceToken);
     if (result.ok) {
+      // Any answer at all counts: this is what the staleness of the
+      // cache, and the capture trust window, are measured from.
+      offlineCache.rememberContact();
       // Keeps the offline-pause fallback supplied with the live entry.
       const data = result.data as
         | { entry?: TimeEntry | null; startedAt?: string; endedAt?: string | null }
@@ -1233,11 +1381,39 @@ async function registerIpcHandlers(): Promise<void> {
     }
     if (!result.ok && result.unauthorized) {
       authStore.clear();
+      // None of it is this machine's to keep once the session is gone.
+      offlineCache.clear();
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
     }
     return result;
+  }
+
+  /**
+   * A read the cache can answer when the server cannot.
+   *
+   * Every one of these used to fail outright with no connection, and the
+   * renderer's setup stopped at the first of them — which is why the app
+   * was unusable offline rather than merely degraded. `remember` runs on
+   * the way past while online, so the copy is always the last real
+   * answer; `recall` serves it when, and only when, the request never
+   * reached the server. A refusal is not a failure to reach: a 403 or a
+   * sign-out is the server's answer and must be passed through.
+   */
+  async function cachedDeviceRead<T>(
+    call: (deviceToken: string) => Promise<TrackingResult<T>>,
+    remember: (data: T) => void,
+    recall: () => T | null,
+  ): Promise<TrackingResult<T>> {
+    const result = await callDeviceApi(call);
+    if (result.ok) {
+      remember(result.data);
+      return result;
+    }
+    if (!isTransportFailure(result)) return result;
+    const cached = recall();
+    return cached === null ? result : { ok: true, data: cached, fromCache: true };
   }
 
   // Exposed to the app-lifecycle hooks (quit/suspend/shutdown) so they can
@@ -1255,22 +1431,49 @@ async function registerIpcHandlers(): Promise<void> {
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    if (await pendingOps.flush(session.deviceToken, apiClient)) {
-      void timerStatusGate.pollOnce();
+    const { settled, refused } = await pendingOps.flush(
+      session.deviceToken,
+      apiClient,
+    );
+    // Hours the server would not take. They used to be dropped in
+    // silence, which left somebody to find the hole in their own
+    // timesheet weeks later; now they are told while they can still
+    // remember what they were doing.
+    if (refused.length > 0) {
+      mainWindow?.webContents.send("tracking:refused", refused);
     }
+    if (settled) void timerStatusGate.pollOnce();
   };
   setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 
   ipcMain.handle("tracking:projectsSetting", () =>
-    callDeviceApi((token) => apiClient.getProjectsSetting(token)),
+    cachedDeviceRead(
+      (token) => apiClient.getProjectsSetting(token),
+      ({ projectsEnabled }) => offlineCache.remember({ projectsEnabled }),
+      () => {
+        const enabled = offlineCache.read().projectsEnabled;
+        return enabled === null ? null : { projectsEnabled: enabled };
+      },
+    ),
   );
 
   ipcMain.handle("tracking:listProjects", () =>
-    callDeviceApi((token) => apiClient.listProjects(token)),
+    cachedDeviceRead(
+      (token) => apiClient.listProjects(token),
+      (projects) => offlineCache.remember({ projects }),
+      () => offlineCache.read().projects,
+    ),
   );
 
   ipcMain.handle("tracking:listTasks", (_event, projectId: string) =>
-    callDeviceApi((token) => apiClient.listTasks(token, projectId)),
+    cachedDeviceRead(
+      (token) => apiClient.listTasks(token, projectId),
+      ({ tasks }) => offlineCache.rememberTasks(projectId, tasks),
+      () => {
+        const tasks = offlineCache.read().tasks[projectId];
+        return tasks ? { tasks } : null;
+      },
+    ),
   );
 
   // Remembering the Project on the way through means the renderer never has
@@ -1330,9 +1533,41 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
+  /**
+   * Offline this answers from the cache rather than failing, which is
+   * what lets the clock keep ticking instead of resetting to nothing.
+   * `workedSeconds` is carried forward from when it was last heard, plus
+   * the time the entry has been running since — the honest projection of
+   * a figure nobody can confirm, rather than a zero that is simply wrong.
+   */
   ipcMain.handle("tracking:status", async () => {
     await flushPendingOps();
-    return callDeviceApi((token) => apiClient.getCurrentTimer(token));
+    return cachedDeviceRead(
+      (token) => apiClient.getCurrentTimer(token),
+      (current) =>
+        offlineCache.remember({
+          workedSeconds: current.workedSeconds ?? null,
+          workedSecondsAt: new Date().toISOString(),
+        }),
+      (): CurrentTimer | null => {
+        const state = offlineCache.read();
+        const entry = state.runningEntry;
+        const since =
+          entry && state.workedSecondsAt
+            ? Math.max(
+                0,
+                Math.floor(
+                  (Date.now() - new Date(state.workedSecondsAt).getTime()) / 1000,
+                ),
+              )
+            : 0;
+        return {
+          entry,
+          now: new Date().toISOString(),
+          workedSeconds: (state.workedSeconds ?? 0) + since,
+        };
+      },
+    );
   });
 
   ipcMain.handle("tracking:pause", async () => {
@@ -1351,20 +1586,45 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
+  // Nothing to cache: this lists entries so the renderer can fold in time
+  // added elsewhere, and offline there is nowhere else. An empty list is
+  // the true answer — "nothing new" — and lets the totals read below,
+  // which is where the day's figure actually comes from.
   ipcMain.handle(
     "tracking:entriesBetween",
     (_event, from: string, to: string) =>
-      callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+      cachedDeviceRead(
+        (token) => apiClient.listEntriesBetween(token, from, to),
+        () => {},
+        () => [],
+      ),
   );
 
+  /**
+   * The day's totals, stamped with the day they belong to. Opening the
+   * app with no connection shows the time already tracked rather than
+   * zero — and on a new morning shows nothing rather than yesterday's,
+   * since `todayTotals` withholds a stamp that is not today's.
+   */
   ipcMain.handle(
     "tracking:completedTotals",
     (_event, from: string, to: string) =>
-      callDeviceApi((token) => apiClient.getCompletedTotals(token, from, to)),
+      cachedDeviceRead(
+        (token) => apiClient.getCompletedTotals(token, from, to),
+        (totals) => offlineCache.rememberToday(totals),
+        () => offlineCache.todayTotals(),
+      ),
   );
 
+  // Cached like the rest, and for a sharper reason: with no policy the
+  // renderer's idle check gives up entirely, so an offline machine left
+  // running overnight records the whole night.
   ipcMain.handle("tracking:idlePolicy", () =>
-    callDeviceApi((token) => apiClient.getIdlePolicy(token)),
+    cachedDeviceRead(
+      (token) => apiClient.getIdlePolicy(token),
+      (idlePolicy) => offlineCache.remember({ idlePolicy }),
+      () => offlineCache.read().idlePolicy,
+    ),
   );
 
   ipcMain.handle(

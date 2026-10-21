@@ -680,6 +680,16 @@ function handleTrackingFailure(result: {
     showLoginView(result.message);
     return;
   }
+  // No status means the request never reached the server. That is a
+  // supported state now rather than a fault (docs/adr/0025-...): nothing
+  // has gone wrong, there is nothing for the person to do, and the red
+  // line used to name a server address they cannot act on. The sync line
+  // says it calmly instead.
+  if (result.status === undefined) {
+    syncFailing = true;
+    updateSyncStatus();
+    return;
+  }
   // 403 is the organisation refusing this — a work time limit, a day
   // tracking is off on, an app it doesn't allow. That is a rule, not a
   // fault, so it gets a dialog rather than the red line above the timer,
@@ -1679,8 +1689,13 @@ async function refreshStatus(resync = false): Promise<void> {
     updateSyncStatus();
     return;
   }
-  syncFailing = false;
-  lastSyncedAt = Date.now();
+  // `ok` no longer means the server answered: the main process serves
+  // these from what it remembered when it cannot be reached, which is
+  // what keeps the clock running. Stale is not failed, but it is not
+  // synced either, and the line must not claim otherwise.
+  syncFailing = result.fromCache === true;
+  if (!syncFailing) lastSyncedAt = Date.now();
+  updateSyncStatus();
   // Re-read now and then, so an admin's change to idle handling reaches a
   // signed-in desktop — and a missed first fetch doesn't leave it off.
   if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
@@ -2019,6 +2034,9 @@ async function runInitTracking(): Promise<void> {
 
   void refreshCapturePermissionBanner();
   startPolling();
+  // Last: the prompt should land on a screen that has finished drawing,
+  // and `refreshStatus` above has already settled what is running.
+  void askAboutRecoveredTimer();
 }
 
 /**
@@ -2050,6 +2068,80 @@ window.api.windowControls.onTrackingReminder((reminder) => {
   // Again now the resize is done: main raises before any of this runs,
   // and going full drops the always-on-top the smaller views hold.
   void window.api.windowControls.show();
+});
+
+const recoveredTimerPrompt = document.getElementById("recovered-timer")!;
+const recoveredTimerMessage = document.getElementById(
+  "recovered-timer-message",
+)!;
+const recoveredTimerKeep = document.getElementById(
+  "recovered-timer-keep",
+) as HTMLButtonElement;
+const recoveredTimerDiscard = document.getElementById(
+  "recovered-timer-discard",
+) as HTMLButtonElement;
+
+/**
+ * The app came back to find a timer still running, which only happens
+ * after a crash or a power cut — every ordinary quit stops it first. The
+ * minutes between the last sign of life and now are the ones nobody
+ * observed, so the person is asked rather than credited or docked
+ * silently. Past an hour main does not offer this at all and simply ends
+ * the entry where it was last seen.
+ */
+async function askAboutRecoveredTimer(): Promise<void> {
+  const recovered = await window.api.tracking.recoveredTimer();
+  if (!recovered) return;
+
+  const at = new Date(recovered.lastSeenAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const minutes = Math.max(1, Math.round(recovered.silentForMs / 60_000));
+  setMode("full", true);
+  recoveredTimerMessage.textContent =
+    `Your timer was still running when Hi Day stopped, at ${at}. ` +
+    `Were you still working for the ${minutes} minute${minutes === 1 ? "" : "s"} since then?`;
+  recoveredTimerPrompt.hidden = false;
+  recoveredTimerKeep.focus();
+}
+
+async function answerRecoveredTimer(keep: boolean): Promise<void> {
+  recoveredTimerPrompt.hidden = true;
+  await window.api.tracking.answerRecoveredTimer(keep);
+  // Either answer changes what is running, so re-read rather than let the
+  // display stand on an assumption.
+  await refreshStatus(true);
+}
+
+recoveredTimerKeep.addEventListener("click", () => {
+  void answerRecoveredTimer(true);
+});
+recoveredTimerDiscard.addEventListener("click", () => {
+  void answerRecoveredTimer(false);
+});
+
+/**
+ * Time tracked offline that the server would not take when it was finally
+ * handed over — an archived Project, a limit reached, a start older than
+ * a device may reach back. Dropping these in silence left somebody to
+ * find the hole in their own timesheet weeks later; the same dialog a
+ * refused start uses says it while they can still remember the work.
+ */
+window.api.windowControls.onRefusedTime((refused) => {
+  if (refused.length === 0) return;
+  const when = (at: string): string =>
+    new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const lines = refused.map((item) => `${when(item.op.at)} — ${item.message}`);
+  timerBlockedTitle.textContent =
+    refused.length === 1
+      ? "Some time could not be saved"
+      : "Some time could not be saved";
+  showTimerBlocked(
+    `Hi Day reconnected, but time you tracked while offline could not be ` +
+      `saved:\n\n${lines.join("\n")}\n\nYou can add it by hand from your ` +
+      `timesheet in the web app.`,
+  );
 });
 
 window.api.windowControls.onTrackingNotice((notice) => {

@@ -66,6 +66,19 @@ backend, PUT the JPEG bytes directly to Wasabi, then record the resulting
 storage key as metadata. The backend never sees the image bytes. See
 `docs/adr/0012-...` for the full design.
 
+**The app works with no connection** (`docs/adr/0025-...`). It keeps the
+last answer the server gave to everything it needs — projects and tasks,
+capture settings, the idle policy, the running entry, the day's totals —
+in `offline-cache.json` beside the session file, and reads from it when
+nothing can be reached. Play and stop work and are queued with the time
+they were pressed; capture keeps running; the clock keeps the time
+already tracked rather than resetting to zero. There is **no limit on how
+long you may track offline**, deliberately — but capture stops after a
+week out of touch, and says so, because an admin who switches screenshots
+off is owed an upper bound on how long a machine that never heard them
+keeps going. Logging in is the one thing that genuinely needs a
+connection. See step 16 under **Running locally** for how to test it.
+
 Both window-tracking and screenshot uploads go through an **offline
 queue** (`OfflineQueue`/`OfflineQueueStore`, `desktop/src/main/offline-queue*.ts`):
 every sample/capture is persisted to a local SQLite database
@@ -298,6 +311,44 @@ dev` — since that's older than the latest `desktop-v*` release on
 gone: crashed` log line. A running timer should still show as running
     once the new window loads (it was never touched — only the window
     itself died, not the main process).
+
+16. **Test working offline** (see `docs/adr/0025-...`). Unplugging at the
+    right moment is impractical, so set `WM_SIMULATE_OFFLINE=1` — `ApiClient`
+    then behaves as though nothing can be reached, in front of every
+    request, which is what being offline actually looks like.
+
+    First, while **online**, log in and let the app settle: that is what
+    fills `offline-cache.json` in the `userData` directory. Quit, then:
+
+    ```bash
+    WM_SIMULATE_OFFLINE=1 pnpm --filter desktop dev
+    ```
+
+    - The logged-in screen should show **your project list**, not an empty
+      one, and the status line should read **"Can't reach Hi Day —
+      retrying"**. There should be **no red error** above the timer: being
+      offline is a supported state, not a fault.
+    - **Today's total should be the figure you left**, not `0:00` — unless
+      it is now a different calendar day, in which case it correctly
+      starts clean.
+    - **Press play.** The clock should start. Check `pending-timer-ops.json`
+      in `userData`: it should hold a queued `start` with an `opId`.
+    - **Quit and relaunch, still offline.** You should be asked whether you
+      were still working — the crash-recovery prompt, since a timer left
+      running means the app did not shut down cleanly. Either answer is
+      fine; **Discard** ends it where the app was last seen alive.
+    - **Restart without the variable.** The queue replays with the times you
+      pressed the buttons, not the time you reconnected, and the status
+      line goes back to "Synced just now".
+
+    To exercise the **refused-hours** dialog, queue a start offline against
+    a Project, archive that Project in the web console, then reconnect: the
+    app should say which time could not be saved rather than dropping it.
+
+    To exercise the **capture trust window**, hand-edit `lastContactAt` in
+    `offline-cache.json` to more than seven days ago and relaunch offline:
+    screenshots and window tracking should stop, with a notice saying so,
+    while the timer keeps working.
 
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built
