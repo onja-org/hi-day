@@ -1,4 +1,4 @@
-import { CLOUD_PRICE_PER_PERSON, TRIAL_PROMISE } from "@/lib/pricing";
+import { CLOUD_PRICE_PER_PERSON, TRIAL_PROMISE } from "@/lib/pricing.generated";
 import { LandingButtonLink } from "./LandingButtonLink";
 
 export function LandingPricingTeaser() {

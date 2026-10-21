@@ -7,7 +7,7 @@ import { PricingComparison } from "@/components/pricing/PricingComparison";
 import { PricingFaq } from "@/components/pricing/PricingFaq";
 import { PricingHero } from "@/components/pricing/PricingHero";
 import { PricingIncluded } from "@/components/pricing/PricingIncluded";
-import { CLOUD_PRICE_PER_PERSON, TRIAL_DAYS } from "@/lib/pricing";
+import { CLOUD_PRICE_PER_PERSON, TRIAL_DAYS } from "@/lib/pricing.generated";
 
 export const metadata: Metadata = {
   // Absolute, like the landing page's: this is the other half of the
