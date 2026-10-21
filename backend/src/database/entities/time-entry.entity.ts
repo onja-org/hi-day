@@ -111,6 +111,42 @@ export class TimeEntry {
   device: Device | null;
 
   /**
+   * True when this entry was closed by the abandoned-timer sweeper rather
+   * than by anyone stopping it — the server giving up on a client it had
+   * not heard from, and dating the end at the last heartbeat because that
+   * is the last moment it knows the person was there.
+   *
+   * It is a guess, and it exists to be overruled. A Device that was simply
+   * offline kept working past that point, and when it reconnects and
+   * reports the real stop the entry is extended to it (see
+   * `TimeEntriesService.stop`) — otherwise every offline stretch longer
+   * than the 30-minute grace would be silently truncated to its first
+   * half hour. Never set on an entry a person actually stopped, so a real
+   * stop can never be reopened this way.
+   */
+  @Column({ type: 'boolean', default: false })
+  closedAsAbandoned: boolean;
+
+  /**
+   * The agent's own id for the start that created this entry, and for the
+   * stop that ended it — echoed back so a replay can be recognised rather
+   * than acted on twice. A device that was offline replays queued starts
+   * and stops on reconnect, and a connection that drops after the server
+   * committed but before the agent read the response leaves it unable to
+   * tell "accepted" from "never arrived"; without these it would send
+   * again, and hours would be duplicated onto a payslip. Null for the web
+   * and for any agent too old to send one.
+   *
+   * Two columns, not one: an entry is closed by a different operation from
+   * the one that opened it, and either can be the one replayed.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  startOperationId: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  stopOperationId: string | null;
+
+  /**
    * The last moment the client holding this running entry was heard from.
    * Only set for a web timer, which has no Device to heartbeat for it: the
    * browser's poll of `/time-entries/current` stamps it, and the hourly

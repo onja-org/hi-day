@@ -101,6 +101,32 @@ const WEB_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 const ABANDONED_ENTRY_BATCH_SIZE = 200;
 
+/**
+ * How far back a Device may date a start it is only now reporting. An
+ * agent that was offline replays what it queued, so a backdated start is
+ * ordinary rather than suspect — but a machine whose clock is wrong (or
+ * has been set wrong) would otherwise write hours into any month it
+ * liked, and these rows feed payroll.
+ *
+ * Deliberately generous, and deliberately not the agent's own 7-day
+ * capture cutoff: somebody genuinely away from a connection for weeks
+ * should get their hours, and refusing them punishes the person for their
+ * internet (see docs/adr/0025-...). Unlike a future timestamp, which
+ * `resolveStartedAt` quietly moves to "now", one past this is rejected —
+ * clamping a month-old start to the floor would invent a month-long entry
+ * rather than correct a small error.
+ */
+const MAX_DEVICE_BACKDATE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Postgres's unique-violation SQLSTATE, as TypeORM surfaces it. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { driverError?: { code?: string } }).driverError?.code === '23505'
+  );
+}
+
 export interface TimeEntrySummary {
   id: string;
   membershipId: string;
@@ -539,7 +565,18 @@ export class TimeEntriesService {
     deviceId: string | null,
     /** A device that was offline when start was pressed reports when that was. */
     requestedStartedAt?: Date,
+    /** `operationId` lets a replayed start be recognised — see `TimeEntry.startOperationId`. */
+    options: { operationId?: string } = {},
   ): Promise<TimeEntrySummary> {
+    // Before anything else, including the one-timer-per-device conflict
+    // below: a replay of a start the server already accepted would
+    // otherwise be refused with a 409 naming the very entry it created.
+    const replayed = await this.entryForOperation(
+      'startOperationId',
+      options.operationId,
+    );
+    if (replayed) return await this.toSummary(replayed);
+
     const { membership, task } = await this.validateStart(
       organisationId,
       userId,
@@ -597,9 +634,15 @@ export class TimeEntriesService {
       endedAt: null,
       source,
       deviceId,
+      startOperationId: options.operationId ?? null,
+      stopOperationId: null,
       lastSeenAt: deviceId === null ? new Date() : null,
     });
-    const saved = await this.timeEntries.save(entry);
+    const saved = await this.saveOrReturnReplay(
+      entry,
+      'startOperationId',
+      options.operationId,
+    );
 
     await this.dataSource.transaction(async (manager) => {
       await this.auditLogService.record(manager, {
@@ -629,23 +672,50 @@ export class TimeEntriesService {
     deviceId: string | null,
     endedAt?: Date,
     /** `pause` ends an entry too, and records itself as such. */
-    options: { action?: 'time_entry.stopped' | 'time_entry.paused' } = {},
+    options: {
+      action?: 'time_entry.stopped' | 'time_entry.paused';
+      /** `operationId` lets a replayed stop be recognised — see `TimeEntry.stopOperationId`. */
+      operationId?: string;
+    } = {},
   ): Promise<TimeEntrySummary> {
+    // Before the lookup below: a replay of a stop the server already
+    // applied finds no running entry and would otherwise 404, which the
+    // agent reads as "refused" and reports as lost time.
+    const replayed = await this.entryForOperation(
+      'stopOperationId',
+      options.operationId,
+    );
+    if (replayed) return await this.toSummary(replayed);
+
     const membership = await this.getActiveMembership(organisationId, userId);
-    const running = await this.timeEntries.findOne({
-      where: this.runningForDevice(membership.id, deviceId),
-    });
+    const resolvedEndedAt = endedAt ?? new Date();
+    const running =
+      (await this.timeEntries.findOne({
+        where: this.runningForDevice(membership.id, deviceId),
+      })) ??
+      (await this.abandonedEntryToExtend(
+        membership.id,
+        deviceId,
+        resolvedEndedAt,
+      ));
     if (!running) {
       throw new NotFoundException(
         'No timer is currently running on this device.',
       );
     }
 
-    const resolvedEndedAt = endedAt ?? new Date();
     this.assertValidRange(running.startedAt, resolvedEndedAt);
 
     running.endedAt = resolvedEndedAt;
-    const saved = await this.timeEntries.save(running);
+    running.stopOperationId = options.operationId ?? null;
+    // Whether or not it was: this is now a stop somebody made, so it must
+    // never be extended a second time.
+    running.closedAsAbandoned = false;
+    const saved = await this.saveOrReturnReplay(
+      running,
+      'stopOperationId',
+      options.operationId,
+    );
     // Never leave a dangling open pause span on a stopped entry — close it
     // at the same instant the entry itself ends, rather than requiring the
     // caller to resume first.
@@ -1077,6 +1147,9 @@ export class TimeEntriesService {
       if (!fresh || fresh.endedAt !== null) return;
 
       fresh.endedAt = lastSeenAt;
+      // So a Device that was merely offline can correct this later — see
+      // `abandonedEntryToExtend`.
+      fresh.closedAsAbandoned = true;
       await manager.save(fresh);
       await this.closeOpenPause(
         manager.getRepository(TimeEntryPause),
@@ -2477,6 +2550,85 @@ export class TimeEntriesService {
    * valid instant rather than rejected, since the device has no way to
    * redo it and the person did press start.
    */
+  /**
+   * The entry to reopen when a Device reports a stop and nothing is
+   * running — `null` when there is nothing it may properly extend.
+   *
+   * A Device that loses its connection stops heartbeating, and after
+   * `ABANDONED_TIMER_GRACE_MS` the sweeper ends its entry at the last
+   * heartbeat. That is the right call for a machine that died, and the
+   * wrong one for a machine that simply went offline and kept working:
+   * every offline stretch past the grace period would be truncated to its
+   * first half hour, and the real stop would arrive to find no entry and
+   * be reported to the person as time that could not be saved.
+   *
+   * So the sweeper's guess yields to the Device's account, under
+   * conditions that make it safe:
+   *  - only an entry the sweeper itself closed (`closedAsAbandoned`),
+   *    never one a person stopped;
+   *  - only this Device's own latest entry, so extending it can never run
+   *    over an entry started after it;
+   *  - only forwards, and only within the window a Device may backdate at
+   *    all, so this cannot resurrect something from months ago.
+   */
+  private async abandonedEntryToExtend(
+    membershipId: string,
+    deviceId: string | null,
+    endedAt: Date,
+  ): Promise<TimeEntry | null> {
+    // The web has no offline mode to reconcile: a closed browser is gone,
+    // and its entry ending at the last poll is the whole truth.
+    if (deviceId === null) return null;
+
+    const latest = await this.timeEntries.findOne({
+      where: { membershipId, deviceId: Equal(deviceId) },
+      order: { startedAt: 'DESC' },
+    });
+    if (!latest?.closedAsAbandoned || !latest.endedAt) return null;
+    if (endedAt.getTime() <= latest.endedAt.getTime()) return null;
+    if (Date.now() - latest.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
+      return null;
+    }
+    return latest;
+  }
+
+  /**
+   * The entry a previous attempt at this operation already wrote, if any.
+   * `undefined` for an agent too old to send an id — which simply gets the
+   * old at-least-once behaviour rather than an error.
+   */
+  private async entryForOperation(
+    column: 'startOperationId' | 'stopOperationId',
+    operationId?: string,
+  ): Promise<TimeEntry | null> {
+    if (!operationId) return null;
+    return await this.timeEntries.findOne({
+      where: { [column]: Equal(operationId) },
+    });
+  }
+
+  /**
+   * Saves, and treats a unique violation on the operation id as the replay
+   * it is: two attempts racing each other both pass `entryForOperation`'s
+   * check, and the database is the only thing that can settle which one
+   * wrote. The loser returns the winner's row rather than an error — the
+   * agent asked for this operation to have happened once, and it has.
+   */
+  private async saveOrReturnReplay(
+    entry: TimeEntry,
+    column: 'startOperationId' | 'stopOperationId',
+    operationId?: string,
+  ): Promise<TimeEntry> {
+    try {
+      return await this.timeEntries.save(entry);
+    } catch (error) {
+      if (!operationId || !isUniqueViolation(error)) throw error;
+      const winner = await this.entryForOperation(column, operationId);
+      if (!winner) throw error;
+      return winner;
+    }
+  }
+
   private async resolveStartedAt(
     membershipId: string,
     deviceId: string | null,
@@ -2484,6 +2636,14 @@ export class TimeEntriesService {
   ): Promise<Date> {
     const now = new Date();
     if (!requested) return now;
+    if (
+      deviceId !== null &&
+      now.getTime() - requested.getTime() > MAX_DEVICE_BACKDATE_MS
+    ) {
+      throw new BadRequestException(
+        'This start is more than 30 days old and can no longer be recorded automatically. Add the time by hand from your timesheet.',
+      );
+    }
     let startedAt = requested.getTime() > now.getTime() ? now : requested;
     const last = await this.timeEntries.findOne({
       where: {

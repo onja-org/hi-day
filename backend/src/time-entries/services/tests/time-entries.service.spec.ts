@@ -932,6 +932,298 @@ describe('TimeEntriesService', () => {
     });
   });
 
+  /**
+   * What an agent that was offline hands back on reconnect, and the two
+   * ways that used to go wrong: hours written twice because a response
+   * was lost, and hours truncated because the sweeper had already given
+   * up on the device. See docs/adr/0025-...
+   */
+  describe('offline reconciliation', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    /**
+     * An entry the sweeper closed `agoMs` ago, on this device. Relative to
+     * now on purpose: every rule it exercises — the backdating limit, "only
+     * forwards" — is measured against the current clock, so a fixed
+     * calendar date would drift out of range and pass for the wrong reason.
+     */
+    function sweptEntry(agoMs: number): TimeEntry {
+      const endedAt = new Date(Date.now() - agoMs);
+      return {
+        ...runningEntry,
+        id: 'entry-swept',
+        source: TimeEntrySource.AGENT,
+        deviceId: 'device-1',
+        startedAt: new Date(endedAt.getTime() - 60 * 60 * 1000),
+        endedAt,
+        closedAsAbandoned: true,
+      };
+    }
+
+    /** The sweeper gave up four hours ago; the person worked on regardless. */
+    const SWEPT_AGO_MS = 4 * 60 * 60 * 1000;
+
+    describe('replayed operations', () => {
+      it('returns the entry a replayed start already created, rather than a conflict', async () => {
+        const existing = {
+          ...runningEntry,
+          id: 'entry-already-started',
+          startOperationId: 'op-1',
+        } as TimeEntry;
+        const findOne = jest.fn().mockResolvedValue(existing);
+        const save = jest.fn((input: Partial<TimeEntry>) =>
+          Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne, save }),
+        });
+
+        const result = await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          undefined,
+          { operationId: 'op-1' },
+        );
+
+        expect(result.id).toBe('entry-already-started');
+        // The point of the check: without it this is the 409 that names
+        // the very entry the first attempt created.
+        expect(save).not.toHaveBeenCalled();
+      });
+
+      it('returns the entry a replayed stop already ended, rather than a 404', async () => {
+        const existing = {
+          ...runningEntry,
+          id: 'entry-already-stopped',
+          endedAt: new Date('2026-01-01T10:00:00Z'),
+          stopOperationId: 'op-2',
+        } as TimeEntry;
+        const save = jest.fn((input: Partial<TimeEntry>) =>
+          Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(existing),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          undefined,
+          { operationId: 'op-2' },
+        );
+
+        expect(result.id).toBe('entry-already-stopped');
+        expect(save).not.toHaveBeenCalled();
+      });
+
+      it('records the operation ids it was given, so a later replay can find them', async () => {
+        const create = jest.fn(
+          (input: Partial<TimeEntry>) => input as TimeEntry,
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ create }),
+        });
+
+        await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          undefined,
+          { operationId: 'op-3' },
+        );
+
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({ startOperationId: 'op-3' }),
+        );
+      });
+
+      it('treats a unique violation on the operation id as the replay it is', async () => {
+        const winner = {
+          ...runningEntry,
+          id: 'entry-winner',
+          startOperationId: 'op-4',
+        } as TimeEntry;
+        // Nothing found on the way in (so the start proceeds), the row
+        // found on the way out — the race this exists for.
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(winner);
+        const save = jest.fn().mockRejectedValue(
+          Object.assign(new Error('duplicate key'), {
+            driverError: { code: '23505' },
+          }),
+        );
+        const timeEntriesRepo = makeTimeEntriesRepo({ findOne, save });
+        const service = makeService({ timeEntriesRepo });
+
+        const result = await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          undefined,
+          { operationId: 'op-4' },
+        );
+
+        expect(result.id).toBe('entry-winner');
+      });
+    });
+
+    describe('backdating limits', () => {
+      it('refuses a start dated further back than a device may reach', async () => {
+        const service = makeService();
+
+        await expect(
+          service.start(
+            'org-1',
+            'user-1',
+            'project-1',
+            undefined,
+            TimeEntrySource.AGENT,
+            'device-1',
+            new Date(Date.now() - 31 * DAY_MS),
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('accepts a start backdated within reach — a fortnight with no connection is not suspicious', async () => {
+        const service = makeService();
+        const startedAt = new Date(Date.now() - 14 * DAY_MS);
+
+        const result = await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          startedAt,
+        );
+
+        expect(result.startedAt).toEqual(startedAt);
+      });
+    });
+
+    describe('extending an entry the sweeper closed', () => {
+      it('extends it to the stop the device actually made', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        // Nothing running; the device's latest entry is the swept one.
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(swept);
+        const save = jest.fn((input: Partial<TimeEntry>) =>
+          Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne, save }),
+        });
+        const reallyStoppedAt = new Date(Date.now() - 60_000);
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          reallyStoppedAt,
+        );
+
+        // Without this the person loses 09:30-13:00: three and a half
+        // hours worked offline, truncated to the last heartbeat.
+        expect(result.endedAt).toEqual(reallyStoppedAt);
+        expect(save).toHaveBeenCalledWith(
+          expect.objectContaining({ closedAsAbandoned: false }),
+        );
+      });
+
+      it('leaves an entry a person stopped alone', async () => {
+        const stoppedByHand = {
+          ...sweptEntry(SWEPT_AGO_MS),
+          closedAsAbandoned: false,
+        } as TimeEntry;
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(stoppedByHand);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+
+        await expect(
+          service.stop(
+            'org-1',
+            'user-1',
+            'device-1',
+            new Date(Date.now() - 60_000),
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('leaves the web alone - a closed browser has no offline stretch to report', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(swept);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+
+        await expect(
+          service.stop('org-1', 'user-1', null, new Date(Date.now() - 60_000)),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('will not reach back past the backdating limit to revive something ancient', async () => {
+        const swept = sweptEntry(31 * DAY_MS);
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(swept);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+
+        await expect(
+          service.stop('org-1', 'user-1', 'device-1'),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('ignores a stop no later than where the sweeper already ended it', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const findOne = jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(swept);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+
+        await expect(
+          service.stop(
+            'org-1',
+            'user-1',
+            'device-1',
+            new Date(Date.now() - SWEPT_AGO_MS - 60_000),
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+    });
+  });
+
   describe('require reason', () => {
     const adminRepo = () =>
       makeMembershipsRepo({
@@ -3675,6 +3967,32 @@ describe('TimeEntriesService', () => {
       );
 
       expect(tx.saved.endedAt).toEqual(lastSeenAt);
+    });
+
+    /**
+     * The end it wrote is a guess at where the person stopped, not a
+     * record of it — and a Device that was merely offline will come back
+     * with the real answer. Marking it is what lets `stop` tell this
+     * apart from an entry somebody actually ended, and so correct the one
+     * without ever reopening the other.
+     */
+    it('marks what it closed as abandoned, so a returning device can correct it', async () => {
+      const lastSeenAt = new Date('2026-10-08T15:51:40.000Z');
+      const { entry, repo } = abandoned(
+        new Date('2026-10-08T15:51:00.000Z'),
+        lastSeenAt,
+      );
+      const tx = transactionOver(entry);
+      const service = makeService({
+        timeEntriesRepo: repo,
+        dataSource: tx.dataSource,
+      });
+
+      await service.closeEntriesFromDevicesThatWentAway(
+        new Date('2026-10-09T06:51:00.000Z'),
+      );
+
+      expect(tx.saved.closedAsAbandoned).toBe(true);
     });
 
     /**
