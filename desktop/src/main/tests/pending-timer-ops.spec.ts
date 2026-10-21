@@ -248,6 +248,46 @@ describe('PendingTimerOps', () => {
     });
   });
 
+  /**
+   * A queued action answers `ok` so the click takes effect on screen, but
+   * it never reached anybody. Main measures how stale the cache is — and
+   * when capture stops trusting its settings — from the last real answer,
+   * so a queued one must not look like one: otherwise a device unreachable
+   * for a fortnight reports itself in touch every time play is pressed.
+   */
+  describe('an answer the queue made up', () => {
+    it('marks an offline start as not having come from the server', async () => {
+      const result = await new PendingTimerOps(dir).start(
+        't',
+        'p2',
+        null,
+        client(),
+      );
+
+      expect(result.ok && result.fromCache).toBe(true);
+    });
+
+    it('marks an offline stop the same way', async () => {
+      const ops = new PendingTimerOps(dir);
+      ops.remember(entry);
+
+      const result = await ops.pause('t', client());
+
+      expect(result.ok && result.fromCache).toBe(true);
+    });
+
+    it('leaves a real answer unmarked', async () => {
+      const result = await new PendingTimerOps(dir).start(
+        't',
+        'p2',
+        null,
+        client({ startTimer: () => Promise.resolve(ok) }),
+      );
+
+      expect(result.ok && result.fromCache).toBeUndefined();
+    });
+  });
+
   describe('hours the server refuses', () => {
     it('reports them, rather than dropping them where nobody will look', async () => {
       const ops = new PendingTimerOps(dir);

@@ -226,13 +226,21 @@ export class PendingTimerOps {
     return isTransportFailure(result) ? this.queueStop(at) : result;
   }
 
+  /**
+   * Each `queue*` below answers `ok` so the person sees their click take
+   * effect, and marks the answer `fromCache` because it did not come from
+   * the server. Without that the main process counts a queued action as
+   * the server having just replied, and the clock that decides how stale
+   * the cache is — and when capture stops trusting its settings — is reset
+   * by an action that never left the machine.
+   */
   private queueStop(at: string): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };
     this.save([...this.load(), { type: 'stop', at, opId: randomUUID() }]);
     const entry = { ...current, endedAt: at };
     this.running.write(null);
-    return { ok: true, data: entry };
+    return { ok: true, data: entry, fromCache: true };
   }
 
   async start(
@@ -258,7 +266,7 @@ export class PendingTimerOps {
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
-    return { ok: true, data: entry };
+    return { ok: true, data: entry, fromCache: true };
   }
 
   async switchTo(
@@ -286,6 +294,6 @@ export class PendingTimerOps {
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
-    return { ok: true, data: entry };
+    return { ok: true, data: entry, fromCache: true };
   }
 }

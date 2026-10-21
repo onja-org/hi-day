@@ -1375,9 +1375,13 @@ async function registerIpcHandlers(): Promise<void> {
 
     const result = await call(session.deviceToken);
     if (result.ok) {
-      // Any answer at all counts: this is what the staleness of the
-      // cache, and the capture trust window, are measured from.
-      offlineCache.rememberContact();
+      // Only an answer that actually came from the server: this is what
+      // the staleness of the cache, and the capture trust window, are
+      // measured from, and the offline queue answers `ok` for actions it
+      // merely wrote down. Counting those would have a device that has
+      // been unreachable for a fortnight report itself as in touch every
+      // time somebody pressed play.
+      if (!result.fromCache) offlineCache.rememberContact();
       // Keeps the offline-pause fallback supplied with the live entry.
       const data = result.data as
         | { entry?: TimeEntry | null; startedAt?: string; endedAt?: string | null }
