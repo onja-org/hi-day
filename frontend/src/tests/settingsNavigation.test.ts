@@ -13,13 +13,6 @@ describe("SETTINGS_GROUPS", () => {
       "organization",
       "members",
       "projects",
-    ]);
-  });
-  
-  it("holds the groups the epic names plus Billing, in card order", () => {
-    expect(SETTINGS_GROUPS.map((group) => group.key)).toEqual([
-      "organization",
-      "members",
       "billing",
       "tracking",
     ]);
