@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiClient, isTransportFailure } from '../api-client';
+import {
+  ApiClient,
+  REQUEST_TIMEOUT_MS,
+  isTransportFailure,
+} from '../api-client';
 
 const BASE_URL = 'https://api.example.com';
 
@@ -253,5 +257,69 @@ describe('isTransportFailure', () => {
 
   it('is false for a success', () => {
     expect(isTransportFailure({ ok: true, data: null })).toBe(false);
+  });
+});
+
+/**
+ * A refused connection rejects at once; a network that has simply gone
+ * never refuses anything, so without a deadline the socket waits as long
+ * as the operating system allows — minutes. The cached answer only
+ * arrives once the request returns, so that deadline is the difference
+ * between working offline and working offline eventually.
+ */
+describe('ApiClient request deadline', () => {
+  it('gives every device request a deadline', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new ApiClient(BASE_URL).listProjects('t');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('treats a request that ran out of time as unreachable, not as a refusal', async () => {
+    // What `AbortSignal.timeout` throws once it fires.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(
+        Object.assign(new Error('The operation was aborted'), {
+          name: 'TimeoutError',
+        }),
+      ),
+    );
+
+    const result = await new ApiClient(BASE_URL).listProjects('t');
+
+    // No status, so callers retry and the cache may answer — the whole
+    // point of failing fast rather than hanging.
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.status).toBeUndefined();
+  });
+
+  it('fails well inside the 15s poll cycle, so requests cannot pile up', () => {
+    expect(REQUEST_TIMEOUT_MS).toBeLessThan(15_000);
+  });
+
+  it('leaves pairing without one — somebody is waiting on it, and no cache can answer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'c', approvalUrl: 'https://x' }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new ApiClient(BASE_URL).startPairing({
+      deviceFingerprint: 'f',
+      platform: 'linux',
+      osVersion: '1',
+      hostname: 'h',
+      appVersion: '1.0.0',
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeUndefined();
   });
 });

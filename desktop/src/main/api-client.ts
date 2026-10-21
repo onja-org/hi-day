@@ -11,6 +11,29 @@ import type { TitleUnavailableReason } from './window-sample';
  * So it is said plainly, without the server address: nobody reading the
  * login screen can do anything with a URL.
  */
+/**
+ * How long a device request waits before it counts as unreachable.
+ *
+ * Without a deadline `fetch` waits as long as the operating system lets
+ * it, and the two ways of being offline fail very differently: a refused
+ * connection (nothing listening on the port) rejects at once, while a
+ * network that has simply gone — wifi dropped, router dead, a captive
+ * portal swallowing traffic — never refuses anything, so the socket sits
+ * waiting for a reply that is not coming. That is the one a real user
+ * gets, and it can take minutes.
+ *
+ * It matters because the cached answer only arrives once the request
+ * returns: without this, "works offline" means "works offline, a minute
+ * or two from now", with the app looking as broken as it ever did in the
+ * meantime. The polls run on a 15s cycle, so five seconds fails well
+ * inside one, and no honest request to this API takes that long.
+ *
+ * Pairing is deliberately excluded — logging in is something a person
+ * just asked for and is waiting on, and there is no cached answer to fall
+ * back to anyway.
+ */
+export const REQUEST_TIMEOUT_MS = 5_000;
+
 const OFFLINE_LOGIN_MESSAGE =
   "Hi Day can't be reached. Logging in needs an internet connection.";
 
@@ -318,6 +341,7 @@ export class ApiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ appVersion }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       return response.ok;
     } catch {
@@ -528,6 +552,10 @@ export class ApiClient {
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        // An abort lands in the same `catch` as any other transport
+        // failure, which is exactly right: nothing reached the server, so
+        // there is no status and the cache may answer.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch {
       // No `status`: the request never reached the server, so there is no

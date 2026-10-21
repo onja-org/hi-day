@@ -208,20 +208,27 @@ export class PendingTimerOps {
   }
 
   /**
-   * Ends the running entry at an explicit instant, queueing it like any
-   * other action when the server cannot be reached. Used to close a timer
-   * recovered after a crash at the last moment the app was known to be
-   * running — the one point past which nothing can be claimed.
+   * Ends the running entry, queueing it like any other action when the
+   * server cannot be reached — so a stop survives an outage rather than
+   * failing outright, which is what used to happen to an idle discard and
+   * to a timer recovered after a crash.
+   *
+   * `endedAt` is passed to the server only when the caller actually meant
+   * to backdate: the backend reads its presence as "this stop was an idle
+   * discard" and records it as such, so sending "now" on an ordinary stop
+   * would mislabel every one of them. The queued record still needs a
+   * concrete instant, and uses now when none was given.
    */
   async stopAt(
     deviceToken: string,
-    at: string,
     client: PendingTimerClient,
+    endedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
+    const at = endedAt ?? new Date().toISOString();
     if (this.hasPending() && !(await this.flush(deviceToken, client)).settled) {
       return this.queueStop(at);
     }
-    const result = await client.stopTimer(deviceToken, at);
+    const result = await client.stopTimer(deviceToken, endedAt);
     if (result.ok) this.running.write(null);
     return isTransportFailure(result) ? this.queueStop(at) : result;
   }

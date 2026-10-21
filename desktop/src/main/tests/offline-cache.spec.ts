@@ -142,6 +142,79 @@ describe('offline cache', () => {
     });
   });
 
+  /**
+   * The machine being switched off is not the same as being offline, and
+   * the difference shows on the way back: the app has stopped, correctly,
+   * but the day it comes back to must still know what was worked. Totals
+   * only ever held what the server reported, so an hour worked with no
+   * connection came back as though it had never happened.
+   */
+  describe('work finished with no connection', () => {
+    it('is remembered across a restart on the same day', () => {
+      const subject = cache();
+      subject.rememberToday({
+        workedSeconds: 600,
+        deviceSeconds: 600,
+        projects: [{ projectId: 'project-1', seconds: 600 }],
+      });
+
+      subject.addWorkedSeconds('project-1', 300);
+
+      // A fresh instance: the file is all the next launch has.
+      expect(cache().todayTotals()?.workedSeconds).toBe(900);
+      expect(cache().todayTotals()?.projects).toEqual([
+        { projectId: 'project-1', seconds: 900 },
+      ]);
+    });
+
+    it('starts a project that had no time yet', () => {
+      const subject = cache();
+      subject.rememberToday({
+        workedSeconds: 600,
+        deviceSeconds: 600,
+        projects: [{ projectId: 'project-1', seconds: 600 }],
+      });
+
+      subject.addWorkedSeconds('project-2', 300);
+
+      expect(subject.todayTotals()?.projects).toEqual([
+        { projectId: 'project-1', seconds: 600 },
+        { projectId: 'project-2', seconds: 300 },
+      ]);
+    });
+
+    it('counts time for an organisation that tracks no projects', () => {
+      const subject = cache();
+
+      subject.addWorkedSeconds(null, 300);
+
+      expect(subject.todayTotals()?.workedSeconds).toBe(300);
+      expect(subject.todayTotals()?.projects).toEqual([]);
+    });
+
+    it('opens a new day rather than inflating yesterday', () => {
+      const subject = cache();
+      subject.rememberToday({
+        workedSeconds: 3600,
+        deviceSeconds: 3600,
+        projects: [],
+      });
+
+      at('2026-10-22T08:00:00.000Z');
+      subject.addWorkedSeconds(null, 300);
+
+      expect(subject.todayTotals()?.workedSeconds).toBe(300);
+    });
+
+    it('ignores a stretch with no time in it', () => {
+      const subject = cache();
+
+      subject.addWorkedSeconds('project-1', 0);
+
+      expect(subject.todayTotals()).toBeNull();
+    });
+  });
+
   describe('the running timer', () => {
     it('remembers it, so a restart with no connection can still stop it', () => {
       const subject = cache();

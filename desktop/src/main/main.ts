@@ -1223,7 +1223,10 @@ async function registerIpcHandlers(): Promise<void> {
     if (!awaitingRecoveryAnswer) return;
     const { lastSeenAt } = awaitingRecoveryAnswer;
     awaitingRecoveryAnswer = null;
-    await callDeviceApi((token) => pendingOps.stopAt(token, lastSeenAt, apiClient));
+    const result = await callDeviceApi((token) =>
+      pendingOps.stopAt(token, apiClient, lastSeenAt),
+    );
+    rememberWorkFinishedOffline(result);
     void timerStatusGate.pollOnce();
   };
 
@@ -1493,6 +1496,29 @@ async function registerIpcHandlers(): Promise<void> {
    * Priming first and polling after means the server still wins whenever
    * it can speak: if it disagrees, its answer lands moments later.
    */
+  /**
+   * Keeps the day's totals honest across the machine being switched off.
+   *
+   * A stretch finished while the server was unreachable is only in the
+   * queue, so nothing has reported it and the cached totals do not know
+   * about it. That is invisible within a session — the renderer keeps its
+   * own tally — and very visible after a restart, where the day would
+   * come back as though the work had never happened. Only `fromCache`
+   * results: anything the server answered is already in its own figures.
+   */
+  const rememberWorkFinishedOffline = (
+    result: TrackingResult<TimeEntry>,
+  ): void => {
+    if (!result.ok || !result.fromCache) return;
+    const entry = result.data;
+    if (!entry?.endedAt) return;
+    const seconds =
+      Math.round(
+        (Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) / 1000,
+      ) - (entry.pausedSeconds ?? 0);
+    offlineCache.addWorkedSeconds(entry.projectId, seconds);
+  };
+
   const applyLocalTimerState = (): void => {
     const current = pendingOps.current();
     timerStatusGate.prime(current !== null && !current.pausedAt);
@@ -1577,15 +1603,19 @@ async function registerIpcHandlers(): Promise<void> {
     };
   });
 
+  // Through the queue, not straight at the server: an idle discard with
+  // no connection used to fail outright, leaving the timer running
+  // through exactly the stretch it was meant to cut off.
   ipcMain.handle("tracking:stop", async (_event, endedAt?: string) => {
     await flushPendingOps();
     const result = await callDeviceApi((token) =>
-      apiClient.stopTimer(token, endedAt),
+      pendingOps.stopAt(token, apiClient, endedAt),
     );
     // `callDeviceApi` only remembers an entry that is still open, so a
     // stop leaves the last running one behind it — which would then read
     // as still running below.
     if (result.ok) pendingOps.remember(null);
+    rememberWorkFinishedOffline(result);
     applyLocalTimerState();
     return result;
   });
@@ -1631,6 +1661,7 @@ async function registerIpcHandlers(): Promise<void> {
     const result = await callDeviceApi((token) =>
       pendingOps.pause(token, apiClient),
     );
+    rememberWorkFinishedOffline(result);
     // Instant local feedback rather than waiting on TimerStatusGate's poll —
     // capture must stop as soon as the person pauses, not up to 15s later.
     applyLocalTimerState();

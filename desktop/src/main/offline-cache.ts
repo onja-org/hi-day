@@ -200,6 +200,48 @@ export class OfflineCache {
     return today?.day === localDay(this.now()) ? today : null;
   }
 
+  /**
+   * Folds a stretch finished with no connection into the day's totals.
+   *
+   * `rememberToday` only ever writes what the server reported, so an hour
+   * worked offline was invisible to it. Within one session that did not
+   * show, because the renderer keeps its own running tally — but the
+   * machine being switched off and turned on again is not one session,
+   * and the day came back reading as though that hour had never been
+   * worked. Which is the moment somebody decides the app lost their time.
+   *
+   * Additive on purpose. The hours are still queued and will be replayed;
+   * when they land, the server's own total overwrites this, so a figure
+   * counted here cannot survive as a double count.
+   */
+  addWorkedSeconds(projectId: string | null, seconds: number): void {
+    if (seconds <= 0) return;
+    // `todayTotals` withholds a stamp that is not today's, so a stretch
+    // finished after midnight starts the new day rather than inflating
+    // the old one.
+    const base = this.todayTotals() ?? {
+      workedSeconds: 0,
+      deviceSeconds: 0,
+      projects: [],
+    };
+    const known = projectId !== null &&
+      base.projects.some((project) => project.projectId === projectId);
+    this.rememberToday({
+      workedSeconds: base.workedSeconds + seconds,
+      deviceSeconds: base.deviceSeconds + seconds,
+      projects:
+        projectId === null
+          ? base.projects
+          : known
+            ? base.projects.map((project) =>
+                project.projectId === projectId
+                  ? { ...project, seconds: project.seconds + seconds }
+                  : project,
+              )
+            : [...base.projects, { projectId, seconds }],
+    });
+  }
+
   /** Notes the entry believed to be running, and that it was alive just now. */
   rememberRunning(entry: TimeEntry | null): void {
     this.remember({
