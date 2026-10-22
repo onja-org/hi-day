@@ -42,7 +42,9 @@ export function TeamGlanceCards({ organisationId }: TeamGlanceCardsProps) {
         emptyText={
           summary.teamsThisWeek.length === 0
             ? "No teams yet — group people into teams to see their hours here."
-            : "No team time this week yet."
+            : summary.workedThisWeekSeconds > 0
+              ? "Time was tracked this week, but not by anyone in a team. Add them to a team to see hours here."
+              : "No time tracked this week yet."
         }
         rows={teamsWithTime.slice(0, ROW_LIMIT).map((team) => ({
           key: team.teamId,
