@@ -241,6 +241,58 @@ export class PendingTimerOps {
    * the cache is — and when capture stops trusting its settings — is reset
    * by an action that never left the machine.
    */
+  /**
+   * Ends the timer, writing the record to disk *before* attempting the
+   * network — for the one caller that gets no second chance.
+   *
+   * `pause` asks the server first and only writes something down once
+   * that has failed. Everywhere else that is fine: the process survives,
+   * and anything left inconsistent is reconciled on the next poll or by
+   * the crash prompt. On quit, suspend and system shutdown it is not. The
+   * operating system is already counting, this process is about to stop
+   * existing, and being killed between "ask the server" and "write it
+   * down" loses the stop entirely — the entry stays open, and the person
+   * comes back to a timer that ran through the night, or to a prompt
+   * about a gap that was never a gap.
+   *
+   * Write-ahead instead: once the stop is on disk, being killed costs
+   * nothing, because the next launch replays it with the time it really
+   * happened. The network attempt still follows — landing it now closes
+   * the entry for every other surface immediately — and if it succeeds
+   * the record is removed, having had nothing left to do. The same shape
+   * the capture queue already uses: persist, then send.
+   */
+  async pauseDurably(
+    deviceToken: string,
+    client: PendingTimerClient,
+  ): Promise<TrackingResult<TimeEntry>> {
+    const current = this.running.read();
+    // Nothing is known to be running here, but the server may still hold
+    // an entry this device never saw stop. Asking is what this did
+    // unconditionally before, and is still the only way to catch that.
+    if (!current) return await this.pause(deviceToken, client);
+
+    const at = new Date().toISOString();
+    const opId = randomUUID();
+    const waiting = this.load();
+    this.save([...waiting, { type: 'stop', at, opId }]);
+    this.running.write(null);
+    const ended: TimeEntry = { ...current, endedAt: at };
+
+    // Anything already queued happened before this and has to reach the
+    // server first, so a lone pause call would close the wrong entry.
+    if (waiting.length > 0) {
+      const { settled } = await this.flush(deviceToken, client);
+      return settled ? { ok: true, data: ended } : { ok: true, data: ended, fromCache: true };
+    }
+
+    const result = await client.pauseTimer(deviceToken);
+    if (!result.ok) return { ok: true, data: ended, fromCache: true };
+    // It landed, so the record written ahead of it has nothing left to do.
+    this.save(this.load().filter((op) => op.opId !== opId));
+    return result;
+  }
+
   private queueStop(at: string): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };

@@ -1459,7 +1459,13 @@ async function registerIpcHandlers(): Promise<void> {
   pauseRunningTimer = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    await pendingOps.pause(session.deviceToken, apiClient);
+    // Durably: this runs while the OS is already shutting the machine
+    // down, and a stop lost between asking the server and writing it down
+    // leaves an entry open overnight. See `pauseDurably`.
+    const result = await pendingOps.pauseDurably(session.deviceToken, apiClient);
+    // So the day the machine comes back to still knows about the stretch
+    // that ended as it went away.
+    rememberWorkFinishedOffline(result);
   };
 
   // Offline pauses/starts are only real to the server once this lands, so

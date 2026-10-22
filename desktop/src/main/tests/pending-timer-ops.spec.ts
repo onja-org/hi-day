@@ -255,6 +255,127 @@ describe('PendingTimerOps', () => {
    * so a queued one must not look like one: otherwise a device unreachable
    * for a fortnight reports itself in touch every time play is pressed.
    */
+  /**
+   * The quit, suspend and shutdown path. Everywhere else the process
+   * survives its own mistakes — a poll or the crash prompt reconciles
+   * whatever was left half-done. Here the OS is already counting and the
+   * process is about to stop existing, so the stop has to be on disk
+   * before anything slow is attempted.
+   */
+  describe('ending the timer durably, for a process about to die', () => {
+    it('writes the stop down before it asks the server anything', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      let queuedWhenAsked: unknown;
+      const pauseTimer = vi.fn(() => {
+        // What is on disk at the moment the network call begins — which
+        // is the moment a shutdown is most likely to kill us.
+        queuedWhenAsked = new PendingTimerOps(dir).load();
+        return Promise.resolve(ok);
+      });
+
+      await ops.pauseDurably('t', client({ pauseTimer }));
+
+      expect(queuedWhenAsked).toEqual([
+        {
+          type: 'stop',
+          at: expect.any(String) as string,
+          opId: expect.any(String) as string,
+        },
+      ]);
+    });
+
+    it('leaves nothing behind once the server has taken it', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+
+      await ops.pauseDurably('t', client({ pauseTimer: () => Promise.resolve(ok) }));
+
+      // The record had one job and it is done; replaying it would end
+      // whatever entry comes next.
+      expect(new PendingTimerOps(dir).load()).toEqual([]);
+    });
+
+    it('keeps the stop when the server cannot be reached', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+
+      const result = await ops.pauseDurably('t', client());
+
+      expect(result.ok && result.data.endedAt).toBeTruthy();
+      expect(new PendingTimerOps(dir).load()).toHaveLength(1);
+    });
+
+    it('keeps it when the server refuses, rather than losing the hours', async () => {
+      // A refusal is the server's answer, but the entry is still open as
+      // far as this device knows and the person has gone. Replaying it
+      // later is the only way the stop ever happens.
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const refused = { ...offline, status: 409 };
+
+      await ops.pauseDurably('t', client({ pauseTimer: () => Promise.resolve(refused) }));
+
+      expect(new PendingTimerOps(dir).load()).toHaveLength(1);
+    });
+
+    it('stops the clock locally either way', async () => {
+      const store = diskBackedStore();
+      const ops = new PendingTimerOps(dir, store);
+      ops.remember(entry);
+
+      await ops.pauseDurably('t', client());
+
+      expect(store.read()).toBeNull();
+    });
+
+    it('replays what was already waiting first, rather than closing the wrong entry', async () => {
+      const store = diskBackedStore();
+      const ops = new PendingTimerOps(dir, store);
+      await ops.start('t', 'p2', null, client());
+      const pauseTimer = vi.fn();
+
+      await ops.pauseDurably('t', client({ pauseTimer }));
+
+      // A lone pause here would act on whatever the server still thinks
+      // is running, which is not the entry this device started offline.
+      expect(pauseTimer).not.toHaveBeenCalled();
+      expect(ops.load().map((op) => op.type)).toEqual(['start', 'stop']);
+    });
+
+    it('asks the server when nothing is known to be running here', async () => {
+      // The one case the old unconditional call existed for: an entry the
+      // server holds that this device never saw start.
+      const pauseTimer = vi.fn(() => Promise.resolve(ok));
+
+      await new PendingTimerOps(dir, diskBackedStore()).pauseDurably(
+        't',
+        client({ pauseTimer }),
+      );
+
+      expect(pauseTimer).toHaveBeenCalled();
+    });
+
+    it('survives being killed between writing and sending', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+
+      // The process dies mid-request: no response, nothing cleaned up.
+      await ops
+        .pauseDurably(
+          't',
+          client({ pauseTimer: () => Promise.reject(new Error('killed')) }),
+        )
+        .catch(() => {});
+
+      // A brand new process finds the stop waiting, at the time it really
+      // happened — not an entry still running through the night.
+      const afterReboot = new PendingTimerOps(dir, diskBackedStore());
+      expect(afterReboot.load()).toHaveLength(1);
+      expect(afterReboot.load()[0].type).toBe('stop');
+    });
+  });
+
   describe('an answer the queue made up', () => {
     it('marks an offline start as not having come from the server', async () => {
       const result = await new PendingTimerOps(dir).start(
