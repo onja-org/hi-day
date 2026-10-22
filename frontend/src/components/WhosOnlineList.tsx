@@ -1,21 +1,27 @@
 "use client";
 
-import clsx from "clsx";
+import { useState } from "react";
 import Link from "next/link";
 import { CaretRightIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useTeamDashboardSummary } from "@/hooks/useTeamDashboardSummary";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
+import { ReportsTableFooter } from "./reports/ReportsTableFooter";
 import { Spinner } from "./Spinner";
 
 type WhosOnlineListProps = {
   organisationId: string;
 };
 
+const PER_PAGE_OPTIONS = [5, 10, 25, 50];
+
 export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
   const projectsEnabled = useProjectsEnabled();
   const summaryQuery = useTeamDashboardSummary(organisationId);
+  const [perPage, setPerPage] = useState(PER_PAGE_OPTIONS[0]);
+  const [requestedPage, setRequestedPage] = useState(1);
+  const [showAll, setShowAll] = useState(false);
 
   if (summaryQuery.isLoading) {
     return (
@@ -30,18 +36,30 @@ export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
     return <ErrorMessage message="Could not load who's online." />;
   }
 
-  const members = summaryQuery.data.members;
+  const onlineMembers = summaryQuery.data.members.filter(
+    (member) => member.isWorking,
+  );
+  const pageCount = showAll
+    ? 1
+    : Math.max(1, Math.ceil(onlineMembers.length / perPage));
+  // Clamp, because the list is polled and can shrink while on a later page.
+  const page = Math.min(requestedPage, pageCount);
+  const members = showAll
+    ? onlineMembers
+    : onlineMembers.slice((page - 1) * perPage, page * perPage);
 
   if (members.length === 0) {
-    return <p className="text-slate-900">No team members to show yet.</p>;
+    return <p className="text-slate-900">Nobody is online right now.</p>;
   }
 
   return (
     <div className="flex flex-col rounded-lg border border-input-border">
       <div className="flex items-center gap-3 px-3 py-2 text-xs font-medium tracking-wide text-slate-900/60 uppercase">
         <span className="flex-1">Member</span>
-        <span className="w-14 text-right">Today</span>
-        <span className="w-16 text-right">This week</span>
+        <span className="w-20 shrink-0 text-right whitespace-nowrap">Today</span>
+        <span className="w-24 shrink-0 text-right whitespace-nowrap">
+          This week
+        </span>
         <span className="w-4" aria-hidden="true" />
       </div>
       <ul className="flex flex-col divide-y divide-input-border border-t border-input-border">
@@ -58,26 +76,19 @@ export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
                 <span className="truncate text-sm font-medium text-slate-900">
                   {member.name ?? member.email}
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-slate-900/60">
-                  <span
-                    aria-hidden="true"
-                    className={clsx(
-                      "h-1.5 w-1.5 shrink-0 rounded-full",
-                      member.isWorking ? "bg-primary" : "bg-secondary/40",
-                    )}
-                  />
-                  {member.isWorking
-                    ? ((projectsEnabled ? member.currentProjectName : null) ?? "Working")
-                    : "Not working"}
-                </span>
+                {projectsEnabled && member.currentProjectName && (
+                  <span className="text-xs text-slate-900/60">
+                    {member.currentProjectName}
+                  </span>
+                )}
               </div>
-              <div className="flex w-14 flex-col items-end gap-1">
-                <span className="text-xs tabular-nums text-slate-900/70">
+              <div className="flex w-20 shrink-0 flex-col items-end gap-1">
+                <span className="text-xs tabular-nums whitespace-nowrap text-slate-900/70">
                   {formatElapsed(member.workedTodaySeconds * 1000)}
                 </span>
               </div>
-              <div className="flex w-16 flex-col items-end gap-1">
-                <span className="text-xs tabular-nums text-slate-900/70">
+              <div className="flex w-24 shrink-0 flex-col items-end gap-1">
+                <span className="text-xs tabular-nums whitespace-nowrap text-slate-900/70">
                   {formatElapsed(member.workedThisWeekSeconds * 1000)}
                 </span>
               </div>
@@ -90,6 +101,24 @@ export function WhosOnlineList({ organisationId }: WhosOnlineListProps) {
           </li>
         ))}
       </ul>
+      <ReportsTableFooter
+        totalRows={onlineMembers.length}
+        perPage={perPage}
+        perPageOptions={PER_PAGE_OPTIONS}
+        onPerPageChange={(value) => {
+          setPerPage(value);
+          setRequestedPage(1);
+          setShowAll(false);
+        }}
+        page={page}
+        pageCount={pageCount}
+        onPageChange={(value) => {
+          setRequestedPage(value);
+          setShowAll(false);
+        }}
+        onShowAll={() => setShowAll(true)}
+        allSelected={showAll}
+      />
     </div>
   );
 }

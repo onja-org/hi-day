@@ -66,6 +66,19 @@ backend, PUT the JPEG bytes directly to Wasabi, then record the resulting
 storage key as metadata. The backend never sees the image bytes. See
 `docs/adr/0012-...` for the full design.
 
+**The app works with no connection** (`docs/adr/0025-...`). It keeps the
+last answer the server gave to everything it needs — projects and tasks,
+capture settings, the idle policy, the running entry, the day's totals —
+in `offline-cache.json` beside the session file, and reads from it when
+nothing can be reached. Play and stop work and are queued with the time
+they were pressed; capture keeps running; the clock keeps the time
+already tracked rather than resetting to zero. There is **no limit on how
+long you may track offline**, deliberately — but capture stops after a
+week out of touch, and says so, because an admin who switches screenshots
+off is owed an upper bound on how long a machine that never heard them
+keeps going. Logging in is the one thing that genuinely needs a
+connection. See step 16 under **Running locally** for how to test it.
+
 Both window-tracking and screenshot uploads go through an **offline
 queue** (`OfflineQueue`/`OfflineQueueStore`, `desktop/src/main/offline-queue*.ts`):
 every sample/capture is persisted to a local SQLite database
@@ -101,9 +114,24 @@ _Options → Keep in Dock_ (macOS), _Add to Favorites_ (GNOME). Clicking the
 pinned icon while the window is hidden brings it back (single-instance lock /
 macOS `activate`). On Windows `app.setAppUserModelId("io.hiday.app")` makes the
 pinned shortcut and the running window one icon rather than two.
-The status bar's compact button shrinks the window to a 360×72
-always-on-top bar with just the timer and start/stop; an idle prompt or a
-tracking error expands it back automatically.
+The status bar has two shrink buttons: one to a 360×72 bar with just the
+timer and start/stop, and one straight to the 68×68 square, so the
+smallest view costs one click rather than two. An idle prompt or a
+tracking error expands back to the full window automatically.
+
+The **tray menu** carries the controls that have to be reachable from
+every size: **Open dashboard** (the web app, whose address the
+backend sends on the capture-settings poll from its own `FRONTEND_URL` —
+so there is no second URL constant to keep in step with
+`api-base-url.ts`, and moving to a new domain reaches every device
+without a desktop release; `DESKTOP_WEB_URL` overrides it and `pnpm dev`
+falls back to `http://localhost:3000`), **Start/Stop timer** (which presses the renderer's own play
+button, so the Project resolution and conflict handling are the same) and
+**Always on top (compact views)**, a checkbox covering the 360×72 bar and
+the 68×68 square — unticking it is how you undo it. The full window never
+floats: at 360×600 it is the app rather than a widget, and floating it
+would put it over the work being tracked (`shouldPin`,
+`window-pinning.ts`).
 
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)
@@ -298,6 +326,74 @@ dev` — since that's older than the latest `desktop-v*` release on
 gone: crashed` log line. A running timer should still show as running
     once the new window loads (it was never touched — only the window
     itself died, not the main process).
+
+16. **Test working offline** (see `docs/adr/0025-...`). Unplugging at the
+    right moment is impractical, so set `WM_SIMULATE_OFFLINE=1` — `ApiClient`
+    then behaves as though nothing can be reached, in front of every
+    request, which is what being offline actually looks like.
+
+    First, while **online**, log in and let the app settle: that is what
+    fills `offline-cache.json` in the `userData` directory. Quit, then:
+
+    ```bash
+    WM_SIMULATE_OFFLINE=1 pnpm --filter desktop dev
+    ```
+
+    - The logged-in screen should show **your project list**, not an empty
+      one, and the status line should read **"Can't reach Hi Day —
+      retrying"**. There should be **no red error** above the timer: being
+      offline is a supported state, not a fault.
+    - **Today's total should be the figure you left**, not `0:00` — unless
+      it is now a different calendar day, in which case it correctly
+      starts clean.
+    - **Press play.** The clock should start. Check `pending-timer-ops.json`
+      in `userData`: it should hold a queued `start` with an `opId`.
+    - **Force-kill and relaunch, still offline** (quitting normally stops
+      the timer, so there would be nothing to recover). Under two minutes
+      the timer simply carries on — there is nothing in doubt. Past that
+      you are asked whether you were still working; **No** ends it where
+      the app was last seen alive. Past an hour it is not asked at all.
+      `WM_CRASH_RECOVERY_FLOOR_MS=1000 WM_CRASH_RECOVERY_WINDOW_MS=5000`
+      brings all three bands within a few seconds of each other.
+    - **Restart without the variable.** The queue replays with the times you
+      pressed the buttons, not the time you reconnected, and the status
+      line goes back to "Synced just now".
+
+    To exercise the **quit-time dialog**, **Quit from the tray** —
+    online, offline, timer running or not. Something always appears, so
+    the window never sits there unexplained while the timer's stop goes
+    over the network: "Closing Hi Day / Saving your tracked time" when
+    there is nothing queued, or "Uploading data" with a falling
+    **Remaining records** count when there is. The app quits on its own
+    once the count reaches zero, and gives up after five seconds either
+    way (`WM_QUIT_DRAIN_LIMIT_MS`) — whatever has not gone up stays
+    queued for the next launch. **Close** quits immediately instead, leaving the
+    data queued for the next launch — which is safe, and is what
+    Hubstaff's own docs describe for quitting mid-upload. A system
+    shutdown or `SIGTERM` deliberately skips the dialog: nobody is
+    looking, and the OS will not wait for it.
+
+    To exercise the **sync-backlog** warning, stay offline with a timer
+    running until the threshold passes. It defaults to five minutes;
+    `WM_BACKLOG_WARNING_MS=10000` shortens it to ten seconds so a test run
+    need not wait it out (the same `intervalFromEnv` knob the capture
+    intervals use, and the one to turn if it proves too eager or too slow
+    in real use). An **"Uploading data" dialog** should appear once,
+    raising the window, with a Close button — and a banner behind it
+    saying the tracked data has not been uploaded and that nothing is
+    lost. Closing the dialog must leave the banner up: the data still has
+    not gone anywhere. The dialog does not return for the same stretch,
+    only for a later one. Bring the backend up and both should withdraw
+    themselves once the queue drains.
+
+    To exercise the **refused-hours** dialog, queue a start offline against
+    a Project, archive that Project in the web console, then reconnect: the
+    app should say which time could not be saved rather than dropping it.
+
+    To exercise the **capture trust window**, hand-edit `lastContactAt` in
+    `offline-cache.json` to more than seven days ago and relaunch offline:
+    screenshots and window tracking should stop, with a notice saying so,
+    while the timer keeps working.
 
 To test the actual packaged installer instead of the `electron .`
 dev shortcut, see **Building installers** below and run the built

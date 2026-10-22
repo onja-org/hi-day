@@ -138,6 +138,22 @@ export class UrlSessionStore {
       });
   }
 
+  /**
+   * How many closed sessions are still waiting to be uploaded. Counted in
+   * SQL rather than by fetching rows: this is asked repeatedly while the
+   * quit dialog counts down, and the rows themselves are not wanted.
+   */
+  countPendingSync(): number {
+    if (!this.isOpen) return 0;
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM url_sessions
+         WHERE ended_at IS NOT NULL AND synced_at IS NULL`,
+      )
+      .get() as { count: number };
+    return row.count;
+  }
+
   getPendingSync(limit: number): UrlSessionRow[] {
     if (!this.isOpen) return [];
     const rows = this.db

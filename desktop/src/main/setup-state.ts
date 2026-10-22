@@ -13,6 +13,7 @@ interface SetupState {
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
+  webAppUrl?: string;
 }
 
 /**
@@ -89,6 +90,32 @@ export function setCompactAlwaysOnTop(
 function write(userDataDir: string, state: SetupState): void {
   mkdirSync(userDataDir, { recursive: true });
   writeFileSync(filePath(userDataDir), JSON.stringify(state), 'utf-8');
+}
+
+/**
+ * The web app's origin, learned from a pairing link — see
+ * `web-app-url.ts`. Kept with the machine rather than the session: the
+ * deployment does not change when somebody signs out.
+ */
+export function webAppOriginFrom(approvalUrl: string): string | null {
+  try {
+    return new URL(approvalUrl).origin;
+  } catch {
+    // Nonsense from an older or misconfigured server; the menu then
+    // simply does not offer the item.
+    return null;
+  }
+}
+
+export function rememberWebAppUrl(userDataDir: string, approvalUrl: string): void {
+  const origin = webAppOriginFrom(approvalUrl);
+  if (!origin) return;
+  write(userDataDir, { ...read(userDataDir), webAppUrl: origin });
+}
+
+/** Null until this install has paired at least once. */
+export function cachedWebAppUrl(userDataDir: string): string | null {
+  return read(userDataDir).webAppUrl ?? null;
 }
 
 /** The remembered answer to the close prompt, or null to ask every time. */

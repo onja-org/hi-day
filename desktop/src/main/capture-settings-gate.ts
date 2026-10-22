@@ -17,6 +17,8 @@ export interface CaptureSettingsValue {
   /** Rides along on this poll rather than adding a second loop; not
    * capture, so it stays its own object. */
   reminders: ReminderSettings;
+  /** Likewise: the deployment's own address, for the tray's dashboard item. */
+  webAppUrl?: string;
 }
 
 /** Reminders off, and the default delivery for when they are turned on. */
@@ -93,6 +95,23 @@ export class CaptureSettingsGate {
   stop(): void {
     if (this.handle) clearInterval(this.handle);
     this.handle = null;
+  }
+
+  /**
+   * Applies settings remembered from a previous session, before any poll
+   * has had a chance to answer.
+   *
+   * `currentSettings` holds its last value through an unreachable server,
+   * but on a cold start there is no last value to hold — `lastSettings`
+   * begins as `OFF_SETTINGS`, so an agent launched with no connection
+   * captures nothing however long it has been running. Priming also sets
+   * the remembered value, not just the applied one: without that, a later
+   * poll reporting the same settings as the cache would read as "no
+   * change" and never be applied at all.
+   */
+  prime(settings: CaptureSettingsValue): void {
+    this.lastSettings = settings;
+    this.onChange(settings);
   }
 
   async pollOnce(): Promise<void> {

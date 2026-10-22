@@ -215,6 +215,16 @@ function launch(scenario: Scenario) {
       },
       resume: () => ok(entry),
       lastProject: () => Promise.resolve(null),
+      // Nothing was left running by a crash in these scenarios — the
+      // recovery prompt has its own tests.
+      // Capture is not paused in these scenarios — the trust window has
+      // its own tests.
+      capturePaused: () => Promise.resolve(false),
+      // Nothing is backed up in these scenarios — the backlog rule has
+      // its own tests.
+      syncBacklog: () => Promise.resolve(null),
+      recoveredTimer: () => Promise.resolve(null),
+      answerRecoveredTimer: () => Promise.resolve(),
       entriesBetween: () => ok(completed),
       // The server's overlap-aware totals; these scenarios never overlap, so
       // a plain sum is what it would answer.
@@ -267,9 +277,14 @@ function launch(scenario: Scenario) {
       show: async () => {},
       close: async () => {},
       setMode: async () => {},
-      compactAlwaysOnTop: () => Promise.resolve(true),
-      setCompactAlwaysOnTop: async () => {},
       onTrackingNotice: () => {},
+      onRefusedTime: () => {},
+      onCapturePaused: () => {},
+      onSyncBacklog: () => {},
+      // The quit drain has its own tests; nothing is uploading here.
+      onSyncDraining: () => {},
+      closeSyncDraining: () => {},
+      onTrayToggleTimer: () => {},
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },
@@ -354,6 +369,7 @@ function launch(scenario: Scenario) {
       const el = document.getElementById('tracking-error')!;
       return el.hidden ? null : el.textContent;
     },
+    syncStatus: () => document.getElementById('sync-status-label')!.textContent,
     visibleView: () =>
       [...document.querySelectorAll<HTMLElement>('#login-view, #status-view')].find(
         (el) => !el.hidden,
@@ -429,11 +445,20 @@ describe('renderer tracking setup recovers from a failed first load', () => {
     app.close();
   });
 
-  it('shows the real error while waiting, not "No projects are available"', async () => {
+  /**
+   * An unreachable server is a supported state, not a fault
+   * (docs/adr/0025-...): nothing has gone wrong and there is nothing for
+   * the person to do, so the red line above the timer stays empty and the
+   * sync line carries it instead. What must never come back is the
+   * original bug this file exists for — reporting it as "No projects are
+   * available", which blames the account for the network.
+   */
+  it('says it cannot reach Hi Day in the sync line, not as an error', async () => {
     const app = launch({ failingProjectLoads: Number.POSITIVE_INFINITY });
     await waitFor(() => app.calls.listProjects >= 2);
 
-    expect(app.trackingError()).toContain('Could not reach the server');
+    expect(app.trackingError()).toBeNull();
+    expect(app.syncStatus()).toContain("Can't reach Hi Day");
     expect(app.calls.start).toBe(0);
     app.close();
   });

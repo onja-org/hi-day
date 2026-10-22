@@ -129,7 +129,16 @@ declare global {
   }
 
   type TrackingResult<T> =
-    | { ok: true; data: T }
+    | {
+        ok: true;
+        data: T;
+        /**
+         * Answered from what the main process remembered, not from the
+         * server — the data is the last that was true, not the current
+         * truth. Drives the "Can't reach Hi Day" line.
+         */
+        fromCache?: boolean;
+      }
     | {
         ok: false;
         message: string;
@@ -161,6 +170,14 @@ declare global {
         status: () => Promise<TrackingResult<CurrentTimer>>;
         pause: () => Promise<TrackingResult<TimeEntry>>;
         resume: () => Promise<TrackingResult<TimeEntry>>;
+        syncBacklog: () => Promise<string | null>;
+        capturePaused: () => Promise<boolean>;
+        recoveredTimer: () => Promise<{
+          startedAt: string;
+          lastSeenAt: string;
+          silentForMs: number;
+        } | null>;
+        answerRecoveredTimer: (keep: boolean) => Promise<void>;
         lastProject: () => Promise<LastProject | null>;
         entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
         completedTotals: (from: string, to: string) => Promise<TrackingResult<CompletedTotals>>;
@@ -186,9 +203,24 @@ declare global {
           mode: "full" | "compact" | "mini",
           centre?: boolean,
         ) => Promise<void>;
-        compactAlwaysOnTop: () => Promise<boolean>;
-        setCompactAlwaysOnTop: (pinned: boolean) => Promise<void>;
         /** Fires when the window comes back from being closed to the tray. */
+        onRefusedTime: (
+          listener: (
+            refused: {
+              op: { type: "start" | "stop"; at: string };
+              message: string;
+            }[],
+          ) => void,
+        ) => void;
+        onSyncDraining: (
+          listener: (
+            progress: { remaining: number; secondsLeft: number } | null,
+          ) => void,
+        ) => void;
+        closeSyncDraining: () => void;
+        onSyncBacklog: (listener: (message: string | null) => void) => void;
+        onCapturePaused: (listener: (paused: boolean) => void) => void;
+        onTrayToggleTimer: (listener: () => void) => void;
         onTrackingNotice: (listener: (notice: string | null) => void) => void;
         onTrackingReminder: (
           listener: (reminder: {

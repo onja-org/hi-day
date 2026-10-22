@@ -95,6 +95,25 @@ export class UrlCaptureService {
   }
 
   /** The one signal this service can't get from powerMonitor — pushed by the renderer. */
+  /**
+   * Whether any closed session is still waiting to be uploaded. Asked by
+   * the sync-backlog check: URL sessions are tracked data like any other,
+   * and a queue of them stuck is the same news as a queue of screenshots.
+   */
+  hasUnsent(): boolean {
+    return this.unsentCount() > 0;
+  }
+
+  /** How many closed sessions are still waiting to go up. */
+  unsentCount(): number {
+    return this.store.countPendingSync();
+  }
+
+  /** Attempts one upload now, rather than waiting for the next tick. */
+  async drainOnce(): Promise<void> {
+    await this.runSync();
+  }
+
   setTimerRunning(running: boolean): void {
     this.reportEvent({ type: 'timerStateChanged', running, ...realClock() });
   }

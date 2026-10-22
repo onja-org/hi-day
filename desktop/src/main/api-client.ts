@@ -5,6 +5,20 @@ import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
 
+/** Said without the server address: nobody reading the login screen can act on a URL. */
+/**
+ * How long a device request waits before it counts as unreachable. A
+ * refused connection rejects at once, but a network that has simply gone
+ * never refuses anything, so without a deadline the socket waits as long
+ * as the OS allows — minutes — and the cached answer only arrives once
+ * the request returns. Fits inside the 15s poll cycle. Pairing is
+ * excluded: somebody is waiting on it, and no cache can answer it.
+ */
+export const REQUEST_TIMEOUT_MS = 5_000;
+
+const OFFLINE_LOGIN_MESSAGE =
+  "Hi Day can't be reached. Logging in needs an internet connection.";
+
 export interface StartPairingRequest {
   deviceFingerprint: string;
   platform: DesktopDevicePlatform;
@@ -92,6 +106,14 @@ export interface TrackedEntry {
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
+  /**
+   * The person's worked seconds across every device currently tracking,
+   * counting wall-clock time two devices share only once (ADR-0022).
+   * Optional here because an older server does not send it, and because
+   * the offline fallback projects it forward rather than knowing it.
+   */
+  workedSeconds?: number;
+  limitReached?: { kind: 'daily' | 'weekly'; limitHours: number };
 }
 
 export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
@@ -118,6 +140,8 @@ export interface CaptureSettings {
   consent: { required: boolean };
   /** When to nudge someone who has not started their timer. */
   reminders: ReminderSettings;
+  /** Where the web app lives, for the tray's dashboard item. */
+  webAppUrl?: string;
 }
 
 /**
@@ -134,7 +158,16 @@ export interface AppEventPayload {
 }
 
 export type TrackingResult<T> =
-  | { ok: true; data: T }
+  | {
+      ok: true;
+      data: T;
+      /**
+       * The server did not answer this; the last answer it gave did. Set
+       * only by the main process's cached reads, so the renderer can show
+       * the figures as remembered rather than current.
+       */
+      fromCache?: boolean;
+    }
   | {
       ok: false;
       message: string;
@@ -151,6 +184,16 @@ export type TrackingResult<T> =
       status?: number;
     };
 
+/**
+ * Whether the request never reached the server — no HTTP status, so
+ * nothing was decided. The one condition under which a cached answer may
+ * stand in, or a queued operation is worth replaying: a refusal is an
+ * answer, and repeating it changes nothing.
+ */
+export function isTransportFailure<T>(result: TrackingResult<T>): boolean {
+  return !result.ok && result.status === undefined && !result.unauthorized;
+}
+
 interface ErrorResponseBody {
   message?: string[] | string;
   runningEntry?: TimeEntry;
@@ -163,7 +206,21 @@ interface ErrorResponseBody {
  * aren't subject to CORS.
  */
 export class ApiClient {
-  constructor(private readonly baseUrl: string) {}
+  /**
+   * `isOffline` puts the agent behind a wall without unplugging anything
+   * (see `offlineSimulated`). In front of every `fetch` rather than in a
+   * caller, since that is the only place that reproduces the real shape:
+   * a transport failure, no HTTP status, everywhere at once.
+   */
+  constructor(
+    private readonly baseUrl: string,
+    private readonly isOffline: () => boolean = () => false,
+  ) {}
+
+  /** The shape a request that never reached the server resolves to. */
+  private unreachable<T>(): TrackingResult<T> {
+    return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
+  }
 
   /**
    * Starts the "log in via the web app" pairing flow (ADR-0009) — the
@@ -171,6 +228,7 @@ export class ApiClient {
    * in the system browser and polls `pollPairing` with the returned code.
    */
   async startPairing(request: StartPairingRequest): Promise<StartPairingResult> {
+    if (this.isOffline()) return { ok: false, message: OFFLINE_LOGIN_MESSAGE };
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/device-pairing`, {
@@ -179,7 +237,7 @@ export class ApiClient {
         body: JSON.stringify(request),
       });
     } catch {
-      return { ok: false, message: `Could not reach the server at ${this.baseUrl}.` };
+      return { ok: false, message: OFFLINE_LOGIN_MESSAGE };
     }
 
     const body = (await response.json().catch(() => ({}))) as StartPairingResponseBody;
@@ -192,13 +250,16 @@ export class ApiClient {
   }
 
   async pollPairing(code: string): Promise<PairingPollResult> {
+    if (this.isOffline()) {
+      return { status: 'error', message: OFFLINE_LOGIN_MESSAGE };
+    }
     let response: Response;
     try {
       response = await fetch(
         `${this.baseUrl}/device-pairing/${encodeURIComponent(code)}/status`,
       );
     } catch {
-      return { status: 'error', message: `Could not reach the server at ${this.baseUrl}.` };
+      return { status: 'error', message: OFFLINE_LOGIN_MESSAGE };
     }
 
     const body = (await response.json().catch(() => ({}))) as PairingPollResponseBody;
@@ -231,6 +292,7 @@ export class ApiClient {
   }
 
   async logout(deviceToken: string): Promise<void> {
+    if (this.isOffline()) return;
     try {
       await fetch(`${this.baseUrl}/devices/logout`, {
         method: 'POST',
@@ -249,6 +311,7 @@ export class ApiClient {
    * heartbeat shows this device offline until the next one lands.
    */
   async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
+    if (this.isOffline()) return false;
     try {
       const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
         method: 'POST',
@@ -257,6 +320,7 @@ export class ApiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ appVersion }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       return response.ok;
     } catch {
@@ -293,6 +357,8 @@ export class ApiClient {
     taskId: string | null,
     /** When start was really pressed, for a start made while offline. */
     startedAt?: string,
+    /** This agent's id for the operation, so a replay is not a second start. */
+    opId?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest(
       'POST',
@@ -300,7 +366,11 @@ export class ApiClient {
         ? '/device/time-entries/start'
         : `/device/projects/${projectId}/time-entries/start`,
       deviceToken,
-      { ...(taskId ? { taskId } : {}), ...(startedAt ? { startedAt } : {}) },
+      {
+        ...(taskId ? { taskId } : {}),
+        ...(startedAt ? { startedAt } : {}),
+        ...(opId ? { opId } : {}),
+      },
     );
   }
 
@@ -323,13 +393,13 @@ export class ApiClient {
   stopTimer(
     deviceToken: string,
     endedAt?: string,
+    /** This agent's id for the operation, so a replay is not a second stop. */
+    opId?: string,
   ): Promise<TrackingResult<TimeEntry>> {
-    return this.deviceRequest(
-      'POST',
-      '/device/time-entries/stop',
-      deviceToken,
-      endedAt ? { endedAt } : {},
-    );
+    return this.deviceRequest('POST', '/device/time-entries/stop', deviceToken, {
+      ...(endedAt ? { endedAt } : {}),
+      ...(opId ? { opId } : {}),
+    });
   }
 
   getCurrentTimer(deviceToken: string): Promise<TrackingResult<CurrentTimer>> {
@@ -429,6 +499,7 @@ export class ApiClient {
    * URL has been issued — see docs/adr/0012-...).
    */
   async putScreenshot(uploadUrl: string, buffer: Buffer): Promise<boolean> {
+    if (this.isOffline()) return false;
     try {
       const response = await fetch(uploadUrl, {
         method: 'PUT',
@@ -450,6 +521,7 @@ export class ApiClient {
     deviceToken: string,
     body?: unknown,
   ): Promise<TrackingResult<T>> {
+    if (this.isOffline()) return this.unreachable();
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
@@ -459,6 +531,9 @@ export class ApiClient {
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        // An abort lands in the same `catch` as any transport failure:
+        // no status, so the cache may answer.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch {
       // No `status`: the request never reached the server, so there is no

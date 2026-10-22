@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import {
   Body,
   Controller,
@@ -67,6 +68,7 @@ export class DeviceTrackingController {
     private readonly activitySamplesService: ActivitySamplesService,
     private readonly screenshotsService: ScreenshotsService,
     private readonly disclosureService: DisclosureService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get('idle-policy')
@@ -92,11 +94,20 @@ export class DeviceTrackingController {
     };
   }
 
+  /**
+   * `webAppUrl` rides along here rather than on an endpoint of its own,
+   * the way `reminders` already does: the agent polls this every 15s and
+   * needs somewhere to send people for the dashboard. It is the same
+   * `FRONTEND_URL` the pairing links are built from, so the agent carries
+   * no address of its own and a move to a new domain reaches every device
+   * without a desktop release.
+   */
   @Get('capture-settings')
   async captureSettings(@Req() request: DeviceAuthenticatedRequest): Promise<
     CaptureSettings & {
       consent: { required: boolean };
       reminders: TrackingReminderSettings;
+      webAppUrl: string;
     }
   > {
     const [captureSettings, reminders] = await Promise.all([
@@ -114,6 +125,7 @@ export class DeviceTrackingController {
       ...captureSettings,
       consent: { required: consentStatus.required },
       reminders,
+      webAppUrl: this.configService.getOrThrow<string>('FRONTEND_URL'),
     };
   }
 
@@ -279,6 +291,7 @@ export class DeviceTrackingController {
       TimeEntrySource.AGENT,
       request.deviceId,
       dto.startedAt ? new Date(dto.startedAt) : undefined,
+      { operationId: dto.opId },
     );
   }
 
@@ -295,6 +308,7 @@ export class DeviceTrackingController {
       TimeEntrySource.AGENT,
       request.deviceId,
       dto.startedAt ? new Date(dto.startedAt) : undefined,
+      { operationId: dto.opId },
     );
   }
 
@@ -308,6 +322,7 @@ export class DeviceTrackingController {
       request.userId,
       request.deviceId,
       dto.endedAt ? new Date(dto.endedAt) : undefined,
+      { operationId: dto.opId },
     );
   }
 

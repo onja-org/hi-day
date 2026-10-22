@@ -969,12 +969,14 @@ input::placeholder {
   background: var(--volt);
 }
 
+/* Smaller than it was, and the timer larger: at 68px the reason to keep
+   the square on screen is the number, not the button. */
 .mini-square-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   margin: 0;
   padding: 0;
   border: none;
@@ -984,7 +986,7 @@ input::placeholder {
 
 .mini-square-timer {
   font-family: var(--font-data);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -1120,6 +1122,7 @@ input::placeholder {
 .compact-expand.is-on svg {
   stroke: var(--ink);
 }
+
 
 .compact button:focus-visible {
   outline-color: var(--volt-light);

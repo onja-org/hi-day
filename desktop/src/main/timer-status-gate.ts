@@ -55,6 +55,19 @@ export class TimerStatusGate {
     this.handle = null;
   }
 
+  /**
+   * Applies a timer state remembered from a previous session, before any
+   * poll has answered. `pollOnce` holds its last value through an
+   * unreachable server, but a cold start has none to hold — so an agent
+   * relaunched mid-outage with a timer still running would otherwise
+   * sample nothing. Sets the remembered value too, so a later poll
+   * agreeing with the cache is not mistaken for "no change".
+   */
+  prime(running: boolean): void {
+    this.lastRunning = running;
+    this.onChange(running);
+  }
+
   async pollOnce(): Promise<void> {
     const session = this.authStore.load();
     const running = session ? await this.isCurrentlyRunning(session.deviceToken) : false;
