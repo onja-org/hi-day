@@ -103,6 +103,12 @@ document.addEventListener("keydown", (event) => {
 document.getElementById("compact-button")!.addEventListener("click", () => {
   setCompact(true);
 });
+// Straight to the square. Somebody who wants the smallest view wants it
+// now, not after a stop in the bar — and the bar keeps its own shrink
+// button for whoever arrives there first.
+document.getElementById("mini-button")!.addEventListener("click", () => {
+  setMode("mini");
+});
 document.getElementById("expand-button")!.addEventListener("click", () => {
   setCompact(false);
 });

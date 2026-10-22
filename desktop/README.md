@@ -114,9 +114,13 @@ _Options → Keep in Dock_ (macOS), _Add to Favorites_ (GNOME). Clicking the
 pinned icon while the window is hidden brings it back (single-instance lock /
 macOS `activate`). On Windows `app.setAppUserModelId("io.hiday.app")` makes the
 pinned shortcut and the running window one icon rather than two.
-The status bar's compact button shrinks the window to a 360×72
-always-on-top bar with just the timer and start/stop; an idle prompt or a
-tracking error expands it back automatically.
+The status bar has two shrink buttons: one to a 360×72 bar with just the
+timer and start/stop, and one straight to the 68×68 square, so the
+smallest view costs one click rather than two. Both float above other
+windows by default, and both carry a pin button that turns that off —
+one preference covers the two of them (`shouldPin`, `window-pinning.ts`).
+An idle prompt or a tracking error expands back to the full window
+automatically.
 
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)
