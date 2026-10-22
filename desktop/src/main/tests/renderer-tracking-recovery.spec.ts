@@ -220,6 +220,9 @@ function launch(scenario: Scenario) {
       // Capture is not paused in these scenarios — the trust window has
       // its own tests.
       capturePaused: () => Promise.resolve(false),
+      // Nothing is backed up in these scenarios — the backlog rule has
+      // its own tests.
+      syncBacklog: () => Promise.resolve(null),
       recoveredTimer: () => Promise.resolve(null),
       answerRecoveredTimer: () => Promise.resolve(),
       entriesBetween: () => ok(completed),
@@ -279,6 +282,7 @@ function launch(scenario: Scenario) {
       onTrackingNotice: () => {},
       onRefusedTime: () => {},
       onCapturePaused: () => {},
+      onSyncBacklog: () => {},
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },

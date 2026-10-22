@@ -120,6 +120,17 @@ first, and treats a unique violation as the replay it is — two replays racing 
 check, and only the database can settle which wrote. Screenshots and app events keep their existing
 at-least-once delivery: a duplicate image is a shrug, duplicate hours are a payslip.
 
+**A queue that has stopped draining is said out loud**, which qualifies the point above rather
+than contradicting it. An unreachable server is not an error; tracked data that has not reached
+anybody for five minutes is worth knowing about, and the quiet "Can't reach Hi Day — retrying" line
+reads as transient because usually it is. The queue is what makes a dropped connection cost nothing,
+and therefore also what lets it fail in silence: data piles up on disk, the timer looks entirely
+normal, and nothing says none of it has landed. The warning needs *both* halves — unsent data **and**
+a server that has not answered — since warning about an outage with nothing queued would be a lie,
+and a queue draining normally is not a backlog. The wording carries as much weight as the rule: it
+says the data is not lost before it says anything else, because "your data may not be synced" alone
+reads as "your hours are gone", and somebody who believes that starts keeping their time elsewhere.
+
 **Refused hours are reported, not dropped.** `PendingTimerOps.flush` returns what the server refused
 alongside whether it settled, and the renderer shows it in the dialog a refused start already uses.
 

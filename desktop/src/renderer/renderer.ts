@@ -2036,6 +2036,7 @@ async function runInitTracking(): Promise<void> {
   // The event only fires on a change, so a window opening mid-pause (or
   // reopening after a renderer crash) has to ask.
   void window.api.tracking.capturePaused().then(showCapturePaused);
+  void window.api.tracking.syncBacklog().then(showSyncBacklog);
   startPolling();
   // Last: the prompt should land on a screen that has finished drawing,
   // and `refreshStatus` above has already settled what is running.
@@ -2072,6 +2073,25 @@ window.api.windowControls.onTrackingReminder((reminder) => {
   // and going full drops the always-on-top the smaller views hold.
   void window.api.windowControls.show();
 });
+
+const syncBacklogBanner = document.getElementById("sync-backlog")!;
+
+/**
+ * Tracked data has stopped reaching the server for long enough that it is
+ * worth saying so. Distinct from the quiet "Can't reach Hi Day — retrying"
+ * line, which is right for an outage that will fix itself and wrong for
+ * one that has not: the queue makes a dropped connection cost nothing,
+ * and that is exactly why it can fail without anybody noticing.
+ *
+ * `role="alert"` rather than `status`, unlike the other banners here —
+ * this one asks the person to do something.
+ */
+function showSyncBacklog(message: string | null): void {
+  syncBacklogBanner.textContent = message ?? "";
+  syncBacklogBanner.hidden = !message;
+}
+
+window.api.windowControls.onSyncBacklog(showSyncBacklog);
 
 const capturePausedBanner = document.getElementById("capture-paused")!;
 

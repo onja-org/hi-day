@@ -241,6 +241,9 @@ const api = {
      * there is one worth asking about — see main's `recoveredTimer`.
      */
     /** Where capture stands now — asked at startup, since the event only fires on a change. */
+    /** Whether data is backed up now — asked at startup, since the event only fires on a change. */
+    syncBacklog: (): Promise<string | null> =>
+      ipcRenderer.invoke("sync:backlogState") as Promise<string | null>,
     capturePaused: (): Promise<boolean> =>
       ipcRenderer.invoke("capture:pausedState") as Promise<boolean>,
     recoveredTimer: (): Promise<RecoveredTimer | null> =>
@@ -334,6 +337,16 @@ const api = {
      * Deliberately not `onTrackingNotice`: that one blocks the timer, and
      * capture pausing must never stop somebody tracking their hours.
      */
+    /**
+     * Tracked data has stopped going up, or has started again. Carries
+     * the message rather than a flag so the wording lives in one place,
+     * next to the rule that decides when to show it.
+     */
+    onSyncBacklog: (listener: (message: string | null) => void): void => {
+      ipcRenderer.on("sync:backlog", (_event, message: string | null) =>
+        listener(message),
+      );
+    },
     onCapturePaused: (listener: (paused: boolean) => void): void => {
       ipcRenderer.on("capture:paused", (_event, paused: boolean) =>
         listener(paused),

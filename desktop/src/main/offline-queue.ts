@@ -117,6 +117,19 @@ export class OfflineQueue {
     }
   }
 
+  /**
+   * Whether any registered kind still holds something unsent. Asked by
+   * the sync-backlog check, which tells the person their data may not be
+   * uploaded — so it reads every kind rather than one, since any of them
+   * stuck is the same news.
+   */
+  hasUnsent(): boolean {
+    for (const kind of this.senders.keys()) {
+      if (this.store.countPending(kind) > 0) return true;
+    }
+    return false;
+  }
+
   start(): void {
     if (this.handle) return;
     this.scheduleNextTick();

@@ -30,6 +30,7 @@ import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
 import { CRASH_RECOVERY_WINDOW_MS, OfflineCache } from "./offline-cache";
+import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
 
 /** A timer the app came back to find still running after a crash. */
 interface RecoveredTimer {
@@ -1461,6 +1462,44 @@ async function registerIpcHandlers(): Promise<void> {
 
   // Offline pauses/starts are only real to the server once this lands, so
   // reading the timer settles them first.
+  /** What the renderer was last told about data waiting to go up. */
+  let backlogAnnounced = false;
+
+  /**
+   * Tells the person when tracked data has stopped going up.
+   *
+   * The queue makes an outage cost nothing, which is also why it can fail
+   * quietly: data piles up on disk, the person sees a timer working
+   * normally, and nothing says that none of it has reached anybody. This
+   * is the one case where the calm "Can't reach Hi Day — retrying" line
+   * is not enough, because it reads as transient and this is not.
+   *
+   * Checked on the same 15s tick that replays queued timer ops, so it
+   * costs nothing extra, and announced only on the change in both
+   * directions — a banner that cannot withdraw itself is one nobody
+   * believes the second time.
+   */
+  const checkSyncBacklog = (): void => {
+    const warn =
+      authStore.load() !== null &&
+      shouldWarnAboutBacklog({
+        hasUnsent:
+          pendingOps.hasPending() ||
+          offlineQueue.hasUnsent() ||
+          urlCaptureService?.hasUnsent() === true,
+        silentForMs: offlineCache.silentForMs(),
+      });
+    if (warn === backlogAnnounced) return;
+    backlogAnnounced = warn;
+    mainWindow?.webContents.send("sync:backlog", warn ? BACKLOG_MESSAGE : null);
+  };
+
+  // Asked at startup and after a renderer crash, since the event above
+  // only fires on a change.
+  ipcMain.handle("sync:backlogState", (): string | null =>
+    backlogAnnounced ? BACKLOG_MESSAGE : null,
+  );
+
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
@@ -1476,6 +1515,7 @@ async function registerIpcHandlers(): Promise<void> {
       mainWindow?.webContents.send("tracking:refused", refused);
     }
     if (settled) void timerStatusGate.pollOnce();
+    checkSyncBacklog();
   };
   setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
 

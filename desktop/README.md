@@ -341,6 +341,13 @@ gone: crashed` log line. A running timer should still show as running
       pressed the buttons, not the time you reconnected, and the status
       line goes back to "Synced just now".
 
+    To exercise the **sync-backlog** warning, stay offline with a timer
+    running for five minutes (`BACKLOG_WARNING_AFTER_MS` in
+    `sync-backlog.ts`): a banner should appear saying the tracked data
+    has not been uploaded, that nothing is lost, and to check the
+    connection or restart. Bring the backend up and it should withdraw
+    itself once the queue drains.
+
     To exercise the **refused-hours** dialog, queue a start offline against
     a Project, archive that Project in the web console, then reconnect: the
     app should say which time could not be saved rather than dropping it.
