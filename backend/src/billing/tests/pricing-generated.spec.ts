@@ -23,25 +23,14 @@ const generated = readFileSync(
 );
 
 describe('frontend pricing.generated.ts', () => {
-  it('advertises the price each period actually charges', () => {
+  it('says exactly what the backend says', () => {
     for (const period of BILLING_PERIODS) {
       expect(generated).toContain(`${period}: "${monthlyPriceLabel(period)}"`);
-    }
-  });
-
-  it('carries the same billing notes', () => {
-    for (const period of BILLING_PERIODS) {
       expect(generated).toContain(`${period}: "${CLOUD_BILLING_NOTE[period]}"`);
     }
-  });
-
-  it('offers exactly the periods the backend does', () => {
     expect(generated).toContain(
       `BILLING_PERIODS: BillingPeriod[] = [${BILLING_PERIODS.map((p) => `"${p}"`).join(', ')}]`,
     );
-  });
-
-  it('agrees on the trial length and what it promises', () => {
     expect(generated).toContain(`TRIAL_DAYS = ${TRIAL_DAYS};`);
     expect(generated).toContain(
       `TRIAL_PROMISE = ${JSON.stringify(TRIAL_PROMISE)}`,

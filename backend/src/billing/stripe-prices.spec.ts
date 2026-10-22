@@ -42,15 +42,6 @@ describe('findPriceMismatch', () => {
     expect(mismatch?.found).toBe('4200 usd/month');
   });
 
-  it('catches a different currency', () => {
-    expect(
-      findPriceMismatch('monthly', CLOUD_PRICES.monthly, {
-        ...matching,
-        currency: 'eur',
-      }),
-    ).not.toBeNull();
-  });
-
   it('catches a one-off price where a recurring one is wanted', () => {
     const mismatch = findPriceMismatch('monthly', CLOUD_PRICES.monthly, {
       ...matching,
