@@ -84,7 +84,9 @@ import {
   markWaylandScreenshotGranted,
   rememberCloseAction,
   cacheReminderSettings,
+  cachedWebAppUrl,
   compactAlwaysOnTop,
+  rememberWebAppUrl,
   setCompactAlwaysOnTop,
   cachedReminderSettings,
   rememberedCloseAction,
@@ -102,6 +104,9 @@ import {
   type DebugSink,
 } from "./url-capture/debug-harness";
 import { intervalFromEnv, offlineSimulated } from "./tuning";
+import { resolveWebAppUrl } from "./web-app-url";
+import { shouldPin } from "./window-pinning";
+import type { WindowMode } from "./window-pinning";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import type { UploadFn } from "./url-capture/sync-contract";
@@ -254,6 +259,10 @@ const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
  * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+/** The gate's copy lives in `registerIpcHandlers`; the menu needs its own. */
+let trayTimerRunning = false;
+/** Asks the renderer to do what pressing its own play/stop button does. */
+let toggleTimerFromTray: (() => void) | null = null;
 
 let isQuitting = false;
 /**
@@ -273,7 +282,6 @@ const FULL_WINDOW_SIZE = { width: 360, height: 600 };
 const COMPACT_WINDOW_SIZE = { width: 360, height: 72 };
 const MINI_WINDOW_SIZE = { width: 68, height: 68 };
 
-type WindowMode = "full" | "compact" | "mini";
 let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -662,14 +670,13 @@ function positionForMode(mode: WindowMode, centre: boolean): void {
   }
 }
 
-/** The smallest view is always on top — lost behind an editor it is no
- * use at all. The compact bar asks; the full window never pins. */
+/** See `shouldPin`: both small views follow one preference. */
 function applyPinning(): void {
   if (!mainWindow) return;
-  const pinned =
-    windowMode === "mini" ||
-    (windowMode === "compact" && compactAlwaysOnTop(app.getPath("userData")));
-  mainWindow.setAlwaysOnTop(pinned, "floating");
+  mainWindow.setAlwaysOnTop(
+    shouldPin(windowMode, compactAlwaysOnTop(app.getPath("userData"))),
+    "floating",
+  );
 }
 
 /**
@@ -732,10 +739,47 @@ function applyRecordingIndicator(isRecording: boolean): void {
 
 function refreshTrayMenu(): void {
   if (!tray) return;
-  const remembered = rememberedCloseAction(app.getPath("userData")) !== null;
+  const userDataDir = app.getPath("userData");
+  const remembered = rememberedCloseAction(userDataDir) !== null;
+  const pinned = compactAlwaysOnTop(userDataDir);
+  const webAppUrl = resolveWebAppUrl(
+    app.isPackaged,
+    cachedWebAppUrl(userDataDir),
+  );
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Hi Day", click: reopenMainWindow },
+      // Absent only when a packaged build has never paired, and so has
+      // nothing but a guess to offer — see `resolveWebAppUrl`.
+      ...(webAppUrl
+        ? [
+            {
+              label: "Open dashboard",
+              click: () => void shell.openExternal(webAppUrl),
+            },
+          ]
+        : []),
+      // One item reading whichever way the timer is not; a greyed
+      // "Stop timer" says nothing the label cannot. Routed through the
+      // renderer so this is not a second way to start a timer.
+      {
+        label: trayTimerRunning ? "Stop timer" : "Start timer",
+        click: () => toggleTimerFromTray?.(),
+      },
+      { type: "separator" },
+      // A checkbox, so undoing it is the same item with its tick gone.
+      // Named for what it governs: the full window never floats, and a
+      // bare "Always on top" ticked while it is open would look broken.
+      {
+        label: "Always on top (compact views)",
+        type: "checkbox",
+        checked: pinned,
+        click: () => {
+          setCompactAlwaysOnTop(userDataDir, !pinned);
+          applyPinning();
+          refreshTrayMenu();
+        },
+      },
       // The only way back from a remembered close choice short of wiping
       // the app's data — without it, a remembered "Quit" is permanent.
       ...(remembered
@@ -1181,6 +1225,13 @@ async function registerIpcHandlers(): Promise<void> {
       if (authStore.load() !== null) {
         cacheReminderSettings(app.getPath("userData"), settings.reminders);
         offlineCache.remember({ captureSettings: settings });
+        // Where the dashboard is, straight from the deployment. Arrives
+        // on every poll, so a packaged build has it without anyone having
+        // to pair again, and a move to a new domain needs no release.
+        if (settings.webAppUrl) {
+          rememberWebAppUrl(app.getPath("userData"), settings.webAppUrl);
+          refreshTrayMenu();
+        }
       }
       recomputeSampling();
     },
@@ -1190,6 +1241,10 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      // The tray's label follows the timer, whoever started it — the web
+      // console and another device both reach this through the gate.
+      trayTimerRunning = running;
+      refreshTrayMenu();
       applyRecordingIndicator(running);
       // Restart the reminder clock on any change, so stopping for lunch
       // buys a full interval of quiet rather than a nudge seconds later.
@@ -1343,6 +1398,12 @@ async function registerIpcHandlers(): Promise<void> {
 
   /** The renderer asking for attention: a dialog behind other windows is
    * one nobody reads. Same escalation as the capture-settings alert. */
+  // Nothing is decided here; the renderer owns all of it.
+  toggleTimerFromTray = (): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:toggleTimer");
+  };
+
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
   });
@@ -1376,6 +1437,10 @@ async function registerIpcHandlers(): Promise<void> {
       }
 
       pendingPairingCode = result.code;
+      // The same link tells us where the web app lives; the tray's
+      // dashboard item has no other source for it.
+      rememberWebAppUrl(app.getPath("userData"), result.approvalUrl);
+      refreshTrayMenu();
       await shell.openExternal(result.approvalUrl);
       return { ok: true };
     },
@@ -2064,19 +2129,6 @@ async function registerIpcHandlers(): Promise<void> {
         refreshTrayMenu();
       }
       applyCloseAction(action);
-    },
-  );
-
-  ipcMain.handle(
-    "window:compactAlwaysOnTop",
-    (): boolean => compactAlwaysOnTop(app.getPath("userData")),
-  );
-
-  ipcMain.handle(
-    "window:setCompactAlwaysOnTop",
-    (_event, pinned: boolean): void => {
-      setCompactAlwaysOnTop(app.getPath("userData"), pinned);
-      applyPinning();
     },
   );
 

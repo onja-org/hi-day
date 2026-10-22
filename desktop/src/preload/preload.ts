@@ -318,13 +318,6 @@ const api = {
       centre?: boolean,
     ): Promise<void> =>
       ipcRenderer.invoke("window:setMode", mode, centre) as Promise<void>,
-    compactAlwaysOnTop: (): Promise<boolean> =>
-      ipcRenderer.invoke("window:compactAlwaysOnTop") as Promise<boolean>,
-    setCompactAlwaysOnTop: (pinned: boolean): Promise<void> =>
-      ipcRenderer.invoke(
-        "window:setCompactAlwaysOnTop",
-        pinned,
-      ) as Promise<void>,
     /**
      * Hours a reconnect handed back that the server would not take. Gone
      * either way; this is so they hear it from the app rather than find
@@ -367,6 +360,10 @@ const api = {
       ipcRenderer.on("capture:paused", (_event, paused: boolean) =>
         listener(paused),
       );
+    },
+    /** The tray's Start/Stop item, which presses the renderer's own button. */
+    onTrayToggleTimer: (listener: () => void): void => {
+      ipcRenderer.on("tray:toggleTimer", () => listener());
     },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>

@@ -114,9 +114,24 @@ _Options → Keep in Dock_ (macOS), _Add to Favorites_ (GNOME). Clicking the
 pinned icon while the window is hidden brings it back (single-instance lock /
 macOS `activate`). On Windows `app.setAppUserModelId("io.hiday.app")` makes the
 pinned shortcut and the running window one icon rather than two.
-The status bar's compact button shrinks the window to a 360×72
-always-on-top bar with just the timer and start/stop; an idle prompt or a
-tracking error expands it back automatically.
+The status bar has two shrink buttons: one to a 360×72 bar with just the
+timer and start/stop, and one straight to the 68×68 square, so the
+smallest view costs one click rather than two. An idle prompt or a
+tracking error expands back to the full window automatically.
+
+The **tray menu** carries the controls that have to be reachable from
+every size: **Open dashboard** (the web app, whose address the
+backend sends on the capture-settings poll from its own `FRONTEND_URL` —
+so there is no second URL constant to keep in step with
+`api-base-url.ts`, and moving to a new domain reaches every device
+without a desktop release; `DESKTOP_WEB_URL` overrides it and `pnpm dev`
+falls back to `http://localhost:3000`), **Start/Stop timer** (which presses the renderer's own play
+button, so the Project resolution and conflict handling are the same) and
+**Always on top (compact views)**, a checkbox covering the 360×72 bar and
+the 68×68 square — unticking it is how you undo it. The full window never
+floats: at 360×600 it is the app rather than a widget, and floating it
+would put it over the work being tracked (`shouldPin`,
+`window-pinning.ts`).
 
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)

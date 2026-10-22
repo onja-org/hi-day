@@ -103,6 +103,11 @@ document.addEventListener("keydown", (event) => {
 document.getElementById("compact-button")!.addEventListener("click", () => {
   setCompact(true);
 });
+// Straight to the square; the bar keeps its own shrink button for
+// whoever arrives there first.
+document.getElementById("mini-button")!.addEventListener("click", () => {
+  setMode("mini");
+});
 document.getElementById("expand-button")!.addEventListener("click", () => {
   setCompact(false);
 });
@@ -112,22 +117,6 @@ document.getElementById("compact-shrink")!.addEventListener("click", () => {
 });
 document.getElementById("mini-expand")!.addEventListener("click", () => {
   setMode("compact");
-});
-
-const compactPin = document.getElementById("compact-pin")!;
-
-function showPinState(pinned: boolean): void {
-  compactPin.setAttribute("aria-pressed", String(pinned));
-  compactPin.classList.toggle("is-on", pinned);
-  compactPin.title = pinned ? "Keep in front: on" : "Keep in front: off";
-}
-
-void window.api.windowControls.compactAlwaysOnTop().then(showPinState);
-
-compactPin.addEventListener("click", () => {
-  const pinned = compactPin.getAttribute("aria-pressed") !== "true";
-  showPinState(pinned);
-  void window.api.windowControls.setCompactAlwaysOnTop(pinned);
 });
 
 const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
@@ -2281,6 +2270,14 @@ window.api.windowControls.onRefusedTime((refused) => {
       `saved:\n\n${lines.join("\n")}\n\nYou can add it by hand from your ` +
       `timesheet in the web app.`,
   );
+});
+/**
+ * The tray's Start/Stop item, taking the same click the play button does
+ * rather than a second path into starting: that one already resolves the
+ * Project, handles a timer running elsewhere, and honours a refusal.
+ */
+window.api.windowControls.onTrayToggleTimer(() => {
+  if (!timerToggle.disabled) timerToggle.click();
 });
 
 window.api.windowControls.onTrackingNotice((notice) => {
