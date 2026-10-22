@@ -22,15 +22,6 @@ const FILE_NAME = 'offline-cache.json';
  */
 export const CAPTURE_TRUST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * How long after the agent was last known to be alive a recovered timer is
- * still worth asking about. Past it the gap is too big to be plausibly
- * "the app crashed and I restarted it", and the time is dropped rather
- * than offered — matching Hubstaff's own one-hour rule, which is a
- * published default rather than a number invented here.
- */
-export const CRASH_RECOVERY_WINDOW_MS = 60 * 60 * 1000;
-
 /** Totals for one local day, so a new day starts from zero rather than yesterday. */
 export interface CachedToday {
   /** `YYYY-MM-DD`, in the device's own time zone. */
@@ -240,6 +231,26 @@ export class OfflineCache {
               )
             : [...base.projects, { projectId, seconds }],
     });
+  }
+
+  /**
+   * Records that the timer believed to be running still is, right now.
+   *
+   * `runningSeenAt` is what crash recovery measures its gap from, and it
+   * has to mean "the app was alive with this timer running", which is a
+   * local fact. It used to be written only by `rememberRunning`, which
+   * only fires when the *server* answers — so an outage looked exactly
+   * like a crash. An hour worked offline would come back past the
+   * recovery ceiling and be ended at the moment the connection dropped,
+   * throwing away every minute after it. Called on a timer by the main
+   * process, whether or not anybody can be reached.
+   *
+   * A no-op when nothing is running: there is no liveness to record, and
+   * stamping one would resurrect a gap that has already been settled.
+   */
+  touchRunning(): void {
+    if (!this.read().runningEntry) return;
+    this.remember({ runningSeenAt: this.now().toISOString() });
   }
 
   /** Notes the entry believed to be running, and that it was alive just now. */

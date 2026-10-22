@@ -333,10 +333,13 @@ gone: crashed` log line. A running timer should still show as running
       starts clean.
     - **Press play.** The clock should start. Check `pending-timer-ops.json`
       in `userData`: it should hold a queued `start` with an `opId`.
-    - **Quit and relaunch, still offline.** You should be asked whether you
-      were still working — the crash-recovery prompt, since a timer left
-      running means the app did not shut down cleanly. Either answer is
-      fine; **Discard** ends it where the app was last seen alive.
+    - **Force-kill and relaunch, still offline** (quitting normally stops
+      the timer, so there would be nothing to recover). Under two minutes
+      the timer simply carries on — there is nothing in doubt. Past that
+      you are asked whether you were still working; **No** ends it where
+      the app was last seen alive. Past an hour it is not asked at all.
+      `WM_CRASH_RECOVERY_FLOOR_MS=1000 WM_CRASH_RECOVERY_WINDOW_MS=5000`
+      brings all three bands within a few seconds of each other.
     - **Restart without the variable.** The queue replays with the times you
       pressed the buttons, not the time you reconnected, and the status
       line goes back to "Synced just now".

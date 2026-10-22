@@ -29,7 +29,8 @@ import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
-import { CRASH_RECOVERY_WINDOW_MS, OfflineCache } from "./offline-cache";
+import { OfflineCache } from "./offline-cache";
+import { recoveryActionFor } from "./recovered-timer";
 import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
 
 /** A timer the app came back to find still running after a crash. */
@@ -1193,11 +1194,8 @@ async function registerIpcHandlers(): Promise<void> {
    * can account for — the app was not running to observe it.
    *
    * Read once, before any poll can overwrite it with the server's own
-   * answer, and offered to the renderer to ask about. Past
-   * `CRASH_RECOVERY_WINDOW_MS` it is not worth asking: the gap is too
-   * long to be plausibly "it crashed and I restarted it", so the entry is
-   * ended where it was last seen alive and nothing is claimed for the
-   * silence.
+   * answer. What is done with it — kept, asked about, or ended where it
+   * was last seen alive — is `recoveryActionFor`'s call.
    */
   const recoveredTimer = ((): RecoveredTimer | null => {
     const session = authStore.load();
@@ -1216,13 +1214,18 @@ async function registerIpcHandlers(): Promise<void> {
     };
   })();
 
-  /** Null once answered — by the person, or by the window having closed. */
-  let awaitingRecoveryAnswer = recoveredTimer;
+  const recoveryAction = recoveredTimer
+    ? recoveryActionFor(recoveredTimer.silentForMs)
+    : null;
+
+  /** Null unless there is a question only the person can answer. */
+  let awaitingRecoveryAnswer =
+    recoveryAction === "ask" ? recoveredTimer : null;
 
   /** Ends the recovered entry where the app was last known to be running. */
-  const endRecoveredTimerAtLastSeen = async (): Promise<void> => {
-    if (!awaitingRecoveryAnswer) return;
-    const { lastSeenAt } = awaitingRecoveryAnswer;
+  const endRecoveredTimerAtLastSeen = async (
+    lastSeenAt: string,
+  ): Promise<void> => {
     awaitingRecoveryAnswer = null;
     const result = await callDeviceApi((token) =>
       pendingOps.stopAt(token, apiClient, lastSeenAt),
@@ -1231,16 +1234,16 @@ async function registerIpcHandlers(): Promise<void> {
     void timerStatusGate.pollOnce();
   };
 
-  if (recoveredTimer && recoveredTimer.silentForMs > CRASH_RECOVERY_WINDOW_MS) {
-    void endRecoveredTimerAtLastSeen().catch(() => {});
+  // `keep` needs nothing done: the entry is already open and the gates
+  // are primed from it below, so the clock simply carries on.
+  if (recoveryAction === "end" && recoveredTimer) {
+    void endRecoveredTimerAtLastSeen(recoveredTimer.lastSeenAt).catch(() => {});
   }
 
   /** What the renderer should ask about, if anything. */
-  ipcMain.handle("tracking:recoveredTimer", (): RecoveredTimer | null =>
-    awaitingRecoveryAnswer &&
-    awaitingRecoveryAnswer.silentForMs <= CRASH_RECOVERY_WINDOW_MS
-      ? awaitingRecoveryAnswer
-      : null,
+  ipcMain.handle(
+    "tracking:recoveredTimer",
+    (): RecoveredTimer | null => awaitingRecoveryAnswer,
   );
 
   /**
@@ -1252,11 +1255,10 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle(
     "tracking:answerRecoveredTimer",
     async (_event, keep: boolean): Promise<void> => {
-      if (keep) {
-        awaitingRecoveryAnswer = null;
-        return;
-      }
-      await endRecoveredTimerAtLastSeen();
+      const pending = awaitingRecoveryAnswer;
+      awaitingRecoveryAnswer = null;
+      if (keep || !pending) return;
+      await endRecoveredTimerAtLastSeen(pending.lastSeenAt);
     },
   );
 
@@ -1517,7 +1519,14 @@ async function registerIpcHandlers(): Promise<void> {
     if (settled) void timerStatusGate.pollOnce();
     checkSyncBacklog();
   };
-  setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
+  setInterval(() => {
+    // Liveness first, and independent of whether anything can be reached:
+    // this is what crash recovery measures its gap from, and leaving it
+    // to the server's answers made an outage indistinguishable from a
+    // crash (see `OfflineCache.touchRunning`).
+    offlineCache.touchRunning();
+    void flushPendingOps().catch(() => {});
+  }, 15_000);
 
   /**
    * Applies what this app just did to the timer, then asks the server to

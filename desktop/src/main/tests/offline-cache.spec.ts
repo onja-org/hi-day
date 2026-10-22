@@ -225,6 +225,72 @@ describe('offline cache', () => {
       expect(cache().read().runningSeenAt).toBe('2026-10-21T10:00:00.000Z');
     });
 
+    /**
+     * The stamp crash recovery measures its gap from. It has to mean "the
+     * app was alive with this timer running" — a local fact — and it used
+     * to be written only when the *server* answered, so an outage looked
+     * exactly like a crash.
+     */
+    describe('keeping the liveness stamp current', () => {
+      it('moves the stamp on without being told the entry again', () => {
+        const subject = cache();
+        subject.rememberRunning(entry);
+
+        at('2026-10-21T10:45:00.000Z');
+        subject.touchRunning();
+
+        expect(subject.read().runningSeenAt).toBe('2026-10-21T10:45:00.000Z');
+        expect(subject.read().runningEntry).toEqual(entry);
+      });
+
+      it('survives the restart that has to read it', () => {
+        const subject = cache();
+        subject.rememberRunning(entry);
+        at('2026-10-21T10:45:00.000Z');
+        subject.touchRunning();
+
+        expect(cache().read().runningSeenAt).toBe('2026-10-21T10:45:00.000Z');
+      });
+
+      it('keeps an hour worked offline out of the crash-recovery ceiling', () => {
+        // The bug this closes: ticking only on a server answer left the
+        // stamp an hour old, so a crash after an hour offline read as
+        // past the ceiling and the entry was ended at the moment the
+        // connection dropped — every minute after it thrown away.
+        const subject = cache();
+        subject.rememberRunning(entry);
+
+        for (const minute of [15, 30, 45, 60]) {
+          at(`2026-10-21T${10 + Math.floor(minute / 60)}:${String(minute % 60).padStart(2, '0')}:00.000Z`);
+          subject.touchRunning();
+        }
+
+        const gapMs =
+          clock.getTime() - new Date(subject.read().runningSeenAt!).getTime();
+        expect(gapMs).toBe(0);
+      });
+
+      it('says nothing when no timer is running', () => {
+        const subject = cache();
+
+        subject.touchRunning();
+
+        // Stamping one here would resurrect a gap already settled.
+        expect(subject.read().runningSeenAt).toBeNull();
+      });
+
+      it('does not bring back a stamp cleared by stopping', () => {
+        const subject = cache();
+        subject.rememberRunning(entry);
+        subject.rememberRunning(null);
+
+        at('2026-10-21T11:00:00.000Z');
+        subject.touchRunning();
+
+        expect(subject.read().runningSeenAt).toBeNull();
+      });
+    });
+
     it('clears the stamp when nothing is running', () => {
       const subject = cache();
       subject.rememberRunning(entry);
