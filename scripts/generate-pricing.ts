@@ -9,17 +9,12 @@ import {
 } from '../backend/src/billing/pricing';
 
 /**
- * Writes the frontend's copy of the advertised prices from the backend's
- * canonical ones.
+ * Writes the frontend's copy of the advertised prices from the backend's.
  *
- * Generated and committed rather than fetched: `/pricing` is a public
- * marketing page that rendered from constants and made no backend call at
- * all, and a page that can fail because an internal API is down is a worse
- * outcome than the duplication this removes. Prices change roughly never, so
- * a generation step is honest about how often this actually moves.
- *
- * `pricing.generated.spec.ts` fails if the committed file and the backend
- * disagree, so drift is a red build rather than a wrong price on a page.
+ * Generated and committed rather than fetched: `/pricing` is a public page
+ * that makes no backend call, and one that can fail because an internal API
+ * is down is worse than the duplication this removes. A backend test fails
+ * the build when the two disagree.
  *
  *   pnpm gen:pricing
  */

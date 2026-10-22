@@ -1,11 +1,9 @@
 import { TRIAL_DAYS } from './trial';
 
 /**
- * What Hi Day Cloud costs, in the shape a payment provider charges in rather
- * than the shape a page displays. Stripe bills an integer amount of minor
- * units against a Price with its own interval, so that is what is canonical
- * here and every displayed figure is derived from it — the opposite way round
- * from how the marketing page used to hold it.
+ * What Hi Day Cloud costs, in the shape Stripe charges in rather than the
+ * shape a page displays: an integer of minor units against a Price with its
+ * own interval. Every displayed figure is derived from it.
  */
 export type BillingPeriod = 'monthly' | 'annual';
 
@@ -21,10 +19,8 @@ export const BILLING_PERIODS: BillingPeriod[] = ['monthly', 'annual'];
 
 /**
  * Annual is one yearly charge of $42.00 a seat, not $3.50 billed twelve
- * times: "billed annually" is a single Stripe Price with a yearly interval,
- * and the $3.50 the page advertises is that divided by twelve. Writing it the
- * other way round is how a product ends up advertising one number and
- * charging twelve times another.
+ * times — the $3.50 the page leads with is this divided by twelve. Writing it
+ * the other way round advertises one number and charges twelve times another.
  */
 export const CLOUD_PRICES: Record<BillingPeriod, CloudPrice> = {
   monthly: { amountMinor: 400, currency: 'usd', interval: 'month' },
@@ -36,10 +32,7 @@ export function monthlyEquivalentMinor(price: CloudPrice): number {
   return price.interval === 'year' ? price.amountMinor / 12 : price.amountMinor;
 }
 
-/**
- * Minor units as the page writes them: no trailing `.00`, because "$4.00 per
- * person" reads like a price that wanted more decimals than it had.
- */
+/** No trailing `.00`: "$4.00 per person" reads like a price missing digits. */
 export function formatMinor(amountMinor: number, currency: string): string {
   const symbol = currency === 'usd' ? '$' : '';
   const major = amountMinor / 100;
