@@ -103,9 +103,8 @@ document.addEventListener("keydown", (event) => {
 document.getElementById("compact-button")!.addEventListener("click", () => {
   setCompact(true);
 });
-// Straight to the square. Somebody who wants the smallest view wants it
-// now, not after a stop in the bar — and the bar keeps its own shrink
-// button for whoever arrives there first.
+// Straight to the square; the bar keeps its own shrink button for
+// whoever arrives there first.
 document.getElementById("mini-button")!.addEventListener("click", () => {
   setMode("mini");
 });
@@ -2273,10 +2272,9 @@ window.api.windowControls.onRefusedTime((refused) => {
   );
 });
 /**
- * The tray's Start/Stop item. Deliberately the same click the play button
- * takes rather than a second path into starting: that one already
- * resolves the Project, handles a timer running elsewhere, and refuses
- * when the organisation has blocked tracking.
+ * The tray's Start/Stop item, taking the same click the play button does
+ * rather than a second path into starting: that one already resolves the
+ * Project, handles a timer running elsewhere, and honours a refusal.
  */
 window.api.windowControls.onTrayToggleTimer(() => {
   if (!timerToggle.disabled) timerToggle.click();

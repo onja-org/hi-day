@@ -192,8 +192,6 @@ describe('compact always on top', () => {
     });
 
     it('takes the origin from the pairing link, dropping its path', () => {
-      // The link is to /link-device with a code on it; the dashboard is
-      // the site, not that page.
       rememberWebAppUrl(userDataDir, 'https://app.hiday.io/link-device?code=abc');
 
       expect(cachedWebAppUrl(userDataDir)).toBe('https://app.hiday.io');
