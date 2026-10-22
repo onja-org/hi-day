@@ -192,6 +192,20 @@ describe('the quit-time uploading dialog', () => {
     expect(dialog).toMatch(/Saving your tracked time/i);
   });
 
+  it('shows how long it will wait, counting down', () => {
+    // Driven by its own ticker in main rather than by the upload loop:
+    // an attempt against an unreachable server takes the whole budget to
+    // fail, so a countdown tied to the loop would sit on 5 and vanish.
+    expect(dialog).toContain('id="sync-draining-countdown"');
+  });
+
+  it('leaves the countdown unannounced, unlike the record count', () => {
+    // A number repeating every second would talk over the part that
+    // matters. The count keeps aria-live; the clock does not.
+    const countdown = dialog.slice(dialog.indexOf('id="sync-draining-countdown"'));
+    expect(countdown.slice(0, countdown.indexOf('>'))).not.toContain('aria-live');
+  });
+
   it('has somewhere to put the count', () => {
     // A number falling towards zero is what lets somebody judge whether
     // waiting is worth it; a spinner says "wait" without saying how long.

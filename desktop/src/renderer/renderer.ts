@@ -2076,6 +2076,9 @@ window.api.windowControls.onTrackingReminder((reminder) => {
 
 const syncDrainingDialog = document.getElementById("sync-draining")!;
 const syncDrainingCount = document.getElementById("sync-draining-count")!;
+const syncDrainingCountdown = document.getElementById(
+  "sync-draining-countdown",
+)!;
 const syncDrainingBody = document.getElementById("sync-draining-body")!;
 const syncDrainingSaving = document.getElementById("sync-draining-saving")!;
 const syncDrainingTitleUploading = document.getElementById(
@@ -2106,12 +2109,15 @@ const syncDrainingClose = document.getElementById(
  * disk for the next launch — Hubstaff's own documentation describes
  * exactly that outcome for quitting mid-upload, and it is not a loss.
  */
-function showSyncDraining(remaining: number | null): void {
-  if (remaining === null) {
+function showSyncDraining(
+  progress: { remaining: number; secondsLeft: number } | null,
+): void {
+  if (progress === null) {
     syncDrainingDialog.hidden = true;
     return;
   }
 
+  const { remaining, secondsLeft } = progress;
   const uploading = remaining > 0;
   syncDrainingTitleUploading.hidden = !uploading;
   syncDrainingTitleClosing.hidden = uploading;
@@ -2120,6 +2126,18 @@ function showSyncDraining(remaining: number | null): void {
   syncDrainingCount.hidden = !uploading;
   syncDrainingCount.textContent = uploading
     ? `Remaining records: ${remaining}`
+    : "";
+  // Only while something is actually being waited on. With nothing to
+  // send the dialog is gone in a moment, and counting down to it would
+  // be theatre.
+  //
+  // Deliberately not `aria-live`: the count of records announcing itself
+  // is useful, a number repeating every second over the top of it is
+  // not — a screen reader would talk continuously and bury the part that
+  // matters.
+  syncDrainingCountdown.hidden = !uploading;
+  syncDrainingCountdown.textContent = uploading
+    ? `Closing in ${secondsLeft}…`
     : "";
 
   if (syncDrainingDialog.hidden) {

@@ -65,6 +65,12 @@ export interface TrackedEntry {
   durationSeconds: number | null;
 }
 
+/** How quitting is going: what is left to send, and how long it will wait. */
+export interface QuitProgress {
+  remaining: number;
+  secondsLeft: number;
+}
+
 /** A timer found still running at startup, after the app stopped unexpectedly. */
 export interface RecoveredTimer {
   startedAt: string;
@@ -347,9 +353,11 @@ const api = {
      * null once the drain is over. Shown as a count rather than a spinner
      * so somebody deciding whether to wait can see it moving.
      */
-    onSyncDraining: (listener: (remaining: number | null) => void): void => {
-      ipcRenderer.on("sync:draining", (_event, remaining: number | null) =>
-        listener(remaining),
+    onSyncDraining: (
+      listener: (progress: QuitProgress | null) => void,
+    ): void => {
+      ipcRenderer.on("sync:draining", (_event, progress: QuitProgress | null) =>
+        listener(progress),
       );
     },
     /** Stop waiting and quit now; the data stays queued for next launch. */

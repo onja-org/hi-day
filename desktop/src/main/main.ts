@@ -1552,6 +1552,20 @@ async function registerIpcHandlers(): Promise<void> {
 
   /** When the quit dialog went up, so it cannot vanish as a flicker. */
   let quitProgressShownAt: number | null = null;
+  /** When it will give up, shared so the countdown and the loop agree. */
+  let quitDeadline = 0;
+
+  /**
+   * How long is left, in whole seconds. Counted from one deadline rather
+   * than from the loop's own progress, so what the person sees ticking
+   * down is the thing that actually decides when the app goes.
+   */
+  const sendQuitProgress = (remaining: number): void => {
+    mainWindow?.webContents.send("sync:draining", {
+      remaining,
+      secondsLeft: Math.max(0, Math.ceil((quitDeadline - Date.now()) / 1000)),
+    });
+  };
 
   /**
    * Put up the moment Quit is pressed, before anything slow starts.
@@ -1562,8 +1576,9 @@ async function registerIpcHandlers(): Promise<void> {
    */
   beginQuitProgress = (): void => {
     quitProgressShownAt = Date.now();
+    quitDeadline = Date.now() + QUIT_DRAIN_LIMIT_MS;
     showMainWindow();
-    mainWindow?.webContents.send("sync:draining", unsentRecordCount());
+    sendQuitProgress(unsentRecordCount());
   };
 
   /**
@@ -1587,9 +1602,15 @@ async function registerIpcHandlers(): Promise<void> {
     };
     ipcMain.once("sync:drainClosed", onClose);
 
-    const deadline = Date.now() + QUIT_DRAIN_LIMIT_MS;
+    // On its own timer, not the loop's: an attempt against an
+    // unreachable server takes the whole budget to fail, so a countdown
+    // driven by the loop would sit on 5 and then vanish. What somebody is
+    // watching has to keep moving even when nothing else is.
+    let lastKnown = unsentRecordCount();
+    const ticker = setInterval(() => sendQuitProgress(lastKnown), 1000);
+
     try {
-      while (!closed && Date.now() < deadline) {
+      while (!closed && Date.now() < quitDeadline) {
         // Checked first, so a quit with nothing queued does no network
         // work at all and only pays the moment the dialog is up for.
         if (unsentRecordCount() === 0) break;
@@ -1599,12 +1620,14 @@ async function registerIpcHandlers(): Promise<void> {
           flushPendingOps().catch(() => {}),
         ]);
         const remaining = unsentRecordCount();
-        mainWindow?.webContents.send("sync:draining", remaining);
+        lastKnown = remaining;
+        sendQuitProgress(remaining);
         if (remaining === 0) break;
         // Short, so the deadline buys as many real attempts as it can.
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
     } finally {
+      clearInterval(ticker);
       ipcMain.removeListener("sync:drainClosed", onClose);
       // A dialog that appears and disappears inside a frame reads as a
       // glitch rather than as the app doing something, so the quickest

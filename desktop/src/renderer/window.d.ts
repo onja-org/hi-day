@@ -215,7 +215,9 @@ declare global {
           ) => void,
         ) => void;
         onSyncDraining: (
-          listener: (remaining: number | null) => void,
+          listener: (
+            progress: { remaining: number; secondsLeft: number } | null,
+          ) => void,
         ) => void;
         closeSyncDraining: () => void;
         onSyncBacklog: (listener: (message: string | null) => void) => void;
