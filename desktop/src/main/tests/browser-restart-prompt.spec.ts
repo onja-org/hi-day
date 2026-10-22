@@ -1,13 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   browserRestartPrompt,
   browsersOrphanedBySweep,
   type BlindBrowserReportLike,
 } from '../browser-restart-prompt';
-import { markBrowserRestartPromptSeen } from '../setup-state';
 
 /** One blind Chrome, the ordinary case that makes the screen appear. */
 function oneOpenBrowser(): BlindBrowserReportLike {
@@ -19,20 +15,9 @@ function oneOpenBrowser(): BlindBrowserReportLike {
 }
 
 describe('browserRestartPrompt', () => {
-  let userDataDir: string;
-
-  beforeEach(() => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-restart-prompt-'));
-  });
-
-  afterEach(() => {
-    rmSync(userDataDir, { recursive: true, force: true });
-  });
-
   function ask(overrides: Partial<Parameters<typeof browserRestartPrompt>[0]> = {}) {
     return browserRestartPrompt({
       platform: 'linux',
-      userDataDir,
       findBrowsers: oneOpenBrowser,
       ...overrides,
     });
@@ -50,7 +35,7 @@ describe('browserRestartPrompt', () => {
   it.each(['darwin', 'win32'])('never asks on %s', (platform) => {
     const findBrowsers = vi.fn(oneOpenBrowser);
 
-    const prompt = browserRestartPrompt({ platform, userDataDir, findBrowsers });
+    const prompt = browserRestartPrompt({ platform, findBrowsers });
 
     expect(prompt.show).toBe(false);
     // Not even scanned: the answer cannot depend on what is running.
@@ -69,16 +54,17 @@ describe('browserRestartPrompt', () => {
   });
 
   /**
-   * The once-per-install promise. Everything else about the machine is
-   * unchanged — the same blind browser is still running — and the answer is
-   * still no.
+   * Asked per orphaning, not once per install. A second sweep that writes a
+   * launcher orphans the windows open at *that* moment just as the first
+   * did, so it has to be able to ask again — remembering an answer across
+   * installs is what left a later sweep's orphans with no screen at all.
+   *
+   * What stops it nagging is the caller: `browsersOrphanedBySweep` hands
+   * back an empty set on any launch that wrote nothing.
    */
-  it('never asks twice on the same install', () => {
+  it('asks again when a later sweep orphans windows afresh', () => {
     expect(ask().show).toBe(true);
-
-    markBrowserRestartPromptSeen(userDataDir);
-
-    expect(ask().show).toBe(false);
+    expect(ask().show).toBe(true);
   });
 
   /**
@@ -227,16 +213,11 @@ describe('browsersOrphanedBySweep', () => {
   });
 
   it('leaves the screen with nothing to show, end to end', () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'orphan-prompt-'));
-    try {
-      const prompt = browserRestartPrompt({
-        platform: 'linux',
-        userDataDir,
-        findBrowsers: () => browsersOrphanedBySweep(open, [{ created: false }]),
-      });
-      expect(prompt.show).toBe(false);
-    } finally {
-      rmSync(userDataDir, { recursive: true, force: true });
-    }
+    const prompt = browserRestartPrompt({
+      platform: 'linux',
+      findBrowsers: () => browsersOrphanedBySweep(open, [{ created: false }]),
+    });
+
+    expect(prompt.show).toBe(false);
   });
 });

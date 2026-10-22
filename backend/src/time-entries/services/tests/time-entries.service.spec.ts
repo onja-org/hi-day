@@ -258,23 +258,6 @@ describe('TimeEntriesService', () => {
     deviceId: null,
   } as TimeEntry;
 
-  describe('countRunningOnProjects', () => {
-    it('counts only open entries that are on a project', async () => {
-      const count = jest.fn().mockResolvedValue(2);
-      const service = makeService({
-        timeEntriesRepo: makeTimeEntriesRepo({ count }),
-      });
-
-      expect(await service.countRunningOnProjects('org-1')).toBe(2);
-      const [{ where }] = count.mock.calls[0] as [
-        { where: Record<string, unknown> },
-      ];
-      expect(where.organisationId).toBe('org-1');
-      expect(where).toHaveProperty('endedAt');
-      expect(where).toHaveProperty('projectId');
-    });
-  });
-
   describe('projects setting', () => {
     it('starts a timer with no project when projects are off', async () => {
       const create = jest.fn((value: object) => value);

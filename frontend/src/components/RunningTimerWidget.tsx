@@ -4,6 +4,7 @@ import { StopIcon } from "@phosphor-icons/react";
 import { useRunningTimer } from "@/hooks/useRunningTimer";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { ErrorMessage } from "./ErrorMessage";
+import { InfoMessage } from "./InfoMessage";
 import { WorkTimeLimitReachedModal } from "./WorkTimeLimitReachedModal";
 import { ProjectColourBadge } from "./ProjectColourBadge";
 import { Spinner } from "./Spinner";
@@ -37,6 +38,11 @@ export function RunningTimerWidget({ organisationId }: RunningTimerWidgetProps) 
           limitHours={timer.limitReached.limitHours}
           onClose={timer.dismissLimitReached}
         />
+      )}
+      {timer.entry?.projectId && !timer.projectsEnabled && (
+        <div className="mb-4">
+          <InfoMessage message="Projects are now turned off. Your timer keeps running on its project until you stop it." />
+        </div>
       )}
       {timer.entry ? (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

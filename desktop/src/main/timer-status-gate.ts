@@ -5,6 +5,12 @@ export interface TimerStatusSession {
 export interface TimerStatusResult {
   ok: boolean;
   data?: { entry: { pausedAt?: string | null } | null };
+  /**
+   * Set by DeviceSessionGuard for a missing, expired or admin-revoked
+   * session, and never for a validation error or a transient failure. A
+   * sign-out is an answer — see `isCurrentlyRunning`.
+   */
+  unauthorized?: boolean;
 }
 
 export interface TimerStatusClient {
@@ -52,17 +58,38 @@ export class TimerStatusGate {
   async pollOnce(): Promise<void> {
     const session = this.authStore.load();
     const running = session ? await this.isCurrentlyRunning(session.deviceToken) : false;
-    this.applyIfChanged(running);
+    // `null` means the poll got no answer, so the last known state stands.
+    if (running !== null) this.applyIfChanged(running);
   }
 
-  private async isCurrentlyRunning(deviceToken: string): Promise<boolean> {
+  /**
+   * `null` when the request didn't get an answer (offline, a server error,
+   * a deploy): the last known state stands, rather than one missed poll
+   * reporting a running timer as stopped.
+   *
+   * This matters far beyond the tray icon. `onChange(false)` stops the
+   * window sampler, clears the activity ticker and switches URL capture
+   * off (see main.ts's recomputeSampling) — so treating an unreachable
+   * server as "not running" silently halts every sampler while the time
+   * entry keeps running. The person stays clocked in with no activity
+   * recorded behind it, and the tray reads "not tracking" while the app's
+   * own timer counts up. Same reasoning as CaptureSettingsGate's
+   * `currentSettings`, which already holds its last value for this.
+   *
+   * A sign-out is an answer, and it means off.
+   */
+  private async isCurrentlyRunning(deviceToken: string): Promise<boolean | null> {
     const result = await this.apiClient.getCurrentTimer(deviceToken);
-    if (!result.ok || !result.data) return false;
+    // Before the `ok` check: an unauthorized result is also `ok: false`.
+    if (result.unauthorized) return false;
+    if (!result.ok || !result.data) return null;
     const entry = result.data.entry;
     // A manually paused entry still exists server-side (only stop() clears
     // it) — capture must not keep running through a pause, so treat it the
-    // same as "no entry" here.
-    return entry !== null && !entry.pausedAt;
+    // same as "no entry" here. Nullish, not `!== null`: an older server
+    // omitting `entry` entirely would otherwise read as running and then
+    // throw on `.pausedAt`, rejecting the poll.
+    return entry != null && !entry.pausedAt;
   }
 
   private applyIfChanged(running: boolean): void {

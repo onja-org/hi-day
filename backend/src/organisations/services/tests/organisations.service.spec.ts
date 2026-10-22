@@ -49,10 +49,9 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Membership>;
   }
 
-  function makeTimeEntriesService(runningOnProjects = 0): TimeEntriesService {
+  function makeTimeEntriesService(): TimeEntriesService {
     return {
       stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
-      countRunningOnProjects: jest.fn().mockResolvedValue(runningOnProjects),
     } as unknown as TimeEntriesService;
   }
 
@@ -649,7 +648,7 @@ describe('OrganisationsService', () => {
     });
 
     describe('turning projects off', () => {
-      function serviceFor(settings: object, running: number) {
+      function serviceFor(settings: object) {
         const organisation = {
           id: 'org-1',
           publicId: 100000,
@@ -665,22 +664,13 @@ describe('OrganisationsService', () => {
           makeMembershipsRepo(),
           makeTeamsRepo(),
           makeAuditLogService().auditLogService,
-          makeTimeEntriesService(running),
+          makeTimeEntriesService(),
         );
         return { service, save };
       }
 
-      it('refuses while a timer is still running on a project', async () => {
-        const { service, save } = serviceFor({ projectsEnabled: true }, 2);
-
-        await expect(
-          service.updateProfile('org-1', 'user-1', { projectsEnabled: false }),
-        ).rejects.toThrow(/2 timers are running/);
-        expect(save).not.toHaveBeenCalled();
-      });
-
-      it('turns them off once nothing is running on one', async () => {
-        const { service } = serviceFor({ projectsEnabled: true }, 0);
+      it('turns them off even while a timer is running on a project', async () => {
+        const { service } = serviceFor({ projectsEnabled: true });
 
         const profile = await service.updateProfile('org-1', 'user-1', {
           projectsEnabled: false,
@@ -689,15 +679,15 @@ describe('OrganisationsService', () => {
         expect(profile.projectsEnabled).toBe(false);
       });
 
-      it('does not check when they are already off, or being turned on', async () => {
-        const alreadyOff = serviceFor({}, 3);
+      it('is a no-op to turn them off when already off, or to turn them on', async () => {
+        const alreadyOff = serviceFor({});
         await expect(
           alreadyOff.service.updateProfile('org-1', 'user-1', {
             projectsEnabled: false,
           }),
         ).resolves.toBeDefined();
 
-        const turningOn = serviceFor({ projectsEnabled: false }, 3);
+        const turningOn = serviceFor({ projectsEnabled: false });
         await expect(
           turningOn.service.updateProfile('org-1', 'user-1', {
             projectsEnabled: true,

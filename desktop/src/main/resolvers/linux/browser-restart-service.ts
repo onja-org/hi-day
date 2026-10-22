@@ -20,6 +20,7 @@ import {
   readActivatedExec,
   readFirefoxPrefs,
   relaunchCommands,
+  relaunchEnvironment,
   restartWarning,
   type RestartOutcome,
 } from './browser-restart';
@@ -217,9 +218,12 @@ export class BrowserRestartService {
           }
           // Detached, so the browser outlives this agent rather than dying
           // with it — it is the person's browser, not our child process.
+          // The environment is corrected rather than inherited: see
+          // relaunchEnvironment.
           spawn(relaunch.command, relaunch.args, {
             detached: true,
             stdio: 'ignore',
+            env: relaunchEnvironment(env),
           }).unref();
         }
         if (relaunches.length > 1) {
