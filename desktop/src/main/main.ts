@@ -259,6 +259,7 @@ const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
  * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+/** The gate's copy lives in `registerIpcHandlers`; the menu needs its own. */
 let trayTimerRunning = false;
 /** Asks the renderer to do what pressing its own play/stop button does. */
 let toggleTimerFromTray: (() => void) | null = null;
@@ -758,21 +759,17 @@ function refreshTrayMenu(): void {
             },
           ]
         : []),
-      // One item rather than two, reading whichever way the timer is not:
-      // a permanently greyed "Stop timer" says nothing a label cannot.
-      // Routed through the renderer so the tray starts a timer exactly as
-      // its play button does — same Project resolution, same conflict
-      // handling — rather than growing a second way to start one.
+      // One item reading whichever way the timer is not; a greyed
+      // "Stop timer" says nothing the label cannot. Routed through the
+      // renderer so this is not a second way to start a timer.
       {
         label: trayTimerRunning ? "Stop timer" : "Start timer",
         click: () => toggleTimerFromTray?.(),
       },
       { type: "separator" },
-      // A checkbox, so the way to undo it is the item itself with its
-      // tick gone — which is also the only place this can be reached
-      // from every window size. Named for what it governs: the full
-      // window never floats, and a bare "Always on top" ticked while it
-      // is open would look broken.
+      // A checkbox, so undoing it is the same item with its tick gone.
+      // Named for what it governs: the full window never floats, and a
+      // bare "Always on top" ticked while it is open would look broken.
       {
         label: "Always on top (compact views)",
         type: "checkbox",
@@ -1228,6 +1225,13 @@ async function registerIpcHandlers(): Promise<void> {
       if (authStore.load() !== null) {
         cacheReminderSettings(app.getPath("userData"), settings.reminders);
         offlineCache.remember({ captureSettings: settings });
+        // Where the dashboard is, straight from the deployment. Arrives
+        // on every poll, so a packaged build has it without anyone having
+        // to pair again, and a move to a new domain needs no release.
+        if (settings.webAppUrl) {
+          rememberWebAppUrl(app.getPath("userData"), settings.webAppUrl);
+          refreshTrayMenu();
+        }
       }
       recomputeSampling();
     },
@@ -1394,9 +1398,7 @@ async function registerIpcHandlers(): Promise<void> {
 
   /** The renderer asking for attention: a dialog behind other windows is
    * one nobody reads. Same escalation as the capture-settings alert. */
-  // Nothing is decided here: the renderer owns which Project a start
-  // belongs to and what a running timer should do, and this is only the
-  // tray asking it to press its own button.
+  // Nothing is decided here; the renderer owns all of it.
   toggleTimerFromTray = (): void => {
     showMainWindow();
     mainWindow?.webContents.send("tray:toggleTimer");

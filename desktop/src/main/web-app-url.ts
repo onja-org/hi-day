@@ -1,16 +1,12 @@
 /**
- * Where the web app lives, for the tray's dashboard item.
+ * Where the web app lives, for the tray's dashboard item. Taken from the
+ * origin of a pairing link rather than a constant beside
+ * `api-base-url.ts`'s: the server builds those from its own
+ * `FRONTEND_URL`, so it is the deployment's own answer and there is no
+ * second value to keep in step at release time.
  *
- * Deliberately not a constant beside `api-base-url.ts`'s. The server
- * already builds its pairing links from its own `FRONTEND_URL`, so the
- * origin of one of those is the deployment's own answer — no second
- * value to keep in step at release time, and right for whichever backend
- * this install talks to.
- *
- * The catch is that pairing happens once. An install that paired before
- * this existed has nothing remembered, which is why dev mode falls back
- * to the frontend's own default port rather than showing nothing: a
- * developer should not have to sign out and back in to see the item.
+ * Pairing happens once, though, so an install that paired before this
+ * existed has nothing remembered — hence the dev fallback.
  */
 const DEV_WEB_URL = 'http://localhost:3000';
 
@@ -22,8 +18,7 @@ export function resolveWebAppUrl(
 ): string | null {
   if (env.DESKTOP_WEB_URL) return env.DESKTOP_WEB_URL;
   if (remembered) return remembered;
-  // A packaged build has no business guessing: an installed app cannot
-  // inherit a developer's shell, and a wrong link in the tray is worse
-  // than no link. It learns the real one the next time anybody pairs.
+  // No guessing from a packaged build: a wrong link in the tray is worse
+  // than none, and it learns the real one at the next pairing.
   return isPackaged ? null : DEV_WEB_URL;
 }

@@ -140,6 +140,8 @@ export interface CaptureSettings {
   consent: { required: boolean };
   /** When to nudge someone who has not started their timer. */
   reminders: ReminderSettings;
+  /** Where the web app lives, for the tray's dashboard item. */
+  webAppUrl?: string;
 }
 
 /**

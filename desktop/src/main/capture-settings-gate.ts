@@ -17,6 +17,8 @@ export interface CaptureSettingsValue {
   /** Rides along on this poll rather than adding a second loop; not
    * capture, so it stays its own object. */
   reminders: ReminderSettings;
+  /** Likewise: the deployment's own address, for the tray's dashboard item. */
+  webAppUrl?: string;
 }
 
 /** Reminders off, and the default delivery for when they are turned on. */

@@ -120,11 +120,12 @@ smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
 The **tray menu** carries the controls that have to be reachable from
-every size: **Open dashboard** (the web app, at whatever origin the
-server's own pairing link uses, so there is no second URL constant to
-keep in step with `api-base-url.ts`; `pnpm dev` falls back to
-`http://localhost:3000` and `DESKTOP_WEB_URL` overrides both — a packaged
-build that has never paired shows no item rather than a guessed link), **Start/Stop timer** (which presses the renderer's own play
+every size: **Open dashboard** (the web app, whose address the
+backend sends on the capture-settings poll from its own `FRONTEND_URL` —
+so there is no second URL constant to keep in step with
+`api-base-url.ts`, and moving to a new domain reaches every device
+without a desktop release; `DESKTOP_WEB_URL` overrides it and `pnpm dev`
+falls back to `http://localhost:3000`), **Start/Stop timer** (which presses the renderer's own play
 button, so the Project resolution and conflict handling are the same) and
 **Always on top (compact views)**, a checkbox covering the 360×72 bar and
 the 68×68 square — unticking it is how you undo it. The full window never
