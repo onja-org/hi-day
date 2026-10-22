@@ -343,10 +343,13 @@ gone: crashed` log line. A running timer should still show as running
 
     To exercise the **sync-backlog** warning, stay offline with a timer
     running for five minutes (`BACKLOG_WARNING_AFTER_MS` in
-    `sync-backlog.ts`): a banner should appear saying the tracked data
-    has not been uploaded, that nothing is lost, and to check the
-    connection or restart. Bring the backend up and it should withdraw
-    itself once the queue drains.
+    `sync-backlog.ts`). An **"Uploading data" dialog** should appear once,
+    raising the window, with a Close button — and a banner behind it
+    saying the tracked data has not been uploaded and that nothing is
+    lost. Closing the dialog must leave the banner up: the data still has
+    not gone anywhere. The dialog does not return for the same stretch,
+    only for a later one. Bring the backend up and both should withdraw
+    themselves once the queue drains.
 
     To exercise the **refused-hours** dialog, queue a start offline against
     a Project, archive that Project in the web console, then reconnect: the

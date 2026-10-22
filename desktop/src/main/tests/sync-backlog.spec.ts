@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BACKLOG_MESSAGE,
@@ -88,5 +90,49 @@ describe('warning that tracked data has not been uploaded', () => {
       expect(BACKLOG_MESSAGE).toMatch(/connection/i);
       expect(BACKLOG_MESSAGE).toMatch(/restart/i);
     });
+  });
+});
+
+/**
+ * The dialog is static markup, so what it says is pinned here rather than
+ * left to whoever next edits the file. It interrupts the person, which
+ * buys it the right to be read — and obliges it to say something worth
+ * reading.
+ */
+describe('the uploading-data dialog', () => {
+  const html = readFileSync(
+    join(__dirname, '..', '..', 'renderer', 'index.html'),
+    'utf8',
+  );
+  // Whitespace collapsed: the markup wraps for readability, and these
+  // assertions are about the words, not where the lines happen to break.
+  const dialog = html
+    .slice(
+      html.indexOf('id="sync-backlog-dialog"'),
+      html.indexOf('id="recovered-timer"'),
+    )
+    .replace(/\s+/g, ' ');
+
+  it('exists, with somewhere to read it and a way out', () => {
+    expect(dialog).toContain('id="sync-backlog-title"');
+    expect(dialog).toContain('id="sync-backlog-body"');
+    expect(dialog).toContain('id="sync-backlog-close"');
+  });
+
+  it('says the data may not have reached the server', () => {
+    expect(dialog).toMatch(/issues uploading the data/i);
+    expect(dialog).toMatch(/may not have been fully synchronized/i);
+  });
+
+  it('names both things the person can try', () => {
+    expect(dialog).toMatch(/internet connection/i);
+    expect(dialog).toMatch(/restart/i);
+  });
+
+  it('is a dialog, announced as one', () => {
+    // Not a banner: it takes focus and interrupts, so assistive
+    // technology has to be told that rather than left to infer it.
+    expect(dialog).toContain('role="alertdialog"');
+    expect(dialog).toContain('aria-modal="true"');
   });
 });

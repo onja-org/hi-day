@@ -2086,10 +2086,46 @@ const syncBacklogBanner = document.getElementById("sync-backlog")!;
  * `role="alert"` rather than `status`, unlike the other banners here —
  * this one asks the person to do something.
  */
+const syncBacklogDialog = document.getElementById("sync-backlog-dialog")!;
+const syncBacklogClose = document.getElementById(
+  "sync-backlog-close",
+) as HTMLButtonElement;
+
+/**
+ * Whether this stretch of not-uploading has already been raised. The
+ * dialog interrupts, so it gets one chance per episode: nagging every
+ * fifteen seconds would make people dismiss it without reading, and the
+ * banner is already there as the standing reminder. Cleared when the
+ * queue drains, so a *later* failure is news again.
+ */
+let syncBacklogRaised = false;
+
 function showSyncBacklog(message: string | null): void {
   syncBacklogBanner.textContent = message ?? "";
   syncBacklogBanner.hidden = !message;
+
+  if (!message) {
+    syncBacklogRaised = false;
+    syncBacklogDialog.hidden = true;
+    return;
+  }
+  if (syncBacklogRaised) return;
+  syncBacklogRaised = true;
+  // The smaller views have no room for a dialog, and growing from a
+  // corner runs it off screen — same treatment as the other two.
+  setMode("full", true);
+  syncBacklogDialog.hidden = false;
+  syncBacklogClose.focus();
+  // Raise the window: a warning behind other windows is one nobody reads,
+  // which is the whole reason this is a dialog and not only a banner.
+  void window.api.windowControls.show();
 }
+
+syncBacklogClose.addEventListener("click", () => {
+  // Dismisses the interruption only. The banner stays until the data
+  // actually goes up, so closing this cannot make the problem look solved.
+  syncBacklogDialog.hidden = true;
+});
 
 window.api.windowControls.onSyncBacklog(showSyncBacklog);
 

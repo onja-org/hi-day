@@ -432,6 +432,40 @@
       </div>
     </div>
 
+    <div id="sync-backlog-dialog" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="sync-backlog-title"
+        aria-describedby="sync-backlog-body"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="sync-backlog-title" class="close-prompt-title">
+          Uploading data
+        </h2>
+        <p id="sync-backlog-body" class="close-prompt-message">
+          We are having issues uploading the data, so it may not have been
+          fully synchronized with the server. Please check your internet
+          connection and try to restart the Desktop app.
+        </p>
+        <div class="close-prompt-actions">
+          <button
+            id="sync-backlog-close"
+            type="button"
+            class="button button-sun"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="recovered-timer" class="close-prompt" hidden>
       <div
         class="close-prompt-card"
