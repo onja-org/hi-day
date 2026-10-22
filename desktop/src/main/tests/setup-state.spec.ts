@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cacheReminderSettings,
+  cachedWebAppUrl,
+  rememberWebAppUrl,
+  webAppOriginFrom,
   compactAlwaysOnTop,
   setCompactAlwaysOnTop,
   cachedReminderSettings,
@@ -181,5 +184,45 @@ describe('compact always on top', () => {
     setCompactAlwaysOnTop(userDataDir, false);
 
     expect(rememberedCloseAction(userDataDir)).toBe('quit');
+  });
+
+  describe('where the web app lives', () => {
+    it('knows nothing until this install has paired', () => {
+      expect(cachedWebAppUrl(userDataDir)).toBeNull();
+    });
+
+    it('takes the origin from the pairing link, dropping its path', () => {
+      // The link is to /link-device with a code on it; the dashboard is
+      // the site, not that page.
+      rememberWebAppUrl(userDataDir, 'https://app.hiday.io/link-device?code=abc');
+
+      expect(cachedWebAppUrl(userDataDir)).toBe('https://app.hiday.io');
+    });
+
+    it('follows whichever deployment this install talks to', () => {
+      rememberWebAppUrl(userDataDir, 'http://localhost:3000/link-device?code=x');
+
+      expect(cachedWebAppUrl(userDataDir)).toBe('http://localhost:3000');
+    });
+
+    it('keeps the last good one when a later link is unusable', () => {
+      rememberWebAppUrl(userDataDir, 'https://app.hiday.io/link-device?code=a');
+
+      rememberWebAppUrl(userDataDir, 'not-a-url');
+
+      expect(cachedWebAppUrl(userDataDir)).toBe('https://app.hiday.io');
+    });
+
+    it('reads an unusable link as nothing rather than throwing', () => {
+      expect(webAppOriginFrom('not-a-url')).toBeNull();
+    });
+
+    it('survives a sign-out, since the deployment did not change', () => {
+      rememberWebAppUrl(userDataDir, 'https://app.hiday.io/link-device?code=a');
+      rememberCloseAction(userDataDir, 'minimize');
+
+      expect(cachedWebAppUrl(userDataDir)).toBe('https://app.hiday.io');
+      expect(rememberedCloseAction(userDataDir)).toBe('minimize');
+    });
   });
 });

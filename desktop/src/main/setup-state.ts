@@ -13,6 +13,7 @@ interface SetupState {
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
+  webAppUrl?: string;
 }
 
 /**
@@ -89,6 +90,38 @@ export function setCompactAlwaysOnTop(
 function write(userDataDir: string, state: SetupState): void {
   mkdirSync(userDataDir, { recursive: true });
   writeFileSync(filePath(userDataDir), JSON.stringify(state), 'utf-8');
+}
+
+/**
+ * Where the web app lives, taken from the pairing link the server hands
+ * out rather than configured here.
+ *
+ * The backend builds that link from its own `FRONTEND_URL`, so reading it
+ * back is how the tray's dashboard item follows whichever deployment this
+ * install actually talks to — a second URL constant beside
+ * `api-base-url.ts` would be one more thing to get wrong at release time.
+ * Kept with the machine, not the session: the deployment does not change
+ * when somebody signs out.
+ */
+export function webAppOriginFrom(approvalUrl: string): string | null {
+  try {
+    return new URL(approvalUrl).origin;
+  } catch {
+    // An older server, or one misconfigured enough to send nonsense. The
+    // menu simply does not offer the item.
+    return null;
+  }
+}
+
+export function rememberWebAppUrl(userDataDir: string, approvalUrl: string): void {
+  const origin = webAppOriginFrom(approvalUrl);
+  if (!origin) return;
+  write(userDataDir, { ...read(userDataDir), webAppUrl: origin });
+}
+
+/** Null until this install has paired at least once. */
+export function cachedWebAppUrl(userDataDir: string): string | null {
+  return read(userDataDir).webAppUrl ?? null;
 }
 
 /** The remembered answer to the close prompt, or null to ask every time. */

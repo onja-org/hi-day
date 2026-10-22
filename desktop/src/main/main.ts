@@ -84,7 +84,9 @@ import {
   markWaylandScreenshotGranted,
   rememberCloseAction,
   cacheReminderSettings,
+  cachedWebAppUrl,
   compactAlwaysOnTop,
+  rememberWebAppUrl,
   setCompactAlwaysOnTop,
   cachedReminderSettings,
   rememberedCloseAction,
@@ -738,9 +740,20 @@ function refreshTrayMenu(): void {
   const userDataDir = app.getPath("userData");
   const remembered = rememberedCloseAction(userDataDir) !== null;
   const pinned = compactAlwaysOnTop(userDataDir);
+  const webAppUrl = cachedWebAppUrl(userDataDir);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Hi Day", click: reopenMainWindow },
+      // Absent until this install has paired, which is the only moment
+      // the server tells us where its web app is.
+      ...(webAppUrl
+        ? [
+            {
+              label: "Open dashboard",
+              click: () => void shell.openExternal(webAppUrl),
+            },
+          ]
+        : []),
       // One item rather than two, reading whichever way the timer is not:
       // a permanently greyed "Stop timer" says nothing a label cannot.
       // Routed through the renderer so the tray starts a timer exactly as
@@ -1418,6 +1431,10 @@ async function registerIpcHandlers(): Promise<void> {
       }
 
       pendingPairingCode = result.code;
+      // The same link tells us where the web app lives; the tray's
+      // dashboard item has no other source for it.
+      rememberWebAppUrl(app.getPath("userData"), result.approvalUrl);
+      refreshTrayMenu();
       await shell.openExternal(result.approvalUrl);
       return { ok: true };
     },
