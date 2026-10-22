@@ -56,15 +56,11 @@ export interface PendingTimerClient {
 }
 
 /**
- * Where the entry believed to be running is kept between calls.
- *
- * It used to be a field on `PendingTimerOps`, which meant it lived only as
- * long as the process. Offline that is the difference between being able
- * to stop and not: with nothing running in memory, `queueStop` has no
- * entry to end and answers "No timer is currently running" to somebody
- * looking straight at a ticking clock. Behind an interface so the main
- * process can back it with the offline cache, while tests keep the cheap
- * in-memory one.
+ * Where the entry believed to be running is kept between calls. A field
+ * on `PendingTimerOps` lived only as long as the process, so offline
+ * `queueStop` had no entry to end and answered "No timer is currently
+ * running" to somebody watching a ticking clock. Behind an interface so
+ * main can back it with the offline cache and tests stay in memory.
  */
 export interface RunningEntryStore {
   read(): TimeEntry | null;
@@ -208,16 +204,11 @@ export class PendingTimerOps {
   }
 
   /**
-   * Ends the running entry, queueing it like any other action when the
-   * server cannot be reached — so a stop survives an outage rather than
-   * failing outright, which is what used to happen to an idle discard and
-   * to a timer recovered after a crash.
-   *
-   * `endedAt` is passed to the server only when the caller actually meant
-   * to backdate: the backend reads its presence as "this stop was an idle
-   * discard" and records it as such, so sending "now" on an ordinary stop
-   * would mislabel every one of them. The queued record still needs a
-   * concrete instant, and uses now when none was given.
+   * Ends the running entry, queueing it when the server cannot be reached
+   * — an idle discard used to fail outright instead. `endedAt` reaches
+   * the server only when the caller meant to backdate, since the backend
+   * reads its presence as "idle discard"; the queued record still needs a
+   * concrete instant and uses now.
    */
   async stopAt(
     deviceToken: string,
@@ -234,33 +225,16 @@ export class PendingTimerOps {
   }
 
   /**
-   * Each `queue*` below answers `ok` so the person sees their click take
-   * effect, and marks the answer `fromCache` because it did not come from
-   * the server. Without that the main process counts a queued action as
-   * the server having just replied, and the clock that decides how stale
-   * the cache is — and when capture stops trusting its settings — is reset
-   * by an action that never left the machine.
-   */
-  /**
-   * Ends the timer, writing the record to disk *before* attempting the
-   * network — for the one caller that gets no second chance.
+   * Ends the timer, writing the record to disk *before* the network — for
+   * the one caller that gets no second chance.
    *
-   * `pause` asks the server first and only writes something down once
-   * that has failed. Everywhere else that is fine: the process survives,
-   * and anything left inconsistent is reconciled on the next poll or by
-   * the crash prompt. On quit, suspend and system shutdown it is not. The
-   * operating system is already counting, this process is about to stop
-   * existing, and being killed between "ask the server" and "write it
-   * down" loses the stop entirely — the entry stays open, and the person
-   * comes back to a timer that ran through the night, or to a prompt
-   * about a gap that was never a gap.
-   *
-   * Write-ahead instead: once the stop is on disk, being killed costs
-   * nothing, because the next launch replays it with the time it really
-   * happened. The network attempt still follows — landing it now closes
-   * the entry for every other surface immediately — and if it succeeds
-   * the record is removed, having had nothing left to do. The same shape
-   * the capture queue already uses: persist, then send.
+   * `pause` asks the server first and writes only once that has failed,
+   * which is fine while the process survives to reconcile it. On quit,
+   * suspend and shutdown it does not: being killed between asking and
+   * writing loses the stop entirely, and the person comes back to a timer
+   * that ran all night. Write-ahead costs nothing if killed, since the
+   * next launch replays it at the time it really happened; the send still
+   * follows, and clears the record if it lands.
    */
   async pauseDurably(
     deviceToken: string,
@@ -293,6 +267,12 @@ export class PendingTimerOps {
     return result;
   }
 
+  /**
+   * Each `queue*` answers `ok` so the click takes effect, and marks it
+   * `fromCache` because it did not come from the server — without which
+   * main counts a queued action as a reply and resets the clock that
+   * decides how stale the cache is.
+   */
   private queueStop(at: string): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };

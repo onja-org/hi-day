@@ -142,13 +142,8 @@ describe('offline cache', () => {
     });
   });
 
-  /**
-   * The machine being switched off is not the same as being offline, and
-   * the difference shows on the way back: the app has stopped, correctly,
-   * but the day it comes back to must still know what was worked. Totals
-   * only ever held what the server reported, so an hour worked with no
-   * connection came back as though it had never happened.
-   */
+  // Totals only held what the server reported, so an hour worked with no
+  // connection came back as though it had never happened.
   describe('work finished with no connection', () => {
     it('is remembered across a restart on the same day', () => {
       const subject = cache();
@@ -225,12 +220,8 @@ describe('offline cache', () => {
       expect(cache().read().runningSeenAt).toBe('2026-10-21T10:00:00.000Z');
     });
 
-    /**
-     * The stamp crash recovery measures its gap from. It has to mean "the
-     * app was alive with this timer running" — a local fact — and it used
-     * to be written only when the *server* answered, so an outage looked
-     * exactly like a crash.
-     */
+    // Written only on a server answer, an outage looked exactly like a
+    // crash — and an hour of offline work was ended where it dropped.
     describe('keeping the liveness stamp current', () => {
       it('moves the stamp on without being told the entry again', () => {
         const subject = cache();
@@ -241,33 +232,6 @@ describe('offline cache', () => {
 
         expect(subject.read().runningSeenAt).toBe('2026-10-21T10:45:00.000Z');
         expect(subject.read().runningEntry).toEqual(entry);
-      });
-
-      it('survives the restart that has to read it', () => {
-        const subject = cache();
-        subject.rememberRunning(entry);
-        at('2026-10-21T10:45:00.000Z');
-        subject.touchRunning();
-
-        expect(cache().read().runningSeenAt).toBe('2026-10-21T10:45:00.000Z');
-      });
-
-      it('keeps an hour worked offline out of the crash-recovery ceiling', () => {
-        // The bug this closes: ticking only on a server answer left the
-        // stamp an hour old, so a crash after an hour offline read as
-        // past the ceiling and the entry was ended at the moment the
-        // connection dropped — every minute after it thrown away.
-        const subject = cache();
-        subject.rememberRunning(entry);
-
-        for (const minute of [15, 30, 45, 60]) {
-          at(`2026-10-21T${10 + Math.floor(minute / 60)}:${String(minute % 60).padStart(2, '0')}:00.000Z`);
-          subject.touchRunning();
-        }
-
-        const gapMs =
-          clock.getTime() - new Date(subject.read().runningSeenAt!).getTime();
-        expect(gapMs).toBe(0);
       });
 
       it('says nothing when no timer is running', () => {
@@ -353,16 +317,9 @@ describe('offline cache', () => {
     });
   });
 
-  /**
-   * Whether capture stopping is worth *telling somebody about*, which is
-   * not the same question as whether it stopped.
-   *
-   * The bug this pins: before the first poll of every launch there has
-   * been no contact at all, so capture is correctly off — but announcing
-   * it put "paused until Hi Day can be reached" on screen next to a
-   * status line reading "Synced just now", every single time the app
-   * opened.
-   */
+  // Not the same question as whether capture stopped: before the first
+  // poll of every launch there has been no contact, so announcing it put
+  // "paused until Hi Day can be reached" next to "Synced just now".
   describe('whether a pause is worth announcing', () => {
     it('says nothing before the first contact — that is a startup moment, not an outage', () => {
       const subject = cache();

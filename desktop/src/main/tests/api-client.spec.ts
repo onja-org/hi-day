@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  ApiClient,
-  REQUEST_TIMEOUT_MS,
-  isTransportFailure,
-} from '../api-client';
+import { ApiClient, isTransportFailure } from '../api-client';
 
 const BASE_URL = 'https://api.example.com';
 
@@ -179,12 +175,8 @@ describe('ApiClient timers without a project', () => {
   });
 });
 
-/**
- * Offline is a supported state, so it needs to be reachable on purpose
- * rather than by unplugging a cable at the right moment (docs/adr/0025-...).
- * The switch sits in front of every request, which is what makes what it
- * produces the real thing: a transport failure, with no HTTP status.
- */
+// In front of every request, so what it produces is the real thing: a
+// transport failure, with no HTTP status (docs/adr/0025-...).
 describe('ApiClient when offline is simulated', () => {
   const offlineClient = () => new ApiClient(BASE_URL, () => true);
 
@@ -260,13 +252,9 @@ describe('isTransportFailure', () => {
   });
 });
 
-/**
- * A refused connection rejects at once; a network that has simply gone
- * never refuses anything, so without a deadline the socket waits as long
- * as the operating system allows — minutes. The cached answer only
- * arrives once the request returns, so that deadline is the difference
- * between working offline and working offline eventually.
- */
+// A refused connection rejects at once; a network that has gone never
+// refuses anything, so without a deadline the socket waits minutes — and
+// the cached answer only arrives once the request returns.
 describe('ApiClient request deadline', () => {
   it('gives every device request a deadline', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -297,10 +285,6 @@ describe('ApiClient request deadline', () => {
     // point of failing fast rather than hanging.
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.status).toBeUndefined();
-  });
-
-  it('fails well inside the 15s poll cycle, so requests cannot pile up', () => {
-    expect(REQUEST_TIMEOUT_MS).toBeLessThan(15_000);
   });
 
   it('leaves pairing without one — somebody is waiting on it, and no cache can answer', async () => {

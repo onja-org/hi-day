@@ -1,30 +1,15 @@
 import { intervalFromEnv } from './tuning';
 
 /**
- * How long the agent will be out of touch, with data waiting, before it
- * says so.
+ * How long out of touch, with data waiting, before the agent says so.
  *
- * Not immediately, on purpose. A dropped connection is ordinary and the
- * queue exists precisely so it costs nothing: warning the moment a single
- * screenshot fails to upload would put a worrying banner on screen
- * several times a day for something that fixes itself in seconds, and a
- * warning people learn to ignore is worse than none.
- *
- * Five minutes is pinned to this app's own rhythms rather than chosen by
- * feel: the timer and capture-settings polls run every 15s and the
- * heartbeat and queue flush every 60s, so five minutes is some fifty
- * consecutive failed requests across four independent loops — stuck, not
- * blipped. The floor underneath it is a backend deploy, during which
- * every agent is unreachable at once; warning at a minute or two would
- * interrupt everybody on a routine release, which is the fastest way to
- * teach a team to dismiss this unread. The ceiling is usefulness: past
- * twenty minutes or so it reports a problem somebody has already been
- * living with.
- *
- * Anywhere from about three to ten minutes is defensible, and only
- * watching how often it actually fires can settle it — hence the
- * override, which is for tuning as much as for not waiting five minutes
- * on every test run.
+ * Not immediately: a dropped connection is ordinary and the queue exists
+ * so it costs nothing, and a banner people see several times a day is one
+ * they learn to ignore. Five minutes is ~50 failed requests across four
+ * loops — above the length of a backend deploy, which would otherwise
+ * alarm everybody at once, and below the point where it reports a problem
+ * somebody has already been living with. Three to ten is all defensible;
+ * only watching how often it fires can settle it, hence the override.
  */
 export const BACKLOG_WARNING_AFTER_MS = intervalFromEnv(
   'WM_BACKLOG_WARNING_MS',
@@ -32,30 +17,20 @@ export const BACKLOG_WARNING_AFTER_MS = intervalFromEnv(
 );
 
 export interface SyncBacklog {
-  /**
-   * Anything captured or clicked that the server has not accepted yet —
-   * queued app events, screenshots, activity samples, URL sessions, and
-   * timer starts and stops waiting to be replayed.
-   */
+  /** Queued app events, screenshots, activity samples, URL sessions and timer ops. */
   hasUnsent: boolean;
-  /** How long since the server last answered, or null if it never has. */
+  /** Time since the server last answered, or null if it never has. */
   silentForMs: number | null;
 }
 
 /**
  * Whether to tell the person their tracked data may not be fully synced.
  *
- * Deliberately needs *both* halves. Being offline with nothing waiting is
- * not a problem to report — the agent works offline by design, and saying
- * "your data may not be synced" when all of it is would be a lie that
- * teaches people to distrust the banner. Equally, a queue with items in
- * it is normal while the server is answering: they are drained on a timer,
- * and a batch mid-flight is not a backlog.
- *
- * `silentForMs` of null means the server has never answered this install.
- * Treated as "say nothing": in practice it cannot happen with data
- * waiting, since pairing is itself a successful request, and inventing a
- * duration to compare against would be guessing.
+ * Needs both halves. Offline with nothing waiting is not a problem to
+ * report — the agent works offline by design — and a queue draining
+ * normally is not a backlog. `silentForMs` null means the server has
+ * never answered, which cannot happen with data waiting, since pairing is
+ * itself a successful request.
  */
 export function shouldWarnAboutBacklog(
   backlog: SyncBacklog,
@@ -67,15 +42,9 @@ export function shouldWarnAboutBacklog(
 }
 
 /**
- * What the person is told. Three things, in the order they need them:
- * that it has not been uploaded, that it is not lost, and what to try.
- *
- * The reassurance is the part that cannot be dropped. "Your data may not
- * be synced" on its own reads as "your hours are gone", and somebody who
- * believes that will start writing their time down somewhere else — or
- * worse, stop trusting the app with it at all. The data is on their disk
- * and will go up on its own; the banner exists so a queue that has
- * genuinely stuck is noticed, not so that an outage feels like a loss.
+ * Leads with the reassurance deliberately: "your data may not be synced"
+ * alone reads as "your hours are gone", and somebody who believes that
+ * starts keeping their time somewhere else.
  */
 export const BACKLOG_MESSAGE =
   "Your tracked time and activity haven't been uploaded yet. Nothing is " +

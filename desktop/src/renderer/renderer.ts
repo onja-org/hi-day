@@ -2092,22 +2092,15 @@ const syncDrainingClose = document.getElementById(
 ) as HTMLButtonElement;
 
 /**
- * Shown for the whole of quitting, not only when there is a backlog.
+ * Shown for the whole of quitting, not only when there is a backlog:
+ * stopping the timer is a network call, so even an empty queue leaves
+ * the window sitting there unexplained, which reads as a hang.
  *
- * Stopping the timer is a network call, so even a quit with nothing
- * queued leaves the window sitting there for a moment with no
- * explanation before it disappears — which reads as the app having hung.
- * Something is always on screen from the moment Quit is pressed.
- *
- * It says two different true things. With records waiting, the count is
- * the point: a spinner says "wait" without saying how long, where a
- * number falling towards zero lets somebody decide for themselves
- * whether to wait or go. With nothing waiting, claiming data has not
- * been sent would be a lie, so it simply says what it is doing.
- *
- * Nothing here is a gate. Close quits immediately and the data stays on
- * disk for the next launch — Hubstaff's own documentation describes
- * exactly that outcome for quitting mid-upload, and it is not a loss.
+ * Two different true things. With records waiting the count is the
+ * point — a number falling towards zero lets somebody decide whether to
+ * wait, where a spinner only says "wait". With nothing waiting, claiming
+ * data has not been sent would be a lie. Close always quits; the data
+ * goes up on the next launch.
  */
 function showSyncDraining(
   progress: { remaining: number; secondsLeft: number } | null,
@@ -2157,14 +2150,10 @@ window.api.windowControls.onSyncDraining(showSyncDraining);
 const syncBacklogBanner = document.getElementById("sync-backlog")!;
 
 /**
- * Tracked data has stopped reaching the server for long enough that it is
- * worth saying so. Distinct from the quiet "Can't reach Hi Day — retrying"
- * line, which is right for an outage that will fix itself and wrong for
- * one that has not: the queue makes a dropped connection cost nothing,
- * and that is exactly why it can fail without anybody noticing.
- *
- * `role="alert"` rather than `status`, unlike the other banners here —
- * this one asks the person to do something.
+ * Tracked data has stopped reaching the server for long enough to say so.
+ * Distinct from the quiet "Can't reach Hi Day — retrying" line, which is
+ * right for an outage that fixes itself. `role="alert"`, unlike the other
+ * banners: this one asks the person to do something.
  */
 const syncBacklogDialog = document.getElementById("sync-backlog-dialog")!;
 const syncBacklogClose = document.getElementById(
@@ -2212,13 +2201,10 @@ window.api.windowControls.onSyncBacklog(showSyncBacklog);
 const capturePausedBanner = document.getElementById("capture-paused")!;
 
 /**
- * Capture has stopped because the agent has not been able to confirm its
- * settings for a week. Purely a notice: it must never disable the timer,
- * which is why it is not routed through `tracking:notice` — that channel
- * is for an organisation refusing to accept tracking from this client,
- * and it blocks the play button on purpose. Tracking time and
- * photographing a screen are different promises, and only the second one
- * expires.
+ * Capture stopped for settings a week unconfirmed. Purely a notice, and
+ * deliberately not `tracking:notice`: that channel blocks the play
+ * button on purpose. Tracking time and photographing a screen are
+ * different promises, and only the second expires.
  */
 function showCapturePaused(paused: boolean): void {
   capturePausedBanner.hidden = !paused;
@@ -2238,12 +2224,9 @@ const recoveredTimerDiscard = document.getElementById(
 ) as HTMLButtonElement;
 
 /**
- * The app came back to find a timer still running, which only happens
- * after a crash or a power cut — every ordinary quit stops it first. The
- * minutes between the last sign of life and now are the ones nobody
- * observed, so the person is asked rather than credited or docked
- * silently. Past an hour main does not offer this at all and simply ends
- * the entry where it was last seen.
+ * A timer still running at startup only happens after a crash — every
+ * ordinary quit stops it first. The minutes nobody observed are put to
+ * the person rather than credited or docked silently.
  */
 async function askAboutRecoveredTimer(): Promise<void> {
   const recovered = await window.api.tracking.recoveredTimer();

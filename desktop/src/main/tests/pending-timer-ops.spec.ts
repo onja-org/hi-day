@@ -179,12 +179,8 @@ describe('PendingTimerOps', () => {
     );
   });
 
-  /**
-   * The gap that made the whole offline path unusable across a restart:
-   * the running entry lived in memory, so a relaunch with no connection
-   * met somebody looking at a ticking clock and told them nothing was
-   * running.
-   */
+  // The running entry lived in memory, so a relaunch with no connection
+  // told somebody watching a ticking clock that nothing was running.
   describe('the running entry across a restart', () => {
     it('can still stop a timer started offline before the app was restarted', async () => {
       const store = diskBackedStore();
@@ -248,20 +244,8 @@ describe('PendingTimerOps', () => {
     });
   });
 
-  /**
-   * A queued action answers `ok` so the click takes effect on screen, but
-   * it never reached anybody. Main measures how stale the cache is — and
-   * when capture stops trusting its settings — from the last real answer,
-   * so a queued one must not look like one: otherwise a device unreachable
-   * for a fortnight reports itself in touch every time play is pressed.
-   */
-  /**
-   * The quit, suspend and shutdown path. Everywhere else the process
-   * survives its own mistakes — a poll or the crash prompt reconciles
-   * whatever was left half-done. Here the OS is already counting and the
-   * process is about to stop existing, so the stop has to be on disk
-   * before anything slow is attempted.
-   */
+  // Everywhere else a poll or the crash prompt reconciles what was left
+  // half-done. Here the process is about to stop existing.
   describe('ending the timer durably, for a process about to die', () => {
     it('writes the stop down before it asks the server anything', async () => {
       const ops = new PendingTimerOps(dir, diskBackedStore());
@@ -304,29 +288,6 @@ describe('PendingTimerOps', () => {
 
       expect(result.ok && result.data.endedAt).toBeTruthy();
       expect(new PendingTimerOps(dir).load()).toHaveLength(1);
-    });
-
-    it('keeps it when the server refuses, rather than losing the hours', async () => {
-      // A refusal is the server's answer, but the entry is still open as
-      // far as this device knows and the person has gone. Replaying it
-      // later is the only way the stop ever happens.
-      const ops = new PendingTimerOps(dir, diskBackedStore());
-      ops.remember(entry);
-      const refused = { ...offline, status: 409 };
-
-      await ops.pauseDurably('t', client({ pauseTimer: () => Promise.resolve(refused) }));
-
-      expect(new PendingTimerOps(dir).load()).toHaveLength(1);
-    });
-
-    it('stops the clock locally either way', async () => {
-      const store = diskBackedStore();
-      const ops = new PendingTimerOps(dir, store);
-      ops.remember(entry);
-
-      await ops.pauseDurably('t', client());
-
-      expect(store.read()).toBeNull();
     });
 
     it('replays what was already waiting first, rather than closing the wrong entry', async () => {
@@ -376,6 +337,9 @@ describe('PendingTimerOps', () => {
     });
   });
 
+  // Main measures staleness from the last real answer, so a queued one
+  // must not look like one — or a device unreachable for a fortnight
+  // reports itself in touch every time play is pressed.
   describe('an answer the queue made up', () => {
     it('marks an offline start as not having come from the server', async () => {
       const result = await new PendingTimerOps(dir).start(

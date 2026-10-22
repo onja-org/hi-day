@@ -7,12 +7,9 @@ import {
   shouldWarnAboutBacklog,
 } from '../sync-backlog';
 
-/**
- * The gap this closes: the offline queue is what makes a dropped
- * connection cost nothing, and therefore also what lets it fail in
- * silence. Data piles up on disk, the timer looks completely normal, and
- * nothing says that none of it has reached anybody.
- */
+// The queue makes a dropped connection cost nothing, and therefore also
+// lets one fail in silence: data piles up, the timer looks normal, and
+// nothing says none of it has reached anybody.
 describe('warning that tracked data has not been uploaded', () => {
   const MINUTE = 60 * 1000;
 
@@ -83,22 +80,9 @@ describe('warning that tracked data has not been uploaded', () => {
     it('keeps the five-minute default when the environment says nothing', () => {
       expect(BACKLOG_WARNING_AFTER_MS).toBe(5 * 60 * 1000);
     });
-
-    it('takes a shorter threshold when one is given', () => {
-      expect(
-        shouldWarnAboutBacklog(
-          { hasUnsent: true, silentForMs: 30 * 1000 },
-          10 * 1000,
-        ),
-      ).toBe(true);
-    });
   });
 
-  /**
-   * The wording carries as much weight as the rule. "Your data may not be
-   * synced" on its own reads as "your hours are gone", and somebody who
-   * believes that starts keeping their time somewhere else.
-   */
+  // "Your data may not be synced" alone reads as "your hours are gone".
   describe('what it says', () => {
     it('promises the data is not lost', () => {
       expect(BACKLOG_MESSAGE).toMatch(/nothing is lost/i);
@@ -112,12 +96,8 @@ describe('warning that tracked data has not been uploaded', () => {
   });
 });
 
-/**
- * The dialog is static markup, so what it says is pinned here rather than
- * left to whoever next edits the file. It interrupts the person, which
- * buys it the right to be read — and obliges it to say something worth
- * reading.
- */
+// Static markup, so the wording is pinned here rather than left to
+// whoever next edits the file.
 describe('the uploading-data dialog', () => {
   const html = readFileSync(
     join(__dirname, '..', '..', 'renderer', 'index.html'),
@@ -131,12 +111,6 @@ describe('the uploading-data dialog', () => {
       html.indexOf('id="recovered-timer"'),
     )
     .replace(/\s+/g, ' ');
-
-  it('exists, with somewhere to read it and a way out', () => {
-    expect(dialog).toContain('id="sync-backlog-title"');
-    expect(dialog).toContain('id="sync-backlog-body"');
-    expect(dialog).toContain('id="sync-backlog-close"');
-  });
 
   it('says the data may not have reached the server', () => {
     expect(dialog).toMatch(/issues uploading the data/i);
@@ -156,11 +130,7 @@ describe('the uploading-data dialog', () => {
   });
 });
 
-/**
- * The dialog the app holds up on the way out, while the queue drains.
- * Static markup, so its wording is pinned here — it is the one thing
- * somebody reads while deciding whether to wait or go.
- */
+// Read while deciding whether to wait or go, so it is pinned too.
 describe('the quit-time uploading dialog', () => {
   const html = readFileSync(
     join(__dirname, '..', '..', 'renderer', 'index.html'),

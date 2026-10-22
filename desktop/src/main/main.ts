@@ -248,15 +248,10 @@ let tray: Tray | null = null;
 const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
 
 /**
- * The most time quitting will spend trying to empty the queue.
- *
- * Somebody who pressed Quit is waiting on the app to disappear, and five
- * seconds is already a long pause when you expected it to go at once. A
- * big backlog will not finish inside it, and that is the right trade:
- * nothing is lost by quitting with records still queued — they are on
- * disk and go up on the next launch — so holding the app open longer
- * buys a little less work later at the cost of somebody standing there
- * now. Close still leaves sooner.
+ * The most time quitting will spend emptying the queue. Five seconds is
+ * already a long pause when you expected the app to go at once, and a
+ * big backlog will not finish inside it — which costs nothing, since
+ * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
 
@@ -701,14 +696,9 @@ function createTray(): void {
  * down with it. */
 /**
  * What the indicator was last told, so a tray that does not exist yet can
- * catch up when it does.
- *
- * The gates are primed from the cache inside `registerIpcHandlers`, which
- * is awaited two lines before `createTray` — so an app relaunched onto a
- * timer that was already running announced it to a `tray` still null, the
- * call did nothing, and the tray was then built with the idle icon
- * hardcoded. It stayed wrong until the person stopped and started again,
- * which is the first moment anything spoke to a tray that existed.
+ * catch up. The gates are primed inside `registerIpcHandlers`, awaited
+ * two lines before `createTray`, so a relaunch onto a running timer
+ * announced it to a null `tray` and the tray was then built idle.
  */
 let recordingIndicatorState = false;
 
@@ -1212,11 +1202,9 @@ async function registerIpcHandlers(): Promise<void> {
     },
   );
   /**
-   * What the agent knew when it was last running, applied before any poll
-   * can answer. Launched with no connection — autostart at login before
-   * the network is up, or a relaunch mid-outage — both gates would
-   * otherwise begin at "off" and stay there, so a machine that was
-   * tracking and capturing comes back doing neither.
+   * What the agent knew when last running, applied before any poll can
+   * answer. Launched with no connection, both gates would otherwise
+   * begin at "off" and stay there.
    */
   /**
    * A timer still marked as running when the app starts means it did not
@@ -1258,20 +1246,13 @@ async function registerIpcHandlers(): Promise<void> {
     recoveryAction === "ask" ? recoveredTimer : null;
 
   /**
-   * Carries on tracking after "yes, I was still working".
-   *
-   * Usually nothing: the entry is open and the clock just continues. But
-   * past the backend's half-hour grace it has already been closed at the
-   * last heartbeat, and the answer has to reclaim the stretch since. A
-   * stop dated now extends that closed entry up to this moment — the
-   * server only ever extends one it closed itself, never one a person
-   * stopped — and a fresh start carries the same work forward from here.
-   *
-   * Two touching entries rather than one, which is the shape `switch`
-   * already produces and which the overlap rules explicitly allow.
-   * Reopening a closed entry would need an endpoint that does not exist,
-   * and inventing one to save a boundary nobody is harmed by is the
-   * wrong trade.
+   * Carries on after "yes, I was still working". Usually nothing. Past
+   * the backend's half-hour grace the entry has already been closed at
+   * the last heartbeat, so a stop dated now extends it to this moment —
+   * the server only extends one it closed itself — and a fresh start
+   * carries the same work forward. Two touching entries, the shape
+   * `switch` already produces; reopening would need an endpoint that
+   * does not exist.
    */
   const continueRecoveredTimer = async (
     recovered: RecoveredTimer,
@@ -1500,16 +1481,12 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   }
 
-  /**
-   * A read the cache can answer when the server cannot.
-   *
-   * Every one of these used to fail outright with no connection, and the
-   * renderer's setup stopped at the first of them — which is why the app
-   * was unusable offline rather than merely degraded. `remember` runs on
-   * the way past while online, so the copy is always the last real
-   * answer; `recall` serves it when, and only when, the request never
-   * reached the server. A refusal is not a failure to reach: a 403 or a
-   * sign-out is the server's answer and must be passed through.
+/**
+   * A read the cache can answer when the server cannot. These used to
+   * fail outright offline, and the renderer's setup stopped at the first
+   * of them. `remember` runs on the way past, so the copy is the last
+   * real answer; `recall` serves it only when nothing reached the server.
+   * A 403 or a sign-out is an answer and is passed through.
    */
   async function cachedDeviceRead<T>(
     call: (deviceToken: string) => Promise<TrackingResult<T>>,
@@ -1583,17 +1560,10 @@ async function registerIpcHandlers(): Promise<void> {
 
   /**
    * Holds the quit open while the queue drains, showing the count fall.
-   *
-   * Most backlogs are a handful of records and go in a second, so this
-   * usually passes quickly. When it does not, the person can see why — a
-   * number that is not moving says more than any wording — and Close
-   * leaves whenever they like. Nothing is lost either way: the data is on
-   * disk and goes up on the next launch, which is exactly what Hubstaff's
-   * own documentation says happens when somebody quits mid-upload.
-   *
-   * Bounded by `QUIT_DRAIN_LIMIT_MS`, because the person is waiting on
-   * the app to go. Whatever has not gone up by then stays queued and
-   * goes on the next launch, which costs nothing anybody can see.
+   * A number that is not moving says more than any wording, and Close
+   * leaves whenever they like — nothing is lost either way, since the
+   * data goes up on the next launch. Bounded by `QUIT_DRAIN_LIMIT_MS`:
+   * the person is waiting on the app to go.
    */
   drainBeforeQuit = async (): Promise<void> => {
     let closed = false;
@@ -1646,18 +1616,11 @@ async function registerIpcHandlers(): Promise<void> {
   let backlogAnnounced = false;
 
   /**
-   * Tells the person when tracked data has stopped going up.
-   *
-   * The queue makes an outage cost nothing, which is also why it can fail
-   * quietly: data piles up on disk, the person sees a timer working
-   * normally, and nothing says that none of it has reached anybody. This
-   * is the one case where the calm "Can't reach Hi Day — retrying" line
-   * is not enough, because it reads as transient and this is not.
-   *
-   * Checked on the same 15s tick that replays queued timer ops, so it
-   * costs nothing extra, and announced only on the change in both
-   * directions — a banner that cannot withdraw itself is one nobody
-   * believes the second time.
+   * Tells the person when tracked data has stopped going up. The queue
+   * makes an outage cost nothing, which is also why it can fail quietly.
+   * The calm "Can't reach Hi Day — retrying" line reads as transient,
+   * and this is not. On the same 15s tick as the op replay, announced
+   * only on the change in both directions.
    */
   const checkSyncBacklog = (): void => {
     const warn =
@@ -1707,21 +1670,14 @@ async function registerIpcHandlers(): Promise<void> {
   }, 15_000);
 
   /**
-   * Applies what this app just did to the timer, then asks the server to
-   * confirm it.
+   * Applies what this app just did, then asks the server to confirm.
    *
-   * `pollOnce` deliberately holds its last value when the server cannot
-   * answer — one missed poll must not report a running timer as stopped.
-   * That is right for a poll and wrong immediately after this app's own
-   * start or stop, which offline is the one thing it does know: the poll
-   * could not answer, so the gate kept "not running", and a timer started
-   * with no connection left the tray reading "not tracking" and — far
-   * worse, since `timerRunning` is what `recomputeSampling` gates on —
-   * window tracking, screenshots and URL capture all switched off behind
-   * a timer that was visibly counting up.
-   *
-   * Priming first and polling after means the server still wins whenever
-   * it can speak: if it disagrees, its answer lands moments later.
+   * `pollOnce` holds its last value when the server cannot answer, which
+   * is right for a poll and wrong straight after this app's own start:
+   * the gate kept "not running", so the tray read "not tracking" and —
+   * since `timerRunning` gates `recomputeSampling` — window tracking,
+   * screenshots and URL capture all stayed off behind a running timer.
+   * Priming first and polling after lets the server still win.
    */
   /**
    * Keeps the day's totals honest across the machine being switched off.

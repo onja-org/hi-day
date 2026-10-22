@@ -326,10 +326,9 @@ const api = {
         pinned,
       ) as Promise<void>,
     /**
-     * Hours a reconnect handed back and the server would not take — an
-     * archived Project, a limit reached, a start too old to record. The
-     * time is gone either way; this is so the person hears it from the
-     * app rather than finding the gap in their timesheet later.
+     * Hours a reconnect handed back that the server would not take. Gone
+     * either way; this is so they hear it from the app rather than find
+     * the gap in their timesheet later.
      */
     onRefusedTime: (
       listener: (refused: RefusedTime[]) => void,
@@ -339,20 +338,15 @@ const api = {
       );
     },
     /**
-     * Capture paused, or resumed, for having been out of touch too long.
-     * Deliberately not `onTrackingNotice`: that one blocks the timer, and
-     * capture pausing must never stop somebody tracking their hours.
+     * Capture paused or resumed for being out of touch. Deliberately not
+     * `onTrackingNotice`, which blocks the timer.
      */
     /**
      * Tracked data has stopped going up, or has started again. Carries
      * the message rather than a flag so the wording lives in one place,
      * next to the rule that decides when to show it.
      */
-    /**
-     * How many records are still going up while the app is quitting;
-     * null once the drain is over. Shown as a count rather than a spinner
-     * so somebody deciding whether to wait can see it moving.
-     */
+    /** Records still going up while quitting; null once it is over. */
     onSyncDraining: (
       listener: (progress: QuitProgress | null) => void,
     ): void => {

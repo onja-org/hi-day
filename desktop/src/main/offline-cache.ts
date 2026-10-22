@@ -11,14 +11,11 @@ import type {
 const FILE_NAME = 'offline-cache.json';
 
 /**
- * How long the agent will act on settings it has not been able to confirm.
- * Tracking time has no such limit — somebody genuinely away from a
- * connection for weeks should still get their hours — but capture does,
- * and the two are not the same promise. The settings say whether this
- * person's screen may be photographed, and an admin who switches that off
- * is owed an upper bound on how long a machine that never heard them
- * keeps going. A week covers a holiday or a bad stretch of internet;
- * past it, capture stops and says so. See docs/adr/0025-...
+ * How long capture may act on settings it cannot confirm. Tracking time
+ * has no such limit — somebody away from a connection for weeks should
+ * still get their hours — but these settings say whether a person's
+ * screen may be photographed, and an admin who switches that off is owed
+ * an upper bound. See docs/adr/0025-...
  */
 export const CAPTURE_TRUST_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -31,11 +28,7 @@ export interface CachedToday {
   projects: { projectId: string; seconds: number }[];
 }
 
-/**
- * The last answer the server gave to each thing the agent has to know to
- * be useful. Everything here is a copy of something the server owns — the
- * agent never decides any of it, it only remembers (see docs/adr/0025-...).
- */
+/** The last answer the server gave to everything the agent needs. */
 export interface OfflineCacheState {
   /** Whose answers these are. A different device's are not this one's to show. */
   deviceId: string | null;
@@ -51,12 +44,7 @@ export interface OfflineCacheState {
   runningEntry: TimeEntry | null;
   /** When that entry was last known to be running — the crash prompt's anchor. */
   runningSeenAt: string | null;
-  /**
-   * The last `workedSeconds` the server reported, and when. Offline the
-   * clock carries this forward rather than restarting from zero — the
-   * figure cannot be confirmed, but it is far closer to the truth than
-   * nothing, which is what used to be shown.
-   */
+  /** The last `workedSeconds` reported, carried forward offline rather than reset to zero. */
   workedSeconds: number | null;
   workedSecondsAt: string | null;
   today: CachedToday | null;
@@ -87,26 +75,16 @@ export function localDay(at: Date): string {
 }
 
 /**
- * What the agent knows when nobody can tell it anything.
+ * What the agent knows when nobody can tell it anything. Without it the
+ * app reached the logged-in screen, failed its first request and stopped
+ * setting itself up: no projects, no clock, and a play button that did
+ * nothing (docs/adr/0025-...).
  *
- * Until this existed the app kept its entire picture of the organisation
- * in renderer memory and asked the server for it again on every launch —
- * so with no connection it reached the logged-in screen, failed its first
- * request, and stopped setting itself up. No projects, no clock, and a
- * play button that silently did nothing. Everything it needs to keep
- * working is written down here as it arrives.
- *
- * Deliberately a plain JSON file rather than a row in `offline-queue.db`:
- * that queue is a list of things waiting to be *sent*, drained and
- * deleted as they land, and this is the opposite — the last thing
- * *received*, overwritten in place and never drained. Putting both in one
- * store would blur a distinction worth keeping. Unencrypted, unlike the
- * session: project names are on screen all day, and the file holds no
- * credential.
- *
- * Tied to a `deviceId`, so re-pairing as somebody else never shows the
- * previous person's projects — a different id reads as an empty cache
- * rather than as somebody else's.
+ * A plain JSON file rather than a row in `offline-queue.db`: that queue
+ * holds things waiting to be *sent*, drained as they land; this is the
+ * last thing *received*, overwritten in place. Unencrypted, since project
+ * names are on screen all day and it holds no credential. Tied to a
+ * `deviceId`, so re-pairing as somebody else reads as an empty cache.
  */
 export class OfflineCache {
   private state: OfflineCacheState | null = null;
@@ -128,24 +106,19 @@ export class OfflineCache {
       const parsed = JSON.parse(
         readFileSync(this.filePath, 'utf-8'),
       ) as Partial<OfflineCacheState>;
-      // Field by field: a file written by an older build has fewer keys,
-      // and a missing one must read as "not known" rather than reach a
-      // caller as undefined.
+      // Field by field: an older build's file has fewer keys, and a
+      // missing one must read as "not known", not reach a caller as
+      // undefined.
       this.state = { ...emptyState(), ...parsed, tasks: parsed.tasks ?? {} };
     } catch {
-      // A truncated or hand-edited file means starting over, which costs
-      // one online launch. Throwing here would strand the app with no
-      // window at all — the same reasoning as setup-state.ts.
+      // Starting over costs one online launch; throwing would strand the
+      // app with no window at all (same reasoning as setup-state.ts).
       this.state = emptyState();
     }
     return this.state;
   }
 
-  /**
-   * The cache, but only if it belongs to `deviceId`. Anything else is
-   * discarded first: this is a new pairing, and the old answers are not
-   * about this account.
-   */
+  /** The cache, but only if it belongs to `deviceId`; anything else is discarded. */
   readFor(deviceId: string): OfflineCacheState {
     const state = this.read();
     if (state.deviceId !== null && state.deviceId !== deviceId) {
@@ -173,18 +146,14 @@ export class OfflineCache {
     this.remember({ tasks: { ...this.read().tasks, [projectId]: tasks } });
   }
 
-  /**
-   * Totals stamped with the day they describe. Read back only on the same
-   * day — see `todayTotals`.
-   */
+  /** Totals stamped with the day they describe — see `todayTotals`. */
   rememberToday(totals: Omit<CachedToday, 'day'>): void {
     this.remember({ today: { ...totals, day: localDay(this.now()) } });
   }
 
   /**
-   * Yesterday's totals are not today's. Returning them would show someone
-   * opening the app offline on a new morning the hours they worked
-   * yesterday, which is worse than showing nothing.
+   * Withholds a stamp that is not today's: yesterday's hours shown on a
+   * new morning are worse than showing nothing.
    */
   todayTotals(): CachedToday | null {
     const today = this.read().today;
@@ -193,23 +162,16 @@ export class OfflineCache {
 
   /**
    * Folds a stretch finished with no connection into the day's totals.
-   *
-   * `rememberToday` only ever writes what the server reported, so an hour
-   * worked offline was invisible to it. Within one session that did not
-   * show, because the renderer keeps its own running tally — but the
-   * machine being switched off and turned on again is not one session,
-   * and the day came back reading as though that hour had never been
-   * worked. Which is the moment somebody decides the app lost their time.
-   *
-   * Additive on purpose. The hours are still queued and will be replayed;
-   * when they land, the server's own total overwrites this, so a figure
-   * counted here cannot survive as a double count.
+   * `rememberToday` only writes what the server reported, so an hour
+   * worked offline was invisible to it — which showed the moment the
+   * machine was switched off and on again, as a day where it never
+   * happened. Additive: when the queued hours land, the server's own
+   * total overwrites this, so nothing here survives as a double count.
    */
   addWorkedSeconds(projectId: string | null, seconds: number): void {
     if (seconds <= 0) return;
-    // `todayTotals` withholds a stamp that is not today's, so a stretch
-    // finished after midnight starts the new day rather than inflating
-    // the old one.
+    // A stretch finished after midnight starts the new day rather than
+    // inflating the old one.
     const base = this.todayTotals() ?? {
       workedSeconds: 0,
       deviceSeconds: 0,
@@ -234,19 +196,12 @@ export class OfflineCache {
   }
 
   /**
-   * Records that the timer believed to be running still is, right now.
-   *
-   * `runningSeenAt` is what crash recovery measures its gap from, and it
-   * has to mean "the app was alive with this timer running", which is a
-   * local fact. It used to be written only by `rememberRunning`, which
-   * only fires when the *server* answers — so an outage looked exactly
-   * like a crash. An hour worked offline would come back past the
-   * recovery ceiling and be ended at the moment the connection dropped,
-   * throwing away every minute after it. Called on a timer by the main
-   * process, whether or not anybody can be reached.
-   *
-   * A no-op when nothing is running: there is no liveness to record, and
-   * stamping one would resurrect a gap that has already been settled.
+   * Records that the timer believed to be running still is. Crash
+   * recovery measures its gap from `runningSeenAt`, so it has to mean
+   * "the app was alive", a local fact — written only on a server answer,
+   * an outage looked exactly like a crash and an hour of offline work was
+   * ended where the connection dropped. A no-op when nothing is running,
+   * which would resurrect an already-settled gap.
    */
   touchRunning(): void {
     if (!this.read().runningEntry) return;
@@ -265,31 +220,21 @@ export class OfflineCache {
   silentForMs(): number | null {
     const last = this.read().lastContactAt;
     if (!last) return null;
-    const since = this.now().getTime() - new Date(last).getTime();
-    // A clock moved backwards would otherwise read as "heard from in the
-    // future", which must not be treated as fresher than fresh.
-    return Math.max(0, since);
+    // Clamped: a backwards clock must not read as fresher than fresh.
+    return Math.max(0, this.now().getTime() - new Date(last).getTime());
   }
 
-  /**
-   * Whether capture may still act on settings this old. `true` before the
-   * first contact ever: an agent that has never reached the server has no
-   * settings to act on, so nothing is being trusted too long.
-   */
+  /** `true` before the first contact ever: no settings yet, so nothing to act on. */
   captureTrustExpired(): boolean {
     const silent = this.silentForMs();
     return silent === null || silent > CAPTURE_TRUST_WINDOW_MS;
   }
 
   /**
-   * Whether capture stopped because settings it *had* went stale — as
-   * opposed to never having had any.
-   *
-   * Only the first is worth telling anybody about. An agent that has not
-   * reached the server yet is also not capturing, but that is a few
-   * seconds at startup before the first poll lands, and announcing it
-   * would put "paused until Hi Day can be reached" on screen every single
-   * launch, next to a status line reading "Synced just now".
+   * Whether settings it *had* went stale, as opposed to never having had
+   * any — only the first is worth announcing. The second is the few
+   * seconds before the first poll of every launch, and saying so put
+   * "paused until Hi Day can be reached" next to "Synced just now".
    */
   captureTrustLapsed(): boolean {
     const silent = this.silentForMs();
@@ -307,8 +252,8 @@ export class OfflineCache {
       mkdirSync(this.userDataDir, { recursive: true });
       writeFileSync(this.filePath, JSON.stringify(this.state), 'utf-8');
     } catch {
-      // A full or read-only disk must not take the app down with it. The
-      // in-memory copy still serves this session; only a restart loses it.
+      // A full or read-only disk must not take the app down with it; the
+      // in-memory copy still serves this session.
     }
   }
 }

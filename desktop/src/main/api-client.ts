@@ -5,32 +5,14 @@ import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
 
+/** Said without the server address: nobody reading the login screen can act on a URL. */
 /**
- * Logging in is the one thing that genuinely cannot work offline — pairing
- * is a conversation with the server, and there is no cached answer for it.
- * So it is said plainly, without the server address: nobody reading the
- * login screen can do anything with a URL.
- */
-/**
- * How long a device request waits before it counts as unreachable.
- *
- * Without a deadline `fetch` waits as long as the operating system lets
- * it, and the two ways of being offline fail very differently: a refused
- * connection (nothing listening on the port) rejects at once, while a
- * network that has simply gone — wifi dropped, router dead, a captive
- * portal swallowing traffic — never refuses anything, so the socket sits
- * waiting for a reply that is not coming. That is the one a real user
- * gets, and it can take minutes.
- *
- * It matters because the cached answer only arrives once the request
- * returns: without this, "works offline" means "works offline, a minute
- * or two from now", with the app looking as broken as it ever did in the
- * meantime. The polls run on a 15s cycle, so five seconds fails well
- * inside one, and no honest request to this API takes that long.
- *
- * Pairing is deliberately excluded — logging in is something a person
- * just asked for and is waiting on, and there is no cached answer to fall
- * back to anyway.
+ * How long a device request waits before it counts as unreachable. A
+ * refused connection rejects at once, but a network that has simply gone
+ * never refuses anything, so without a deadline the socket waits as long
+ * as the OS allows — minutes — and the cached answer only arrives once
+ * the request returns. Fits inside the 15s poll cycle. Pairing is
+ * excluded: somebody is waiting on it, and no cache can answer it.
  */
 export const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -201,11 +183,10 @@ export type TrackingResult<T> =
     };
 
 /**
- * Whether the request never reached the server at all — no HTTP status,
- * so nothing was accepted, rejected or decided. The one condition under
- * which a cached answer may stand in, and under which a queued operation
- * is worth replaying later: a refusal is an answer, and repeating it
- * changes nothing.
+ * Whether the request never reached the server — no HTTP status, so
+ * nothing was decided. The one condition under which a cached answer may
+ * stand in, or a queued operation is worth replaying: a refusal is an
+ * answer, and repeating it changes nothing.
  */
 export function isTransportFailure<T>(result: TrackingResult<T>): boolean {
   return !result.ok && result.status === undefined && !result.unauthorized;
@@ -224,14 +205,10 @@ interface ErrorResponseBody {
  */
 export class ApiClient {
   /**
-   * `isOffline` lets a developer put the agent behind a wall without
-   * unplugging anything — see `offlineSimulated` in tuning.ts. It sits
-   * here, in front of every `fetch`, rather than in any one caller,
-   * because that is the only place that reproduces the real shape of
-   * being offline: a transport failure, with no HTTP status, on every
-   * request alike. The offline cases worth testing (a week-stale capture
-   * setting, hours replayed and refused, a crash mid-outage) are
-   * otherwise painful to reach by hand.
+   * `isOffline` puts the agent behind a wall without unplugging anything
+   * (see `offlineSimulated`). In front of every `fetch` rather than in a
+   * caller, since that is the only place that reproduces the real shape:
+   * a transport failure, no HTTP status, everywhere at once.
    */
   constructor(
     private readonly baseUrl: string,
@@ -552,9 +529,8 @@ export class ApiClient {
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        // An abort lands in the same `catch` as any other transport
-        // failure, which is exactly right: nothing reached the server, so
-        // there is no status and the cache may answer.
+        // An abort lands in the same `catch` as any transport failure:
+        // no status, so the cache may answer.
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch {

@@ -8,15 +8,10 @@ import { PendingTimerOps } from '../pending-timer-ops';
 import type { PendingTimerClient } from '../pending-timer-ops';
 
 /**
- * The whole offline round trip, over the real modules wired together
- * rather than each one alone.
- *
- * Every piece here has its own unit tests; what those cannot catch is the
- * seams between them — the queue, the cache, the day stamping and the
- * replay all agreeing about the same stretch of work. These are the
- * promises the branch is for, written as the journeys somebody actually
- * takes: track with no connection, lose the process, come back, and have
- * the hours land on the right day exactly once.
+ * The whole offline round trip over the real modules wired together.
+ * Every piece has its own unit tests; what those cannot catch is the
+ * seams — the queue, the cache, the day stamping and the replay all
+ * agreeing about one stretch of work.
  */
 describe('tracking offline and syncing back', () => {
   const unreachable = { ok: false as const, message: 'unreachable' };
@@ -123,11 +118,9 @@ describe('tracking offline and syncing back', () => {
   let server: FakeServer;
 
   /**
-   * Moves the whole system clock, not one module's. `PendingTimerOps`
-   * stamps queued operations from `new Date()` directly — which is the
-   * point of it, since those times are what the hours are eventually
-   * recorded at — so a clock injected into the cache alone would leave
-   * the two halves of every journey disagreeing about when it happened.
+   * The whole system clock, not one module's: `PendingTimerOps` stamps
+   * from `new Date()` directly, so a clock injected into the cache alone
+   * would leave the two halves of a journey disagreeing.
    */
   const at = (iso: string): void => {
     vi.setSystemTime(new Date(iso));
@@ -158,10 +151,8 @@ describe('tracking offline and syncing back', () => {
   });
 
   /**
-   * Which local day an instant belongs to, worked out the same way the
-   * app does. Not hardcoded: a fixed string would pass in one timezone
-   * and fail in another, and the rule under test is "the day the person
-   * was living in", which is exactly what varies.
+   * Derived, not hardcoded: the rule under test is "the day the person
+   * was living in", which is exactly what varies by timezone.
    */
   const dayOf = (iso: string): string => localDay(new Date(iso));
 
