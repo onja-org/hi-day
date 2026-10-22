@@ -969,12 +969,14 @@ input::placeholder {
   background: var(--volt);
 }
 
+/* Smaller than it was, and the timer larger: at 68px the reason to keep
+   the square on screen is the number, not the button. */
 .mini-square-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   margin: 0;
   padding: 0;
   border: none;
@@ -984,7 +986,7 @@ input::placeholder {
 
 .mini-square-timer {
   font-family: var(--font-data);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -998,6 +1000,40 @@ input::placeholder {
 }
 
 .mini-square.is-running .mini-square-expand path {
+  stroke: var(--chalk);
+}
+
+/* Mirrors the expand corner opposite it, so neither reads as the odd one
+   out and both stay clear of the timer. */
+.mini-square-pin {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  opacity: 0.55;
+  -webkit-app-region: no-drag;
+}
+
+/* On is the resting state, so it is the *off* state that has to look
+   deliberate — a pin struck through, not merely a dimmer icon. */
+.mini-square-pin.is-on {
+  opacity: 1;
+}
+
+.mini-square-pin.is-on #mini-pin-slash {
+  display: none;
+}
+
+.mini-square.is-running .mini-square-pin path {
   stroke: var(--chalk);
 }
 
@@ -1119,6 +1155,13 @@ input::placeholder {
 
 .compact-expand.is-on svg {
   stroke: var(--ink);
+}
+
+/* Three icon buttons sit together here, and a tinted background alone did
+   not read as a toggle — the pin was reported as missing entirely. The
+   slash says which of the three has an on and an off. */
+#compact-pin.is-on #compact-pin-slash {
+  display: none;
 }
 
 .compact button:focus-visible {

@@ -102,6 +102,8 @@ import {
   type DebugSink,
 } from "./url-capture/debug-harness";
 import { intervalFromEnv, offlineSimulated } from "./tuning";
+import { shouldPin } from "./window-pinning";
+import type { WindowMode } from "./window-pinning";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import type { UploadFn } from "./url-capture/sync-contract";
@@ -273,7 +275,6 @@ const FULL_WINDOW_SIZE = { width: 360, height: 600 };
 const COMPACT_WINDOW_SIZE = { width: 360, height: 72 };
 const MINI_WINDOW_SIZE = { width: 68, height: 68 };
 
-type WindowMode = "full" | "compact" | "mini";
 let urlCaptureService: UrlCaptureService | null = null;
 let resolverOrchestrator: ResolverOrchestrator | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -662,14 +663,13 @@ function positionForMode(mode: WindowMode, centre: boolean): void {
   }
 }
 
-/** The smallest view is always on top — lost behind an editor it is no
- * use at all. The compact bar asks; the full window never pins. */
+/** See `shouldPin`: both small views follow one preference. */
 function applyPinning(): void {
   if (!mainWindow) return;
-  const pinned =
-    windowMode === "mini" ||
-    (windowMode === "compact" && compactAlwaysOnTop(app.getPath("userData")));
-  mainWindow.setAlwaysOnTop(pinned, "floating");
+  mainWindow.setAlwaysOnTop(
+    shouldPin(windowMode, compactAlwaysOnTop(app.getPath("userData"))),
+    "floating",
+  );
 }
 
 /**

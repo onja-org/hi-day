@@ -115,20 +115,31 @@ document.getElementById("mini-expand")!.addEventListener("click", () => {
 });
 
 const compactPin = document.getElementById("compact-pin")!;
+const miniPin = document.getElementById("mini-pin")!;
 
+/**
+ * One preference, two controls. Both small views float or neither does,
+ * so whichever is on screen can turn it off — the square used to be
+ * pinned with no way to say otherwise.
+ */
 function showPinState(pinned: boolean): void {
-  compactPin.setAttribute("aria-pressed", String(pinned));
-  compactPin.classList.toggle("is-on", pinned);
-  compactPin.title = pinned ? "Keep in front: on" : "Keep in front: off";
+  for (const control of [compactPin, miniPin]) {
+    control.setAttribute("aria-pressed", String(pinned));
+    control.classList.toggle("is-on", pinned);
+    control.title = pinned ? "Keep in front: on" : "Keep in front: off";
+  }
 }
 
 void window.api.windowControls.compactAlwaysOnTop().then(showPinState);
 
-compactPin.addEventListener("click", () => {
+function togglePinned(): void {
   const pinned = compactPin.getAttribute("aria-pressed") !== "true";
   showPinState(pinned);
   void window.api.windowControls.setCompactAlwaysOnTop(pinned);
-});
+}
+
+compactPin.addEventListener("click", togglePinned);
+miniPin.addEventListener("click", togglePinned);
 
 const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
 const profileMenu = document.getElementById("profile-menu")!;
