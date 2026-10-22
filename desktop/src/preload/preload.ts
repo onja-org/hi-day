@@ -318,13 +318,6 @@ const api = {
       centre?: boolean,
     ): Promise<void> =>
       ipcRenderer.invoke("window:setMode", mode, centre) as Promise<void>,
-    compactAlwaysOnTop: (): Promise<boolean> =>
-      ipcRenderer.invoke("window:compactAlwaysOnTop") as Promise<boolean>,
-    setCompactAlwaysOnTop: (pinned: boolean): Promise<void> =>
-      ipcRenderer.invoke(
-        "window:setCompactAlwaysOnTop",
-        pinned,
-      ) as Promise<void>,
     /**
      * Hours a reconnect handed back that the server would not take. Gone
      * either way; this is so they hear it from the app rather than find

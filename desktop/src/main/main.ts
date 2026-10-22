@@ -2133,19 +2133,6 @@ async function registerIpcHandlers(): Promise<void> {
   );
 
   ipcMain.handle(
-    "window:compactAlwaysOnTop",
-    (): boolean => compactAlwaysOnTop(app.getPath("userData")),
-  );
-
-  ipcMain.handle(
-    "window:setCompactAlwaysOnTop",
-    (_event, pinned: boolean): void => {
-      setCompactAlwaysOnTop(app.getPath("userData"), pinned);
-      applyPinning();
-    },
-  );
-
-  ipcMain.handle(
     "window:setMode",
     (_event, mode: WindowMode, centre?: boolean): void => {
       setWindowMode(mode, centre === true);
