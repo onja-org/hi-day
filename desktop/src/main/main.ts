@@ -239,6 +239,15 @@ let tray: Tray | null = null;
  * window used to quit the app (and pause the timer) on Windows and Linux.
  */
 let isQuitting = false;
+/**
+ * Set when the machine is going down rather than the person leaving. A
+ * dialog is worse than useless there: nobody is looking, the OS will not
+ * wait for it, and holding the quit open risks being killed mid-write —
+ * which is precisely what writing the stop down first exists to avoid.
+ */
+let quittingForPowerEvent = false;
+/** Assigned once the IPC handlers exist; see `drainBeforeQuit`. */
+let drainBeforeQuit: (() => Promise<void>) | null = null;
 
 /** The tracker's two fixed sizes: the full window and the compact bar. */
 const FULL_WINDOW_SIZE = { width: 360, height: 600 };
@@ -1470,6 +1479,59 @@ async function registerIpcHandlers(): Promise<void> {
 
   // Offline pauses/starts are only real to the server once this lands, so
   // reading the timer settles them first.
+  /** Everything still waiting to reach the server, as one number. */
+  const unsentRecordCount = (): number =>
+    offlineQueue.pendingCount() +
+    pendingOps.load().length +
+    (urlCaptureService?.unsentCount() ?? 0);
+
+  /**
+   * Holds the quit open while the queue drains, showing the count fall.
+   *
+   * Most backlogs are a handful of records and go in a second, so this
+   * usually flashes and quitting feels normal. When it does not, the
+   * person can see why — a number that is not moving says more than any
+   * wording — and Close leaves whenever they like. Nothing is lost
+   * either way: the data is on disk and goes up on the next launch, which
+   * is exactly what Hubstaff's own documentation says happens when
+   * somebody quits mid-upload.
+   *
+   * So there is no timeout, because there is no trap: the only thing an
+   * artificial deadline would add is quitting out from under somebody who
+   * was watching the number go down.
+   */
+  drainBeforeQuit = async (): Promise<void> => {
+    if (unsentRecordCount() === 0) return;
+    showMainWindow();
+    mainWindow?.webContents.send("sync:draining", unsentRecordCount());
+
+    let closed = false;
+    const onClose = (): void => {
+      closed = true;
+    };
+    ipcMain.once("sync:drainClosed", onClose);
+
+    try {
+      // Up to a minute of real attempts; past that a connection is not
+      // coming back within the patience of somebody trying to quit, and
+      // the count on screen has already told them so.
+      for (let attempt = 0; attempt < 12 && !closed; attempt += 1) {
+        await Promise.all([
+          offlineQueue.flushAll().catch(() => {}),
+          urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
+          flushPendingOps().catch(() => {}),
+        ]);
+        const remaining = unsentRecordCount();
+        mainWindow?.webContents.send("sync:draining", remaining);
+        if (remaining === 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } finally {
+      ipcMain.removeListener("sync:drainClosed", onClose);
+      mainWindow?.webContents.send("sync:draining", null);
+    }
+  };
+
   /** What the renderer was last told about data waiting to go up. */
   let backlogAnnounced = false;
 
@@ -2190,6 +2252,15 @@ if (!gotSingleInstanceLock) {
         .catch((error: unknown) =>
           console.error("[timer] pause on quit failed:", error),
         )
+        // Only once the timer is stopped: its own stop is one of the
+        // records being counted, and draining before it would quit with
+        // the very thing this waits for still unwritten.
+        .then(async () => {
+          if (quittingForPowerEvent || !drainBeforeQuit) return;
+          await drainBeforeQuit().catch((error: unknown) =>
+            console.error("[sync] drain on quit failed:", error),
+          );
+        })
         .finally(() => {
           quitPauseComplete = true;
           stopUrlCapture();
@@ -2217,6 +2288,7 @@ if (!gotSingleInstanceLock) {
   powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
   powerMonitor.on("shutdown", () => {
     isQuitting = true;
+    quittingForPowerEvent = true;
     pauseForPowerEvent("shutdown");
   });
 
@@ -2225,6 +2297,10 @@ if (!gotSingleInstanceLock) {
   // the timer still running. Routed through app.quit() so it takes the same
   // pause-then-exit path as closing the window.
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
-    process.on(signal, () => app.quit());
+    process.on(signal, () => {
+      // Whatever sent this is waiting on the process, not on a dialog.
+      quittingForPowerEvent = true;
+      app.quit();
+    });
   }
 }

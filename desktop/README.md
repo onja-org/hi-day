@@ -344,6 +344,16 @@ gone: crashed` log line. A running timer should still show as running
       pressed the buttons, not the time you reconnected, and the status
       line goes back to "Synced just now".
 
+    To exercise the **quit-time upload dialog**, queue some captures
+    offline (start a timer with screenshots on), then **Quit from the
+    tray**. An "Uploading data" dialog should appear with a falling
+    **Remaining records** count, and the app should quit on its own once
+    it reaches zero. **Close** quits immediately instead, leaving the
+    data queued for the next launch — which is safe, and is what
+    Hubstaff's own docs describe for quitting mid-upload. A system
+    shutdown or `SIGTERM` deliberately skips the dialog: nobody is
+    looking, and the OS will not wait for it.
+
     To exercise the **sync-backlog** warning, stay offline with a timer
     running until the threshold passes. It defaults to five minutes;
     `WM_BACKLOG_WARNING_MS=10000` shortens it to ten seconds so a test run

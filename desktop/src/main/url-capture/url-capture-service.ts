@@ -101,7 +101,17 @@ export class UrlCaptureService {
    * and a queue of them stuck is the same news as a queue of screenshots.
    */
   hasUnsent(): boolean {
-    return this.store.getPendingSync(1).length > 0;
+    return this.unsentCount() > 0;
+  }
+
+  /** How many closed sessions are still waiting to go up. */
+  unsentCount(): number {
+    return this.store.countPendingSync();
+  }
+
+  /** Attempts one upload now, rather than waiting for the next tick. */
+  async drainOnce(): Promise<void> {
+    await this.runSync();
   }
 
   setTimerRunning(running: boolean): void {

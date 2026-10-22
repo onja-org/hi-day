@@ -432,6 +432,40 @@
       </div>
     </div>
 
+    <div id="sync-draining" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="sync-draining-title"
+        aria-describedby="sync-draining-body"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="sync-draining-title" class="close-prompt-title">
+          Uploading data
+        </h2>
+        <p id="sync-draining-body" class="close-prompt-message">
+          There is data that has not been sent to the server. Please wait
+          until completed.
+        </p>
+        <p id="sync-draining-count" class="close-prompt-message" aria-live="polite"></p>
+        <div class="close-prompt-actions">
+          <button
+            id="sync-draining-close"
+            type="button"
+            class="button button-sun"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="sync-backlog-dialog" class="close-prompt" hidden>
       <div
         class="close-prompt-card timer-blocked-card"

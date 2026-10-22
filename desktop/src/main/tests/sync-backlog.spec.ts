@@ -155,3 +155,46 @@ describe('the uploading-data dialog', () => {
     expect(dialog).toContain('aria-modal="true"');
   });
 });
+
+/**
+ * The dialog the app holds up on the way out, while the queue drains.
+ * Static markup, so its wording is pinned here — it is the one thing
+ * somebody reads while deciding whether to wait or go.
+ */
+describe('the quit-time uploading dialog', () => {
+  const html = readFileSync(
+    join(__dirname, '..', '..', 'renderer', 'index.html'),
+    'utf8',
+  );
+  const dialog = html
+    .slice(
+      html.indexOf('id="sync-draining"'),
+      html.indexOf('id="sync-backlog-dialog"'),
+    )
+    .replace(/\s+/g, ' ');
+
+  it('says what is happening and that it is not finished', () => {
+    expect(dialog).toMatch(/Uploading data/i);
+    expect(dialog).toMatch(/has not been sent to the server/i);
+    expect(dialog).toMatch(/wait until completed/i);
+  });
+
+  it('has somewhere to put the count', () => {
+    // A number falling towards zero is what lets somebody judge whether
+    // waiting is worth it; a spinner says "wait" without saying how long.
+    expect(dialog).toContain('id="sync-draining-count"');
+  });
+
+  it('announces the count as it changes', () => {
+    // It updates while focus sits on the Close button, so a screen
+    // reader has to be told the number moved.
+    expect(dialog).toContain('aria-live="polite"');
+  });
+
+  it('always offers a way out', () => {
+    // Quitting mid-upload is explicitly safe: the data is on disk and
+    // goes up next launch. Trapping somebody would buy nothing.
+    expect(dialog).toContain('id="sync-draining-close"');
+    expect(dialog).toMatch(/>\s*Close\s*</i);
+  });
+});

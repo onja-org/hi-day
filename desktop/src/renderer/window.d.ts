@@ -214,6 +214,10 @@ declare global {
             }[],
           ) => void,
         ) => void;
+        onSyncDraining: (
+          listener: (remaining: number | null) => void,
+        ) => void;
+        closeSyncDraining: () => void;
         onSyncBacklog: (listener: (message: string | null) => void) => void;
         onCapturePaused: (listener: (paused: boolean) => void) => void;
         onTrackingNotice: (listener: (notice: string | null) => void) => void;

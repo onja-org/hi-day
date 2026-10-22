@@ -2074,6 +2074,42 @@ window.api.windowControls.onTrackingReminder((reminder) => {
   void window.api.windowControls.show();
 });
 
+const syncDrainingDialog = document.getElementById("sync-draining")!;
+const syncDrainingCount = document.getElementById("sync-draining-count")!;
+const syncDrainingClose = document.getElementById(
+  "sync-draining-close",
+) as HTMLButtonElement;
+
+/**
+ * Shown while the app is quitting with data still to upload, counting
+ * down as it goes. The count is the point: a spinner says "wait" without
+ * saying how long, where a number falling towards zero lets somebody
+ * decide for themselves whether to wait or go.
+ *
+ * Nothing here is a gate. Close quits immediately and the data stays on
+ * disk for the next launch — Hubstaff's own documentation describes
+ * exactly that outcome for quitting mid-upload, and it is not a loss.
+ */
+function showSyncDraining(remaining: number | null): void {
+  if (remaining === null) {
+    syncDrainingDialog.hidden = true;
+    return;
+  }
+  syncDrainingCount.textContent = `Remaining records: ${remaining}`;
+  if (syncDrainingDialog.hidden) {
+    setMode("full", true);
+    syncDrainingDialog.hidden = false;
+    syncDrainingClose.focus();
+  }
+}
+
+syncDrainingClose.addEventListener("click", () => {
+  syncDrainingDialog.hidden = true;
+  window.api.windowControls.closeSyncDraining();
+});
+
+window.api.windowControls.onSyncDraining(showSyncDraining);
+
 const syncBacklogBanner = document.getElementById("sync-backlog")!;
 
 /**

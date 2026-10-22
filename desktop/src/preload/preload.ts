@@ -342,6 +342,20 @@ const api = {
      * the message rather than a flag so the wording lives in one place,
      * next to the rule that decides when to show it.
      */
+    /**
+     * How many records are still going up while the app is quitting;
+     * null once the drain is over. Shown as a count rather than a spinner
+     * so somebody deciding whether to wait can see it moving.
+     */
+    onSyncDraining: (listener: (remaining: number | null) => void): void => {
+      ipcRenderer.on("sync:draining", (_event, remaining: number | null) =>
+        listener(remaining),
+      );
+    },
+    /** Stop waiting and quit now; the data stays queued for next launch. */
+    closeSyncDraining: (): void => {
+      ipcRenderer.send("sync:drainClosed");
+    },
     onSyncBacklog: (listener: (message: string | null) => void): void => {
       ipcRenderer.on("sync:backlog", (_event, message: string | null) =>
         listener(message),

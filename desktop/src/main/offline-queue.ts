@@ -118,16 +118,27 @@ export class OfflineQueue {
   }
 
   /**
+   * How many items are still unsent, across every registered kind. Shown
+   * to the person on the way out, where a bare "data is waiting" says
+   * nothing about whether to wait a second or give up — a number falling
+   * towards zero does.
+   */
+  pendingCount(): number {
+    let total = 0;
+    for (const kind of this.senders.keys()) {
+      total += this.store.countPending(kind);
+    }
+    return total;
+  }
+
+  /**
    * Whether any registered kind still holds something unsent. Asked by
    * the sync-backlog check, which tells the person their data may not be
    * uploaded — so it reads every kind rather than one, since any of them
    * stuck is the same news.
    */
   hasUnsent(): boolean {
-    for (const kind of this.senders.keys()) {
-      if (this.store.countPending(kind) > 0) return true;
-    }
-    return false;
+    return this.pendingCount() > 0;
   }
 
   start(): void {

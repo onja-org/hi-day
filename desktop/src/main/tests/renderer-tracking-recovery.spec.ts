@@ -283,6 +283,9 @@ function launch(scenario: Scenario) {
       onRefusedTime: () => {},
       onCapturePaused: () => {},
       onSyncBacklog: () => {},
+      // The quit drain has its own tests; nothing is uploading here.
+      onSyncDraining: () => {},
+      closeSyncDraining: () => {},
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },
