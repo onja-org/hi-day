@@ -179,6 +179,19 @@ describe('the quit-time uploading dialog', () => {
     expect(dialog).toMatch(/wait until completed/i);
   });
 
+  /**
+   * Stopping the timer is a network call, so even a quit with an empty
+   * queue leaves the window up for a moment. Saying "there is data that
+   * has not been sent" then would be a plain lie, so the dialog carries
+   * a second, truthful face for it.
+   */
+  it('has a second wording for a quit with nothing to upload', () => {
+    expect(dialog).toContain('id="sync-draining-title-closing"');
+    expect(dialog).toContain('id="sync-draining-saving"');
+    expect(dialog).toMatch(/Closing Hi Day/i);
+    expect(dialog).toMatch(/Saving your tracked time/i);
+  });
+
   it('has somewhere to put the count', () => {
     // A number falling towards zero is what lets somebody judge whether
     // waiting is worth it; a spinner says "wait" without saying how long.

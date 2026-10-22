@@ -2076,15 +2076,31 @@ window.api.windowControls.onTrackingReminder((reminder) => {
 
 const syncDrainingDialog = document.getElementById("sync-draining")!;
 const syncDrainingCount = document.getElementById("sync-draining-count")!;
+const syncDrainingBody = document.getElementById("sync-draining-body")!;
+const syncDrainingSaving = document.getElementById("sync-draining-saving")!;
+const syncDrainingTitleUploading = document.getElementById(
+  "sync-draining-title-uploading",
+)!;
+const syncDrainingTitleClosing = document.getElementById(
+  "sync-draining-title-closing",
+)!;
 const syncDrainingClose = document.getElementById(
   "sync-draining-close",
 ) as HTMLButtonElement;
 
 /**
- * Shown while the app is quitting with data still to upload, counting
- * down as it goes. The count is the point: a spinner says "wait" without
- * saying how long, where a number falling towards zero lets somebody
- * decide for themselves whether to wait or go.
+ * Shown for the whole of quitting, not only when there is a backlog.
+ *
+ * Stopping the timer is a network call, so even a quit with nothing
+ * queued leaves the window sitting there for a moment with no
+ * explanation before it disappears — which reads as the app having hung.
+ * Something is always on screen from the moment Quit is pressed.
+ *
+ * It says two different true things. With records waiting, the count is
+ * the point: a spinner says "wait" without saying how long, where a
+ * number falling towards zero lets somebody decide for themselves
+ * whether to wait or go. With nothing waiting, claiming data has not
+ * been sent would be a lie, so it simply says what it is doing.
  *
  * Nothing here is a gate. Close quits immediately and the data stays on
  * disk for the next launch — Hubstaff's own documentation describes
@@ -2095,7 +2111,17 @@ function showSyncDraining(remaining: number | null): void {
     syncDrainingDialog.hidden = true;
     return;
   }
-  syncDrainingCount.textContent = `Remaining records: ${remaining}`;
+
+  const uploading = remaining > 0;
+  syncDrainingTitleUploading.hidden = !uploading;
+  syncDrainingTitleClosing.hidden = uploading;
+  syncDrainingBody.hidden = !uploading;
+  syncDrainingSaving.hidden = uploading;
+  syncDrainingCount.hidden = !uploading;
+  syncDrainingCount.textContent = uploading
+    ? `Remaining records: ${remaining}`
+    : "";
+
   if (syncDrainingDialog.hidden) {
     setMode("full", true);
     syncDrainingDialog.hidden = false;

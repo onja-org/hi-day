@@ -238,6 +238,12 @@ let tray: Tray | null = null;
  * hides it to the tray instead, so tracking keeps running — closing the
  * window used to quit the app (and pause the timer) on Windows and Linux.
  */
+/**
+ * The least time the quitting dialog stays up. Long enough to read as
+ * intentional; short enough that an ordinary quit still feels immediate.
+ */
+const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
+
 let isQuitting = false;
 /**
  * Set when the machine is going down rather than the person leaving. A
@@ -248,6 +254,8 @@ let isQuitting = false;
 let quittingForPowerEvent = false;
 /** Assigned once the IPC handlers exist; see `drainBeforeQuit`. */
 let drainBeforeQuit: (() => Promise<void>) | null = null;
+/** Puts something on screen the instant Quit is pressed. */
+let beginQuitProgress: (() => void) | null = null;
 
 /** The tracker's two fixed sizes: the full window and the compact bar. */
 const FULL_WINDOW_SIZE = { width: 360, height: 600 };
@@ -1485,26 +1493,39 @@ async function registerIpcHandlers(): Promise<void> {
     pendingOps.load().length +
     (urlCaptureService?.unsentCount() ?? 0);
 
+  /** When the quit dialog went up, so it cannot vanish as a flicker. */
+  let quitProgressShownAt: number | null = null;
+
+  /**
+   * Put up the moment Quit is pressed, before anything slow starts.
+   *
+   * Stopping the timer is a network call, so even a quit with an empty
+   * queue leaves the window on screen for a moment with nothing
+   * explaining why it has not gone — which reads as the app having hung.
+   */
+  beginQuitProgress = (): void => {
+    quitProgressShownAt = Date.now();
+    showMainWindow();
+    mainWindow?.webContents.send("sync:draining", unsentRecordCount());
+  };
+
   /**
    * Holds the quit open while the queue drains, showing the count fall.
    *
    * Most backlogs are a handful of records and go in a second, so this
-   * usually flashes and quitting feels normal. When it does not, the
-   * person can see why — a number that is not moving says more than any
-   * wording — and Close leaves whenever they like. Nothing is lost
-   * either way: the data is on disk and goes up on the next launch, which
-   * is exactly what Hubstaff's own documentation says happens when
-   * somebody quits mid-upload.
+   * usually passes quickly. When it does not, the person can see why — a
+   * number that is not moving says more than any wording — and Close
+   * leaves whenever they like. Nothing is lost either way: the data is on
+   * disk and goes up on the next launch, which is exactly what Hubstaff's
+   * own documentation says happens when somebody quits mid-upload.
    *
-   * So there is no timeout, because there is no trap: the only thing an
-   * artificial deadline would add is quitting out from under somebody who
-   * was watching the number go down.
+   * So there is no deadline on waiting, because there is no trap: with a
+   * real way out, the only thing a deadline could add is quitting out
+   * from under somebody who was watching the number go down. There is a
+   * ceiling on *attempts*, past which a connection is not returning
+   * within the patience of somebody trying to leave.
    */
   drainBeforeQuit = async (): Promise<void> => {
-    if (unsentRecordCount() === 0) return;
-    showMainWindow();
-    mainWindow?.webContents.send("sync:draining", unsentRecordCount());
-
     let closed = false;
     const onClose = (): void => {
       closed = true;
@@ -1512,10 +1533,10 @@ async function registerIpcHandlers(): Promise<void> {
     ipcMain.once("sync:drainClosed", onClose);
 
     try {
-      // Up to a minute of real attempts; past that a connection is not
-      // coming back within the patience of somebody trying to quit, and
-      // the count on screen has already told them so.
       for (let attempt = 0; attempt < 12 && !closed; attempt += 1) {
+        // Checked first, so a quit with nothing queued does no network
+        // work at all and only pays the moment the dialog is up for.
+        if (unsentRecordCount() === 0) break;
         await Promise.all([
           offlineQueue.flushAll().catch(() => {}),
           urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
@@ -1528,6 +1549,15 @@ async function registerIpcHandlers(): Promise<void> {
       }
     } finally {
       ipcMain.removeListener("sync:drainClosed", onClose);
+      // A dialog that appears and disappears inside a frame reads as a
+      // glitch rather than as the app doing something, so the quickest
+      // quit still shows it long enough to have been deliberate.
+      const shownFor = Date.now() - (quitProgressShownAt ?? Date.now());
+      if (shownFor < QUIT_PROGRESS_MIN_VISIBLE_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, QUIT_PROGRESS_MIN_VISIBLE_MS - shownFor),
+        );
+      }
       mainWindow?.webContents.send("sync:draining", null);
     }
   };
@@ -2248,6 +2278,9 @@ if (!gotSingleInstanceLock) {
     isQuitting = true;
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();
+      // Before anything slow, so there is never a stretch where the
+      // window is still up with nothing saying why.
+      if (!quittingForPowerEvent) beginQuitProgress?.();
       void pauseRunningTimer()
         .catch((error: unknown) =>
           console.error("[timer] pause on quit failed:", error),

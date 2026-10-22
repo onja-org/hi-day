@@ -344,11 +344,13 @@ gone: crashed` log line. A running timer should still show as running
       pressed the buttons, not the time you reconnected, and the status
       line goes back to "Synced just now".
 
-    To exercise the **quit-time upload dialog**, queue some captures
-    offline (start a timer with screenshots on), then **Quit from the
-    tray**. An "Uploading data" dialog should appear with a falling
-    **Remaining records** count, and the app should quit on its own once
-    it reaches zero. **Close** quits immediately instead, leaving the
+    To exercise the **quit-time dialog**, **Quit from the tray** —
+    online, offline, timer running or not. Something always appears, so
+    the window never sits there unexplained while the timer's stop goes
+    over the network: "Closing Hi Day / Saving your tracked time" when
+    there is nothing queued, or "Uploading data" with a falling
+    **Remaining records** count when there is. The app quits on its own
+    once the count reaches zero. **Close** quits immediately instead, leaving the
     data queued for the next launch — which is safe, and is what
     Hubstaff's own docs describe for quitting mid-upload. A system
     shutdown or `SIGTERM` deliberately skips the dialog: nobody is

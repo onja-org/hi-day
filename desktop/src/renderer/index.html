@@ -447,11 +447,15 @@
           aria-hidden="true"
         />
         <h2 id="sync-draining-title" class="close-prompt-title">
-          Uploading data
+          <span id="sync-draining-title-uploading">Uploading data</span>
+          <span id="sync-draining-title-closing" hidden>Closing Hi Day</span>
         </h2>
         <p id="sync-draining-body" class="close-prompt-message">
           There is data that has not been sent to the server. Please wait
           until completed.
+        </p>
+        <p id="sync-draining-saving" class="close-prompt-message" hidden>
+          Saving your tracked time. This will only take a moment.
         </p>
         <p id="sync-draining-count" class="close-prompt-message" aria-live="polite"></p>
         <div class="close-prompt-actions">
