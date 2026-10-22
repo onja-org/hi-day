@@ -753,9 +753,11 @@ function refreshTrayMenu(): void {
       { type: "separator" },
       // A checkbox, so the way to undo it is the item itself with its
       // tick gone — which is also the only place this can be reached
-      // from every window size.
+      // from every window size. Named for what it governs: the full
+      // window never floats, and a bare "Always on top" ticked while it
+      // is open would look broken.
       {
-        label: "Always on top",
+        label: "Always on top (compact views)",
         type: "checkbox",
         checked: pinned,
         click: () => {

@@ -122,8 +122,11 @@ tracking error expands back to the full window automatically.
 The **tray menu** carries the controls that have to be reachable from
 every size: **Start/Stop timer** (which presses the renderer's own play
 button, so the Project resolution and conflict handling are the same) and
-**Always on top**, a checkbox covering all three sizes — unticking it is
-how you undo it (`shouldPin`, `window-pinning.ts`).
+**Always on top (compact views)**, a checkbox covering the 360×72 bar and
+the 68×68 square — unticking it is how you undo it. The full window never
+floats: at 360×600 it is the app rather than a widget, and floating it
+would put it over the work being tracked (`shouldPin`,
+`window-pinning.ts`).
 
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)
