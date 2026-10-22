@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CRASH_RECOVERY_FLOOR_MS,
   CRASH_RECOVERY_WINDOW_MS,
+  keepActionFor,
   recoveryActionFor,
 } from '../recovered-timer';
 
@@ -108,5 +109,37 @@ describe('what to do with a timer recovered at startup', () => {
         'end',
       );
     });
+  });
+});
+
+/**
+ * Answering "yes, I was still working" used to do nothing at all, which
+ * was fine right up until the backend's half-hour grace had already
+ * closed the entry being asked about — the next poll reported no timer,
+ * the clock stopped, and the answer was discarded along with the time it
+ * was meant to claim.
+ */
+describe('carrying on after keeping a recovered timer', () => {
+  it('does nothing when the entry is still open', () => {
+    expect(keepActionFor({ answered: true, running: true })).toBe('carry-on');
+  });
+
+  it('reclaims the stretch when the server has already closed it', () => {
+    // The sweeper got there first. Without this the person said "I was
+    // working" and watched the clock stop anyway.
+    expect(keepActionFor({ answered: true, running: false })).toBe('reopen');
+  });
+
+  it('does nothing when the server cannot be reached', () => {
+    // Offline the local entry stays open, and whenever they do stop,
+    // that stop extends the closed entry to the real time. Reopening
+    // blind would cut the day in two for nothing.
+    expect(keepActionFor({ answered: false, running: false })).toBe('carry-on');
+  });
+
+  it('trusts the answer over the guess when both are present', () => {
+    // `running` is meaningless without an answer; it must not be what
+    // decides, or an unreachable server would reopen on a stale belief.
+    expect(keepActionFor({ answered: false, running: true })).toBe('carry-on');
   });
 });

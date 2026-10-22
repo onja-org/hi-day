@@ -30,7 +30,7 @@ import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
 import { OfflineCache } from "./offline-cache";
-import { recoveryActionFor } from "./recovered-timer";
+import { keepActionFor, recoveryActionFor } from "./recovered-timer";
 import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
 
 /** A timer the app came back to find still running after a crash. */
@@ -38,6 +38,9 @@ interface RecoveredTimer {
   startedAt: string;
   lastSeenAt: string;
   silentForMs: number;
+  /** Carried so tracking can be continued on the same work — see `keepActionFor`. */
+  projectId: string | null;
+  taskId: string | null;
 }
 import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
@@ -1222,6 +1225,8 @@ async function registerIpcHandlers(): Promise<void> {
     return {
       startedAt: state.runningEntry.startedAt,
       lastSeenAt: state.runningSeenAt,
+      projectId: state.runningEntry.projectId,
+      taskId: state.runningEntry.taskId,
       // Measured here rather than in the renderer, so both the auto-answer
       // below and the prompt agree on one reading of the clock.
       silentForMs: Math.max(
@@ -1238,6 +1243,41 @@ async function registerIpcHandlers(): Promise<void> {
   /** Null unless there is a question only the person can answer. */
   let awaitingRecoveryAnswer =
     recoveryAction === "ask" ? recoveredTimer : null;
+
+  /**
+   * Carries on tracking after "yes, I was still working".
+   *
+   * Usually nothing: the entry is open and the clock just continues. But
+   * past the backend's half-hour grace it has already been closed at the
+   * last heartbeat, and the answer has to reclaim the stretch since. A
+   * stop dated now extends that closed entry up to this moment — the
+   * server only ever extends one it closed itself, never one a person
+   * stopped — and a fresh start carries the same work forward from here.
+   *
+   * Two touching entries rather than one, which is the shape `switch`
+   * already produces and which the overlap rules explicitly allow.
+   * Reopening a closed entry would need an endpoint that does not exist,
+   * and inventing one to save a boundary nobody is harmed by is the
+   * wrong trade.
+   */
+  const continueRecoveredTimer = async (
+    recovered: RecoveredTimer,
+  ): Promise<void> => {
+    const current = await callDeviceApi((token) =>
+      apiClient.getCurrentTimer(token),
+    );
+    const action = keepActionFor({
+      answered: current.ok,
+      running: current.ok && current.data.entry !== null,
+    });
+    if (action === "carry-on") return;
+
+    await callDeviceApi((token) => pendingOps.stopAt(token, apiClient));
+    await callDeviceApi((token) =>
+      pendingOps.start(token, recovered.projectId, recovered.taskId, apiClient),
+    );
+    applyLocalTimerState();
+  };
 
   /** Ends the recovered entry where the app was last known to be running. */
   const endRecoveredTimerAtLastSeen = async (
@@ -1274,7 +1314,11 @@ async function registerIpcHandlers(): Promise<void> {
     async (_event, keep: boolean): Promise<void> => {
       const pending = awaitingRecoveryAnswer;
       awaitingRecoveryAnswer = null;
-      if (keep || !pending) return;
+      if (!pending) return;
+      if (keep) {
+        await continueRecoveredTimer(pending);
+        return;
+      }
       await endRecoveredTimerAtLastSeen(pending.lastSeenAt);
     },
   );

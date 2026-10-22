@@ -68,3 +68,36 @@ export function recoveryActionFor(
   if (silentForMs < floorMs) return 'keep';
   return 'ask';
 }
+
+/**
+ * - `carry-on`: the entry is still open; saying "I kept working" needs
+ *   nothing done, the clock simply continues.
+ * - `reopen`: the server has already closed it, so the stretch since has
+ *   to be reclaimed before tracking can continue into it.
+ */
+export type KeepAction = 'carry-on' | 'reopen';
+
+/**
+ * What answering "yes, I was still working" has to do.
+ *
+ * The case this exists for: the backend ends a timer whose device has not
+ * been heard from for half an hour, dating it at the last heartbeat. A
+ * crash stops the heartbeat, so by the time somebody is asked about a
+ * forty-minute gap, the entry they are being asked about has already been
+ * closed underneath them. Answering "keep" used to do nothing at all —
+ * the next poll reported no timer, the clock stopped, and the answer was
+ * quietly discarded along with the time it was meant to claim.
+ *
+ * `answered` false means the server could not be reached, and that is
+ * deliberately `carry-on`: the local entry stays open, and whenever the
+ * person does stop, that stop extends the closed entry to the real time
+ * (see the backend's `abandonedEntryToExtend`). Reopening blind would cut
+ * the day in two for nothing.
+ */
+export function keepActionFor(serverTimer: {
+  answered: boolean;
+  running: boolean;
+}): KeepAction {
+  if (!serverTimer.answered) return 'carry-on';
+  return serverTimer.running ? 'carry-on' : 'reopen';
+}

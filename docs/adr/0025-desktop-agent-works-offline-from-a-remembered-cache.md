@@ -131,6 +131,16 @@ and a queue draining normally is not a backlog. The wording carries as much weig
 says the data is not lost before it says anything else, because "your data may not be synced" alone
 reads as "your hours are gone", and somebody who believes that starts keeping their time elsewhere.
 
+**Answering "I was still working" has to reclaim the entry, not just assume it.** The sweeper ends a
+timer whose device has gone quiet for half an hour, and a crash stops the heartbeat — so by the time
+somebody is asked about a forty-minute gap, the entry they are being asked about has already been
+closed underneath them. Keeping it is then a stop dated *now*, which extends that closed entry to
+this moment (the server only ever extends one it closed itself), plus a fresh start carrying the
+same Project and Task forward. **Two touching entries, not one**: that is the shape `switch` already
+produces and the overlap rules explicitly allow, and reopening a closed entry would need an endpoint
+that does not exist. With the server unreachable it does nothing instead — the local entry stays
+open, and whenever the person does stop, that stop extends the closed one to the real time anyway.
+
 **Refused hours are reported, not dropped.** `PendingTimerOps.flush` returns what the server refused
 alongside whether it settled, and the renderer shows it in the dialog a refused start already uses.
 
