@@ -247,6 +247,19 @@ let tray: Tray | null = null;
  */
 const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
 
+/**
+ * The most time quitting will spend trying to empty the queue.
+ *
+ * Somebody who pressed Quit is waiting on the app to disappear, and five
+ * seconds is already a long pause when you expected it to go at once. A
+ * big backlog will not finish inside it, and that is the right trade:
+ * nothing is lost by quitting with records still queued — they are on
+ * disk and go up on the next launch — so holding the app open longer
+ * buys a little less work later at the cost of somebody standing there
+ * now. Close still leaves sooner.
+ */
+const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+
 let isQuitting = false;
 /**
  * Set when the machine is going down rather than the person leaving. A
@@ -1563,11 +1576,9 @@ async function registerIpcHandlers(): Promise<void> {
    * disk and goes up on the next launch, which is exactly what Hubstaff's
    * own documentation says happens when somebody quits mid-upload.
    *
-   * So there is no deadline on waiting, because there is no trap: with a
-   * real way out, the only thing a deadline could add is quitting out
-   * from under somebody who was watching the number go down. There is a
-   * ceiling on *attempts*, past which a connection is not returning
-   * within the patience of somebody trying to leave.
+   * Bounded by `QUIT_DRAIN_LIMIT_MS`, because the person is waiting on
+   * the app to go. Whatever has not gone up by then stays queued and
+   * goes on the next launch, which costs nothing anybody can see.
    */
   drainBeforeQuit = async (): Promise<void> => {
     let closed = false;
@@ -1576,8 +1587,9 @@ async function registerIpcHandlers(): Promise<void> {
     };
     ipcMain.once("sync:drainClosed", onClose);
 
+    const deadline = Date.now() + QUIT_DRAIN_LIMIT_MS;
     try {
-      for (let attempt = 0; attempt < 12 && !closed; attempt += 1) {
+      while (!closed && Date.now() < deadline) {
         // Checked first, so a quit with nothing queued does no network
         // work at all and only pays the moment the dialog is up for.
         if (unsentRecordCount() === 0) break;
@@ -1589,7 +1601,8 @@ async function registerIpcHandlers(): Promise<void> {
         const remaining = unsentRecordCount();
         mainWindow?.webContents.send("sync:draining", remaining);
         if (remaining === 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Short, so the deadline buys as many real attempts as it can.
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
     } finally {
       ipcMain.removeListener("sync:drainClosed", onClose);

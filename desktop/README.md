@@ -350,7 +350,9 @@ gone: crashed` log line. A running timer should still show as running
     over the network: "Closing Hi Day / Saving your tracked time" when
     there is nothing queued, or "Uploading data" with a falling
     **Remaining records** count when there is. The app quits on its own
-    once the count reaches zero. **Close** quits immediately instead, leaving the
+    once the count reaches zero, and gives up after five seconds either
+    way (`WM_QUIT_DRAIN_LIMIT_MS`) — whatever has not gone up stays
+    queued for the next launch. **Close** quits immediately instead, leaving the
     data queued for the next launch — which is safe, and is what
     Hubstaff's own docs describe for quitting mid-upload. A system
     shutdown or `SIGTERM` deliberately skips the dialog: nobody is
