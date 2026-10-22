@@ -3,6 +3,8 @@ import { reminderMessage } from "./reminder-message.js";
 export {};
 
 const STATUS_POLL_INTERVAL_MS = 15_000;
+/** Just the Projects on/off setting, so an admin's switch shows up promptly. */
+const PROJECTS_SETTING_POLL_INTERVAL_MS = 1_000;
 /**
  * How often the day's totals are reconciled against the server, to catch
  * time added elsewhere. Below the status poll, so in practice every poll
@@ -510,6 +512,14 @@ const reminderStartButton = document.getElementById("reminder-start-button")!;
 const reminderDismissButton = document.getElementById(
   "reminder-dismiss-button",
 )!;
+const projectsChangeBanner = document.getElementById("projects-change-banner")!;
+const projectsChangeTitle = document.getElementById("projects-change-title")!;
+const projectsChangeMessage = document.getElementById(
+  "projects-change-message",
+)!;
+const projectsChangeOkButton = document.getElementById(
+  "projects-change-ok-button",
+)!;
 const idleBannerMessage = document.getElementById("idle-banner-message")!;
 const idleKeepButton = document.getElementById(
   "idle-keep-button",
@@ -564,6 +574,8 @@ const accessibilitySettingsButton = document.getElementById(
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let tickHandle: ReturnType<typeof setInterval> | null = null;
 let idlePollHandle: ReturnType<typeof setInterval> | null = null;
+let projectsSettingPollHandle: ReturnType<typeof setInterval> | null = null;
+let projectsSettingCheckInFlight = false;
 let screenRecordingPollHandle: ReturnType<typeof setInterval> | null = null;
 let runningEntry: TimeEntry | null = null;
 
@@ -1393,12 +1405,32 @@ function applyProjectsMode(): void {
   idleAssignToggle.hidden = !projectsEnabled;
 }
 
+/** Tells the person an admin just switched Projects on or off under them. */
+function showProjectsChangeBanner(enabled: boolean): void {
+  projectsChangeTitle.textContent = enabled
+    ? "Projects are now on"
+    : "Projects are now off";
+  projectsChangeMessage.textContent = enabled
+    ? "Your admin turned Projects on. Pick a Project to track your time against."
+    : "Your admin turned Projects off. Time is now tracked without a Project.";
+  // The banner lives in the tracking view, which the smaller sizes hide.
+  setMode("full", true);
+  projectsChangeBanner.hidden = false;
+  void window.api.windowControls.show();
+}
+
+projectsChangeOkButton.addEventListener("click", () => {
+  projectsChangeBanner.hidden = true;
+});
+
 /**
  * Picks up an admin switching Projects on or off while the app is open, by
  * rerunning setup — which re-reads the setting and the list. Quiet on any
  * failure: the status poll already reports an unreachable server.
  */
-async function refreshProjectsSetting(): Promise<void> {
+async function refreshProjectsSetting(
+  { includeList = true }: { includeList?: boolean } = {},
+): Promise<void> {
   const setting = await window.api.tracking.projectsSetting();
   if (!setting.ok) return;
   if (setting.data.projectsEnabled !== projectsEnabled) {
@@ -1408,10 +1440,22 @@ async function refreshProjectsSetting(): Promise<void> {
     projectsLoaded = false;
     applyProjectsMode();
     renderProjects();
+    showProjectsChangeBanner(projectsEnabled);
     await initTracking();
     return;
   }
-  if (projectsEnabled) await refreshProjectList();
+  if (projectsEnabled && includeList) await refreshProjectList();
+}
+
+/** The fast poll: skips overlapping runs, since a flip reruns setup, which is slow. */
+async function checkProjectsSettingFlip(): Promise<void> {
+  if (projectsSettingCheckInFlight) return;
+  projectsSettingCheckInFlight = true;
+  try {
+    await refreshProjectsSetting({ includeList: false });
+  } finally {
+    projectsSettingCheckInFlight = false;
+  }
 }
 
 /**
@@ -1694,6 +1738,10 @@ function startPolling(): void {
     void refreshProjectsSetting();
     void refreshCapturePermissionBanner();
   }, STATUS_POLL_INTERVAL_MS);
+  projectsSettingPollHandle = setInterval(
+    () => void checkProjectsSettingFlip(),
+    PROJECTS_SETTING_POLL_INTERVAL_MS,
+  );
   tickHandle = setInterval(tick, 1000);
   idlePollHandle = setInterval(() => void checkIdle(), IDLE_POLL_INTERVAL_MS);
 }
@@ -1702,6 +1750,8 @@ function stopPolling(): void {
   if (pollHandle) clearInterval(pollHandle);
   if (tickHandle) clearInterval(tickHandle);
   if (idlePollHandle) clearInterval(idlePollHandle);
+  if (projectsSettingPollHandle) clearInterval(projectsSettingPollHandle);
+  projectsSettingPollHandle = null;
   pollHandle = null;
   tickHandle = null;
   idlePollHandle = null;
