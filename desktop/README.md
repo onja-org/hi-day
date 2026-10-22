@@ -121,9 +121,10 @@ tracking error expands back to the full window automatically.
 
 The **tray menu** carries the controls that have to be reachable from
 every size: **Open dashboard** (the web app, at whatever origin the
-server's own pairing link uses — there is no second URL constant to keep
-in step with `api-base-url.ts`, and the item is absent until this install
-has paired once), **Start/Stop timer** (which presses the renderer's own play
+server's own pairing link uses, so there is no second URL constant to
+keep in step with `api-base-url.ts`; `pnpm dev` falls back to
+`http://localhost:3000` and `DESKTOP_WEB_URL` overrides both — a packaged
+build that has never paired shows no item rather than a guessed link), **Start/Stop timer** (which presses the renderer's own play
 button, so the Project resolution and conflict handling are the same) and
 **Always on top (compact views)**, a checkbox covering the 360×72 bar and
 the 68×68 square — unticking it is how you undo it. The full window never

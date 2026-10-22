@@ -104,6 +104,7 @@ import {
   type DebugSink,
 } from "./url-capture/debug-harness";
 import { intervalFromEnv, offlineSimulated } from "./tuning";
+import { resolveWebAppUrl } from "./web-app-url";
 import { shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
@@ -740,12 +741,15 @@ function refreshTrayMenu(): void {
   const userDataDir = app.getPath("userData");
   const remembered = rememberedCloseAction(userDataDir) !== null;
   const pinned = compactAlwaysOnTop(userDataDir);
-  const webAppUrl = cachedWebAppUrl(userDataDir);
+  const webAppUrl = resolveWebAppUrl(
+    app.isPackaged,
+    cachedWebAppUrl(userDataDir),
+  );
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Hi Day", click: reopenMainWindow },
-      // Absent until this install has paired, which is the only moment
-      // the server tells us where its web app is.
+      // Absent only when a packaged build has never paired, and so has
+      // nothing but a guess to offer — see `resolveWebAppUrl`.
       ...(webAppUrl
         ? [
             {
