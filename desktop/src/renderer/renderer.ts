@@ -680,6 +680,16 @@ function handleTrackingFailure(result: {
     showLoginView(result.message);
     return;
   }
+  // No status means the request never reached the server. That is a
+  // supported state now rather than a fault (docs/adr/0025-...): nothing
+  // has gone wrong, there is nothing for the person to do, and the red
+  // line used to name a server address they cannot act on. The sync line
+  // says it calmly instead.
+  if (result.status === undefined) {
+    syncFailing = true;
+    updateSyncStatus();
+    return;
+  }
   // 403 is the organisation refusing this — a work time limit, a day
   // tracking is off on, an app it doesn't allow. That is a rule, not a
   // fault, so it gets a dialog rather than the red line above the timer,
@@ -1679,8 +1689,13 @@ async function refreshStatus(resync = false): Promise<void> {
     updateSyncStatus();
     return;
   }
-  syncFailing = false;
-  lastSyncedAt = Date.now();
+  // `ok` no longer means the server answered: the main process serves
+  // these from what it remembered when it cannot be reached, which is
+  // what keeps the clock running. Stale is not failed, but it is not
+  // synced either, and the line must not claim otherwise.
+  syncFailing = result.fromCache === true;
+  if (!syncFailing) lastSyncedAt = Date.now();
+  updateSyncStatus();
   // Re-read now and then, so an admin's change to idle handling reaches a
   // signed-in desktop — and a missed first fetch doesn't leave it off.
   if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
@@ -2018,7 +2033,14 @@ async function runInitTracking(): Promise<void> {
   }
 
   void refreshCapturePermissionBanner();
+  // The event only fires on a change, so a window opening mid-pause (or
+  // reopening after a renderer crash) has to ask.
+  void window.api.tracking.capturePaused().then(showCapturePaused);
+  void window.api.tracking.syncBacklog().then(showSyncBacklog);
   startPolling();
+  // Last: the prompt should land on a screen that has finished drawing,
+  // and `refreshStatus` above has already settled what is running.
+  void askAboutRecoveredTimer();
 }
 
 /**
@@ -2050,6 +2072,215 @@ window.api.windowControls.onTrackingReminder((reminder) => {
   // Again now the resize is done: main raises before any of this runs,
   // and going full drops the always-on-top the smaller views hold.
   void window.api.windowControls.show();
+});
+
+const syncDrainingDialog = document.getElementById("sync-draining")!;
+const syncDrainingCount = document.getElementById("sync-draining-count")!;
+const syncDrainingCountdown = document.getElementById(
+  "sync-draining-countdown",
+)!;
+const syncDrainingBody = document.getElementById("sync-draining-body")!;
+const syncDrainingSaving = document.getElementById("sync-draining-saving")!;
+const syncDrainingTitleUploading = document.getElementById(
+  "sync-draining-title-uploading",
+)!;
+const syncDrainingTitleClosing = document.getElementById(
+  "sync-draining-title-closing",
+)!;
+const syncDrainingClose = document.getElementById(
+  "sync-draining-close",
+) as HTMLButtonElement;
+
+/**
+ * Shown for the whole of quitting, not only when there is a backlog:
+ * stopping the timer is a network call, so even an empty queue leaves
+ * the window sitting there unexplained, which reads as a hang.
+ *
+ * Two different true things. With records waiting the count is the
+ * point — a number falling towards zero lets somebody decide whether to
+ * wait, where a spinner only says "wait". With nothing waiting, claiming
+ * data has not been sent would be a lie. Close always quits; the data
+ * goes up on the next launch.
+ */
+function showSyncDraining(
+  progress: { remaining: number; secondsLeft: number } | null,
+): void {
+  if (progress === null) {
+    syncDrainingDialog.hidden = true;
+    return;
+  }
+
+  const { remaining, secondsLeft } = progress;
+  const uploading = remaining > 0;
+  syncDrainingTitleUploading.hidden = !uploading;
+  syncDrainingTitleClosing.hidden = uploading;
+  syncDrainingBody.hidden = !uploading;
+  syncDrainingSaving.hidden = uploading;
+  syncDrainingCount.hidden = !uploading;
+  syncDrainingCount.textContent = uploading
+    ? `Remaining records: ${remaining}`
+    : "";
+  // Only while something is actually being waited on. With nothing to
+  // send the dialog is gone in a moment, and counting down to it would
+  // be theatre.
+  //
+  // Deliberately not `aria-live`: the count of records announcing itself
+  // is useful, a number repeating every second over the top of it is
+  // not — a screen reader would talk continuously and bury the part that
+  // matters.
+  syncDrainingCountdown.hidden = !uploading;
+  syncDrainingCountdown.textContent = uploading
+    ? `Closing in ${secondsLeft}…`
+    : "";
+
+  if (syncDrainingDialog.hidden) {
+    setMode("full", true);
+    syncDrainingDialog.hidden = false;
+    syncDrainingClose.focus();
+  }
+}
+
+syncDrainingClose.addEventListener("click", () => {
+  syncDrainingDialog.hidden = true;
+  window.api.windowControls.closeSyncDraining();
+});
+
+window.api.windowControls.onSyncDraining(showSyncDraining);
+
+const syncBacklogBanner = document.getElementById("sync-backlog")!;
+
+/**
+ * Tracked data has stopped reaching the server for long enough to say so.
+ * Distinct from the quiet "Can't reach Hi Day — retrying" line, which is
+ * right for an outage that fixes itself. `role="alert"`, unlike the other
+ * banners: this one asks the person to do something.
+ */
+const syncBacklogDialog = document.getElementById("sync-backlog-dialog")!;
+const syncBacklogClose = document.getElementById(
+  "sync-backlog-close",
+) as HTMLButtonElement;
+
+/**
+ * Whether this stretch of not-uploading has already been raised. The
+ * dialog interrupts, so it gets one chance per episode: nagging every
+ * fifteen seconds would make people dismiss it without reading, and the
+ * banner is already there as the standing reminder. Cleared when the
+ * queue drains, so a *later* failure is news again.
+ */
+let syncBacklogRaised = false;
+
+function showSyncBacklog(message: string | null): void {
+  syncBacklogBanner.textContent = message ?? "";
+  syncBacklogBanner.hidden = !message;
+
+  if (!message) {
+    syncBacklogRaised = false;
+    syncBacklogDialog.hidden = true;
+    return;
+  }
+  if (syncBacklogRaised) return;
+  syncBacklogRaised = true;
+  // The smaller views have no room for a dialog, and growing from a
+  // corner runs it off screen — same treatment as the other two.
+  setMode("full", true);
+  syncBacklogDialog.hidden = false;
+  syncBacklogClose.focus();
+  // Raise the window: a warning behind other windows is one nobody reads,
+  // which is the whole reason this is a dialog and not only a banner.
+  void window.api.windowControls.show();
+}
+
+syncBacklogClose.addEventListener("click", () => {
+  // Dismisses the interruption only. The banner stays until the data
+  // actually goes up, so closing this cannot make the problem look solved.
+  syncBacklogDialog.hidden = true;
+});
+
+window.api.windowControls.onSyncBacklog(showSyncBacklog);
+
+const capturePausedBanner = document.getElementById("capture-paused")!;
+
+/**
+ * Capture stopped for settings a week unconfirmed. Purely a notice, and
+ * deliberately not `tracking:notice`: that channel blocks the play
+ * button on purpose. Tracking time and photographing a screen are
+ * different promises, and only the second expires.
+ */
+function showCapturePaused(paused: boolean): void {
+  capturePausedBanner.hidden = !paused;
+}
+
+window.api.windowControls.onCapturePaused(showCapturePaused);
+
+const recoveredTimerPrompt = document.getElementById("recovered-timer")!;
+const recoveredTimerMessage = document.getElementById(
+  "recovered-timer-message",
+)!;
+const recoveredTimerKeep = document.getElementById(
+  "recovered-timer-keep",
+) as HTMLButtonElement;
+const recoveredTimerDiscard = document.getElementById(
+  "recovered-timer-discard",
+) as HTMLButtonElement;
+
+/**
+ * A timer still running at startup only happens after a crash — every
+ * ordinary quit stops it first. The minutes nobody observed are put to
+ * the person rather than credited or docked silently.
+ */
+async function askAboutRecoveredTimer(): Promise<void> {
+  const recovered = await window.api.tracking.recoveredTimer();
+  if (!recovered) return;
+
+  const at = new Date(recovered.lastSeenAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const minutes = Math.max(1, Math.round(recovered.silentForMs / 60_000));
+  setMode("full", true);
+  recoveredTimerMessage.textContent =
+    `Your timer was still running when Hi Day stopped, at ${at}. ` +
+    `Were you still working for the ${minutes} minute${minutes === 1 ? "" : "s"} since then?`;
+  recoveredTimerPrompt.hidden = false;
+  recoveredTimerKeep.focus();
+}
+
+async function answerRecoveredTimer(keep: boolean): Promise<void> {
+  recoveredTimerPrompt.hidden = true;
+  await window.api.tracking.answerRecoveredTimer(keep);
+  // Either answer changes what is running, so re-read rather than let the
+  // display stand on an assumption.
+  await refreshStatus(true);
+}
+
+recoveredTimerKeep.addEventListener("click", () => {
+  void answerRecoveredTimer(true);
+});
+recoveredTimerDiscard.addEventListener("click", () => {
+  void answerRecoveredTimer(false);
+});
+
+/**
+ * Time tracked offline that the server would not take when it was finally
+ * handed over — an archived Project, a limit reached, a start older than
+ * a device may reach back. Dropping these in silence left somebody to
+ * find the hole in their own timesheet weeks later; the same dialog a
+ * refused start uses says it while they can still remember the work.
+ */
+window.api.windowControls.onRefusedTime((refused) => {
+  if (refused.length === 0) return;
+  const when = (at: string): string =>
+    new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const lines = refused.map((item) => `${when(item.op.at)} — ${item.message}`);
+  timerBlockedTitle.textContent =
+    refused.length === 1
+      ? "Some time could not be saved"
+      : "Some time could not be saved";
+  showTimerBlocked(
+    `Hi Day reconnected, but time you tracked while offline could not be ` +
+      `saved:\n\n${lines.join("\n")}\n\nYou can add it by hand from your ` +
+      `timesheet in the web app.`,
+  );
 });
 
 window.api.windowControls.onTrackingNotice((notice) => {

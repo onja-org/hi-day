@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiClient } from '../api-client';
+import { ApiClient, isTransportFailure } from '../api-client';
 
 const BASE_URL = 'https://api.example.com';
 
@@ -172,5 +172,138 @@ describe('ApiClient timers without a project', () => {
     await new ApiClient(BASE_URL).getProjectsSetting('t');
 
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/device/projects-setting`);
+  });
+});
+
+// In front of every request, so what it produces is the real thing: a
+// transport failure, with no HTTP status (docs/adr/0025-...).
+describe('ApiClient when offline is simulated', () => {
+  const offlineClient = () => new ApiClient(BASE_URL, () => true);
+
+  it('never reaches the network at all', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await offlineClient().listProjects('t');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails the way an unreachable server does, with no status', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    const result = await offlineClient().listProjects('t');
+
+    // The absence of a status is load-bearing: it is how callers tell
+    // "try again later" from "the server refused this and always will".
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.status).toBeUndefined();
+    expect(result.ok === false && result.unauthorized).toBeUndefined();
+  });
+
+  it('refuses to start a pairing, saying what the person can act on', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    const result = await offlineClient().startPairing({
+      deviceFingerprint: 'f',
+      platform: 'linux',
+      osVersion: '1',
+      hostname: 'h',
+      appVersion: '1.0.0',
+    });
+
+    expect(result.ok).toBe(false);
+    // Logging in genuinely cannot work offline, and a server URL is not
+    // something anyone reading the login screen can do anything with.
+    expect(result.ok === false && result.message).not.toContain(BASE_URL);
+    expect(result.ok === false && result.message).toContain('internet');
+  });
+
+  it('reports a failed heartbeat rather than pretending one landed', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    expect(await offlineClient().heartbeat('t', '1.0.0')).toBe(false);
+  });
+});
+
+describe('isTransportFailure', () => {
+  it('is true only when nothing reached the server', () => {
+    expect(isTransportFailure({ ok: false, message: 'unreachable' })).toBe(true);
+  });
+
+  it('is false for a refusal, which repeating cannot change', () => {
+    expect(
+      isTransportFailure({ ok: false, message: 'too old', status: 400 }),
+    ).toBe(false);
+  });
+
+  it('is false for a sign-out, which is an answer', () => {
+    expect(
+      isTransportFailure({
+        ok: false,
+        message: 'signed out',
+        unauthorized: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('is false for a success', () => {
+    expect(isTransportFailure({ ok: true, data: null })).toBe(false);
+  });
+});
+
+// A refused connection rejects at once; a network that has gone never
+// refuses anything, so without a deadline the socket waits minutes — and
+// the cached answer only arrives once the request returns.
+describe('ApiClient request deadline', () => {
+  it('gives every device request a deadline', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new ApiClient(BASE_URL).listProjects('t');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('treats a request that ran out of time as unreachable, not as a refusal', async () => {
+    // What `AbortSignal.timeout` throws once it fires.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(
+        Object.assign(new Error('The operation was aborted'), {
+          name: 'TimeoutError',
+        }),
+      ),
+    );
+
+    const result = await new ApiClient(BASE_URL).listProjects('t');
+
+    // No status, so callers retry and the cache may answer — the whole
+    // point of failing fast rather than hanging.
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.status).toBeUndefined();
+  });
+
+  it('leaves pairing without one — somebody is waiting on it, and no cache can answer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'c', approvalUrl: 'https://x' }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new ApiClient(BASE_URL).startPairing({
+      deviceFingerprint: 'f',
+      platform: 'linux',
+      osVersion: '1',
+      hostname: 'h',
+      appVersion: '1.0.0',
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeUndefined();
   });
 });

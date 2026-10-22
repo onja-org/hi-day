@@ -141,6 +141,11 @@
 
         <section id="status-view" class="status-view" hidden>
           <div id="tracking-view" class="tracking-view">
+            <p id="sync-backlog" class="banner" role="alert" hidden></p>
+            <p id="capture-paused" class="banner" role="status" hidden>
+              Screenshots and app tracking are paused until Hi Day can be
+              reached again. Your timer still works.
+            </p>
             <p id="tracking-notice" class="banner" role="status" hidden></p>
             <p id="tracking-error" class="error-text" role="alert" hidden></p>
             <button id="switch-button" type="button" class="button button-secondary button-small" hidden>
@@ -422,6 +427,110 @@
             class="button button-sun"
           >
             Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sync-draining" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="sync-draining-title"
+        aria-describedby="sync-draining-body"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="sync-draining-title" class="close-prompt-title">
+          <span id="sync-draining-title-uploading">Uploading data</span>
+          <span id="sync-draining-title-closing" hidden>Closing Hi Day</span>
+        </h2>
+        <p id="sync-draining-body" class="close-prompt-message">
+          There is data that has not been sent to the server. Please wait
+          until completed.
+        </p>
+        <p id="sync-draining-saving" class="close-prompt-message" hidden>
+          Saving your tracked time. This will only take a moment.
+        </p>
+        <p id="sync-draining-count" class="close-prompt-message" aria-live="polite"></p>
+        <p id="sync-draining-countdown" class="close-prompt-message" hidden></p>
+        <div class="close-prompt-actions">
+          <button
+            id="sync-draining-close"
+            type="button"
+            class="button button-sun"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sync-backlog-dialog" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="sync-backlog-title"
+        aria-describedby="sync-backlog-body"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="sync-backlog-title" class="close-prompt-title">
+          Uploading data
+        </h2>
+        <p id="sync-backlog-body" class="close-prompt-message">
+          We are having issues uploading the data, so it may not have been
+          fully synchronized with the server. Please check your internet
+          connection and try to restart the Desktop app.
+        </p>
+        <div class="close-prompt-actions">
+          <button
+            id="sync-backlog-close"
+            type="button"
+            class="button button-sun"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="recovered-timer" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="recovered-timer-title"
+        aria-describedby="recovered-timer-message"
+      >
+        <h2 id="recovered-timer-title" class="close-prompt-title">
+          Hi Day stopped unexpectedly
+        </h2>
+        <p id="recovered-timer-message" class="close-prompt-message"></p>
+        <div class="close-prompt-actions">
+          <button
+            id="recovered-timer-keep"
+            type="button"
+            class="button button-sun"
+          >
+            Yes, keep tracking
+          </button>
+          <button
+            id="recovered-timer-discard"
+            type="button"
+            class="button button-quiet"
+          >
+            No, stop it there
           </button>
         </div>
       </div>

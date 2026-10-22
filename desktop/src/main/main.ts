@@ -17,17 +17,31 @@ import {
 import type {
   AllowedApps,
   AppUrlTracking,
+  CurrentTimer,
   PairingPollResult,
   TimeEntry,
   TrackingResult,
 } from "./api-client";
-import { ApiClient } from "./api-client";
+import { ApiClient, isTransportFailure } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { OfflineCache } from "./offline-cache";
+import { keepActionFor, recoveryActionFor } from "./recovered-timer";
+import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
+
+/** A timer the app came back to find still running after a crash. */
+interface RecoveredTimer {
+  startedAt: string;
+  lastSeenAt: string;
+  silentForMs: number;
+  /** Carried so tracking can be continued on the same work — see `keepActionFor`. */
+  projectId: string | null;
+  taskId: string | null;
+}
 import { allowedAppsNotice } from "./allowed-apps-notice";
 import { CaptureSettingsGate } from "./capture-settings-gate";
 import { getOrCreateDeviceFingerprint } from "./device-identity";
@@ -87,7 +101,7 @@ import {
   NullDebugHarness,
   type DebugSink,
 } from "./url-capture/debug-harness";
-import { intervalFromEnv } from "./tuning";
+import { intervalFromEnv, offlineSimulated } from "./tuning";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import type { UploadFn } from "./url-capture/sync-contract";
@@ -227,7 +241,32 @@ let tray: Tray | null = null;
  * hides it to the tray instead, so tracking keeps running — closing the
  * window used to quit the app (and pause the timer) on Windows and Linux.
  */
+/**
+ * The least time the quitting dialog stays up. Long enough to read as
+ * intentional; short enough that an ordinary quit still feels immediate.
+ */
+const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
+
+/**
+ * The most time quitting will spend emptying the queue. Five seconds is
+ * already a long pause when you expected the app to go at once, and a
+ * big backlog will not finish inside it — which costs nothing, since
+ * queued records go up on the next launch.
+ */
+const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+
 let isQuitting = false;
+/**
+ * Set when the machine is going down rather than the person leaving. A
+ * dialog is worse than useless there: nobody is looking, the OS will not
+ * wait for it, and holding the quit open risks being killed mid-write —
+ * which is precisely what writing the stop down first exists to avoid.
+ */
+let quittingForPowerEvent = false;
+/** Assigned once the IPC handlers exist; see `drainBeforeQuit`. */
+let drainBeforeQuit: (() => Promise<void>) | null = null;
+/** Puts something on screen the instant Quit is pressed. */
+let beginQuitProgress: (() => void) | null = null;
 
 /** The tracker's two fixed sizes: the full window and the compact bar. */
 const FULL_WINDOW_SIZE = { width: 360, height: 600 };
@@ -647,11 +686,24 @@ function createTray(): void {
   tray.setToolTip("Hi Day");
   refreshTrayMenu();
   tray.on("click", reopenMainWindow);
+  // Whatever was decided before this existed — see
+  // `recordingIndicatorState`. Not the idle image above, which is only
+  // the placeholder this is built from.
+  applyRecordingIndicator(recordingIndicatorState);
 }
 
 /** Best-effort: an icon that will not load must never take the app
  * down with it. */
+/**
+ * What the indicator was last told, so a tray that does not exist yet can
+ * catch up. The gates are primed inside `registerIpcHandlers`, awaited
+ * two lines before `createTray`, so a relaunch onto a running timer
+ * announced it to a null `tray` and the tray was then built idle.
+ */
+let recordingIndicatorState = false;
+
 function applyRecordingIndicator(isRecording: boolean): void {
+  recordingIndicatorState = isRecording;
   const indicator = recordingIndicatorFor(process.platform, isRecording);
   const load = (file: string) =>
     nativeImage.createFromPath(join(__dirname, "assets", file));
@@ -729,8 +781,19 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return false;
   };
-  const pendingOps = new PendingTimerOps(app.getPath("userData"));
-  const apiClient = new ApiClient(API_BASE_URL);
+  /**
+   * The last answers the server gave, so this app can still be used when
+   * nobody can answer (docs/adr/0025-...). Everything read through
+   * `cachedDeviceRead` below writes through to it on the way past.
+   */
+  const offlineCache = new OfflineCache(app.getPath("userData"));
+  // Backed by the cache rather than memory, so a timer started offline can
+  // still be stopped after a restart — before this, it could not.
+  const pendingOps = new PendingTimerOps(app.getPath("userData"), {
+    read: () => offlineCache.read().runningEntry,
+    write: (entry) => offlineCache.rememberRunning(entry),
+  });
+  const apiClient = new ApiClient(API_BASE_URL, offlineSimulated);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
   // screenshot is persisted to SQLite before it's sent, and drained in
@@ -842,8 +905,42 @@ async function registerIpcHandlers(): Promise<void> {
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
+  /** What the renderer was last told about capture being paused. */
+  let capturePauseAnnounced = false;
+
+  /**
+   * Whether capture may run at all right now. Tracking time has no such
+   * limit — an outage is no reason to stop paying somebody — but capture
+   * does: these settings say whether this person's screen may be
+   * photographed, and an admin who switches that off is owed an upper
+   * bound on how long a machine that never heard them keeps going
+   * (docs/adr/0025-...). Told, not silent: capture disappearing without
+   * explanation is the same opacity this product exists to avoid.
+   */
+  function capturePaused(): boolean {
+    return authStore.load() !== null && offlineCache.captureTrustLapsed();
+  }
+
+  function captureAllowed(): boolean {
+    const paused = capturePaused();
+    // On the change only, and in both directions — saying it once and
+    // never withdrawing it leaves the banner up for the rest of the
+    // session after the connection comes back.
+    if (paused !== capturePauseAnnounced) {
+      capturePauseAnnounced = paused;
+      mainWindow?.webContents.send("capture:paused", paused);
+    }
+    return !offlineCache.captureTrustExpired();
+  }
+
+  // Asked at startup, and after a renderer crash takes the banner with
+  // it: `captureAllowed` only speaks on a change, so a fresh window needs
+  // to be able to ask where things stand.
+  ipcMain.handle("capture:pausedState", (): boolean => capturePaused());
+
   function recomputeSampling(): void {
-    if (appUrlTracking !== "off" && timerRunning) {
+    const mayCapture = captureAllowed();
+    if (appUrlTracking !== "off" && timerRunning && mayCapture) {
       windowSampler.start();
     } else {
       windowSampler.stop();
@@ -866,7 +963,7 @@ async function registerIpcHandlers(): Promise<void> {
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
-    if (screenshotsEnabled && timerRunning) {
+    if (screenshotsEnabled && timerRunning && mayCapture) {
       screenshotSampler.start();
     } else {
       screenshotSampler.stop();
@@ -1083,6 +1180,7 @@ async function registerIpcHandlers(): Promise<void> {
       // session, and caching that would erase the settings this is for.
       if (authStore.load() !== null) {
         cacheReminderSettings(app.getPath("userData"), settings.reminders);
+        offlineCache.remember({ captureSettings: settings });
       }
       recomputeSampling();
     },
@@ -1103,6 +1201,136 @@ async function registerIpcHandlers(): Promise<void> {
       recomputeSampling();
     },
   );
+  /**
+   * What the agent knew when last running, applied before any poll can
+   * answer. Launched with no connection, both gates would otherwise
+   * begin at "off" and stay there.
+   */
+  /**
+   * A timer still marked as running when the app starts means it did not
+   * shut down: every ordinary quit, sleep and system shutdown pauses the
+   * timer first (see the `before-quit` and `powerMonitor` handlers), and
+   * pausing clears this. So what is left here is a crash or a power cut,
+   * and the stretch between the last sign of life and now is time nobody
+   * can account for — the app was not running to observe it.
+   *
+   * Read once, before any poll can overwrite it with the server's own
+   * answer. What is done with it — kept, asked about, or ended where it
+   * was last seen alive — is `recoveryActionFor`'s call.
+   */
+  const recoveredTimer = ((): RecoveredTimer | null => {
+    const session = authStore.load();
+    if (!session) return null;
+    const state = offlineCache.readFor(session.deviceId);
+    if (!state.runningEntry || !state.runningSeenAt) return null;
+    return {
+      startedAt: state.runningEntry.startedAt,
+      lastSeenAt: state.runningSeenAt,
+      projectId: state.runningEntry.projectId,
+      taskId: state.runningEntry.taskId,
+      // Measured here rather than in the renderer, so both the auto-answer
+      // below and the prompt agree on one reading of the clock.
+      silentForMs: Math.max(
+        0,
+        Date.now() - new Date(state.runningSeenAt).getTime(),
+      ),
+    };
+  })();
+
+  const recoveryAction = recoveredTimer
+    ? recoveryActionFor(recoveredTimer.silentForMs)
+    : null;
+
+  /** Null unless there is a question only the person can answer. */
+  let awaitingRecoveryAnswer =
+    recoveryAction === "ask" ? recoveredTimer : null;
+
+  /**
+   * Carries on after "yes, I was still working". Usually nothing. Past
+   * the backend's half-hour grace the entry has already been closed at
+   * the last heartbeat, so a stop dated now extends it to this moment —
+   * the server only extends one it closed itself — and a fresh start
+   * carries the same work forward. Two touching entries, the shape
+   * `switch` already produces; reopening would need an endpoint that
+   * does not exist.
+   */
+  const continueRecoveredTimer = async (
+    recovered: RecoveredTimer,
+  ): Promise<void> => {
+    const current = await callDeviceApi((token) =>
+      apiClient.getCurrentTimer(token),
+    );
+    const action = keepActionFor({
+      answered: current.ok,
+      running: current.ok && current.data.entry !== null,
+    });
+    if (action === "carry-on") return;
+
+    await callDeviceApi((token) => pendingOps.stopAt(token, apiClient));
+    await callDeviceApi((token) =>
+      pendingOps.start(token, recovered.projectId, recovered.taskId, apiClient),
+    );
+    applyLocalTimerState();
+  };
+
+  /** Ends the recovered entry where the app was last known to be running. */
+  const endRecoveredTimerAtLastSeen = async (
+    lastSeenAt: string,
+  ): Promise<void> => {
+    awaitingRecoveryAnswer = null;
+    const result = await callDeviceApi((token) =>
+      pendingOps.stopAt(token, apiClient, lastSeenAt),
+    );
+    rememberWorkFinishedOffline(result);
+    void timerStatusGate.pollOnce();
+  };
+
+  // `keep` needs nothing done: the entry is already open and the gates
+  // are primed from it below, so the clock simply carries on.
+  if (recoveryAction === "end" && recoveredTimer) {
+    void endRecoveredTimerAtLastSeen(recoveredTimer.lastSeenAt).catch(() => {});
+  }
+
+  /** What the renderer should ask about, if anything. */
+  ipcMain.handle(
+    "tracking:recoveredTimer",
+    (): RecoveredTimer | null => awaitingRecoveryAnswer,
+  );
+
+  /**
+   * `keep` leaves the entry running: the person says they were working
+   * through, and the clock simply resumes. `discard` ends it at the last
+   * sign of life. Either way nothing is invented — the only question is
+   * who the unobserved minutes belong to, and only they can answer it.
+   */
+  ipcMain.handle(
+    "tracking:answerRecoveredTimer",
+    async (_event, keep: boolean): Promise<void> => {
+      const pending = awaitingRecoveryAnswer;
+      awaitingRecoveryAnswer = null;
+      if (!pending) return;
+      if (keep) {
+        await continueRecoveredTimer(pending);
+        return;
+      }
+      await endRecoveredTimerAtLastSeen(pending.lastSeenAt);
+    },
+  );
+
+  function primeGatesFromCache(): void {
+    const session = authStore.load();
+    if (!session) return;
+    const cached = offlineCache.readFor(session.deviceId);
+    if (cached.captureSettings) captureSettingsGate.prime(cached.captureSettings);
+    // Only the entry's existence: a paused entry is not running, same rule
+    // the gate's own poll applies.
+    if (cached.runningEntry && !cached.runningEntry.pausedAt) {
+      pendingOps.remember(cached.runningEntry);
+      timerStatusGate.prime(true);
+    }
+  }
+  primeGatesFromCache();
+
   captureSettingsGate.start();
   timerStatusGate.start();
   setInterval(() => void reminderTick(), REMINDER_TICK_MS);
@@ -1197,6 +1425,10 @@ async function registerIpcHandlers(): Promise<void> {
       await pendingOps.pause(session.deviceToken, apiClient);
       await apiClient.logout(session.deviceToken);
       authStore.clear();
+      // Projects, settings and totals all belong to the session that just
+      // ended — none of it is this machine's to keep, or to show whoever
+      // signs in next.
+      offlineCache.clear();
     }
     stopUrlCapture();
     stopHeartbeat();
@@ -1222,6 +1454,13 @@ async function registerIpcHandlers(): Promise<void> {
 
     const result = await call(session.deviceToken);
     if (result.ok) {
+      // Only an answer that actually came from the server: this is what
+      // the staleness of the cache, and the capture trust window, are
+      // measured from, and the offline queue answers `ok` for actions it
+      // merely wrote down. Counting those would have a device that has
+      // been unreachable for a fortnight report itself as in touch every
+      // time somebody pressed play.
+      if (!result.fromCache) offlineCache.rememberContact();
       // Keeps the offline-pause fallback supplied with the live entry.
       const data = result.data as
         | { entry?: TimeEntry | null; startedAt?: string; endedAt?: string | null }
@@ -1233,11 +1472,35 @@ async function registerIpcHandlers(): Promise<void> {
     }
     if (!result.ok && result.unauthorized) {
       authStore.clear();
+      // None of it is this machine's to keep once the session is gone.
+      offlineCache.clear();
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
     }
     return result;
+  }
+
+/**
+   * A read the cache can answer when the server cannot. These used to
+   * fail outright offline, and the renderer's setup stopped at the first
+   * of them. `remember` runs on the way past, so the copy is the last
+   * real answer; `recall` serves it only when nothing reached the server.
+   * A 403 or a sign-out is an answer and is passed through.
+   */
+  async function cachedDeviceRead<T>(
+    call: (deviceToken: string) => Promise<TrackingResult<T>>,
+    remember: (data: T) => void,
+    recall: () => T | null,
+  ): Promise<TrackingResult<T>> {
+    const result = await callDeviceApi(call);
+    if (result.ok) {
+      remember(result.data);
+      return result;
+    }
+    if (!isTransportFailure(result)) return result;
+    const cached = recall();
+    return cached === null ? result : { ok: true, data: cached, fromCache: true };
   }
 
   // Exposed to the app-lifecycle hooks (quit/suspend/shutdown) so they can
@@ -1247,30 +1510,232 @@ async function registerIpcHandlers(): Promise<void> {
   pauseRunningTimer = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    await pendingOps.pause(session.deviceToken, apiClient);
+    // Durably: this runs while the OS is already shutting the machine
+    // down, and a stop lost between asking the server and writing it down
+    // leaves an entry open overnight. See `pauseDurably`.
+    const result = await pendingOps.pauseDurably(session.deviceToken, apiClient);
+    // So the day the machine comes back to still knows about the stretch
+    // that ended as it went away.
+    rememberWorkFinishedOffline(result);
   };
 
   // Offline pauses/starts are only real to the server once this lands, so
   // reading the timer settles them first.
+  /** Everything still waiting to reach the server, as one number. */
+  const unsentRecordCount = (): number =>
+    offlineQueue.pendingCount() +
+    pendingOps.load().length +
+    (urlCaptureService?.unsentCount() ?? 0);
+
+  /** When the quit dialog went up, so it cannot vanish as a flicker. */
+  let quitProgressShownAt: number | null = null;
+  /** When it will give up, shared so the countdown and the loop agree. */
+  let quitDeadline = 0;
+
+  /**
+   * How long is left, in whole seconds. Counted from one deadline rather
+   * than from the loop's own progress, so what the person sees ticking
+   * down is the thing that actually decides when the app goes.
+   */
+  const sendQuitProgress = (remaining: number): void => {
+    mainWindow?.webContents.send("sync:draining", {
+      remaining,
+      secondsLeft: Math.max(0, Math.ceil((quitDeadline - Date.now()) / 1000)),
+    });
+  };
+
+  /**
+   * Put up the moment Quit is pressed, before anything slow starts.
+   *
+   * Stopping the timer is a network call, so even a quit with an empty
+   * queue leaves the window on screen for a moment with nothing
+   * explaining why it has not gone — which reads as the app having hung.
+   */
+  beginQuitProgress = (): void => {
+    quitProgressShownAt = Date.now();
+    quitDeadline = Date.now() + QUIT_DRAIN_LIMIT_MS;
+    showMainWindow();
+    sendQuitProgress(unsentRecordCount());
+  };
+
+  /**
+   * Holds the quit open while the queue drains, showing the count fall.
+   * A number that is not moving says more than any wording, and Close
+   * leaves whenever they like — nothing is lost either way, since the
+   * data goes up on the next launch. Bounded by `QUIT_DRAIN_LIMIT_MS`:
+   * the person is waiting on the app to go.
+   */
+  drainBeforeQuit = async (): Promise<void> => {
+    let closed = false;
+    const onClose = (): void => {
+      closed = true;
+    };
+    ipcMain.once("sync:drainClosed", onClose);
+
+    // On its own timer, not the loop's: an attempt against an
+    // unreachable server takes the whole budget to fail, so a countdown
+    // driven by the loop would sit on 5 and then vanish. What somebody is
+    // watching has to keep moving even when nothing else is.
+    let lastKnown = unsentRecordCount();
+    const ticker = setInterval(() => sendQuitProgress(lastKnown), 1000);
+
+    try {
+      while (!closed && Date.now() < quitDeadline) {
+        // Checked first, so a quit with nothing queued does no network
+        // work at all and only pays the moment the dialog is up for.
+        if (unsentRecordCount() === 0) break;
+        await Promise.all([
+          offlineQueue.flushAll().catch(() => {}),
+          urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
+          flushPendingOps().catch(() => {}),
+        ]);
+        const remaining = unsentRecordCount();
+        lastKnown = remaining;
+        sendQuitProgress(remaining);
+        if (remaining === 0) break;
+        // Short, so the deadline buys as many real attempts as it can.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    } finally {
+      clearInterval(ticker);
+      ipcMain.removeListener("sync:drainClosed", onClose);
+      // A dialog that appears and disappears inside a frame reads as a
+      // glitch rather than as the app doing something, so the quickest
+      // quit still shows it long enough to have been deliberate.
+      const shownFor = Date.now() - (quitProgressShownAt ?? Date.now());
+      if (shownFor < QUIT_PROGRESS_MIN_VISIBLE_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, QUIT_PROGRESS_MIN_VISIBLE_MS - shownFor),
+        );
+      }
+      mainWindow?.webContents.send("sync:draining", null);
+    }
+  };
+
+  /** What the renderer was last told about data waiting to go up. */
+  let backlogAnnounced = false;
+
+  /**
+   * Tells the person when tracked data has stopped going up. The queue
+   * makes an outage cost nothing, which is also why it can fail quietly.
+   * The calm "Can't reach Hi Day — retrying" line reads as transient,
+   * and this is not. On the same 15s tick as the op replay, announced
+   * only on the change in both directions.
+   */
+  const checkSyncBacklog = (): void => {
+    const warn =
+      authStore.load() !== null &&
+      shouldWarnAboutBacklog({
+        hasUnsent:
+          pendingOps.hasPending() ||
+          offlineQueue.hasUnsent() ||
+          urlCaptureService?.hasUnsent() === true,
+        silentForMs: offlineCache.silentForMs(),
+      });
+    if (warn === backlogAnnounced) return;
+    backlogAnnounced = warn;
+    mainWindow?.webContents.send("sync:backlog", warn ? BACKLOG_MESSAGE : null);
+  };
+
+  // Asked at startup and after a renderer crash, since the event above
+  // only fires on a change.
+  ipcMain.handle("sync:backlogState", (): string | null =>
+    backlogAnnounced ? BACKLOG_MESSAGE : null,
+  );
+
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    if (await pendingOps.flush(session.deviceToken, apiClient)) {
-      void timerStatusGate.pollOnce();
+    const { settled, refused } = await pendingOps.flush(
+      session.deviceToken,
+      apiClient,
+    );
+    // Hours the server would not take. They used to be dropped in
+    // silence, which left somebody to find the hole in their own
+    // timesheet weeks later; now they are told while they can still
+    // remember what they were doing.
+    if (refused.length > 0) {
+      mainWindow?.webContents.send("tracking:refused", refused);
     }
+    if (settled) void timerStatusGate.pollOnce();
+    checkSyncBacklog();
   };
-  setInterval(() => void flushPendingOps().catch(() => {}), 15_000);
+  setInterval(() => {
+    // Liveness first, and independent of whether anything can be reached:
+    // this is what crash recovery measures its gap from, and leaving it
+    // to the server's answers made an outage indistinguishable from a
+    // crash (see `OfflineCache.touchRunning`).
+    offlineCache.touchRunning();
+    void flushPendingOps().catch(() => {});
+  }, 15_000);
+
+  /**
+   * Applies what this app just did, then asks the server to confirm.
+   *
+   * `pollOnce` holds its last value when the server cannot answer, which
+   * is right for a poll and wrong straight after this app's own start:
+   * the gate kept "not running", so the tray read "not tracking" and —
+   * since `timerRunning` gates `recomputeSampling` — window tracking,
+   * screenshots and URL capture all stayed off behind a running timer.
+   * Priming first and polling after lets the server still win.
+   */
+  /**
+   * Keeps the day's totals honest across the machine being switched off.
+   *
+   * A stretch finished while the server was unreachable is only in the
+   * queue, so nothing has reported it and the cached totals do not know
+   * about it. That is invisible within a session — the renderer keeps its
+   * own tally — and very visible after a restart, where the day would
+   * come back as though the work had never happened. Only `fromCache`
+   * results: anything the server answered is already in its own figures.
+   */
+  const rememberWorkFinishedOffline = (
+    result: TrackingResult<TimeEntry>,
+  ): void => {
+    if (!result.ok || !result.fromCache) return;
+    const entry = result.data;
+    if (!entry?.endedAt) return;
+    const seconds =
+      Math.round(
+        (Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) / 1000,
+      ) - (entry.pausedSeconds ?? 0);
+    offlineCache.addWorkedSeconds(entry.projectId, seconds);
+  };
+
+  const applyLocalTimerState = (): void => {
+    const current = pendingOps.current();
+    timerStatusGate.prime(current !== null && !current.pausedAt);
+    void timerStatusGate.pollOnce();
+  };
 
   ipcMain.handle("tracking:projectsSetting", () =>
-    callDeviceApi((token) => apiClient.getProjectsSetting(token)),
+    cachedDeviceRead(
+      (token) => apiClient.getProjectsSetting(token),
+      ({ projectsEnabled }) => offlineCache.remember({ projectsEnabled }),
+      () => {
+        const enabled = offlineCache.read().projectsEnabled;
+        return enabled === null ? null : { projectsEnabled: enabled };
+      },
+    ),
   );
 
   ipcMain.handle("tracking:listProjects", () =>
-    callDeviceApi((token) => apiClient.listProjects(token)),
+    cachedDeviceRead(
+      (token) => apiClient.listProjects(token),
+      (projects) => offlineCache.remember({ projects }),
+      () => offlineCache.read().projects,
+    ),
   );
 
   ipcMain.handle("tracking:listTasks", (_event, projectId: string) =>
-    callDeviceApi((token) => apiClient.listTasks(token, projectId)),
+    cachedDeviceRead(
+      (token) => apiClient.listTasks(token, projectId),
+      ({ tasks }) => offlineCache.rememberTasks(projectId, tasks),
+      () => {
+        const tasks = offlineCache.read().tasks[projectId];
+        return tasks ? { tasks } : null;
+      },
+    ),
   );
 
   // Remembering the Project on the way through means the renderer never has
@@ -1293,7 +1758,7 @@ async function registerIpcHandlers(): Promise<void> {
       // Instant local feedback for window tracking rather than waiting on
       // TimerStatusGate's poll; the periodic poll still covers a timer
       // started or stopped elsewhere.
-      void timerStatusGate.pollOnce();
+      applyLocalTimerState();
       return result;
     },
   );
@@ -1307,7 +1772,7 @@ async function registerIpcHandlers(): Promise<void> {
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);
       }
-      void timerStatusGate.pollOnce();
+      applyLocalTimerState();
       return result;
     },
   );
@@ -1321,27 +1786,68 @@ async function registerIpcHandlers(): Promise<void> {
     };
   });
 
+  // Through the queue, not straight at the server: an idle discard with
+  // no connection used to fail outright, leaving the timer running
+  // through exactly the stretch it was meant to cut off.
   ipcMain.handle("tracking:stop", async (_event, endedAt?: string) => {
     await flushPendingOps();
     const result = await callDeviceApi((token) =>
-      apiClient.stopTimer(token, endedAt),
+      pendingOps.stopAt(token, apiClient, endedAt),
     );
-    void timerStatusGate.pollOnce();
+    // `callDeviceApi` only remembers an entry that is still open, so a
+    // stop leaves the last running one behind it — which would then read
+    // as still running below.
+    if (result.ok) pendingOps.remember(null);
+    rememberWorkFinishedOffline(result);
+    applyLocalTimerState();
     return result;
   });
 
+  /**
+   * Offline this answers from the cache rather than failing, which is
+   * what lets the clock keep ticking instead of resetting to nothing.
+   * `workedSeconds` is carried forward from when it was last heard, plus
+   * the time the entry has been running since — the honest projection of
+   * a figure nobody can confirm, rather than a zero that is simply wrong.
+   */
   ipcMain.handle("tracking:status", async () => {
     await flushPendingOps();
-    return callDeviceApi((token) => apiClient.getCurrentTimer(token));
+    return cachedDeviceRead(
+      (token) => apiClient.getCurrentTimer(token),
+      (current) =>
+        offlineCache.remember({
+          workedSeconds: current.workedSeconds ?? null,
+          workedSecondsAt: new Date().toISOString(),
+        }),
+      (): CurrentTimer | null => {
+        const state = offlineCache.read();
+        const entry = state.runningEntry;
+        const since =
+          entry && state.workedSecondsAt
+            ? Math.max(
+                0,
+                Math.floor(
+                  (Date.now() - new Date(state.workedSecondsAt).getTime()) / 1000,
+                ),
+              )
+            : 0;
+        return {
+          entry,
+          now: new Date().toISOString(),
+          workedSeconds: (state.workedSeconds ?? 0) + since,
+        };
+      },
+    );
   });
 
   ipcMain.handle("tracking:pause", async () => {
     const result = await callDeviceApi((token) =>
       pendingOps.pause(token, apiClient),
     );
+    rememberWorkFinishedOffline(result);
     // Instant local feedback rather than waiting on TimerStatusGate's poll —
     // capture must stop as soon as the person pauses, not up to 15s later.
-    void timerStatusGate.pollOnce();
+    applyLocalTimerState();
     return result;
   });
 
@@ -1351,20 +1857,45 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
+  // Nothing to cache: this lists entries so the renderer can fold in time
+  // added elsewhere, and offline there is nowhere else. An empty list is
+  // the true answer — "nothing new" — and lets the totals read below,
+  // which is where the day's figure actually comes from.
   ipcMain.handle(
     "tracking:entriesBetween",
     (_event, from: string, to: string) =>
-      callDeviceApi((token) => apiClient.listEntriesBetween(token, from, to)),
+      cachedDeviceRead(
+        (token) => apiClient.listEntriesBetween(token, from, to),
+        () => {},
+        () => [],
+      ),
   );
 
+  /**
+   * The day's totals, stamped with the day they belong to. Opening the
+   * app with no connection shows the time already tracked rather than
+   * zero — and on a new morning shows nothing rather than yesterday's,
+   * since `todayTotals` withholds a stamp that is not today's.
+   */
   ipcMain.handle(
     "tracking:completedTotals",
     (_event, from: string, to: string) =>
-      callDeviceApi((token) => apiClient.getCompletedTotals(token, from, to)),
+      cachedDeviceRead(
+        (token) => apiClient.getCompletedTotals(token, from, to),
+        (totals) => offlineCache.rememberToday(totals),
+        () => offlineCache.todayTotals(),
+      ),
   );
 
+  // Cached like the rest, and for a sharper reason: with no policy the
+  // renderer's idle check gives up entirely, so an offline machine left
+  // running overnight records the whole night.
   ipcMain.handle("tracking:idlePolicy", () =>
-    callDeviceApi((token) => apiClient.getIdlePolicy(token)),
+    cachedDeviceRead(
+      (token) => apiClient.getIdlePolicy(token),
+      (idlePolicy) => offlineCache.remember({ idlePolicy }),
+      () => offlineCache.read().idlePolicy,
+    ),
   );
 
   ipcMain.handle(
@@ -1783,10 +2314,22 @@ if (!gotSingleInstanceLock) {
     isQuitting = true;
     if (!quitPauseComplete && pauseRunningTimer) {
       event.preventDefault();
+      // Before anything slow, so there is never a stretch where the
+      // window is still up with nothing saying why.
+      if (!quittingForPowerEvent) beginQuitProgress?.();
       void pauseRunningTimer()
         .catch((error: unknown) =>
           console.error("[timer] pause on quit failed:", error),
         )
+        // Only once the timer is stopped: its own stop is one of the
+        // records being counted, and draining before it would quit with
+        // the very thing this waits for still unwritten.
+        .then(async () => {
+          if (quittingForPowerEvent || !drainBeforeQuit) return;
+          await drainBeforeQuit().catch((error: unknown) =>
+            console.error("[sync] drain on quit failed:", error),
+          );
+        })
         .finally(() => {
           quitPauseComplete = true;
           stopUrlCapture();
@@ -1814,6 +2357,7 @@ if (!gotSingleInstanceLock) {
   powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
   powerMonitor.on("shutdown", () => {
     isQuitting = true;
+    quittingForPowerEvent = true;
     pauseForPowerEvent("shutdown");
   });
 
@@ -1822,6 +2366,10 @@ if (!gotSingleInstanceLock) {
   // the timer still running. Routed through app.quit() so it takes the same
   // pause-then-exit path as closing the window.
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
-    process.on(signal, () => app.quit());
+    process.on(signal, () => {
+      // Whatever sent this is waiting on the process, not on a dialog.
+      quittingForPowerEvent = true;
+      app.quit();
+    });
   }
 }

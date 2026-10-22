@@ -35,6 +35,63 @@ describe('CaptureSettingsGate', () => {
     return { getCaptureSettings: vi.fn().mockResolvedValue(result) };
   }
 
+  /**
+   * `currentSettings` holds its last value through an unreachable server,
+   * but a cold start has no last value to hold — so an agent launched
+   * with no connection captured nothing, however long it had been set up
+   * to. Priming is how the settings it already knew survive a restart.
+   */
+  describe('priming from what the last session knew', () => {
+    it('applies the remembered settings at once', () => {
+      const onChange = vi.fn();
+      const remembered = settings({ screenshotsEnabled: true });
+      const gate = new CaptureSettingsGate(
+        makeSession('token-1'),
+        makeClient({ ok: false }),
+        onChange,
+      );
+
+      gate.prime(remembered);
+
+      expect(onChange).toHaveBeenCalledWith(remembered);
+    });
+
+    it('leaves a later poll that agrees with them quiet, not re-applied', async () => {
+      const onChange = vi.fn();
+      const remembered = settings({ screenshotsEnabled: true });
+      const gate = new CaptureSettingsGate(
+        makeSession('token-1'),
+        makeClient({ ok: true, data: remembered }),
+        onChange,
+      );
+
+      gate.prime(remembered);
+      await gate.pollOnce();
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reports a poll that disagrees with them', async () => {
+      const onChange = vi.fn();
+      const gate = new CaptureSettingsGate(
+        makeSession('token-1'),
+        makeClient({ ok: true, data: settings({ screenshotsEnabled: false }) }),
+        onChange,
+      );
+
+      // An admin switched screenshots off while this agent was away.
+      // Without priming setting the remembered value too, this would read
+      // as no change and the agent would keep capturing.
+      gate.prime(settings({ screenshotsEnabled: true }));
+      await gate.pollOnce();
+
+      expect(onChange).toHaveBeenNthCalledWith(
+        2,
+        settings({ screenshotsEnabled: false }),
+      );
+    });
+  });
+
   it('does not call onChange when there is no session and it was already off', async () => {
     const onChange = vi.fn();
     const gate = new CaptureSettingsGate(

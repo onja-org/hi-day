@@ -205,6 +205,81 @@ describe('TimerStatusGate', () => {
     expect(onChange).toHaveBeenNthCalledWith(2, false);
   });
 
+  /**
+   * Holding the last value is no help on a cold start, where there is no
+   * last value — an agent relaunched mid-outage with a timer still
+   * running would begin at "not running" and sample nothing.
+   */
+  describe('priming from what the last session knew', () => {
+    it('applies the remembered state at once', () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('token-1'),
+        makeClient({ ok: false }),
+        onChange,
+      );
+
+      gate.prime(true);
+
+      expect(onChange).toHaveBeenCalledWith(true);
+    });
+
+    it('leaves a later poll that agrees with it quiet, not re-applied', async () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('token-1'),
+        makeClient({ ok: true, data: { entry: {} } }),
+        onChange,
+      );
+
+      gate.prime(true);
+      await gate.pollOnce();
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The shape main relies on after this app's own start or stop. The
+     * poll holding its last value is right for a poll and wrong here:
+     * offline it cannot answer, so a timer started with no connection
+     * left the gate on "not running" — the tray read "not tracking", and
+     * because `timerRunning` is what gates sampling, window tracking,
+     * screenshots and URL capture all stayed off behind a timer that was
+     * visibly counting up.
+     */
+    it('survives a poll that cannot answer, so a local start is not undone', async () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('token-1'),
+        makeClient({ ok: false }),
+        onChange,
+      );
+
+      gate.prime(true);
+      await gate.pollOnce();
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(true);
+    });
+
+    it('still reports a poll that disagrees with it', async () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('token-1'),
+        makeClient({ ok: true, data: { entry: null } }),
+        onChange,
+      );
+
+      gate.prime(true);
+      await gate.pollOnce();
+
+      // The timer was stopped elsewhere while this agent was away. Without
+      // priming setting the remembered value too, this would read as no
+      // change at all and capture would keep running.
+      expect(onChange).toHaveBeenNthCalledWith(2, false);
+    });
+  });
+
   // An older server omitting `entry` used to throw on `.pausedAt`.
   it('treats a missing entry field as not running rather than throwing', async () => {
     const onChange = vi.fn();

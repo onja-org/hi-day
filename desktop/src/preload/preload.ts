@@ -65,6 +65,25 @@ export interface TrackedEntry {
   durationSeconds: number | null;
 }
 
+/** How quitting is going: what is left to send, and how long it will wait. */
+export interface QuitProgress {
+  remaining: number;
+  secondsLeft: number;
+}
+
+/** A timer found still running at startup, after the app stopped unexpectedly. */
+export interface RecoveredTimer {
+  startedAt: string;
+  lastSeenAt: string;
+  silentForMs: number;
+}
+
+/** One queued operation the server refused when it was finally replayed. */
+export interface RefusedTime {
+  op: { type: "start" | "stop"; at: string };
+  message: string;
+}
+
 export interface CurrentTimer {
   entry: TimeEntry | null;
   now: string;
@@ -102,7 +121,7 @@ export interface CapturePermissionStatus {
 }
 
 export type TrackingResult<T> =
-  | { ok: true; data: T }
+  | { ok: true; data: T; fromCache?: boolean }
   | {
       ok: false;
       message: string;
@@ -223,6 +242,21 @@ const api = {
       ipcRenderer.invoke("tracking:resume") as Promise<
         TrackingResult<TimeEntry>
       >,
+    /**
+     * A timer the app came back to find still running after a crash, if
+     * there is one worth asking about — see main's `recoveredTimer`.
+     */
+    /** Where capture stands now — asked at startup, since the event only fires on a change. */
+    /** Whether data is backed up now — asked at startup, since the event only fires on a change. */
+    syncBacklog: (): Promise<string | null> =>
+      ipcRenderer.invoke("sync:backlogState") as Promise<string | null>,
+    capturePaused: (): Promise<boolean> =>
+      ipcRenderer.invoke("capture:pausedState") as Promise<boolean>,
+    recoveredTimer: (): Promise<RecoveredTimer | null> =>
+      ipcRenderer.invoke("tracking:recoveredTimer") as Promise<RecoveredTimer | null>,
+    /** `keep` leaves it running; otherwise it ends at the last sign of life. */
+    answerRecoveredTimer: (keep: boolean): Promise<void> =>
+      ipcRenderer.invoke("tracking:answerRecoveredTimer", keep) as Promise<void>,
     lastProject: (): Promise<LastProject | null> =>
       ipcRenderer.invoke("tracking:lastProject") as Promise<LastProject | null>,
     entriesBetween: (
@@ -291,6 +325,49 @@ const api = {
         "window:setCompactAlwaysOnTop",
         pinned,
       ) as Promise<void>,
+    /**
+     * Hours a reconnect handed back that the server would not take. Gone
+     * either way; this is so they hear it from the app rather than find
+     * the gap in their timesheet later.
+     */
+    onRefusedTime: (
+      listener: (refused: RefusedTime[]) => void,
+    ): void => {
+      ipcRenderer.on("tracking:refused", (_event, refused: RefusedTime[]) =>
+        listener(refused),
+      );
+    },
+    /**
+     * Capture paused or resumed for being out of touch. Deliberately not
+     * `onTrackingNotice`, which blocks the timer.
+     */
+    /**
+     * Tracked data has stopped going up, or has started again. Carries
+     * the message rather than a flag so the wording lives in one place,
+     * next to the rule that decides when to show it.
+     */
+    /** Records still going up while quitting; null once it is over. */
+    onSyncDraining: (
+      listener: (progress: QuitProgress | null) => void,
+    ): void => {
+      ipcRenderer.on("sync:draining", (_event, progress: QuitProgress | null) =>
+        listener(progress),
+      );
+    },
+    /** Stop waiting and quit now; the data stays queued for next launch. */
+    closeSyncDraining: (): void => {
+      ipcRenderer.send("sync:drainClosed");
+    },
+    onSyncBacklog: (listener: (message: string | null) => void): void => {
+      ipcRenderer.on("sync:backlog", (_event, message: string | null) =>
+        listener(message),
+      );
+    },
+    onCapturePaused: (listener: (paused: boolean) => void): void => {
+      ipcRenderer.on("capture:paused", (_event, paused: boolean) =>
+        listener(paused),
+      );
+    },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
         listener(notice),
