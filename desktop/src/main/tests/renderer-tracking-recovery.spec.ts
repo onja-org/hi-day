@@ -277,8 +277,6 @@ function launch(scenario: Scenario) {
       show: async () => {},
       close: async () => {},
       setMode: async () => {},
-      compactAlwaysOnTop: () => Promise.resolve(true),
-      setCompactAlwaysOnTop: async () => {},
       onTrackingNotice: () => {},
       onRefusedTime: () => {},
       onCapturePaused: () => {},
@@ -286,6 +284,7 @@ function launch(scenario: Scenario) {
       // The quit drain has its own tests; nothing is uploading here.
       onSyncDraining: () => {},
       closeSyncDraining: () => {},
+      onTrayToggleTimer: () => {},
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },

@@ -116,11 +116,14 @@ macOS `activate`). On Windows `app.setAppUserModelId("io.hiday.app")` makes the
 pinned shortcut and the running window one icon rather than two.
 The status bar has two shrink buttons: one to a 360×72 bar with just the
 timer and start/stop, and one straight to the 68×68 square, so the
-smallest view costs one click rather than two. Both float above other
-windows by default, and both carry a pin button that turns that off —
-one preference covers the two of them (`shouldPin`, `window-pinning.ts`).
-An idle prompt or a tracking error expands back to the full window
-automatically.
+smallest view costs one click rather than two. An idle prompt or a
+tracking error expands back to the full window automatically.
+
+The **tray menu** carries the controls that have to be reachable from
+every size: **Start/Stop timer** (which presses the renderer's own play
+button, so the Project resolution and conflict handling are the same) and
+**Always on top**, a checkbox covering all three sizes — unticking it is
+how you undo it (`shouldPin`, `window-pinning.ts`).
 
 On approval, the app registers itself as a Device against your account
 (see the backend's auto-registration flow in `backend/src/devices/`)

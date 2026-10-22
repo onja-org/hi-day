@@ -120,33 +120,6 @@ document.getElementById("mini-expand")!.addEventListener("click", () => {
   setMode("compact");
 });
 
-const compactPin = document.getElementById("compact-pin")!;
-const miniPin = document.getElementById("mini-pin")!;
-
-/**
- * One preference, two controls. Both small views float or neither does,
- * so whichever is on screen can turn it off — the square used to be
- * pinned with no way to say otherwise.
- */
-function showPinState(pinned: boolean): void {
-  for (const control of [compactPin, miniPin]) {
-    control.setAttribute("aria-pressed", String(pinned));
-    control.classList.toggle("is-on", pinned);
-    control.title = pinned ? "Keep in front: on" : "Keep in front: off";
-  }
-}
-
-void window.api.windowControls.compactAlwaysOnTop().then(showPinState);
-
-function togglePinned(): void {
-  const pinned = compactPin.getAttribute("aria-pressed") !== "true";
-  showPinState(pinned);
-  void window.api.windowControls.setCompactAlwaysOnTop(pinned);
-}
-
-compactPin.addEventListener("click", togglePinned);
-miniPin.addEventListener("click", togglePinned);
-
 const userAvatar = document.getElementById("user-avatar") as HTMLButtonElement;
 const profileMenu = document.getElementById("profile-menu")!;
 const profileSignedInAsEl = document.getElementById("profile-signed-in-as")!;
@@ -2298,6 +2271,15 @@ window.api.windowControls.onRefusedTime((refused) => {
       `saved:\n\n${lines.join("\n")}\n\nYou can add it by hand from your ` +
       `timesheet in the web app.`,
   );
+});
+/**
+ * The tray's Start/Stop item. Deliberately the same click the play button
+ * takes rather than a second path into starting: that one already
+ * resolves the Project, handles a timer running elsewhere, and refuses
+ * when the organisation has blocked tracking.
+ */
+window.api.windowControls.onTrayToggleTimer(() => {
+  if (!timerToggle.disabled) timerToggle.click();
 });
 
 window.api.windowControls.onTrackingNotice((notice) => {

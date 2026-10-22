@@ -203,8 +203,6 @@ declare global {
           mode: "full" | "compact" | "mini",
           centre?: boolean,
         ) => Promise<void>;
-        compactAlwaysOnTop: () => Promise<boolean>;
-        setCompactAlwaysOnTop: (pinned: boolean) => Promise<void>;
         /** Fires when the window comes back from being closed to the tray. */
         onRefusedTime: (
           listener: (
@@ -222,6 +220,7 @@ declare global {
         closeSyncDraining: () => void;
         onSyncBacklog: (listener: (message: string | null) => void) => void;
         onCapturePaused: (listener: (paused: boolean) => void) => void;
+        onTrayToggleTimer: (listener: () => void) => void;
         onTrackingNotice: (listener: (notice: string | null) => void) => void;
         onTrackingReminder: (
           listener: (reminder: {

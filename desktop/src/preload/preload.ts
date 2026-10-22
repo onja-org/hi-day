@@ -368,6 +368,10 @@ const api = {
         listener(paused),
       );
     },
+    /** The tray's Start/Stop item, which presses the renderer's own button. */
+    onTrayToggleTimer: (listener: () => void): void => {
+      ipcRenderer.on("tray:toggleTimer", () => listener());
+    },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
         listener(notice),

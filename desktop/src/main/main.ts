@@ -256,6 +256,9 @@ const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
  * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+let trayTimerRunning = false;
+/** Asks the renderer to do what pressing its own play/stop button does. */
+let toggleTimerFromTray: (() => void) | null = null;
 
 let isQuitting = false;
 /**
@@ -732,10 +735,35 @@ function applyRecordingIndicator(isRecording: boolean): void {
 
 function refreshTrayMenu(): void {
   if (!tray) return;
-  const remembered = rememberedCloseAction(app.getPath("userData")) !== null;
+  const userDataDir = app.getPath("userData");
+  const remembered = rememberedCloseAction(userDataDir) !== null;
+  const pinned = compactAlwaysOnTop(userDataDir);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Hi Day", click: reopenMainWindow },
+      // One item rather than two, reading whichever way the timer is not:
+      // a permanently greyed "Stop timer" says nothing a label cannot.
+      // Routed through the renderer so the tray starts a timer exactly as
+      // its play button does — same Project resolution, same conflict
+      // handling — rather than growing a second way to start one.
+      {
+        label: trayTimerRunning ? "Stop timer" : "Start timer",
+        click: () => toggleTimerFromTray?.(),
+      },
+      { type: "separator" },
+      // A checkbox, so the way to undo it is the item itself with its
+      // tick gone — which is also the only place this can be reached
+      // from every window size.
+      {
+        label: "Always on top",
+        type: "checkbox",
+        checked: pinned,
+        click: () => {
+          setCompactAlwaysOnTop(userDataDir, !pinned);
+          applyPinning();
+          refreshTrayMenu();
+        },
+      },
       // The only way back from a remembered close choice short of wiping
       // the app's data — without it, a remembered "Quit" is permanent.
       ...(remembered
@@ -1190,6 +1218,10 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (running) => {
       timerRunning = running;
+      // The tray's label follows the timer, whoever started it — the web
+      // console and another device both reach this through the gate.
+      trayTimerRunning = running;
+      refreshTrayMenu();
       applyRecordingIndicator(running);
       // Restart the reminder clock on any change, so stopping for lunch
       // buys a full interval of quiet rather than a nudge seconds later.
@@ -1343,6 +1375,14 @@ async function registerIpcHandlers(): Promise<void> {
 
   /** The renderer asking for attention: a dialog behind other windows is
    * one nobody reads. Same escalation as the capture-settings alert. */
+  // Nothing is decided here: the renderer owns which Project a start
+  // belongs to and what a running timer should do, and this is only the
+  // tray asking it to press its own button.
+  toggleTimerFromTray = (): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:toggleTimer");
+  };
+
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
   });
