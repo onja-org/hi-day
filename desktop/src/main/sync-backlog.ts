@@ -1,3 +1,5 @@
+import { intervalFromEnv } from './tuning';
+
 /**
  * How long the agent will be out of touch, with data waiting, before it
  * says so.
@@ -6,12 +8,28 @@
  * queue exists precisely so it costs nothing: warning the moment a single
  * screenshot fails to upload would put a worrying banner on screen
  * several times a day for something that fixes itself in seconds, and a
- * warning people learn to ignore is worse than none. Five minutes is long
- * enough that the queue has genuinely stopped draining rather than
- * hiccuped, and short enough to reach somebody while they can still do
- * something about it.
+ * warning people learn to ignore is worse than none.
+ *
+ * Five minutes is pinned to this app's own rhythms rather than chosen by
+ * feel: the timer and capture-settings polls run every 15s and the
+ * heartbeat and queue flush every 60s, so five minutes is some fifty
+ * consecutive failed requests across four independent loops — stuck, not
+ * blipped. The floor underneath it is a backend deploy, during which
+ * every agent is unreachable at once; warning at a minute or two would
+ * interrupt everybody on a routine release, which is the fastest way to
+ * teach a team to dismiss this unread. The ceiling is usefulness: past
+ * twenty minutes or so it reports a problem somebody has already been
+ * living with.
+ *
+ * Anywhere from about three to ten minutes is defensible, and only
+ * watching how often it actually fires can settle it — hence the
+ * override, which is for tuning as much as for not waiting five minutes
+ * on every test run.
  */
-export const BACKLOG_WARNING_AFTER_MS = 5 * 60 * 1000;
+export const BACKLOG_WARNING_AFTER_MS = intervalFromEnv(
+  'WM_BACKLOG_WARNING_MS',
+  5 * 60 * 1000,
+);
 
 export interface SyncBacklog {
   /**

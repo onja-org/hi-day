@@ -342,8 +342,11 @@ gone: crashed` log line. A running timer should still show as running
       line goes back to "Synced just now".
 
     To exercise the **sync-backlog** warning, stay offline with a timer
-    running for five minutes (`BACKLOG_WARNING_AFTER_MS` in
-    `sync-backlog.ts`). An **"Uploading data" dialog** should appear once,
+    running until the threshold passes. It defaults to five minutes;
+    `WM_BACKLOG_WARNING_MS=10000` shortens it to ten seconds so a test run
+    need not wait it out (the same `intervalFromEnv` knob the capture
+    intervals use, and the one to turn if it proves too eager or too slow
+    in real use). An **"Uploading data" dialog** should appear once,
     raising the window, with a Close button — and a banner behind it
     saying the tracked data has not been uploaded and that nothing is
     lost. Closing the dialog must leave the banner up: the data still has

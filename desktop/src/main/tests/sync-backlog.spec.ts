@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BACKLOG_MESSAGE,
   BACKLOG_WARNING_AFTER_MS,
@@ -15,6 +15,11 @@ import {
  */
 describe('warning that tracked data has not been uploaded', () => {
   const MINUTE = 60 * 1000;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
 
   describe('when it stays quiet', () => {
     it('says nothing when everything has been sent, however long the outage', () => {
@@ -63,6 +68,20 @@ describe('warning that tracked data has not been uploaded', () => {
           silentForMs: BACKLOG_WARNING_AFTER_MS,
         }),
       ).toBe(true);
+    });
+
+    it('takes a shorter window from the environment', async () => {
+      // Read at import, so the module has to be loaded again to see it.
+      vi.resetModules();
+      vi.stubEnv('WM_BACKLOG_WARNING_MS', '10000');
+
+      const module = await import('../sync-backlog');
+
+      expect(module.BACKLOG_WARNING_AFTER_MS).toBe(10_000);
+    });
+
+    it('keeps the five-minute default when the environment says nothing', () => {
+      expect(BACKLOG_WARNING_AFTER_MS).toBe(5 * 60 * 1000);
     });
 
     it('takes a shorter threshold when one is given', () => {
