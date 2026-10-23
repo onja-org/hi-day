@@ -104,6 +104,7 @@ describe('MembershipsService', () => {
         ({
           stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
         } as unknown as TimeEntriesService),
+      { syncToProvider: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
 

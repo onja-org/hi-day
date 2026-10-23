@@ -1,3 +1,4 @@
+import type { MembershipRole } from "./membership";
 /** Mirrors the backend's `SubscriptionStatus`. Only trials exist so far. */
 export type SubscriptionStatus = "trialing";
 
@@ -31,4 +32,21 @@ export type BillingStatus = {
 
 export type GetTrialStatusResult =
   | { ok: true; status: BillingStatus }
+  | { ok: false; message: string };
+
+/** One person on the bill, as the Billing page lists them. */
+export type BilledPerson = {
+  membershipId: string;
+  name: string | null;
+  email: string;
+  role: MembershipRole;
+};
+
+export type BilledSeats = {
+  count: number;
+  people: BilledPerson[];
+};
+
+export type GetBilledSeatsResult =
+  | { ok: true; seats: BilledSeats }
   | { ok: false; message: string };
