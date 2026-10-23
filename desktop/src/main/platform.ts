@@ -19,12 +19,10 @@ export function toDevicePlatform(nodePlatform: NodeJS.Platform): DesktopDevicePl
 }
 
 /**
- * Wayland gives no way to identify the active window at all — both
- * get-windows and @paymoapp/active-window only support X11 on Linux, "for
- * security reasons" per their docs — checked before ever calling into the
- * window-capture library on Linux, not treated as a call that might fail.
- * Matches the desktop app's existing "Linux best-effort" support level
- * (see docs/adr/0007-... for the same caveat on idle detection).
+ * Wayland gives no protocol for reading another application's window, so a
+ * Wayland-native window is only visible through AT-SPI; XWayland clients are
+ * still read from X11. Decides whether WindowSampler falls back to AT-SPI
+ * when X11 reports no focused window (see docs/adr/0026-...).
  */
 export function isWaylandSession(): boolean {
   return process.platform === 'linux' && !!process.env.WAYLAND_DISPLAY;
