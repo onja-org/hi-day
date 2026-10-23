@@ -1,9 +1,11 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import type { BillingPeriod } from '../pricing';
+import { CheckoutService } from '../services/checkout.service';
 import type { BilledSeats } from '../services/billed-seats.service';
 import { BilledSeatsService } from '../services/billed-seats.service';
 import type { TrialStatus } from '../services/trial.service';
@@ -20,7 +22,26 @@ export class BillingController {
   constructor(
     private readonly trialService: TrialService,
     private readonly billedSeatsService: BilledSeatsService,
+    private readonly checkoutService: CheckoutService,
   ) {}
+
+  /**
+   * Where to send the admin to pay. Returns a URL rather than redirecting,
+   * so the browser leaves the app deliberately rather than being bounced
+   * mid-request.
+   */
+  @Post('checkout')
+  async startCheckout(
+    @Req() request: AuthenticatedRequest,
+    @Body('period') period: BillingPeriod,
+  ): Promise<{ url: string }> {
+    return {
+      url: await this.checkoutService.createSessionUrl(
+        request.organisationId!,
+        period,
+      ),
+    };
+  }
 
   /**
    * `trial: null` for an Organisation created before trials existed — a

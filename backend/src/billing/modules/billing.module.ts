@@ -7,7 +7,10 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { BillingController } from '../controllers/billing.controller';
+import { StripeWebhookController } from '../controllers/stripe-webhook.controller';
 import { BilledSeatsService } from '../services/billed-seats.service';
+import { CheckoutService } from '../services/checkout.service';
+import { StripeWebhookService } from '../services/stripe-webhook.service';
 import { StripeService } from '../services/stripe.service';
 import { TrialService } from '../services/trial.service';
 
@@ -17,8 +20,15 @@ import { TrialService } from '../services/trial.service';
     JwtAuthModule,
     EmailModule,
   ],
-  controllers: [BillingController],
-  providers: [BilledSeatsService, StripeService, TrialService, RoleGuard],
+  controllers: [BillingController, StripeWebhookController],
+  providers: [
+    BilledSeatsService,
+    CheckoutService,
+    StripeService,
+    StripeWebhookService,
+    TrialService,
+    RoleGuard,
+  ],
   exports: [BilledSeatsService, StripeService, TrialService],
 })
 export class BillingModule {}
