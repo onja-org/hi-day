@@ -26,6 +26,13 @@ function keysFor(
       const yesterday = addDaysToKey(todayKey, -1);
       return [yesterday, yesterday];
     }
+    case "this_week":
+      // The whole week, days still to come included — they just have
+      // nothing in them yet.
+      return [
+        startOfWeekKey(todayKey, weekStart),
+        endOfWeekKey(todayKey, weekStart),
+      ];
     case "last_7_days":
       return [addDaysToKey(todayKey, -6), todayKey];
     case "last_week": {

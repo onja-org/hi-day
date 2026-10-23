@@ -62,6 +62,52 @@ describe("getTimesheetDateRange", () => {
     expect(range.from).toEqual(new Date(2025, 11, 29, 0, 0, 0, 0));
   });
 
+  // The same cases as the backend's report-date-range.util.spec.ts, so a
+  // saved or scheduled "This week" covers the days the browser showed.
+  describe("'this_week' — the whole calendar week, not seven days back", () => {
+    const days = (now: Date, weekStart: "monday" | "sunday" = "monday") => {
+      const range = getTimesheetDateRange("this_week", now, undefined, weekStart);
+      return [range.from, range.to];
+    };
+
+    it.each([
+      ["a Wednesday", new Date(2026, 0, 7, 15, 30)],
+      ["a Monday", new Date(2026, 0, 5, 8, 0)],
+      ["a Sunday", new Date(2026, 0, 11, 21, 0)],
+    ])("covers Monday to Sunday on %s", (_label, now) => {
+      expect(days(now)).toEqual([
+        new Date(2026, 0, 5, 0, 0, 0, 0),
+        new Date(2026, 0, 11, 23, 59, 59, 999),
+      ]);
+    });
+
+    it("includes the days after today, which simply have nothing yet", () => {
+      const [, to] = days(new Date(2026, 0, 7, 15, 30));
+      expect(to.getTime()).toBeGreaterThan(new Date(2026, 0, 7, 23, 59, 59, 999).getTime());
+    });
+
+    it("crosses a year boundary", () => {
+      expect(days(new Date(2026, 0, 1, 12, 0))).toEqual([
+        new Date(2025, 11, 29, 0, 0, 0, 0),
+        new Date(2026, 0, 4, 23, 59, 59, 999),
+      ]);
+    });
+
+    it.each([
+      ["a Wednesday", new Date(2026, 0, 7, 15, 30), [4, 10]],
+      ["a Sunday, its first day", new Date(2026, 0, 11, 9, 0), [11, 17]],
+      ["a Saturday, its last day", new Date(2026, 0, 10, 9, 0), [4, 10]],
+    ] as const)(
+      "runs Sunday to Saturday for an organisation whose weeks start on Sunday, on %s",
+      (_label, now, [first, last]) => {
+        expect(days(now, "sunday")).toEqual([
+          new Date(2026, 0, first, 0, 0, 0, 0),
+          new Date(2026, 0, last, 23, 59, 59, 999),
+        ]);
+      },
+    );
+  });
+
   it("defaults to now when no reference date is given", () => {
     const range = getTimesheetDateRange("today");
     const today = new Date();

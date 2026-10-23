@@ -13,7 +13,8 @@ import type { ReportScope } from "@/types/reportScope";
 import type { SavedReportSettings } from "@/types/savedReport";
 import type { TimeActivityGrouping } from "@/types/timeActivityGrouping";
 
-export const DEFAULT_TIME_ACTIVITY_PRESET: DateRangePreset = "last_7_days";
+/** A calendar week, from the organisation's week start — not the last seven days. */
+export const DEFAULT_TIME_ACTIVITY_PRESET: DateRangePreset = "this_week";
 
 /** The report's own controls — what the viewer has chosen, starting from a saved report's settings when one is opened. */
 export function useTimeActivityReportControls(
