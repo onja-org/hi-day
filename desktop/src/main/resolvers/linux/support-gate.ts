@@ -15,6 +15,31 @@ export interface SessionEnvironment {
   currentDesktop: string | undefined;
 }
 
+/** What Electron writes over `XDG_CURRENT_DESKTOP` in its own process. */
+const ELECTRON_DESKTOP_PLACEHOLDER = 'Unity';
+
+/**
+ * The real desktop, from markers Electron leaves alone. Needed because
+ * `ORIGINAL_XDG_CURRENT_DESKTOP` survives only one generation: when the app
+ * relaunches itself — an auto-update, a crash recovery — the new process
+ * inherits `Unity`, and Electron copies that over `ORIGINAL_…` too. Seen on
+ * a real machine after an auto-update: both read `Unity`, a GNOME Wayland
+ * session read as unsupported, and URL capture stayed off until the next
+ * login while app tracking carried on.
+ */
+function desktopFromSessionMarkers(env: NodeJS.ProcessEnv): string | undefined {
+  // Set by gnome-shell's own session, and by GNOME's menu setup.
+  const gnome = !!env.GNOME_SHELL_SESSION_MODE || env.XDG_MENU_PREFIX === 'gnome-';
+  const sessionDesktop = env.XDG_SESSION_DESKTOP ?? env.DESKTOP_SESSION;
+  if (gnome) {
+    // Ubuntu's session is "ubuntu", and its XDG_CURRENT_DESKTOP "ubuntu:GNOME".
+    return sessionDesktop && sessionDesktop.toLowerCase() !== 'gnome'
+      ? `${sessionDesktop}:GNOME`
+      : 'GNOME';
+  }
+  return sessionDesktop;
+}
+
 /**
  * Electron overwrites `XDG_CURRENT_DESKTOP` with `Unity` and keeps the real
  * value in `ORIGINAL_XDG_CURRENT_DESKTOP`, which made a genuine GNOME
@@ -24,9 +49,12 @@ export interface SessionEnvironment {
 export function readSessionEnvironment(
   env: NodeJS.ProcessEnv = process.env,
 ): SessionEnvironment {
+  const named = [env.ORIGINAL_XDG_CURRENT_DESKTOP, env.XDG_CURRENT_DESKTOP].find(
+    (value) => value && value !== ELECTRON_DESKTOP_PLACEHOLDER,
+  );
   return {
     sessionType: env.XDG_SESSION_TYPE,
-    currentDesktop: env.ORIGINAL_XDG_CURRENT_DESKTOP ?? env.XDG_CURRENT_DESKTOP,
+    currentDesktop: named ?? desktopFromSessionMarkers(env) ?? env.XDG_CURRENT_DESKTOP,
   };
 }
 

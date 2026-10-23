@@ -1,4 +1,4 @@
-# Blind browsers are detected at runtime, and their time is kept as "URL unknown"
+# Blind browsers are detected at runtime, their time is kept as "URL unknown", and a self-relaunch no longer switches URL capture off
 
 Some Ubuntu users had URL tracking that worked on some days and not others, while app tracking worked throughout. Colleagues on what looked like the same setup never saw it. The ticket blamed a browser extension, but there isn't one, by design (`URL_TRACKING_CONTEXT.md`, constraint 1). On Linux, URLs are read from the browser's address bar over AT-SPI.
 
@@ -18,6 +18,21 @@ Reproduced with the real resolver code against throwaway Chrome profiles (`--use
 | normal window with the flag first | yes | found (`example.org`) |
 
 `BrowserRestartService.findBlind()` already detected blind browsers from `/proc`, but only for the one-time setup screen, so a browser that went blind later went unnoticed. A failed read was dropped without a trace: no session, no health signal. `ResolverHealthTracker` collected health but never sent it anywhere.
+
+## A second cause: URL capture switched off after the app relaunches itself
+
+Found afterwards on a machine whose Chrome had the flag but whose installed agent recorded no URLs all morning, while app tracking worked.
+
+Electron writes `Unity` over `XDG_CURRENT_DESKTOP` in its own process and keeps the real value in `ORIGINAL_XDG_CURRENT_DESKTOP`, and `support-gate.ts` reads that. It survives only one generation. When the app relaunches itself (here, an auto-update's `quitAndInstall` with run-after; also crash recovery's `app.relaunch()`), the new process inherits `Unity` and Electron copies it over `ORIGINAL_…` as well:
+
+| Launch | `XDG_CURRENT_DESKTOP` | `ORIGINAL_XDG_CURRENT_DESKTOP` |
+| --- | --- | --- |
+| from the session | `Unity` | `ubuntu:GNOME` |
+| relaunched from inside Electron | `Unity` | `Unity` |
+
+The side-car then reads "Wayland, not GNOME", reports no `url` capability, and never connects to the accessibility bus. That was confirmed live: it had no connection there at all, and the registry listed only the main process as a listener. It stays like that until the next normal launch, so URL tracking breaks after every auto-update or crash and comes back at the next login. App tracking doesn't go through the gate and carries on.
+
+**Fix:** `readSessionEnvironment` ignores Electron's `Unity` placeholder. When both variables hold it, it rebuilds the desktop from markers Electron leaves alone: `GNOME_SHELL_SESSION_MODE` or `XDG_MENU_PREFIX=gnome-`, with `XDG_SESSION_DESKTOP` (`ubuntu` gives `ubuntu:GNOME`). Otherwise it uses `XDG_SESSION_DESKTOP` / `DESKTOP_SESSION` as given. The support gate, the Devices page's display session, and the browser relaunch environment all read through it. With the live side-car's environment, the gate now answers supported. The per-device health in this ADR would have shown this case as `unavailable`, with the gate's reason.
 
 ## What this ADR decided
 

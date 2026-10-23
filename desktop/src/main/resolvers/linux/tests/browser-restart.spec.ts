@@ -240,6 +240,17 @@ describe('relaunchCommands', () => {
 });
 
 describe('relaunchEnvironment', () => {
+  it('still restores the real desktop after the app relaunched itself', () => {
+    const env = relaunchEnvironment({
+      XDG_CURRENT_DESKTOP: 'Unity',
+      ORIGINAL_XDG_CURRENT_DESKTOP: 'Unity',
+      XDG_SESSION_DESKTOP: 'ubuntu',
+      GNOME_SHELL_SESSION_MODE: 'ubuntu',
+    });
+    expect(env.XDG_CURRENT_DESKTOP).toBe('ubuntu:GNOME');
+    expect(env.ORIGINAL_XDG_CURRENT_DESKTOP).toBeUndefined();
+  });
+
   /**
    * The bug this exists for: Electron rewrites XDG_CURRENT_DESKTOP to
    * `Unity` in its own process, a spawned Chromium reads it, and lays its
