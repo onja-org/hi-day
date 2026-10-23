@@ -9,6 +9,7 @@ import {
   TRIAL_DAYS,
 } from "@/lib/pricing.generated";
 import { BilledPeople } from "./BilledPeople";
+import { SubscribeButtons } from "./SubscribeButtons";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
 import { TrialSummary } from "./TrialSummary";
@@ -116,11 +117,7 @@ export function SubscriptionSettings({
           </div>
         </dl>
 
-        <p className="mt-4 text-sm text-slate-900/60">
-          Adding a payment method isn&apos;t available yet. Nothing is locked
-          while we finish it — your team keeps every feature, and you
-          won&apos;t be charged without choosing a plan first.
-        </p>
+        <SubscribeButtons organisationId={organisationId} />
 
         <Link
           href="/pricing"
