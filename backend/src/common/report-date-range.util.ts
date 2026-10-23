@@ -11,6 +11,7 @@ import {
 export const REPORT_DATE_PRESETS = [
   'today',
   'yesterday',
+  'this_week',
   'last_7_days',
   'last_week',
   'last_2_weeks',
@@ -49,6 +50,12 @@ function presetDays(
     case 'yesterday': {
       const yesterday = addDaysToKey(today, -1);
       return { from: yesterday, to: yesterday };
+    }
+    case 'this_week': {
+      // The whole week, days still to come included — they just have
+      // nothing in them yet.
+      const first = weekStart(today);
+      return { from: first, to: addDaysToKey(first, 6) };
     }
     case 'last_7_days':
       return { from: addDaysToKey(today, -6), to: today };

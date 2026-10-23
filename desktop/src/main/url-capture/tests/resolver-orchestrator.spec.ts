@@ -63,6 +63,50 @@ describe('ResolverOrchestrator', () => {
     expect(urlResolved.browser).toBe('chrome.exe');
   });
 
+  it('keeps an unreadable browser window as urlUnreadable, but never a non-browser one', async () => {
+    const events: EngineEvent[] = [];
+    orchestrator = new ResolverOrchestrator({
+      spawnConfig: {
+        command: process.execPath,
+        args: [mockResolverPath, join(fixturesDir, 'orchestrator-unreadable.json')],
+      },
+      reportEvent: (event) => events.push(event),
+      heartbeatIntervalMs: 10_000,
+      logger: () => undefined,
+      identifyBrowser: (app) => (app === 'Google Chrome' ? 'chrome' : null),
+      platformSource: 'atspi',
+    });
+    orchestrator.start();
+
+    const unreadable = await waitFor(() => events.find((e) => e.type === 'urlUnreadable'));
+    expect(unreadable).toMatchObject({ pid: 111, hwnd: 222, browser: 'chrome', source: 'atspi' });
+
+    // The terminal's identical failure is only a focus change, never unknown time.
+    await waitFor(() =>
+      events.find((e) => e.type === 'focusChanged' && e.target?.pid === 333),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(events.filter((e) => e.type === 'urlUnreadable')).toHaveLength(1);
+  });
+
+  it('drops an unreadable window as before when no browser identifier is given', async () => {
+    const events: EngineEvent[] = [];
+    orchestrator = new ResolverOrchestrator({
+      spawnConfig: {
+        command: process.execPath,
+        args: [mockResolverPath, join(fixturesDir, 'orchestrator-unreadable.json')],
+      },
+      reportEvent: (event) => events.push(event),
+      heartbeatIntervalMs: 10_000,
+      logger: () => undefined,
+    });
+    orchestrator.start();
+
+    await waitFor(() => events.find((e) => e.type === 'focusChanged' && e.target?.pid === 333));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(events.some((e) => e.type === 'urlUnreadable')).toBe(false);
+  });
+
   it('drops a reading that fails normalization — no urlResolved event at all', async () => {
     const events: EngineEvent[] = [];
     orchestrator = new ResolverOrchestrator({

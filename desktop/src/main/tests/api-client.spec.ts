@@ -29,6 +29,58 @@ describe('ApiClient#heartbeat', () => {
     );
   });
 
+  it('carries app-capture health and the display session when known', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ApiClient(BASE_URL);
+    await client.heartbeat('device-token-123', '1.2.3', {
+      appCapture: { status: 'unavailable', detail: 'No X display.' },
+      urlCapture: { status: 'degraded', detail: 'Chrome is running without website tracking.' },
+      displaySession: 'x11 · ubuntu:GNOME',
+    });
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(requestInit.body as string)).toEqual({
+      appVersion: '1.2.3',
+      appCaptureStatus: 'unavailable',
+      appCaptureDetail: 'No X display.',
+      urlCaptureStatus: 'degraded',
+      urlCaptureDetail: 'Chrome is running without website tracking.',
+      displaySession: 'x11 · ubuntu:GNOME',
+    });
+  });
+
+  it('retries with the version alone when an older backend rejects the capture fields', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ApiClient(BASE_URL);
+    const result = await client.heartbeat('device-token-123', '1.2.3', {
+      appCapture: { status: 'ok', detail: null },
+      displaySession: 'wayland · ubuntu:GNOME',
+    });
+
+    expect(result).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, retryInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(retryInit.body as string)).toEqual({ appVersion: '1.2.3' });
+  });
+
+  it('does not retry a 400 when there were no capture fields to blame', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ApiClient(BASE_URL);
+    const result = await client.heartbeat('device-token-123', '1.2.3');
+
+    expect(result).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('returns false when the server responds with a non-ok status', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
 

@@ -56,6 +56,12 @@ window titles is Screen Recording, not Accessibility), and `docs/adr/0016-...`
 for GNOME's Wayland gap being closed via AT-SPI2 (`GnomeWindowFocusTracker`,
 `desktop/src/main/gnome-window-focus-tracker.ts`) rather than the extension
 `0009` had originally deferred this to.
+On Linux the native addon is no longer used at all: every session reads X11
+directly (`X11WindowTracker`), with AT-SPI covering Wayland-native windows —
+the addon's Linux binary needs glibc 2.38, so on Ubuntu 22.04 an Xorg session
+recorded no apps at all. The agent now reports on its heartbeat whether app
+capture works (`ok` / `degraded` / `unavailable`, plus the session type), and
+the web console's Devices page shows it — see `docs/adr/0026-...`.
 
 Screenshots are captured via Electron's own `desktopCapturer`
 (`ScreenshotSampler`, `desktop/src/main/screenshot-sampler.ts` — no
@@ -119,15 +125,30 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
-The **tray menu** carries the controls that have to be reachable from
-every size: **Open dashboard** (the web app, whose address the
-backend sends on the capture-settings poll from its own `FRONTEND_URL` —
+The **tray menu** is laid out like Hubstaff's (`src/main/tray-menu.ts`,
+a pure template builder with its own spec): the timer (**Start/Stop
+timer**, **Add time note…**, **Open Hi Day**), **Recent projects** (the
+last three the timer ran against, kept in the session so signing out
+forgets them; picking one goes through the renderer's own Project-row
+click, except on the Project already running, where that click would
+pause), the account (**Signed in as …**, the email and organisation,
+**Sign out…**, confirmed first and then routed through the window's Log
+out button), the web app (**Open dashboard**, **Add/Edit time**), and
+the app (**Preferences**, **Check for updates…**, which always answers
+with a dialog, **About Hi Day**, **Quit Hi Day**). Signed out, only the
+items that need no account remain. **Add time note…** and **Add/Edit
+time** open the web app's `/open/notes` and `/open/timesheet`, which
+redirect into the signed-in organisation; the device knows its
+organisation's name but not its id.
+
+**Open dashboard** links to the web app. The backend sends that address on the
+capture-settings poll from its own `FRONTEND_URL`,
 so there is no second URL constant to keep in step with
 `api-base-url.ts`, and moving to a new domain reaches every device
 without a desktop release; `DESKTOP_WEB_URL` overrides it and `pnpm dev`
-falls back to `http://localhost:3000`), **Start/Stop timer** (which presses the renderer's own play
-button, so the Project resolution and conflict handling are the same) and
-**Always on top (compact views)**, a checkbox covering the 360×72 bar and
+falls back to `http://localhost:3000`. **Start/Stop timer** presses the renderer's own play
+button, so the Project resolution and conflict handling are the same.
+**Preferences → Always on top (compact views)** is a checkbox covering the 360×72 bar and
 the 68×68 square — unticking it is how you undo it. The full window never
 floats: at 360×600 it is the app rather than a widget, and floating it
 would put it over the work being tracked (`shouldPin`,
@@ -224,15 +245,16 @@ dev` — it should skip straight to the logged-in screen instead of
    `GET /device/time-entries/current` every 15s (immediately on login/
    logout, and instantly on this app's own Start/Stop/switch actions).
    Samples aren't logged to this app's terminal — see step 10 to confirm
-   sampling is actually happening via the web console instead. On a
-   Wayland session (`$WAYLAND_DISPLAY` set) on GNOME, `@paymoapp/active-window`
-   itself still produces nothing (X11-only), but `GnomeWindowFocusTracker`
-   (see `docs/adr/0016-...`) fills in real `appName`/`title` via AT-SPI2 once
-   you've switched focus at least once after the timer starts — the very
-   first tick or two, before any window activation has been observed yet,
-   still falls back to `titleUnavailableReason: 'not-exposed'` with both
-   fields null. A non-GNOME Wayland session (or one with no working
-   accessibility bus at all) gets that same `'not-exposed'` fallback
+   sampling is actually happening via the web console instead. On Linux,
+   `X11WindowTracker` reads the focused window straight from X11 on every
+   session (Xorg, or XWayland clients on Wayland). On a Wayland session
+   (`$WAYLAND_DISPLAY` set) on GNOME, a Wayland-native window comes from
+   `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) via AT-SPI2 once
+   you've switched focus at least once after the timer starts — before any
+   window activation has been observed, such a window falls back to
+   `titleUnavailableReason: 'not-exposed'` with both fields null. A
+   non-GNOME Wayland session (or one with no working accessibility bus at
+   all) gets that same `'not-exposed'` fallback for Wayland-native windows
    permanently instead — this is a known, informational, un-fixable-from-here
    gap for those cases (no "Grant Access"-style button, since there's
    nothing to grant). macOS-specific behavior (the Screen Recording banner,
@@ -529,6 +551,15 @@ output — not just assumed from source-mode success):
   dev environment; `npmRebuild` (electron-builder's default `true`) ran
   successfully here, but hasn't been confirmed on the other two OSes.
 
+**Idle handling** (`docs/adr/0028-...`): nothing happens before the
+organisation's idle timeout. Coming back inside it carries on as if nobody
+had left, and that includes the laptop having slept meanwhile. At the
+timeout, tracking stops where input stopped, and the Keep/Discard prompt
+waits for an answer: Keep counts the idle stretch, and Discard drops only
+it, restarting from when the person came back. The waiting prompt is kept on
+disk (`idle-hold.json`), so a reload, a relaunch or a crash brings it back
+rather than losing the time.
+
 ## Known limitations (this pass)
 
 - **On Linux, running this app turns on the session's accessibility bridge
@@ -660,10 +691,17 @@ output — not just assumed from source-mode success):
   permission now. Still unverified on real macOS hardware — nobody on this
   project has a Mac — so treat "does title actually populate once granted"
   as confirmed by the library's own docs, not by this repo's own testing.
+- **Xorg on Ubuntu 22.04 recorded no apps at all — fixed.** The Xorg branch
+  used `@paymoapp/active-window`, whose Linux binary needs glibc 2.38; on
+  22.04 (glibc 2.35) it never loaded and every sample came back empty, with
+  nothing to say so. Linux now reads X11 directly on every session, and the
+  Devices page shows each device's app-capture status. Still to confirm on a
+  real affected 22.04 Xorg machine — see `docs/adr/0026-...`.
 - **Wayland gave no app name either, not just no title — fixed on GNOME, still
   a real gap elsewhere.** Neither `get-windows` nor `@paymoapp/active-window`
   provides any window/app information at all under Wayland (both only
-  support X11 on Linux, "for security reasons" per their docs). On GNOME,
+  support X11 on Linux, "for security reasons" per their docs). XWayland
+  clients are read from X11 directly (`X11WindowTracker`). On GNOME,
   `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) now fills this via
   AT-SPI2 instead, verified live against a real GNOME Wayland session — a
   sample only falls back to `{ appName: null, title: null,

@@ -6,6 +6,7 @@ import type { DateRangePreset } from "@/types/dateRange";
 export const DATE_RANGE_PRESET_LABELS: Record<DateRangePreset, string> = {
   today: "Today",
   yesterday: "Yesterday",
+  this_week: "This week",
   last_7_days: "Last 7 days",
   last_week: "Last week",
   last_2_weeks: "Last 2 weeks",

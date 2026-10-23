@@ -82,3 +82,34 @@ export function lookupBrowser(
   }
   return { key: CHROMIUM_GENERIC_KEY, entry: fallback };
 }
+
+/**
+ * AT-SPI reports an application's display name ("Google Chrome"); the
+ * registry keys Linux entries by process name ("google-chrome"). Normalize
+ * before matching rather than duplicating every name in the registry.
+ */
+export function normalizeAppName(appName: string): string {
+  return appName.trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * The registry key of the browser a focus event's `app` names, or null when
+ * it names no known browser. Strict, unlike `lookupBrowser`: that one falls
+ * back to the generic Chromium strategy for anything, which is right for
+ * picking how to read an address bar but would call a terminal a browser.
+ *
+ * Each side-car names the focused app its own way: the AT-SPI display name
+ * on Linux, the process name on Windows, the application name on macOS.
+ */
+export function identifyBrowser(
+  registry: BrowserRegistry,
+  platform: RegistryPlatform,
+  app: string,
+): string | null {
+  const name = platform === 'linux' ? normalizeAppName(app) : app;
+  for (const [key, entry] of Object.entries(registry)) {
+    if (entry.match?.[platform] === name) return key;
+    if (platform === 'darwin' && entry.darwinAppName === name) return key;
+  }
+  return null;
+}

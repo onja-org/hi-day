@@ -8,6 +8,7 @@ import {
   type ResolverHealthSnapshot,
 } from './resolver-health';
 import { ResolverManager, type ResolverSpawnConfig } from './resolver-manager';
+import type { Source } from './protocol';
 import type { EngineEvent } from './session-types';
 
 export interface ResolverOrchestratorOptions {
@@ -25,7 +26,25 @@ export interface ResolverOrchestratorOptions {
    * this is opt-in-only, and the two must never be conflated.
    */
   debugSink?: DebugSink;
+  /**
+   * Which browser a focus event's `app` names, or null for anything else.
+   * Without it a failed read is simply dropped, as it always was; with it,
+   * a browser window whose URL cannot be read is kept as "URL unknown".
+   */
+  identifyBrowser?: (app: string) => string | null;
+  /** The reading method this platform's side-car uses — the source of an unknown-URL session. */
+  platformSource?: Source;
 }
+
+/**
+ * Failures meaning the address bar cannot be read at all, as opposed to
+ * one not worth reading right now (the person is typing in it, or it is a
+ * new tab) or a read that went wrong once. `no-address-bar` is what a
+ * Linux browser started without its accessibility tree gives; the other
+ * two are macOS's Automation permission being refused and a browser its
+ * resolver has no route into.
+ */
+const UNREADABLE_CODES = new Set(['no-address-bar', 'consent-denied', 'unsupported-browser']);
 
 /**
  * Owns a ResolverManager for one platform's side-car and turns its output
@@ -43,6 +62,8 @@ export class ResolverOrchestrator {
   private readonly logger: (line: string) => void;
   private readonly health = new ResolverHealthTracker();
   private readonly debugSink: DebugSink;
+  private readonly identifyBrowser: ((app: string) => string | null) | null;
+  private readonly platformSource: Source | null;
   private currentFocus: { pid: number; hwnd: number; app: string } | null = null;
 
   constructor(options: ResolverOrchestratorOptions) {
@@ -50,6 +71,8 @@ export class ResolverOrchestrator {
     this.normalizeOptions = options.normalizeOptions;
     this.logger = options.logger ?? ((): void => undefined);
     this.debugSink = options.debugSink ?? new NullDebugHarness();
+    this.identifyBrowser = options.identifyBrowser ?? null;
+    this.platformSource = options.platformSource ?? null;
 
     this.manager = new ResolverManager(options.spawnConfig, { logger: this.logger });
     this.heartbeat = new HeartbeatScheduler({
@@ -59,7 +82,7 @@ export class ResolverOrchestrator {
 
     this.manager.on('ready', (event) => {
       this.logger(`[resolver] ready platform=${event.platform} caps=${event.caps.join(',')}`);
-      this.health.onReady(realClock().wallClockMs);
+      this.health.onReady(realClock().wallClockMs, event.caps);
     });
     this.manager.on('focus', (event) => {
       this.currentFocus = { pid: event.pid, hwnd: event.hwnd, app: event.app };
@@ -73,6 +96,7 @@ export class ResolverOrchestrator {
     });
     this.manager.on('error', (event) => {
       this.logger(`[resolver] error code=${event.code} detail=${event.detail}`);
+      this.health.onSideCarError(event.detail);
     });
     this.manager.on('restarting', () => {
       this.health.onRestarting();
@@ -127,6 +151,7 @@ export class ResolverOrchestrator {
         decision: `resolve-failed:${extractResolverErrorCode(outcome.message)}`,
         app: focus.app,
       });
+      this.reportUnreadableBrowser(focus, extractResolverErrorCode(outcome.message));
       return;
     }
 
@@ -165,6 +190,26 @@ export class ResolverOrchestrator {
       private: outcome.private,
       source: outcome.source,
       confidence: outcome.confidence,
+      ...realClock(),
+    });
+  }
+
+  /** Browser time that would otherwise vanish, kept as "URL unknown" — see UNREADABLE_CODES. */
+  private reportUnreadableBrowser(
+    focus: { pid: number; hwnd: number; app: string },
+    code: string,
+  ): void {
+    if (!this.identifyBrowser || !this.platformSource) return;
+    if (!UNREADABLE_CODES.has(code)) return;
+    const browser = this.identifyBrowser(focus.app);
+    if (!browser) return;
+
+    this.reportEvent({
+      type: 'urlUnreadable',
+      pid: focus.pid,
+      hwnd: focus.hwnd,
+      browser,
+      source: this.platformSource,
       ...realClock(),
     });
   }

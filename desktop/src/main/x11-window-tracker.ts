@@ -1,7 +1,9 @@
+import type { CaptureSourceState } from './app-capture-health';
 import type { GnomeWindowFocus } from './gnome-window-focus-tracker';
 
 /** Predefined X11 atoms. */
 const ANY_PROPERTY_TYPE = 0;
+const WM_NAME = 39;
 const WM_CLASS = 67;
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -22,6 +24,7 @@ const REQUEST_TIMEOUT_MS = 2_000;
  */
 export class X11WindowTracker {
   private lastFocus: GnomeWindowFocus | null = null;
+  private sourceState: CaptureSourceState = 'starting';
   private timer: ReturnType<typeof setInterval> | null = null;
   private display: unknown = null;
   private client: import('x11').X11Client | null = null;
@@ -45,6 +48,7 @@ export class X11WindowTracker {
         x11.createClient((err, display) => {
           if (err || !display) {
             this.log(`x11 unavailable: ${err?.message ?? 'no display'}`);
+            this.sourceState = 'down';
             resolve();
             return;
           }
@@ -64,9 +68,11 @@ export class X11WindowTracker {
         this.options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
       );
       this.timer.unref?.();
+      this.sourceState = 'up';
       await this.refresh();
     } catch (error) {
       this.log(`x11 tracker failed to start: ${String(error)}`);
+      this.sourceState = 'down';
     }
   }
 
@@ -81,6 +87,11 @@ export class X11WindowTracker {
     }
     this.display = null;
     this.client = null;
+  }
+
+  /** Whether an X display answered — what app-capture health is judged on. */
+  get state(): CaptureSourceState {
+    return this.sourceState;
   }
 
   /** Null when no X11 window has focus — ie. a Wayland-native one does. */
@@ -98,7 +109,7 @@ export class X11WindowTracker {
         return;
       }
       const [title, appName] = await Promise.all([
-        this.readString(windowId, this.nameAtom),
+        this.readTitle(windowId),
         this.readWmClass(windowId),
       ]);
       this.lastFocus = appName || title ? { appName, title } : null;
@@ -112,6 +123,17 @@ export class X11WindowTracker {
   private async readActiveWindowId(): Promise<number> {
     const data = await this.getProperty(this.root, this.activeWindowAtom, 4);
     return data && data.length >= 4 ? data.readUInt32LE(0) : 0;
+  }
+
+  /**
+   * `_NET_WM_NAME`, else the legacy `WM_NAME` — older toolkits set only the
+   * latter, and the addon this replaced on Xorg read it.
+   */
+  private async readTitle(windowId: number): Promise<string> {
+    return (
+      (await this.readString(windowId, this.nameAtom)) ||
+      (await this.readString(windowId, WM_NAME))
+    );
   }
 
   private async readString(windowId: number, atom: number): Promise<string> {

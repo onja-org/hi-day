@@ -10,7 +10,7 @@ const safeStorage = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ safeStorage }));
 
-import { AuthStore } from '../auth-store';
+import { AuthStore, recentProjectIds, type StoredSession } from '../auth-store';
 
 describe('AuthStore.load', () => {
   let userDataDir: string;
@@ -62,5 +62,54 @@ describe('AuthStore.load', () => {
 
     expect(() => new AuthStore(userDataDir).load()).not.toThrow();
     expect(new AuthStore(userDataDir).load()).toBeNull();
+  });
+});
+
+describe('AuthStore.rememberProject', () => {
+  let userDataDir: string;
+
+  beforeEach(() => {
+    safeStorage.isEncryptionAvailable.mockReturnValue(false);
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-auth-store-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  const signedIn = (extra: Partial<StoredSession> = {}): AuthStore => {
+    const store = new AuthStore(userDataDir);
+    store.save({
+      email: 'someone@example.com',
+      organisationName: 'Acme',
+      deviceId: 'device-1',
+      deviceToken: 'token-1',
+      ...extra,
+    });
+    return store;
+  };
+
+  it('keeps the tray its recent Projects, newest first', () => {
+    const store = signedIn();
+    store.rememberProject('a', null);
+    store.rememberProject('b', null);
+    store.rememberProject('a', 'task-1');
+
+    const session = store.load()!;
+    expect(recentProjectIds(session)).toEqual(['a', 'b']);
+    expect(session.lastTaskId).toBe('task-1');
+  });
+
+  // A session saved before the list existed still has one Project to offer.
+  it('starts the list from the last Project on an older session', () => {
+    const store = signedIn({ lastProjectId: 'old' });
+    expect(recentProjectIds(store.load()!)).toEqual(['old']);
+
+    store.rememberProject('new', null);
+    expect(recentProjectIds(store.load()!)).toEqual(['new', 'old']);
+  });
+
+  it('has nothing to offer before any timer has run', () => {
+    expect(recentProjectIds(signedIn().load()!)).toEqual([]);
   });
 });

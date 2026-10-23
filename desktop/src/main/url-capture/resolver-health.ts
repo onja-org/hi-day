@@ -19,6 +19,14 @@ export interface ResolverHealthSnapshot {
   lastSuccessfulResolveAt: number | null;
   /** Counts over the last MAX_RECENT_ERRORS resolve() failures, not all-time. */
   recentErrorCounts: Record<string, number>;
+  /** What the side-car said it can do when it came up; null before then. */
+  caps: string[] | null;
+  /**
+   * The side-car's own account of why it is short of a capability — an
+   * unsupported desktop session, an unreachable accessibility bus. Written
+   * for the person, never carries a URL.
+   */
+  lastErrorDetail: string | null;
 }
 
 const MAX_RECENT_ERRORS = 20;
@@ -35,11 +43,19 @@ export class ResolverHealthTracker {
   private state: ResolverLifecycleState = 'starting';
   private lastReadyAt: number | null = null;
   private lastSuccessfulResolveAt: number | null = null;
+  private caps: string[] | null = null;
+  private lastErrorDetail: string | null = null;
   private readonly recentErrors: string[] = [];
 
-  onReady(nowMs: number): void {
+  onReady(nowMs: number, caps: string[] = []): void {
     this.state = 'ready';
     this.lastReadyAt = nowMs;
+    this.caps = caps;
+    this.lastErrorDetail = null;
+  }
+
+  onSideCarError(detail: string): void {
+    this.lastErrorDetail = detail;
   }
 
   onRestarting(): void {
@@ -71,6 +87,8 @@ export class ResolverHealthTracker {
       lastReadyAt: this.lastReadyAt,
       lastSuccessfulResolveAt: this.lastSuccessfulResolveAt,
       recentErrorCounts,
+      caps: this.caps,
+      lastErrorDetail: this.lastErrorDetail,
     };
   }
 }

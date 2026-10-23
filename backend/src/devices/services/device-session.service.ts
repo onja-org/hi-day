@@ -113,6 +113,23 @@ export class DeviceSessionService {
     await this.devices.update(deviceId, {
       lastSeenAt: new Date(),
       ...(dto.appVersion !== undefined ? { appVersion: dto.appVersion } : {}),
+      // An agent that sends no status — an older one, or a newer one whose
+      // window sources are still starting — leaves the last report standing.
+      ...(dto.appCaptureStatus !== undefined
+        ? {
+            appCaptureStatus: dto.appCaptureStatus,
+            appCaptureDetail: dto.appCaptureDetail ?? null,
+          }
+        : {}),
+      ...(dto.urlCaptureStatus !== undefined
+        ? {
+            urlCaptureStatus: dto.urlCaptureStatus,
+            urlCaptureDetail: dto.urlCaptureDetail ?? null,
+          }
+        : {}),
+      ...(dto.displaySession !== undefined
+        ? { displaySession: dto.displaySession }
+        : {}),
     });
   }
 

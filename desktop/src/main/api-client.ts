@@ -1,9 +1,16 @@
+import type { CaptureHealth } from './app-capture-health';
 import type { DesktopDevicePlatform } from './platform';
 import type { ReminderSettings } from "./tracking-reminder";
 import type { ActivitySample } from './activity-sampler';
 import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
+
+export interface HeartbeatCaptureReport {
+  appCapture: CaptureHealth | null;
+  urlCapture?: CaptureHealth | null;
+  displaySession: string | null;
+}
 
 /** Said without the server address: nobody reading the login screen can act on a URL. */
 /**
@@ -309,23 +316,64 @@ export class ApiClient {
    * Keeps `lastSeenAt` fresh so the Devices page's active/offline status
    * reflects a running app, not just a login. Best-effort: a missed
    * heartbeat shows this device offline until the next one lands.
+   *
+   * Also carries whether app capture works here, so a machine recording no
+   * apps shows as such on the Devices page instead of just looking quiet.
+   * A null `appCapture` (sources still starting) leaves the stored value be.
+   *
+   * A backend older than these fields rejects them outright
+   * (`forbidNonWhitelisted`), which would stop `lastSeenAt` moving and show
+   * every upgraded device offline — so a 400 is retried with the version
+   * alone, and a desktop release need not wait for the backend's.
    */
-  async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
+  async heartbeat(
+    deviceToken: string,
+    appVersion: string,
+    capture: HeartbeatCaptureReport = { appCapture: null, displaySession: null },
+  ): Promise<boolean> {
     if (this.isOffline()) return false;
+    const captureFields = {
+      ...(capture.appCapture
+        ? {
+            appCaptureStatus: capture.appCapture.status,
+            appCaptureDetail: capture.appCapture.detail,
+          }
+        : {}),
+      ...(capture.urlCapture
+        ? {
+            urlCaptureStatus: capture.urlCapture.status,
+            urlCaptureDetail: capture.urlCapture.detail,
+          }
+        : {}),
+      ...(capture.displaySession ? { displaySession: capture.displaySession } : {}),
+    };
     try {
-      const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${deviceToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ appVersion }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      const response = await this.postHeartbeat(deviceToken, {
+        appVersion,
+        ...captureFields,
       });
+      if (response.status === 400 && Object.keys(captureFields).length > 0) {
+        return (await this.postHeartbeat(deviceToken, { appVersion })).ok;
+      }
       return response.ok;
     } catch {
       return false;
     }
+  }
+
+  private postHeartbeat(
+    deviceToken: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    return fetch(`${this.baseUrl}/devices/heartbeat`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${deviceToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   }
 
   /** Whether to offer a Project picker, or just a timer. */

@@ -17,6 +17,8 @@ function toSessionGroup(page: UrlHourBucketPage, hourStart: string): UrlSessionG
   return {
     url: page.url,
     host: page.host,
+    urlUnknown: page.urlUnknown,
+    browser: page.browser,
     title: page.title,
     totalActiveMs: page.activeMs,
     lastVisitedAt: hourStart,

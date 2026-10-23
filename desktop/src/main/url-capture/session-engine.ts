@@ -101,6 +101,9 @@ export class SessionEngine {
       case 'urlResolved':
         this.handleUrlResolved(event, outputs);
         break;
+      case 'urlUnreadable':
+        this.handleUrlUnreadable(event, outputs);
+        break;
       case 'idleChanged':
         this.idle = event.idle;
         if (event.idle) this.closeOpenSession(event, outputs, true);
@@ -227,6 +230,41 @@ export class SessionEngine {
     this.openOrMergeSession(event, outputs);
   }
 
+  /**
+   * Keeps a browser window's time as "URL unknown" rather than dropping it —
+   * a browser started without its accessibility tree, say, never yields a
+   * reading for as long as it runs.
+   *
+   * Only opens one where nothing is open for this window yet: a window whose
+   * URL was already read keeps that session, since one failed read in the
+   * middle of it says nothing about the page having changed.
+   */
+  private handleUrlUnreadable(
+    event: Extract<EngineEvent, { type: 'urlUnreadable' }>,
+    outputs: EngineOutput[],
+  ): void {
+    if (this.locked) return;
+    if (!this.focusedTarget || this.focusedTarget.pid !== event.pid || this.focusedTarget.hwnd !== event.hwnd) {
+      return;
+    }
+    if (this.open && this.open.pid === event.pid && this.open.hwnd === event.hwnd) return;
+    if (!this.gatingConditionsHold()) return;
+
+    this.openOrMergeSession(
+      {
+        ...event,
+        type: 'urlResolved',
+        url: '',
+        host: '',
+        path: null,
+        title: null,
+        private: null,
+        confidence: 'unknown',
+      },
+      outputs,
+    );
+  }
+
   private openOrMergeSession(
     event: Extract<EngineEvent, { type: 'urlResolved' }>,
     outputs: EngineOutput[],
@@ -234,7 +272,13 @@ export class SessionEngine {
     const candidate = this.mergeCandidate;
     this.mergeCandidate = null; // consumed regardless of whether it matches
 
-    if (candidate && candidate.session.url === event.url && event.wallClockMs - candidate.closedAtWallClockMs <= this.mergeWindowMs) {
+    // An unknown URL is the same empty string in every browser, so it only
+    // merges back into the same browser's unknown time.
+    const sameUrl =
+      candidate !== null &&
+      candidate.session.url === event.url &&
+      (event.url !== '' || candidate.session.browser === event.browser);
+    if (candidate && sameUrl && event.wallClockMs - candidate.closedAtWallClockMs <= this.mergeWindowMs) {
       const reopened: OpenSessionState = {
         ...candidate.session,
         pid: event.pid,

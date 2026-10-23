@@ -4,6 +4,9 @@ export type DevicePlatform = "windows" | "macos" | "linux" | "ios" | "android";
 
 export type DeviceStatus = "active" | "offline" | "signed_out";
 
+/** Whether the desktop agent can record apps, or websites, as it last reported. */
+export type CaptureStatus = "ok" | "degraded" | "unavailable";
+
 export type Device = {
   id: string;
   status: DeviceStatus;
@@ -11,6 +14,13 @@ export type Device = {
   osVersion: string | null;
   hostname: string | null;
   appVersion: string | null;
+  /** Null until an agent new enough to report it has checked in. */
+  appCaptureStatus: CaptureStatus | null;
+  appCaptureDetail: string | null;
+  urlCaptureStatus: CaptureStatus | null;
+  urlCaptureDetail: string | null;
+  /** Linux only, e.g. "x11 · ubuntu:GNOME". */
+  displaySession: string | null;
   userId: string;
   userEmail: string;
   userName: string | null;

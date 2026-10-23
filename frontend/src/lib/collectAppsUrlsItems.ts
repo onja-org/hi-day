@@ -1,4 +1,5 @@
 import { projectNameOrUntracked } from "@/lib/projectNameOrUntracked";
+import { unknownWebsiteLabel } from "@/lib/unknownWebsiteLabel";
 import type { AppActivityDay } from "@/types/appActivity";
 import type { AppsUrlsItem, AppsUrlsMemberDay } from "@/types/appsUrlsReport";
 import type { Project } from "@/types/project";
@@ -33,7 +34,7 @@ export function collectAppsUrlsItems(
           dateKey: day.date,
           projectId: page.projectId,
           projectName: projectNameOrUntracked(projects, page.projectId),
-          label: page.host,
+          label: page.urlUnknown ? unknownWebsiteLabel(page.browser) : page.host,
           kind: "site",
           seconds: page.activeMs / 1000,
           memberId: member.key,

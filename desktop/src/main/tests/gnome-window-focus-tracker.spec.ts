@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GnomeWindowFocusTracker } from '../gnome-window-focus-tracker';
+import { EventRegistrationError } from '../resolvers/linux/atspi';
 
 describe('GnomeWindowFocusTracker', () => {
   it('getLastFocus is null before start() and before any activation', () => {
@@ -63,6 +64,47 @@ describe('GnomeWindowFocusTracker', () => {
 
     await expect(tracker.start()).resolves.toBeUndefined();
     expect(tracker.getLastFocus()).toBeNull();
+  });
+
+  it("reports 'starting', then 'up' once the client has started", async () => {
+    const tracker = new GnomeWindowFocusTracker({
+      enableAccessibilityBridge: vi.fn().mockResolvedValue(undefined),
+      createAtspiClient: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
+    });
+
+    expect(tracker.state).toBe('starting');
+    await tracker.start();
+    expect(tracker.state).toBe('up');
+    expect(tracker.failureReason).toBeNull();
+  });
+
+  it("reports 'down' with the cause when the registry drops the listener", async () => {
+    const tracker = new GnomeWindowFocusTracker({
+      enableAccessibilityBridge: vi.fn().mockResolvedValue(undefined),
+      createAtspiClient: () => ({
+        start: vi.fn().mockRejectedValue(new EventRegistrationError('dropped')),
+        stop: vi.fn(),
+      }),
+    });
+
+    await tracker.start();
+
+    expect(tracker.state).toBe('down');
+    expect(tracker.failureReason).toBe('event-registration-failed');
+  });
+
+  it("reports 'down' as bus-unavailable for any other failure", async () => {
+    const tracker = new GnomeWindowFocusTracker({
+      enableAccessibilityBridge: vi.fn().mockResolvedValue(undefined),
+      createAtspiClient: () => ({
+        start: vi.fn().mockRejectedValue(new Error('no bus')),
+        stop: vi.fn(),
+      }),
+    });
+
+    await tracker.start();
+
+    expect(tracker.failureReason).toBe('bus-unavailable');
   });
 
   it('stop() clears the client and the last-known focus', async () => {

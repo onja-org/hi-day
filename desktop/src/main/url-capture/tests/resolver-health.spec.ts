@@ -26,7 +26,23 @@ describe('ResolverHealthTracker', () => {
       lastReadyAt: null,
       lastSuccessfulResolveAt: null,
       recentErrorCounts: {},
+      caps: null,
+      lastErrorDetail: null,
     });
+  });
+
+  it("keeps the side-car's capabilities and its account of what it is short of", () => {
+    const tracker = new ResolverHealthTracker();
+    tracker.onReady(1_000, ['focus']);
+    tracker.onSideCarError('Website tracking on Wayland is supported only on GNOME.');
+
+    expect(tracker.snapshot()).toMatchObject({
+      caps: ['focus'],
+      lastErrorDetail: 'Website tracking on Wayland is supported only on GNOME.',
+    });
+
+    tracker.onReady(2_000, ['focus', 'url']);
+    expect(tracker.snapshot()).toMatchObject({ caps: ['focus', 'url'], lastErrorDetail: null });
   });
 
   it('tracks state transitions and timestamps', () => {

@@ -51,6 +51,15 @@ export type EngineEvent =
       source: Source;
       confidence: Confidence;
     } & EngineClock)
+  | ({
+      /** A focused browser window whose address bar could not be read at all. */
+      type: 'urlUnreadable';
+      pid: number;
+      hwnd: number;
+      browser: string;
+      /** The platform's own reading method — what was tried and came back empty. */
+      source: Source;
+    } & EngineClock)
   | ({ type: 'idleChanged'; idle: boolean } & EngineClock)
   | ({ type: 'screenLockChanged'; locked: boolean } & EngineClock)
   | ({ type: 'powerStateChanged'; awake: boolean } & EngineClock)

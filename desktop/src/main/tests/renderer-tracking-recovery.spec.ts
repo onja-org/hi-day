@@ -24,25 +24,28 @@ const FAST_POLL_MS = 50;
 
 function rendererScript(pollMs: number): string {
   // The renderer is a module in the app but is eval'd as a plain script
-  // here, so its one local import is inlined rather than resolved.
-  const imported = readFileSync(
-    join(RENDERER_DIR, 'reminder-message.ts'),
-    'utf8',
-  ).replace(/^export /gm, '');
+  // here, so its local imports are inlined rather than resolved.
+  const imported = ['reminder-message.ts', 'idle-hold.ts']
+    .map((file) => readFileSync(join(RENDERER_DIR, file), 'utf8').replace(/^export /gm, ''))
+    .join('\n');
   const source =
     imported +
-    readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8').replace(
-      /^import .*from "\.\/reminder-message\.js";$/m,
-      '',
-    );
-  const fastSource = source.replace(
-    'const STATUS_POLL_INTERVAL_MS = 15_000;',
-    `const STATUS_POLL_INTERVAL_MS = ${pollMs};`,
-  );
+    readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8')
+      .replace(/^import .*from "\.\/reminder-message\.js";$/m, '')
+      .replace(/^import \{[^}]*\} from "\.\/idle-hold\.js";$/m, '');
+  const fastSource = source
+    .replace(
+      'const STATUS_POLL_INTERVAL_MS = 15_000;',
+      `const STATUS_POLL_INTERVAL_MS = ${pollMs};`,
+    )
+    .replace('const IDLE_POLL_INTERVAL_MS = 10_000;', `const IDLE_POLL_INTERVAL_MS = ${pollMs};`);
   // Guards the guard: a renamed constant would silently keep the 15s cadence.
   expect(fastSource).not.toBe(source);
+  // A window onto one renderer variable, appended inside its own scope: see
+  // `idleRestartInFlight` below.
+  const probedSource = `${fastSource}\n(window as any).__idleRestartInFlight = () => idleRestartInFlight;\n`;
   return ts
-    .transpileModule(fastSource, {
+    .transpileModule(probedSource, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     })
     .outputText.replace(/^export \{\};?$/m, '');
@@ -77,6 +80,16 @@ interface Scenario {
   pollMs?: number;
   /** How far the server's count of each entry falls short of this device's clock. */
   serverShortfallSeconds?: number;
+  /** The organisation's idle handling; one that never fires unless a test says otherwise. */
+  idlePolicy?: { handling: 'off' | 'flag' | 'auto_subtract'; thresholdMinutes: number };
+  /** An idle hold main kept on disk from before launch — a sleep, or a relaunch. */
+  storedHold?: {
+    projectId: string | null;
+    taskId: string | null;
+    idleStartedAt: string;
+    returnedAt: string | null;
+    reason: 'timeout' | 'sleep';
+  };
   /** Whether the organisation tracks time against Projects; on unless a test says otherwise. */
   projectsEnabled?: boolean;
   /** A daily/weekly work time limit the server reports as already reached. */
@@ -113,9 +126,20 @@ function launch(scenario: Scenario) {
     idlePolicy: 0,
     /** The project each start named, in order. */
     startedWith: [] as (string | null)[],
+    pause: 0,
+    /** The project each switch named, in order. */
+    switchedTo: [] as (string | null)[],
     /** Bodies passed to main's raise-the-window alert. */
     trackingAlerts: [] as string[],
+    /** The backdated start each start asked for, in order — undefined for "now". */
+    startedAt: [] as (string | undefined)[],
+    /** The backdated end each stop asked for, in order. */
+    stoppedAt: [] as (string | undefined)[],
   };
+  /** Seconds since the last keyboard or mouse input, as main would report it. */
+  const idle = { seconds: 0 };
+  let heldIdle = scenario.storedHold ?? null;
+  const wakeListeners: (() => void)[] = [];
   const entry = {
     id: 'e1',
     projectId: PROJECT.id as string | null,
@@ -130,6 +154,8 @@ function launch(scenario: Scenario) {
   const reopenListeners: (() => void)[] = [];
   const reminderListeners: ((message: string) => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
+  const trayTrackProjectListeners: ((projectId: string) => void)[] = [];
+  const traySignOutListeners: (() => void)[] = [];
   const completed: {
     id: string;
     projectId: string | null;
@@ -148,6 +174,8 @@ function launch(scenario: Scenario) {
    * `limitReached` mid-test to have the next poll report a work limit. */
   const server = {
     revoked: false,
+    /** Set mid-test to have every start refused, as a work limit would. */
+    refuseStarts: false,
     limitReached: scenario.limitReached ?? null as
       | { kind: 'daily' | 'weekly'; limitHours: number }
       | null,
@@ -177,9 +205,17 @@ function launch(scenario: Scenario) {
         return ok(scenario.projects ?? [PROJECT]);
       },
       listTasks: () => ok({ tasks: [] }),
-      start: (projectId: string | null) => {
+      start: (projectId: string | null, _taskId?: string | null, startedAt?: string) => {
+        if (server.refuseStarts) {
+          return Promise.resolve({
+            ok: false,
+            message: 'You have reached your daily limit.',
+            status: 409,
+          });
+        }
         calls.start += 1;
         calls.startedWith.push(projectId);
+        calls.startedAt.push(startedAt);
         const started = {
           ...entry,
           projectId,
@@ -189,8 +225,16 @@ function launch(scenario: Scenario) {
         if (!server.revoked) running = started;
         return ok(started);
       },
-      switchTo: () => ok(entry),
-      stop: () => ok(entry),
+      switchTo: (projectId: string | null) => {
+        calls.switchedTo.push(projectId);
+        return ok(entry);
+      },
+      stop: (endedAt?: string) => {
+        calls.stoppedAt.push(endedAt);
+        const ended = { ...(running ?? entry), endedAt: endedAt ?? new Date(now()).toISOString() };
+        if (!server.revoked) running = null;
+        return ok(ended);
+      },
       status: () => {
         calls.status += 1;
         return ok({
@@ -202,6 +246,7 @@ function launch(scenario: Scenario) {
       },
       // Pausing ends the entry, as the backend does now.
       pause: () => {
+        calls.pause += 1;
         const ended = { ...(running ?? entry), endedAt: new Date(now()).toISOString() };
         if (!server.revoked && running) {
           completed.push({
@@ -255,7 +300,7 @@ function launch(scenario: Scenario) {
         if (!server.revoked && calls.idlePolicy <= (scenario.failingIdlePolicyLoads ?? 0)) {
           return Promise.resolve(UNREACHABLE);
         }
-        return ok({ handling: 'ignore', thresholdMinutes: 5 });
+        return ok(scenario.idlePolicy ?? { handling: 'ignore', thresholdMinutes: 5 });
       },
       permissionStatus: () =>
         ok({
@@ -270,7 +315,25 @@ function launch(scenario: Scenario) {
       requestScreenRecordingAccess: () => Promise.resolve(),
       openPrivacySettings: () => Promise.resolve(),
     },
-    idle: { seconds: () => Promise.resolve(0) },
+    idle: {
+      seconds: () => Promise.resolve(idle.seconds),
+      hold: () => Promise.resolve(heldIdle),
+      setHold: (hold: NonNullable<typeof heldIdle>) => {
+        heldIdle = hold;
+        return Promise.resolve();
+      },
+      markReturned: (at: string) => {
+        if (heldIdle && heldIdle.returnedAt === null) heldIdle = { ...heldIdle, returnedAt: at };
+        return Promise.resolve(heldIdle);
+      },
+      clearHold: () => {
+        heldIdle = null;
+        return Promise.resolve();
+      },
+      onWake: (listener: () => void) => {
+        wakeListeners.push(listener);
+      },
+    },
     urlCapture: { timerStateChanged: () => {} },
     windowControls: {
       minimise: async () => {},
@@ -285,6 +348,12 @@ function launch(scenario: Scenario) {
       onSyncDraining: () => {},
       closeSyncDraining: () => {},
       onTrayToggleTimer: () => {},
+      onTrayTrackProject: (listener: (projectId: string) => void) => {
+        trayTrackProjectListeners.push(listener);
+      },
+      onTraySignOut: (listener: () => void) => {
+        traySignOutListeners.push(listener);
+      },
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },
@@ -320,12 +389,50 @@ function launch(scenario: Scenario) {
     calls,
     server,
     timerSeconds,
+    /** Main's idle reading from now on. */
+    setIdleSeconds: (seconds: number) => {
+      idle.seconds = seconds;
+    },
+    /** What main has on disk. */
+    heldIdle: () => heldIdle,
+    /** Main putting a hold on disk, as it does when the machine goes to sleep. */
+    holdForSleep: (hold: NonNullable<typeof heldIdle>) => {
+      heldIdle = hold;
+      running = null;
+    },
+    /** The machine waking: main records the return and tells the renderer. */
+    wake: () => {
+      if (heldIdle && heldIdle.returnedAt === null) {
+        heldIdle = { ...heldIdle, returnedAt: new Date(now()).toISOString() };
+      }
+      wakeListeners.forEach((listener) => listener());
+    },
+    idlePromptVisible: () => !document.getElementById('idle-prompt')!.hidden,
+    /** The renderer has applied a running timer. */
+    rendererShowsRunning: () => document.getElementById('timer-card')!.classList.contains('is-running'),
+    /**
+     * Whether a Keep/Discard/wake restart is still finishing — the
+     * renderer's own guard, through the probe `rendererScript` appends. A
+     * status poll can show the timer running and clear the hold first, so
+     * nothing on the page says the restart's own tail (totals, then
+     * `setRunning`) is done.
+     */
+    idleRestartInFlight: () =>
+      (window as unknown as { __idleRestartInFlight: () => boolean }).__idleRestartInFlight(),
+    idleMessage: () => document.getElementById('idle-banner-message')!.textContent,
+    clickKeepIdle: () => document.getElementById('idle-keep-button')!.click(),
+    clickDiscardIdle: () => document.getElementById('idle-discard-button')!.click(),
     advanceClock: (ms: number) => {
       clock.offsetMs += ms;
     },
     /** Main asking the renderer how a close should go. */
     requestClose: () => closeRequestListeners.forEach((listener) => listener()),
     closePromptVisible: () => !document.getElementById('close-prompt')!.hidden,
+    /** A Project picked under the tray's "Recent projects". */
+    trayTrackProject: (projectId: string) =>
+      trayTrackProjectListeners.forEach((listener) => listener(projectId)),
+    /** The tray's Sign out, after its confirmation. */
+    traySignOut: () => traySignOutListeners.forEach((listener) => listener()),
     /** Main's signal that the window came back from the tray. */
     reopen: () => reopenListeners.forEach((listener) => listener()),
     remind: (message: string) =>
@@ -396,6 +503,22 @@ async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<voi
 /** Setup has finished: projects listed and the first status poll answered. */
 async function waitForSetup(app: ReturnType<typeof launch>): Promise<void> {
   await waitFor(() => app.projectCount() !== '0' && app.calls.status > 0 && app.playReady());
+}
+
+/**
+ * An idle restart has finished in the renderer, not just reached the
+ * server. Closing the window on the server's word alone left the restart's
+ * tail — the totals refresh, then `setRunning` — running against a
+ * torn-down document, which CI reported as unhandled rejections.
+ */
+async function waitForIdleRestart(app: ReturnType<typeof launch>): Promise<void> {
+  await waitFor(
+    () =>
+      app.isRunning() &&
+      app.heldIdle() === null &&
+      app.rendererShowsRunning() &&
+      !app.idleRestartInFlight(),
+  );
 }
 
 /** The timer never starts on its own — the person presses play. */
@@ -718,6 +841,68 @@ describe('renderer close prompt', () => {
   });
 });
 
+describe('renderer takes the tray menu', () => {
+  const OTHER = { ...PROJECT, id: 'p2', name: 'Project Two' };
+
+  // Clicking the running Project's row pauses it; a menu item that reads
+  // as "track this" must not.
+  it('keeps tracking when the running Project is picked from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await startTimer(app);
+
+    app.trayTrackProject(PROJECT.id);
+    await settle(FAST_POLL_MS * 2);
+
+    expect(app.calls.pause).toBe(0);
+    expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+
+  it('switches to another Project picked from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await startTimer(app);
+
+    app.trayTrackProject(OTHER.id);
+    await waitFor(() => app.calls.switchedTo.length > 0);
+
+    expect(app.calls.switchedTo).toEqual([OTHER.id]);
+    app.close();
+  });
+
+  it('starts on a Project picked from the tray while stopped', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await waitForSetup(app);
+
+    app.trayTrackProject(OTHER.id);
+    await waitFor(() => app.isRunning());
+
+    expect(app.calls.startedWith).toEqual([OTHER.id]);
+    app.close();
+  });
+
+  it('ignores a Project the list no longer has', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    app.trayTrackProject('archived');
+    await settle(FAST_POLL_MS * 2);
+
+    expect(app.calls.start).toBe(0);
+    app.close();
+  });
+
+  it('lands on the login view after signing out from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    app.traySignOut();
+    await waitFor(() => app.visibleView() === 'login-view');
+
+    expect(app.visibleView()).toBe('login-view');
+    app.close();
+  });
+});
+
 describe('renderer with Projects turned off', () => {
   /** There is no list to wait on, so setup is the first status poll answering. */
   async function waitForSetupWithoutProjects(app: ReturnType<typeof launch>): Promise<void> {
@@ -767,3 +952,194 @@ describe('renderer with Projects turned off', () => {
     app.close();
   });
 });
+
+const MINUTE_MS = 60_000;
+/** Whole seconds — the renderer works in them, so a test should too. */
+const secondsOf = (iso: string | undefined) => Math.round(Date.parse(iso ?? '') / 1000);
+
+/**
+ * The ticket: tracking stopped before the idle timeout was reached. Before
+ * it, nothing may happen at all; at it, tracking stops where input stopped
+ * and waits for Keep or Discard.
+ */
+describe('renderer idle timeout', () => {
+  const flag20 = { handling: 'flag' as const, thresholdMinutes: 20 };
+
+  it('keeps tracking when the person comes back before the timeout', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+
+    app.setIdleSeconds(19 * 60);
+    await settle(FAST_POLL_MS * 4);
+    app.setIdleSeconds(2);
+    await settle(FAST_POLL_MS * 4);
+
+    expect(app.calls.stoppedAt).toEqual([]);
+    expect(app.idlePromptVisible()).toBe(false);
+    expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+
+  it.each([5, 20])(
+    'with a %i min timeout, stops where input stopped and asks only once it is reached',
+    async (thresholdMinutes) => {
+      const app = launch({ failingProjectLoads: 0, idlePolicy: { handling: 'flag', thresholdMinutes } });
+      await startTimer(app);
+
+      app.setIdleSeconds(thresholdMinutes * 60 - 30);
+      await settle(FAST_POLL_MS * 4);
+      expect(app.idlePromptVisible()).toBe(false);
+
+      app.setIdleSeconds(thresholdMinutes * 60);
+      await waitFor(() => app.idlePromptVisible());
+
+      expect(app.isRunning()).toBe(false);
+      expect(app.calls.stoppedAt).toHaveLength(1);
+      const expectedStop = Math.round(Date.now() / 1000) - thresholdMinutes * 60;
+      expect(Math.abs(secondsOf(app.calls.stoppedAt[0]) - expectedStop)).toBeLessThanOrEqual(2);
+      expect(app.heldIdle()?.reason).toBe('timeout');
+      app.close();
+    },
+  );
+
+  it('Keep starts again from where input stopped, so the idle time counts once', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.clickKeepIdle();
+    await waitForIdleRestart(app);
+
+    expect(app.calls.startedAt.at(-1)).toBe(app.calls.stoppedAt[0]);
+    expect(app.idlePromptVisible()).toBe(false);
+    expect(app.heldIdle()).toBeNull();
+    app.close();
+  });
+
+  it('Discard starts again from when the person came back, keeping the work done before answering', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    // Back at the keyboard 10 seconds ago, then a minute before answering.
+    app.setIdleSeconds(10);
+    await waitFor(() => app.heldIdle()?.returnedAt !== null);
+    const returnedAt = app.heldIdle()!.returnedAt!;
+    app.advanceClock(MINUTE_MS);
+    app.clickDiscardIdle();
+    await waitForIdleRestart(app);
+
+    expect(app.calls.startedAt.at(-1)).toBe(returnedAt);
+    expect(secondsOf(returnedAt) - secondsOf(app.calls.stoppedAt[0])).toBeGreaterThanOrEqual(25 * 60 - 12);
+    app.close();
+  });
+
+  it('keeps the question open when the restart is refused, so the idle time is not lost', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.server.refuseStarts = true;
+    app.clickKeepIdle();
+    await waitFor(() => app.trackingError() !== null);
+
+    expect(app.idlePromptVisible()).toBe(true);
+    expect(app.heldIdle()).not.toBeNull();
+
+    app.server.refuseStarts = false;
+    app.clickDiscardIdle();
+    await waitForIdleRestart(app);
+    expect(app.heldIdle()).toBeNull();
+    expect(app.idlePromptVisible()).toBe(false);
+    app.close();
+  });
+
+  it('a held stretch survives a relaunch: the prompt comes back', async () => {
+    const idleStartedAt = new Date(Date.now() - 30 * MINUTE_MS).toISOString();
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      storedHold: { projectId: PROJECT.id, taskId: null, idleStartedAt, returnedAt: null, reason: 'timeout' },
+    });
+    await waitFor(() => app.idlePromptVisible());
+
+    expect(app.calls.start).toBe(0);
+    expect(app.heldIdle()?.returnedAt).not.toBeNull();
+    app.close();
+  });
+});
+
+/** The bug as reported: GNOME suspends a laptop after 15 min on battery, inside a 20 min timeout. */
+describe('renderer after the machine sleeps', () => {
+  const flag20 = { handling: 'flag' as const, thresholdMinutes: 20 };
+  const sleptAt = (minutesAgo: number) => new Date(Date.now() - minutesAgo * MINUTE_MS).toISOString();
+
+  it('picks tracking up from where input stopped when woken inside the timeout', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    const idleStartedAt = sleptAt(17);
+    app.holdForSleep({ projectId: PROJECT.id, taskId: null, idleStartedAt, returnedAt: null, reason: 'sleep' });
+
+    app.wake();
+    await waitForIdleRestart(app);
+
+    expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
+    expect(app.idlePromptVisible()).toBe(false);
+    expect(app.heldIdle()).toBeNull();
+    app.close();
+  });
+
+  it('asks when woken past the timeout, saying the computer was asleep', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    const idleStartedAt = sleptAt(90);
+    app.holdForSleep({ projectId: PROJECT.id, taskId: null, idleStartedAt, returnedAt: null, reason: 'sleep' });
+
+    app.wake();
+    await waitFor(() => app.idlePromptVisible());
+
+    expect(app.isRunning()).toBe(false);
+    expect(app.idleMessage()).toContain('asleep');
+    app.clickKeepIdle();
+    await waitForIdleRestart(app);
+    expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
+    app.close();
+  });
+
+  it('settles a sleep hold found at launch the same way', async () => {
+    const idleStartedAt = sleptAt(3);
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      storedHold: {
+        projectId: PROJECT.id,
+        taskId: null,
+        idleStartedAt,
+        returnedAt: new Date().toISOString(),
+        reason: 'sleep',
+      },
+    });
+    await waitForIdleRestart(app);
+
+    expect(app.calls.startedAt).toEqual([idleStartedAt]);
+    app.close();
+  });
+
+  it('leaves a timer started elsewhere alone and drops the stale hold', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      runningElsewhere: true,
+      storedHold: { projectId: PROJECT.id, taskId: null, idleStartedAt: sleptAt(3), returnedAt: null, reason: 'sleep' },
+    });
+    await waitForSetup(app);
+    await waitFor(() => app.heldIdle() === null);
+
+    expect(app.calls.start).toBe(0);
+    app.close();
+  });
+});
+

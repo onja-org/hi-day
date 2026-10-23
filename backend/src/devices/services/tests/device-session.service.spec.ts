@@ -2,9 +2,11 @@ import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { TokenService } from '../../../auth/services/token.service';
 import { hashToken } from '../../../common/hash-token.util';
+import { AppCaptureStatus } from '../../../database/entities/app-capture-status.enum';
 import { Device } from '../../../database/entities/device.entity';
 import { DevicePlatform } from '../../../database/entities/device-platform.enum';
 import { DeviceSession } from '../../../database/entities/device-session.entity';
+import { UrlCaptureStatus } from '../../../database/entities/url-capture-status.enum';
 import { DeviceSessionService } from '../device-session.service';
 
 describe('DeviceSessionService', () => {
@@ -189,6 +191,83 @@ describe('DeviceSessionService', () => {
           appVersion: '2.0.0',
         }),
       );
+    });
+    it('stores app-capture health and the display session when reported', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const devicesRepo = makeDevicesRepo({ update });
+      const service = makeService({ devicesRepo });
+
+      await service.heartbeat('device-1', {
+        appVersion: '2.0.0',
+        appCaptureStatus: AppCaptureStatus.UNAVAILABLE,
+        appCaptureDetail: 'Could not connect to the X display.',
+        displaySession: 'x11 · ubuntu:GNOME',
+      });
+
+      expect(update).toHaveBeenCalledWith(
+        'device-1',
+        expect.objectContaining({
+          appCaptureStatus: AppCaptureStatus.UNAVAILABLE,
+          appCaptureDetail: 'Could not connect to the X display.',
+          displaySession: 'x11 · ubuntu:GNOME',
+        }),
+      );
+    });
+
+    it('clears the detail when the status comes back ok', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const devicesRepo = makeDevicesRepo({ update });
+      const service = makeService({ devicesRepo });
+
+      await service.heartbeat('device-1', {
+        appCaptureStatus: AppCaptureStatus.OK,
+      });
+
+      expect(update).toHaveBeenCalledWith(
+        'device-1',
+        expect.objectContaining({
+          appCaptureStatus: AppCaptureStatus.OK,
+          appCaptureDetail: null,
+        }),
+      );
+    });
+
+    it('stores URL-capture health alongside app-capture health', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const devicesRepo = makeDevicesRepo({ update });
+      const service = makeService({ devicesRepo });
+
+      await service.heartbeat('device-1', {
+        urlCaptureStatus: UrlCaptureStatus.DEGRADED,
+        urlCaptureDetail: 'Chrome is running without website tracking.',
+      });
+
+      const [, patch] = update.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(patch).toMatchObject({
+        urlCaptureStatus: UrlCaptureStatus.DEGRADED,
+        urlCaptureDetail: 'Chrome is running without website tracking.',
+      });
+      expect(patch).not.toHaveProperty('appCaptureStatus');
+    });
+
+    it('leaves the last report standing when an agent sends none', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const devicesRepo = makeDevicesRepo({ update });
+      const service = makeService({ devicesRepo });
+
+      await service.heartbeat('device-1', { appVersion: '2.0.0' });
+
+      const [, patch] = update.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(patch).not.toHaveProperty('appCaptureStatus');
+      expect(patch).not.toHaveProperty('appCaptureDetail');
+      expect(patch).not.toHaveProperty('displaySession');
+      expect(patch).not.toHaveProperty('urlCaptureStatus');
     });
   });
 

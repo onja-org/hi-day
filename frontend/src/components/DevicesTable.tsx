@@ -103,6 +103,7 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
               <th className="px-3 py-2 font-medium">User</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Platform</th>
+              <th className="px-3 py-2 font-medium">Tracking</th>
               <th className="px-3 py-2 font-medium">App version</th>
               <th className="px-3 py-2 font-medium">Last seen</th>
               <th className="px-3 py-2 font-medium" />
@@ -119,7 +120,7 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
             {devices.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-3 py-4 text-center text-slate-900"
                 >
                   {devicesQuery.data.length === 0

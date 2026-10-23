@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -18,6 +19,7 @@ import type {
   AllowedApps,
   AppUrlTracking,
   CurrentTimer,
+  HeartbeatCaptureReport,
   PairingPollResult,
   TimeEntry,
   TrackingResult,
@@ -27,7 +29,7 @@ import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
-import { AuthStore } from "./auth-store";
+import { AuthStore, recentProjectIds } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
 import { OfflineCache } from "./offline-cache";
 import { keepActionFor, recoveryActionFor } from "./recovered-timer";
@@ -50,7 +52,12 @@ import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
 import { hasTrackedFullWorkDay, shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
+import { assessAppCapture, describeDisplaySession } from "./app-capture-health";
+import { assessUrlCapture } from "./url-capture-health";
+import { displayName } from "./resolvers/linux/blind-browsers";
+import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
+import { IdleHoldStore, whenInputStopped, type IdleHold } from "./idle-hold-store";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
 import { OfflineQueue } from "./offline-queue";
 import { OfflineQueueStore } from "./offline-queue-store";
@@ -107,9 +114,16 @@ import { intervalFromEnv, offlineSimulated } from "./tuning";
 import { resolveWebAppUrl } from "./web-app-url";
 import { shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
+import {
+  identifyBrowser,
+  loadBrowserRegistry,
+  type RegistryPlatform,
+} from "./url-capture/browser-registry";
+import type { Source } from "./url-capture/protocol";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
-import type { UploadFn } from "./url-capture/sync-contract";
+import { syncWithOlderBackendFallback } from "./url-capture/older-backend-fallback";
+import type { SyncResponseBody, UploadFn } from "./url-capture/sync-contract";
 import { UrlCaptureService } from "./url-capture/url-capture-service";
 
 /**
@@ -161,10 +175,15 @@ import { RELEASES_PAGE_URL, checkForUpdate } from "./update-checker";
 import { syncAutoLaunch } from "./auto-launch";
 import type { AutoUpdateState } from "./auto-updater";
 import {
+  checkForUpdatesNow,
   getAutoUpdateState,
   restartToApplyUpdate,
   startAutoUpdater,
+  supportsSilentAutoUpdate,
 } from "./auto-updater";
+import { manualUpdateOutcome, updateDialogFor } from "./update-check-dialog";
+import { recentProjectsFor, trayMenuTemplate } from "./tray-menu";
+import type { TrayMenuState, TraySession } from "./tray-menu";
 import {
   loadRelaunchHistory,
   recordRelaunch,
@@ -263,6 +282,21 @@ const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
 let trayTimerRunning = false;
 /** Asks the renderer to do what pressing its own play/stop button does. */
 let toggleTimerFromTray: (() => void) | null = null;
+/** Asks the renderer to do what clicking a Project row does. */
+let trackProjectFromTray: ((projectId: string) => void) | null = null;
+/** Asks the renderer to do what its own Log out button does. */
+let signOutFromTray: (() => void) | null = null;
+/**
+ * The session and cached Projects the menu shows, both of which live
+ * inside `registerIpcHandlers`. Null until it has run: the menu then
+ * reads as signed out.
+ */
+let trayAccount:
+  | (() => {
+      session: TraySession | null;
+      recentProjects: { id: string; name: string }[];
+    })
+  | null = null;
 
 let isQuitting = false;
 /**
@@ -292,6 +326,14 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
  * (which are wired outside that function) can pause the running timer.
  */
 let pauseRunningTimer: (() => Promise<void>) | null = null;
+/** Set once IPC handlers are registered, like `pauseRunningTimer`: what suspend and wake do with a running timer. */
+let holdRunningTimerForSleep: (() => void) | null = null;
+let markIdleReturnedOnWake: (() => void) | null = null;
+/** The latest idle reading, for working out when input stopped as the machine sleeps. */
+const IDLE_SAMPLE_INTERVAL_MS = 10_000;
+let lastIdleReading: { seconds: number; atMs: number } | null = null;
+/** Set alongside the window trackers, which live inside registerIpcHandlers. */
+let readCaptureReport: (() => HeartbeatCaptureReport) | null = null;
 /** Guards the async pause during before-quit, which must not re-enter. */
 let quitPauseComplete = false;
 
@@ -351,7 +393,11 @@ const TRACKING_ALERT_DWELL_MS = 5_000;
 function startHeartbeat(apiClient: ApiClient, deviceToken: string): void {
   stopHeartbeat();
   const beat = (): void => {
-    void apiClient.heartbeat(deviceToken, app.getVersion());
+    void apiClient.heartbeat(
+      deviceToken,
+      app.getVersion(),
+      readCaptureReport?.() ?? undefined,
+    );
   };
   beat(); // immediately — a fresh login shouldn't wait a full interval to show active
   heartbeatTimer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
@@ -384,13 +430,24 @@ function buildUrlSessionUploadFn(
   keepTitles: () => boolean,
 ): UploadFn {
   return async (batch) => {
-    const result = await apiClient.syncUrlSessions(
-      deviceToken,
-      keepTitles() ? batch : batch.map((session) => ({ ...session, title: null })),
-    );
-    if (result.ok) {
-      return result.data;
+    // The last failed response, for the handling below once the fallback
+    // (an older backend rejecting unknown-URL sessions) has had its go.
+    let failure: Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null = null;
+    const attempt = await syncWithOlderBackendFallback(batch, async (sessions) => {
+      const response = await apiClient.syncUrlSessions(
+        deviceToken,
+        keepTitles() ? sessions : sessions.map((session) => ({ ...session, title: null })),
+      );
+      if (response.ok) return { ok: true, acked: response.data.acked };
+      failure = response;
+      return { ok: false, status: response.status };
+    });
+    if (attempt.ok) {
+      return { acked: attempt.acked };
     }
+    // Cast because TypeScript can't see the assignment inside the callback.
+    const result = failure as Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null;
+    if (!result) return { acked: [] };
 
     if (result.unauthorized) {
       authStore.clear();
@@ -465,6 +522,7 @@ function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService 
       reportEvent: (event) => service.reportEvent(event),
       logger: (line) => console.log(line),
       debugSink: buildDebugSink(),
+      ...unreadableBrowserOptions(),
     });
     resolverOrchestrator.start();
   } else {
@@ -472,6 +530,45 @@ function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService 
   }
 
   return urlCaptureService;
+}
+
+/** Browsers running without their accessibility tree right now, by display name. */
+function findBlindBrowserNames(): string[] {
+  try {
+    const report = new BrowserRestartService().findBlind();
+    const names = [
+      ...report.restartable.map((browser) => browser.command),
+      ...report.manual.map((entry) => entry.browser.command),
+    ].map(displayName);
+    return [...new Set(names)];
+  } catch {
+    return []; // A /proc read that fails says nothing either way.
+  }
+}
+
+/**
+ * Lets a browser window whose URL cannot be read count as "URL unknown"
+ * instead of vanishing — a Linux browser opened without its accessibility
+ * tree, typically from a web-app shortcut, is the case that prompted it.
+ */
+function unreadableBrowserOptions(): {
+  identifyBrowser?: (app: string) => string | null;
+  platformSource?: Source;
+} {
+  const platform = process.platform;
+  if (platform !== "linux" && platform !== "darwin" && platform !== "win32") {
+    return {};
+  }
+  const registry = loadBrowserRegistry();
+  const sources: Record<RegistryPlatform, Source> = {
+    linux: "atspi",
+    darwin: "apple-events",
+    win32: "uia",
+  };
+  return {
+    identifyBrowser: (appName) => identifyBrowser(registry, platform, appName),
+    platformSource: sources[platform],
+  };
 }
 
 // Opt-in only (URL_TRACKING_CONTEXT.md's pinned rule: "never log a full
@@ -737,66 +834,107 @@ function applyRecordingIndicator(isRecording: boolean): void {
   }
 }
 
+/**
+ * What the menu was last built from. Some callers run on every status
+ * poll, and rebuilding an unchanged menu can snap an open one shut under
+ * AppIndicator.
+ */
+let lastTrayMenuState: string | null = null;
+
 function refreshTrayMenu(): void {
   if (!tray) return;
   const userDataDir = app.getPath("userData");
-  const remembered = rememberedCloseAction(userDataDir) !== null;
   const pinned = compactAlwaysOnTop(userDataDir);
-  const webAppUrl = resolveWebAppUrl(
-    app.isPackaged,
-    cachedWebAppUrl(userDataDir),
-  );
+  const account = trayAccount?.() ?? { session: null, recentProjects: [] };
+  const state: TrayMenuState = {
+    session: account.session,
+    timerRunning: trayTimerRunning,
+    recentProjects: account.recentProjects,
+    webAppUrl: resolveWebAppUrl(app.isPackaged, cachedWebAppUrl(userDataDir)),
+    compactAlwaysOnTop: pinned,
+    closeChoiceRemembered: rememberedCloseAction(userDataDir) !== null,
+  };
+  const key = JSON.stringify(state);
+  if (key === lastTrayMenuState) return;
+  lastTrayMenuState = key;
   tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Open Hi Day", click: reopenMainWindow },
-      // Absent only when a packaged build has never paired, and so has
-      // nothing but a guess to offer — see `resolveWebAppUrl`.
-      ...(webAppUrl
-        ? [
-            {
-              label: "Open dashboard",
-              click: () => void shell.openExternal(webAppUrl),
-            },
-          ]
-        : []),
-      // One item reading whichever way the timer is not; a greyed
-      // "Stop timer" says nothing the label cannot. Routed through the
-      // renderer so this is not a second way to start a timer.
-      {
-        label: trayTimerRunning ? "Stop timer" : "Start timer",
-        click: () => toggleTimerFromTray?.(),
-      },
-      { type: "separator" },
-      // A checkbox, so undoing it is the same item with its tick gone.
-      // Named for what it governs: the full window never floats, and a
-      // bare "Always on top" ticked while it is open would look broken.
-      {
-        label: "Always on top (compact views)",
-        type: "checkbox",
-        checked: pinned,
-        click: () => {
+    Menu.buildFromTemplate(
+      trayMenuTemplate(state, {
+        openApp: reopenMainWindow,
+        toggleTimer: () => toggleTimerFromTray?.(),
+        trackProject: (projectId) => trackProjectFromTray?.(projectId),
+        signOut: () => void confirmSignOutFromTray(),
+        openWeb: (url) => void shell.openExternal(url),
+        toggleCompactAlwaysOnTop: () => {
           setCompactAlwaysOnTop(userDataDir, !pinned);
           applyPinning();
           refreshTrayMenu();
         },
-      },
-      // The only way back from a remembered close choice short of wiping
-      // the app's data — without it, a remembered "Quit" is permanent.
-      ...(remembered
-        ? [
-            {
-              label: "Ask Before Closing Again",
-              click: () => {
-                rememberCloseAction(app.getPath("userData"), null);
-                refreshTrayMenu();
-              },
-            },
-          ]
-        : []),
-      { type: "separator" },
-      { label: "Quit Hi Day", click: () => app.quit() },
-    ]),
+        forgetCloseChoice: () => {
+          rememberCloseAction(userDataDir, null);
+          refreshTrayMenu();
+        },
+        checkForUpdates: () => void checkForUpdatesFromTray(),
+        showAbout: () => void showAboutFromTray(),
+        quit: () => app.quit(),
+      }),
+    ),
   );
+}
+
+/**
+ * Signing out costs a trip to the browser to sign back in, and pauses a
+ * running timer — too much for one stray click on a menu item.
+ */
+async function confirmSignOutFromTray(): Promise<void> {
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    message: "Sign out of Hi Day?",
+    detail: trayTimerRunning
+      ? "Your timer will be paused, and signing back in means approving this device in your browser again."
+      : "Signing back in means approving this device in your browser again.",
+    buttons: ["Sign out", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (response === 0) signOutFromTray?.();
+}
+
+/** Always answers, even with "nothing found": a click that shows nothing reads as broken. */
+async function checkForUpdatesFromTray(): Promise<void> {
+  const outcome = await manualUpdateOutcome(
+    getAutoUpdateState(),
+    app.isPackaged && supportsSilentAutoUpdate(process.platform),
+    checkForUpdatesNow,
+    () => checkForUpdate(app.getVersion()),
+  );
+  const shown = updateDialogFor(outcome, app.getVersion());
+  const { response } = await dialog.showMessageBox({
+    type: "info",
+    message: shown.message,
+    detail: shown.detail,
+    buttons: shown.buttons,
+    defaultId: 0,
+    cancelId: shown.buttons.length - 1,
+  });
+  if (response !== 0) return;
+  if (shown.action === "restart") {
+    // As the window's own restart button does — see `update:restart`.
+    isQuitting = true;
+    restartToApplyUpdate();
+  } else if (shown.action === "openReleases") {
+    await shell.openExternal(RELEASES_PAGE_URL);
+  }
+}
+
+/** A message box rather than `app.showAboutPanel`, which Linux barely has. */
+async function showAboutFromTray(): Promise<void> {
+  await dialog.showMessageBox({
+    type: "info",
+    message: "Hi Day",
+    detail: `Version ${app.getVersion()}`,
+    buttons: ["OK"],
+  });
 }
 
 async function registerIpcHandlers(): Promise<void> {
@@ -831,6 +969,8 @@ async function registerIpcHandlers(): Promise<void> {
    * `cachedDeviceRead` below writes through to it on the way past.
    */
   const offlineCache = new OfflineCache(app.getPath("userData"));
+  /** An idle stretch the timer is stopped for, until it is kept or discarded. */
+  const idleHoldStore = new IdleHoldStore(app.getPath("userData"));
   // Backed by the cache rather than memory, so a timer started offline can
   // still be stopped after a restart — before this, it could not.
   const pendingOps = new PendingTimerOps(app.getPath("userData"), {
@@ -878,6 +1018,28 @@ async function registerIpcHandlers(): Promise<void> {
       ? new X11WindowTracker({ logger: (line) => console.log(line) })
       : null;
   void x11WindowTracker?.start();
+  readCaptureReport = () => {
+    const platform = toDevicePlatform(process.platform);
+    return {
+      appCapture: assessAppCapture({
+        platform,
+        isWayland: isWaylandSession(),
+        x11: x11WindowTracker?.state ?? 'down',
+        atspi: gnomeWindowFocusTracker?.state ?? 'down',
+        atspiFailure: gnomeWindowFocusTracker?.failureReason ?? null,
+        // Never loaded on Linux: inside Electron on Wayland it segfaults.
+        nativeAddonLoaded: platform !== 'linux' && loadActiveWindowModule() !== null,
+      }),
+      urlCapture: assessUrlCapture({
+        resolver: resolverOrchestrator?.healthSnapshot() ?? null,
+        // Scanned only while URL capture runs: off, there is nothing to report.
+        blindBrowsers:
+          platform === "linux" && resolverOrchestrator ? findBlindBrowserNames() : [],
+      }),
+      displaySession: describeDisplaySession(platform, readSessionEnvironment()),
+    };
+  };
+
   // Linux-only, best-effort — see gnome-idle-monitor.ts.
   const gnomeIdleMonitor =
     process.platform === "linux"
@@ -920,6 +1082,7 @@ async function registerIpcHandlers(): Promise<void> {
     readIdleSeconds,
   });
   let activityTicker: ReturnType<typeof setInterval> | null = null;
+  let idleSampleTicker: ReturnType<typeof setInterval> | null = null;
 
   const screenshotUploader = new ScreenshotUploader(
     authStore,
@@ -998,9 +1161,20 @@ async function registerIpcHandlers(): Promise<void> {
     // window title, so switching those off must not blank it out.
     if (timerRunning) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
+      // Main's own reading of when input stopped, for the moment the machine
+      // sleeps: the renderer's poll is throttled while its window sits
+      // hidden in the tray, and a stale reading would date the idle stretch
+      // from the sleep instead of from when the person left.
+      idleSampleTicker ??= setInterval(() => {
+        void readIdleSeconds().then((seconds) => {
+          lastIdleReading = { seconds, atMs: Date.now() };
+        });
+      }, IDLE_SAMPLE_INTERVAL_MS);
     } else if (activityTicker) {
       clearInterval(activityTicker);
       activityTicker = null;
+      if (idleSampleTicker) clearInterval(idleSampleTicker);
+      idleSampleTicker = null;
       // Emit the part-finished period rather than discarding the minutes
       // already measured, then push it out with the rest.
       void activitySampler.flush().then(() => activitySampleUploader.flush());
@@ -1156,6 +1330,10 @@ async function registerIpcHandlers(): Promise<void> {
     const settings = signedOut
       ? cachedReminderSettings(app.getPath("userData"))
       : reminderSettings;
+
+    // Waiting on the idle prompt is not forgetting to track: it already
+    // asks, and a reminder on top would only bury it.
+    if (idleHoldStore.load()) return;
 
     const now = new Date();
     const due = shouldRemind({
@@ -1403,6 +1581,32 @@ async function registerIpcHandlers(): Promise<void> {
     showMainWindow();
     mainWindow?.webContents.send("tray:toggleTimer");
   };
+  trackProjectFromTray = (projectId: string): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:trackProject", projectId);
+  };
+  // Through the window's own button, so it lands on the login view too.
+  signOutFromTray = (): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:signOut");
+  };
+  trayAccount = () => {
+    const session = authStore.load();
+    if (!session) return { session: null, recentProjects: [] };
+    const cached = offlineCache.read();
+    return {
+      session: {
+        email: session.email,
+        name: session.name,
+        organisationName: session.organisationName,
+      },
+      // Off for the organisation means no Project to start a timer on.
+      recentProjects:
+        cached.projectsEnabled === false
+          ? []
+          : recentProjectsFor(recentProjectIds(session), cached.projects),
+    };
+  };
 
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
@@ -1474,6 +1678,7 @@ async function registerIpcHandlers(): Promise<void> {
       // that it depends on a setting.
       void captureSettingsGate.pollOnce();
       void timerStatusGate.pollOnce();
+      refreshTrayMenu();
     } else if (result.status === "expired") {
       pendingPairingCode = null;
     }
@@ -1494,6 +1699,7 @@ async function registerIpcHandlers(): Promise<void> {
       // ended — none of it is this machine's to keep, or to show whoever
       // signs in next.
       offlineCache.clear();
+      idleHoldStore.clear();
     }
     stopUrlCapture();
     stopHeartbeat();
@@ -1502,6 +1708,7 @@ async function registerIpcHandlers(): Promise<void> {
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
     void timerStatusGate.pollOnce();
+    refreshTrayMenu();
     return { loggedIn: false };
   });
 
@@ -1582,6 +1789,45 @@ async function registerIpcHandlers(): Promise<void> {
     // So the day the machine comes back to still knows about the stretch
     // that ended as it went away.
     rememberWorkFinishedOffline(result);
+  };
+
+  // Sleep is idle time too. Rather than ending the entry at the moment of
+  // sleep and leaving it ended — which stopped tracking for someone back
+  // well inside the timeout, since a laptop on battery suspends after 15
+  // minutes and the timeout may be 20 — it is ended where input stopped and
+  // held. On wake the renderer picks it up again from there, or asks, by
+  // how long the person was away (src/renderer/idle-hold.ts). With idle
+  // handling off there is no timeout to measure against, so sleep still
+  // just pauses.
+  holdRunningTimerForSleep = (): void => {
+    const session = authStore.load();
+    const running = pendingOps.current();
+    const policy = offlineCache.read().idlePolicy;
+    if (!session || !running || running.pausedAt || !policy || policy.handling === "off") {
+      void pauseRunningTimer?.().catch((error: unknown) =>
+        console.error("[timer] pause on suspend failed:", error),
+      );
+      return;
+    }
+    const idleStartedAt = new Date(
+      whenInputStopped(lastIdleReading, Date.now()),
+    ).toISOString();
+    // Written before the stop, so a machine that never wakes still has it.
+    idleHoldStore.save({
+      projectId: running.projectId,
+      taskId: running.taskId,
+      idleStartedAt,
+      returnedAt: null,
+      reason: "sleep",
+    });
+    void pendingOps
+      .pauseDurably(session.deviceToken, apiClient, idleStartedAt)
+      .then(rememberWorkFinishedOffline)
+      .catch((error: unknown) => console.error("[timer] hold on suspend failed:", error));
+  };
+  markIdleReturnedOnWake = (): void => {
+    const hold = idleHoldStore.markReturned(new Date().toISOString());
+    if (hold) mainWindow?.webContents.send("idle:wake");
   };
 
   // Offline pauses/starts are only real to the server once this lands, so
@@ -1776,7 +2022,10 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle("tracking:projectsSetting", () =>
     cachedDeviceRead(
       (token) => apiClient.getProjectsSetting(token),
-      ({ projectsEnabled }) => offlineCache.remember({ projectsEnabled }),
+      ({ projectsEnabled }) => {
+        offlineCache.remember({ projectsEnabled });
+        refreshTrayMenu();
+      },
       () => {
         const enabled = offlineCache.read().projectsEnabled;
         return enabled === null ? null : { projectsEnabled: enabled };
@@ -1787,7 +2036,11 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle("tracking:listProjects", () =>
     cachedDeviceRead(
       (token) => apiClient.listProjects(token),
-      (projects) => offlineCache.remember({ projects }),
+      (projects) => {
+        offlineCache.remember({ projects });
+        // The names under "Recent projects" come from this list.
+        refreshTrayMenu();
+      },
       () => offlineCache.read().projects,
     ),
   );
@@ -2059,11 +2312,20 @@ async function registerIpcHandlers(): Promise<void> {
   // Prefers GNOME's D-Bus reading — powerMonitor only works under X11.
   ipcMain.handle("idle:seconds", async () => {
     const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
-    if (gnomeMs !== null && gnomeMs !== undefined) {
-      return Math.floor(gnomeMs / 1000);
-    }
-    return powerMonitor.getSystemIdleTime();
+    const seconds =
+      gnomeMs !== null && gnomeMs !== undefined
+        ? Math.floor(gnomeMs / 1000)
+        : powerMonitor.getSystemIdleTime();
+    lastIdleReading = { seconds, atMs: Date.now() };
+    return seconds;
   });
+
+  ipcMain.handle("idle:hold", (): IdleHold | null => idleHoldStore.load());
+  ipcMain.handle("idle:setHold", (_event, hold: IdleHold): void => idleHoldStore.save(hold));
+  ipcMain.handle("idle:markReturned", (_event, at: string): IdleHold | null =>
+    idleHoldStore.markReturned(at),
+  );
+  ipcMain.handle("idle:clearHold", (): void => idleHoldStore.clear());
 
   // Fire-and-forget push, not invoke/handle — this is the only signal the
   // main process needs about timer state that it can't get from powerMonitor
@@ -2406,7 +2668,11 @@ if (!gotSingleInstanceLock) {
       console.error(`[timer] pause on ${label} failed:`, error),
     );
   };
-  powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
+  powerMonitor.on("suspend", () => {
+    if (holdRunningTimerForSleep) holdRunningTimerForSleep();
+    else pauseForPowerEvent("suspend");
+  });
+  powerMonitor.on("resume", () => markIdleReturnedOnWake?.());
   powerMonitor.on("shutdown", () => {
     isQuitting = true;
     quittingForPowerEvent = true;
