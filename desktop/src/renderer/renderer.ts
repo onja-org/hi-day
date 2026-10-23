@@ -650,7 +650,7 @@ let idleHandled = false;
  * idle-hold.ts. Mirrored on disk by main, so it outlives a reload.
  */
 let idleHold: IdleHold | null = null;
-/** Keep, Discard and a resume on wake all restart the timer; only one may run at a time. */
+/** Keep, Discard and a resume on wake all restart the timer; only one may run at a time, start to totals. */
 let idleRestartInFlight = false;
 
 function showTrackingError(message: string): void {
@@ -1159,25 +1159,29 @@ async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<v
   const projectId = assignTo ?? hold.projectId;
   const taskId = assignTo ? null : hold.taskId;
 
+  // Held until the totals are in too, so a second click can't start over
+  // a restart that is still finishing.
   idleRestartInFlight = true;
-  const startResult = await callTracking(() =>
-    window.api.tracking.start(projectId, taskId, startedAt),
-  ).finally(() => {
+  try {
+    const startResult = await callTracking(() =>
+      window.api.tracking.start(projectId, taskId, startedAt),
+    );
+    if (!startResult.ok) {
+      // Still unanswered — a work limit, say, refused it — so the hold
+      // stays and the prompt with it: dropping them here would lose the
+      // idle time with no way left to keep or discard it.
+      showIdleBanner(hold);
+      handleTrackingFailure(startResult);
+      return;
+    }
+    hideIdleBanner();
+    await window.api.idle.clearHold();
+    // The held stretch is now either back on the Project, moved, or dropped.
+    await refreshTodayTotals();
+    setRunning(startResult.data);
+  } finally {
     idleRestartInFlight = false;
-  });
-  if (!startResult.ok) {
-    // Still unanswered — a work limit, say, refused it — so the hold stays
-    // and the prompt with it: dropping them here would lose the idle time
-    // with no way left to keep or discard it.
-    showIdleBanner(hold);
-    handleTrackingFailure(startResult);
-    return;
   }
-  hideIdleBanner();
-  await window.api.idle.clearHold();
-  // The held stretch is now either back on the Project, moved, or dropped.
-  await refreshTodayTotals();
-  setRunning(startResult.data);
 }
 
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */

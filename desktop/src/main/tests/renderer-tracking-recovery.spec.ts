@@ -41,8 +41,11 @@ function rendererScript(pollMs: number): string {
     .replace('const IDLE_POLL_INTERVAL_MS = 10_000;', `const IDLE_POLL_INTERVAL_MS = ${pollMs};`);
   // Guards the guard: a renamed constant would silently keep the 15s cadence.
   expect(fastSource).not.toBe(source);
+  // A window onto one renderer variable, appended inside its own scope: see
+  // `idleRestartInFlight` below.
+  const probedSource = `${fastSource}\n(window as any).__idleRestartInFlight = () => idleRestartInFlight;\n`;
   return ts
-    .transpileModule(fastSource, {
+    .transpileModule(probedSource, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     })
     .outputText.replace(/^export \{\};?$/m, '');
@@ -390,6 +393,17 @@ function launch(scenario: Scenario) {
       wakeListeners.forEach((listener) => listener());
     },
     idlePromptVisible: () => !document.getElementById('idle-prompt')!.hidden,
+    /** The renderer has applied a running timer. */
+    rendererShowsRunning: () => document.getElementById('timer-card')!.classList.contains('is-running'),
+    /**
+     * Whether a Keep/Discard/wake restart is still finishing — the
+     * renderer's own guard, through the probe `rendererScript` appends. A
+     * status poll can show the timer running and clear the hold first, so
+     * nothing on the page says the restart's own tail (totals, then
+     * `setRunning`) is done.
+     */
+    idleRestartInFlight: () =>
+      (window as unknown as { __idleRestartInFlight: () => boolean }).__idleRestartInFlight(),
     idleMessage: () => document.getElementById('idle-banner-message')!.textContent,
     clickKeepIdle: () => document.getElementById('idle-keep-button')!.click(),
     clickDiscardIdle: () => document.getElementById('idle-discard-button')!.click(),
@@ -469,6 +483,22 @@ async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<voi
 /** Setup has finished: projects listed and the first status poll answered. */
 async function waitForSetup(app: ReturnType<typeof launch>): Promise<void> {
   await waitFor(() => app.projectCount() !== '0' && app.calls.status > 0 && app.playReady());
+}
+
+/**
+ * An idle restart has finished in the renderer, not just reached the
+ * server. Closing the window on the server's word alone left the restart's
+ * tail — the totals refresh, then `setRunning` — running against a
+ * torn-down document, which CI reported as unhandled rejections.
+ */
+async function waitForIdleRestart(app: ReturnType<typeof launch>): Promise<void> {
+  await waitFor(
+    () =>
+      app.isRunning() &&
+      app.heldIdle() === null &&
+      app.rendererShowsRunning() &&
+      !app.idleRestartInFlight(),
+  );
 }
 
 /** The timer never starts on its own — the person presses play. */
@@ -897,7 +927,7 @@ describe('renderer idle timeout', () => {
     await waitFor(() => app.idlePromptVisible());
 
     app.clickKeepIdle();
-    await waitFor(() => app.isRunning() && app.heldIdle() === null && !app.idlePromptVisible());
+    await waitForIdleRestart(app);
 
     expect(app.calls.startedAt.at(-1)).toBe(app.calls.stoppedAt[0]);
     expect(app.idlePromptVisible()).toBe(false);
@@ -917,7 +947,7 @@ describe('renderer idle timeout', () => {
     const returnedAt = app.heldIdle()!.returnedAt!;
     app.advanceClock(MINUTE_MS);
     app.clickDiscardIdle();
-    await waitFor(() => app.isRunning());
+    await waitForIdleRestart(app);
 
     expect(app.calls.startedAt.at(-1)).toBe(returnedAt);
     expect(secondsOf(returnedAt) - secondsOf(app.calls.stoppedAt[0])).toBeGreaterThanOrEqual(25 * 60 - 12);
@@ -939,7 +969,7 @@ describe('renderer idle timeout', () => {
 
     app.server.refuseStarts = false;
     app.clickDiscardIdle();
-    await waitFor(() => app.isRunning() && app.heldIdle() === null);
+    await waitForIdleRestart(app);
     expect(app.heldIdle()).toBeNull();
     expect(app.idlePromptVisible()).toBe(false);
     app.close();
@@ -972,7 +1002,7 @@ describe('renderer after the machine sleeps', () => {
     app.holdForSleep({ projectId: PROJECT.id, taskId: null, idleStartedAt, returnedAt: null, reason: 'sleep' });
 
     app.wake();
-    await waitFor(() => app.isRunning() && app.heldIdle() === null);
+    await waitForIdleRestart(app);
 
     expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
     expect(app.idlePromptVisible()).toBe(false);
@@ -992,7 +1022,7 @@ describe('renderer after the machine sleeps', () => {
     expect(app.isRunning()).toBe(false);
     expect(app.idleMessage()).toContain('asleep');
     app.clickKeepIdle();
-    await waitFor(() => app.isRunning());
+    await waitForIdleRestart(app);
     expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
     app.close();
   });
@@ -1010,7 +1040,7 @@ describe('renderer after the machine sleeps', () => {
         reason: 'sleep',
       },
     });
-    await waitFor(() => app.isRunning());
+    await waitForIdleRestart(app);
 
     expect(app.calls.startedAt).toEqual([idleStartedAt]);
     app.close();
