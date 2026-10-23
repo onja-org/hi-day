@@ -56,6 +56,12 @@ window titles is Screen Recording, not Accessibility), and `docs/adr/0016-...`
 for GNOME's Wayland gap being closed via AT-SPI2 (`GnomeWindowFocusTracker`,
 `desktop/src/main/gnome-window-focus-tracker.ts`) rather than the extension
 `0009` had originally deferred this to.
+On Linux the native addon is no longer used at all: every session reads X11
+directly (`X11WindowTracker`), with AT-SPI covering Wayland-native windows —
+the addon's Linux binary needs glibc 2.38, so on Ubuntu 22.04 an Xorg session
+recorded no apps at all. The agent now reports on its heartbeat whether app
+capture works (`ok` / `degraded` / `unavailable`, plus the session type), and
+the web console's Devices page shows it — see `docs/adr/0026-...`.
 
 Screenshots are captured via Electron's own `desktopCapturer`
 (`ScreenshotSampler`, `desktop/src/main/screenshot-sampler.ts` — no
@@ -224,15 +230,16 @@ dev` — it should skip straight to the logged-in screen instead of
    `GET /device/time-entries/current` every 15s (immediately on login/
    logout, and instantly on this app's own Start/Stop/switch actions).
    Samples aren't logged to this app's terminal — see step 10 to confirm
-   sampling is actually happening via the web console instead. On a
-   Wayland session (`$WAYLAND_DISPLAY` set) on GNOME, `@paymoapp/active-window`
-   itself still produces nothing (X11-only), but `GnomeWindowFocusTracker`
-   (see `docs/adr/0016-...`) fills in real `appName`/`title` via AT-SPI2 once
-   you've switched focus at least once after the timer starts — the very
-   first tick or two, before any window activation has been observed yet,
-   still falls back to `titleUnavailableReason: 'not-exposed'` with both
-   fields null. A non-GNOME Wayland session (or one with no working
-   accessibility bus at all) gets that same `'not-exposed'` fallback
+   sampling is actually happening via the web console instead. On Linux,
+   `X11WindowTracker` reads the focused window straight from X11 on every
+   session (Xorg, or XWayland clients on Wayland). On a Wayland session
+   (`$WAYLAND_DISPLAY` set) on GNOME, a Wayland-native window comes from
+   `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) via AT-SPI2 once
+   you've switched focus at least once after the timer starts — before any
+   window activation has been observed, such a window falls back to
+   `titleUnavailableReason: 'not-exposed'` with both fields null. A
+   non-GNOME Wayland session (or one with no working accessibility bus at
+   all) gets that same `'not-exposed'` fallback for Wayland-native windows
    permanently instead — this is a known, informational, un-fixable-from-here
    gap for those cases (no "Grant Access"-style button, since there's
    nothing to grant). macOS-specific behavior (the Screen Recording banner,
@@ -660,10 +667,17 @@ output — not just assumed from source-mode success):
   permission now. Still unverified on real macOS hardware — nobody on this
   project has a Mac — so treat "does title actually populate once granted"
   as confirmed by the library's own docs, not by this repo's own testing.
+- **Xorg on Ubuntu 22.04 recorded no apps at all — fixed.** The Xorg branch
+  used `@paymoapp/active-window`, whose Linux binary needs glibc 2.38; on
+  22.04 (glibc 2.35) it never loaded and every sample came back empty, with
+  nothing to say so. Linux now reads X11 directly on every session, and the
+  Devices page shows each device's app-capture status. Still to confirm on a
+  real affected 22.04 Xorg machine — see `docs/adr/0026-...`.
 - **Wayland gave no app name either, not just no title — fixed on GNOME, still
   a real gap elsewhere.** Neither `get-windows` nor `@paymoapp/active-window`
   provides any window/app information at all under Wayland (both only
-  support X11 on Linux, "for security reasons" per their docs). On GNOME,
+  support X11 on Linux, "for security reasons" per their docs). XWayland
+  clients are read from X11 directly (`X11WindowTracker`). On GNOME,
   `GnomeWindowFocusTracker` (see `docs/adr/0016-...`) now fills this via
   AT-SPI2 instead, verified live against a real GNOME Wayland session — a
   sample only falls back to `{ appName: null, title: null,

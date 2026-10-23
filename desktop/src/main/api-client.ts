@@ -1,9 +1,15 @@
+import type { AppCaptureHealth } from './app-capture-health';
 import type { DesktopDevicePlatform } from './platform';
 import type { ReminderSettings } from "./tracking-reminder";
 import type { ActivitySample } from './activity-sampler';
 import type { UrlSession } from './url-capture/session-types';
 import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
+
+export interface HeartbeatCaptureReport {
+  appCapture: AppCaptureHealth | null;
+  displaySession: string | null;
+}
 
 /** Said without the server address: nobody reading the login screen can act on a URL. */
 /**
@@ -309,8 +315,16 @@ export class ApiClient {
    * Keeps `lastSeenAt` fresh so the Devices page's active/offline status
    * reflects a running app, not just a login. Best-effort: a missed
    * heartbeat shows this device offline until the next one lands.
+   *
+   * Also carries whether app capture works here, so a machine recording no
+   * apps shows as such on the Devices page instead of just looking quiet.
+   * A null `appCapture` (sources still starting) leaves the stored value be.
    */
-  async heartbeat(deviceToken: string, appVersion: string): Promise<boolean> {
+  async heartbeat(
+    deviceToken: string,
+    appVersion: string,
+    capture: HeartbeatCaptureReport = { appCapture: null, displaySession: null },
+  ): Promise<boolean> {
     if (this.isOffline()) return false;
     try {
       const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
@@ -319,7 +333,16 @@ export class ApiClient {
           Authorization: `Bearer ${deviceToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ appVersion }),
+        body: JSON.stringify({
+          appVersion,
+          ...(capture.appCapture
+            ? {
+                appCaptureStatus: capture.appCapture.status,
+                appCaptureDetail: capture.appCapture.detail,
+              }
+            : {}),
+          ...(capture.displaySession ? { displaySession: capture.displaySession } : {}),
+        }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       return response.ok;

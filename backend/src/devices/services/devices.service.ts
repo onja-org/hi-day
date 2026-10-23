@@ -9,6 +9,7 @@ import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { AppCaptureStatus } from '../../database/entities/app-capture-status.enum';
 import { Device } from '../../database/entities/device.entity';
 import { DevicePlatform } from '../../database/entities/device-platform.enum';
 import { DeviceSession } from '../../database/entities/device-session.entity';
@@ -28,6 +29,9 @@ export interface DeviceSummary {
   osVersion: string | null;
   hostname: string | null;
   appVersion: string | null;
+  appCaptureStatus: AppCaptureStatus | null;
+  appCaptureDetail: string | null;
+  displaySession: string | null;
   userId: string;
   userEmail: string;
   userName: string | null;
@@ -266,6 +270,9 @@ export class DevicesService {
       osVersion: device.osVersion,
       hostname: device.hostname,
       appVersion: device.appVersion,
+      appCaptureStatus: device.appCaptureStatus,
+      appCaptureDetail: device.appCaptureDetail,
+      displaySession: device.displaySession,
       userId: device.userId,
       userEmail: device.user.email,
       userName: device.user.name,

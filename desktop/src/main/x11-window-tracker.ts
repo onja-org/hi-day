@@ -1,3 +1,4 @@
+import type { CaptureSourceState } from './app-capture-health';
 import type { GnomeWindowFocus } from './gnome-window-focus-tracker';
 
 /** Predefined X11 atoms. */
@@ -22,6 +23,7 @@ const REQUEST_TIMEOUT_MS = 2_000;
  */
 export class X11WindowTracker {
   private lastFocus: GnomeWindowFocus | null = null;
+  private sourceState: CaptureSourceState = 'starting';
   private timer: ReturnType<typeof setInterval> | null = null;
   private display: unknown = null;
   private client: import('x11').X11Client | null = null;
@@ -45,6 +47,7 @@ export class X11WindowTracker {
         x11.createClient((err, display) => {
           if (err || !display) {
             this.log(`x11 unavailable: ${err?.message ?? 'no display'}`);
+            this.sourceState = 'down';
             resolve();
             return;
           }
@@ -64,9 +67,11 @@ export class X11WindowTracker {
         this.options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
       );
       this.timer.unref?.();
+      this.sourceState = 'up';
       await this.refresh();
     } catch (error) {
       this.log(`x11 tracker failed to start: ${String(error)}`);
+      this.sourceState = 'down';
     }
   }
 
@@ -81,6 +86,11 @@ export class X11WindowTracker {
     }
     this.display = null;
     this.client = null;
+  }
+
+  /** Whether an X display answered — what app-capture health is judged on. */
+  get state(): CaptureSourceState {
+    return this.sourceState;
   }
 
   /** Null when no X11 window has focus — ie. a Wayland-native one does. */

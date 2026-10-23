@@ -29,6 +29,25 @@ describe('ApiClient#heartbeat', () => {
     );
   });
 
+  it('carries app-capture health and the display session when known', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new ApiClient(BASE_URL);
+    await client.heartbeat('device-token-123', '1.2.3', {
+      appCapture: { status: 'unavailable', detail: 'No X display.' },
+      displaySession: 'x11 · ubuntu:GNOME',
+    });
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(requestInit.body as string)).toEqual({
+      appVersion: '1.2.3',
+      appCaptureStatus: 'unavailable',
+      appCaptureDetail: 'No X display.',
+      displaySession: 'x11 · ubuntu:GNOME',
+    });
+  });
+
   it('returns false when the server responds with a non-ok status', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
 

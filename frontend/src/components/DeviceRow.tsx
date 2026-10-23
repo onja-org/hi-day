@@ -5,6 +5,7 @@ import { DEVICES_QUERY_KEY } from "@/hooks/useDevices";
 import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { signOutDevice } from "@/lib/signOutDevice";
 import type { Device } from "@/types/device";
+import { AppCaptureBadge } from "./AppCaptureBadge";
 import { DeviceStatusBadge } from "./DeviceStatusBadge";
 
 type DeviceRowProps = {
@@ -44,6 +45,15 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
       <td className="px-3 py-2 text-slate-900">
         {devicePlatformLabel(device.platform)}
         {device.osVersion ? ` (${device.osVersion})` : ""}
+        {device.displaySession && (
+          <span className="block text-xs text-slate-900/70">{device.displaySession}</span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-slate-900">
+        <AppCaptureBadge
+          status={device.appCaptureStatus}
+          detail={device.appCaptureDetail}
+        />
       </td>
       <td className="px-3 py-2 text-slate-900">{device.appVersion ?? "—"}</td>
       <td className="px-3 py-2 text-slate-900">{formatLastSeen(device.lastSeenAt)}</td>
