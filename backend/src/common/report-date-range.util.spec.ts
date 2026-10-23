@@ -43,6 +43,67 @@ describe('resolveReportDateRange', () => {
     ]);
   });
 
+  // The same cases as the frontend's getTimesheetDateRange.test.ts, so a
+  // saved or scheduled "This week" covers the days the browser showed.
+  describe('this week — the whole calendar week, not seven days back', () => {
+    const thisWeek = (
+      iso: string,
+      weekStartsOn: 'monday' | 'sunday' = 'monday',
+    ) => {
+      const { from, to } = resolveReportDateRange(
+        'this_week',
+        new Date(iso),
+        'UTC',
+        weekStartsOn,
+      );
+      return [from, to].map((d) => d.toISOString().slice(0, 10));
+    };
+
+    it.each([
+      ['a Wednesday', '2026-01-07T15:30:00Z'],
+      ['a Monday', '2026-01-05T08:00:00Z'],
+      ['a Sunday', '2026-01-11T21:00:00Z'],
+    ])('covers Monday to Sunday on %s', (_label, iso) => {
+      expect(thisWeek(iso)).toEqual(['2026-01-05', '2026-01-11']);
+    });
+
+    it('crosses a year boundary', () => {
+      expect(thisWeek('2026-01-01T12:00:00Z')).toEqual([
+        '2025-12-29',
+        '2026-01-04',
+      ]);
+    });
+
+    it.each([
+      ['a Wednesday', '2026-01-07T15:30:00Z', ['2026-01-04', '2026-01-10']],
+      [
+        'a Sunday, its first day',
+        '2026-01-11T09:00:00Z',
+        ['2026-01-11', '2026-01-17'],
+      ],
+      [
+        'a Saturday, its last day',
+        '2026-01-10T09:00:00Z',
+        ['2026-01-04', '2026-01-10'],
+      ],
+    ])(
+      'runs Sunday to Saturday for an organisation whose weeks start on Sunday, on %s',
+      (_label, iso, expected) => {
+        expect(thisWeek(iso, 'sunday')).toEqual(expected);
+      },
+    );
+
+    it('reads the week in the organisation zone', () => {
+      // 22:30Z on Sunday 11 Jan is already Monday 12 Jan in Nairobi.
+      const { from } = resolveReportDateRange(
+        'this_week',
+        new Date('2026-01-11T22:30:00Z'),
+        'Africa/Nairobi',
+      );
+      expect(from.toISOString()).toBe('2026-01-11T21:00:00.000Z');
+    });
+  });
+
   it('last month is the whole previous month', () => {
     expect(days('last_month')).toEqual(['2026-09-01', '2026-09-30']);
   });

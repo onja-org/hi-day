@@ -269,6 +269,26 @@ describe('PendingTimerOps', () => {
       ]);
     });
 
+    it('ends the entry where input stopped when given a time, as a stop the server can backdate', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const stopTimer = vi.fn(() => Promise.resolve(ok));
+      const pauseTimer = vi.fn();
+      let queuedWhenAsked: unknown;
+      stopTimer.mockImplementation(() => {
+        queuedWhenAsked = new PendingTimerOps(dir).load();
+        return Promise.resolve(ok);
+      });
+
+      await ops.pauseDurably('t', client({ stopTimer, pauseTimer }), '2026-10-23T09:00:00.000Z');
+
+      expect(pauseTimer).not.toHaveBeenCalled();
+      expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-23T09:00:00.000Z', expect.any(String));
+      expect(queuedWhenAsked).toEqual([
+        { type: 'stop', at: '2026-10-23T09:00:00.000Z', opId: expect.any(String) as string },
+      ]);
+    });
+
     it('leaves nothing behind once the server has taken it', async () => {
       const ops = new PendingTimerOps(dir, diskBackedStore());
       ops.remember(entry);

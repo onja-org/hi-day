@@ -47,7 +47,7 @@ export function ScheduleReportModal({
   const [addresses, setAddresses] = useState(initialSchedule?.emails.join(", ") ?? "");
   const [message, setMessage] = useState(initialSchedule?.message ?? "");
   const [fileType, setFileType] = useState<SendReportFileType>(initialSchedule?.fileType ?? "pdf");
-  const [dateRange, setDateRange] = useState<DateRangePreset>(initialSchedule?.dateRange ?? "last_7_days");
+  const [dateRange, setDateRange] = useState<DateRangePreset>(initialSchedule?.dateRange ?? "this_week");
   const [frequency, setFrequency] = useState<ScheduleFrequency | "">(initialSchedule?.frequency ?? "");
   const [hour, setHour] = useState(initialSchedule ? String(initialSchedule.hour) : "");
   const [days, setDays] = useState<number[]>(initialSchedule?.days ?? []);
