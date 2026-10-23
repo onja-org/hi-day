@@ -54,7 +54,7 @@ import { X11WindowTracker } from "./x11-window-tracker";
 import { assessAppCapture, describeDisplaySession } from "./app-capture-health";
 import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
-import { IdleHoldStore, type IdleHold } from "./idle-hold-store";
+import { IdleHoldStore, whenInputStopped, type IdleHold } from "./idle-hold-store";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
 import { OfflineQueue } from "./offline-queue";
 import { OfflineQueueStore } from "./offline-queue-store";
@@ -299,7 +299,8 @@ let pauseRunningTimer: (() => Promise<void>) | null = null;
 /** Set once IPC handlers are registered, like `pauseRunningTimer`: what suspend and wake do with a running timer. */
 let holdRunningTimerForSleep: (() => void) | null = null;
 let markIdleReturnedOnWake: (() => void) | null = null;
-/** The renderer's latest idle reading, for working out when input stopped as the machine sleeps. */
+/** The latest idle reading, for working out when input stopped as the machine sleeps. */
+const IDLE_SAMPLE_INTERVAL_MS = 10_000;
 let lastIdleReading: { seconds: number; atMs: number } | null = null;
 /** Set alongside the window trackers, which live inside registerIpcHandlers. */
 let readCaptureReport: (() => HeartbeatCaptureReport) | null = null;
@@ -953,6 +954,7 @@ async function registerIpcHandlers(): Promise<void> {
     readIdleSeconds,
   });
   let activityTicker: ReturnType<typeof setInterval> | null = null;
+  let idleSampleTicker: ReturnType<typeof setInterval> | null = null;
 
   const screenshotUploader = new ScreenshotUploader(
     authStore,
@@ -1031,9 +1033,20 @@ async function registerIpcHandlers(): Promise<void> {
     // window title, so switching those off must not blank it out.
     if (timerRunning) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
+      // Main's own reading of when input stopped, for the moment the machine
+      // sleeps: the renderer's poll is throttled while its window sits
+      // hidden in the tray, and a stale reading would date the idle stretch
+      // from the sleep instead of from when the person left.
+      idleSampleTicker ??= setInterval(() => {
+        void readIdleSeconds().then((seconds) => {
+          lastIdleReading = { seconds, atMs: Date.now() };
+        });
+      }, IDLE_SAMPLE_INTERVAL_MS);
     } else if (activityTicker) {
       clearInterval(activityTicker);
       activityTicker = null;
+      if (idleSampleTicker) clearInterval(idleSampleTicker);
+      idleSampleTicker = null;
       // Emit the part-finished period rather than discarding the minutes
       // already measured, then push it out with the rest.
       void activitySampler.flush().then(() => activitySampleUploader.flush());
@@ -1189,6 +1202,10 @@ async function registerIpcHandlers(): Promise<void> {
     const settings = signedOut
       ? cachedReminderSettings(app.getPath("userData"))
       : reminderSettings;
+
+    // Waiting on the idle prompt is not forgetting to track: it already
+    // asks, and a reminder on top would only bury it.
+    if (idleHoldStore.load()) return;
 
     const now = new Date();
     const due = shouldRemind({
@@ -1636,13 +1653,9 @@ async function registerIpcHandlers(): Promise<void> {
       );
       return;
     }
-    const nowMs = Date.now();
-    // A reading from the renderer's 10s poll; an older one says little.
-    const idleStartedMs =
-      lastIdleReading && nowMs - lastIdleReading.atMs < 60_000
-        ? lastIdleReading.atMs - lastIdleReading.seconds * 1000
-        : nowMs;
-    const idleStartedAt = new Date(Math.min(idleStartedMs, nowMs)).toISOString();
+    const idleStartedAt = new Date(
+      whenInputStopped(lastIdleReading, Date.now()),
+    ).toISOString();
     // Written before the stop, so a machine that never wakes still has it.
     idleHoldStore.save({
       projectId: running.projectId,

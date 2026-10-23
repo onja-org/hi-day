@@ -52,3 +52,21 @@ export class IdleHoldStore {
     return hold;
   }
 }
+
+/** Readings older than this say little about when input stopped. */
+const MAX_IDLE_READING_AGE_MS = 60_000;
+
+/**
+ * When input stopped, from the latest idle reading — for a machine going to
+ * sleep, whose stretch counts from there rather than from the sleep itself.
+ * Without a recent reading the best that can be said is "now": that only
+ * ever under-counts the time away, so it can resume a timer that should
+ * have asked, but never asks about time that was really worked.
+ */
+export function whenInputStopped(
+  reading: { seconds: number; atMs: number } | null,
+  nowMs: number,
+): number {
+  if (!reading || nowMs - reading.atMs > MAX_IDLE_READING_AGE_MS) return nowMs;
+  return Math.min(nowMs, reading.atMs - reading.seconds * 1000);
+}

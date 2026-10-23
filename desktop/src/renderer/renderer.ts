@@ -650,6 +650,8 @@ let idleHandled = false;
  * idle-hold.ts. Mirrored on disk by main, so it outlives a reload.
  */
 let idleHold: IdleHold | null = null;
+/** Keep, Discard and a resume on wake all restart the timer; only one may run at a time. */
+let idleRestartInFlight = false;
 
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
@@ -1153,22 +1155,29 @@ async function settleIdleHold(): Promise<void> {
  */
 async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<void> {
   const hold = idleHold;
-  if (!hold) return;
+  if (!hold || idleRestartInFlight) return;
   const projectId = assignTo ?? hold.projectId;
   const taskId = assignTo ? null : hold.taskId;
-  hideIdleBanner();
-  await window.api.idle.clearHold();
 
+  idleRestartInFlight = true;
   const startResult = await callTracking(() =>
     window.api.tracking.start(projectId, taskId, startedAt),
-  );
+  ).finally(() => {
+    idleRestartInFlight = false;
+  });
+  if (!startResult.ok) {
+    // Still unanswered — a work limit, say, refused it — so the hold stays
+    // and the prompt with it: dropping them here would lose the idle time
+    // with no way left to keep or discard it.
+    showIdleBanner(hold);
+    handleTrackingFailure(startResult);
+    return;
+  }
+  hideIdleBanner();
+  await window.api.idle.clearHold();
   // The held stretch is now either back on the Project, moved, or dropped.
   await refreshTodayTotals();
-  if (startResult.ok) {
-    setRunning(startResult.data);
-  } else {
-    handleTrackingFailure(startResult);
-  }
+  setRunning(startResult.data);
 }
 
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */

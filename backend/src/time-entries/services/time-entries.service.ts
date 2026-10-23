@@ -653,6 +653,13 @@ export class TimeEntriesService {
           timeEntryId: saved.id,
           projectId,
           taskId: task?.id ?? null,
+          ...(requestedStartedAt
+            ? {
+                backdatedSeconds: Math.round(
+                  (Date.now() - startedAt.getTime()) / 1000,
+                ),
+              }
+            : {}),
         },
       });
     });
@@ -728,10 +735,15 @@ export class TimeEntriesService {
         actorUserId: userId,
         metadata: {
           timeEntryId: saved.id,
+          // How far before the request the entry ended. Said as a fact
+          // rather than as "idle time discarded": the desktop also ends an
+          // entry where input stopped while it waits to hear whether that
+          // time is kept, and replays stops it queued offline — neither
+          // discards anything. Whether idle time was kept shows on the
+          // next start's own `backdatedSeconds` (ADR-0028).
           ...(endedAt
             ? {
-                reason: 'idle',
-                discardedSeconds: Math.round(
+                backdatedSeconds: Math.round(
                   (Date.now() - resolvedEndedAt.getTime()) / 1000,
                 ),
               }

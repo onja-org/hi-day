@@ -24,9 +24,13 @@ Tracking stopped before the organisation's idle timeout was reached. The rendere
 - **The other modes:**
   - `auto_subtract` still stops at idle start with nothing to ask, and stays stopped past the timeout. A sleep inside the timeout resumes like everywhere else.
   - `off` has no timeout to measure against, so sleep still just pauses, as before.
+- **When input stopped before a sleep comes from main's own reading.** While a timer runs, main samples idle every 10 seconds itself (`whenInputStopped`, falling back to "now" without a reading under a minute old). The renderer's poll is throttled while its window sits hidden in the tray, so a stale reading would date the stretch from the sleep instead. That would resume silently, after someone was away past the timeout, in exactly the reported case.
+- **A refused restart keeps the question open.** If Keep, Discard or a resume is refused (a work limit, say), the hold and the prompt stay, with the error shown. Dropping them would lose the idle time with no way left to keep or discard it.
+- **No not-tracking reminder while a hold waits.** The prompt already asks.
+- **The audit trail states facts, not conclusions.** A backdated stop used to be logged as `{ reason: 'idle', discardedSeconds }`. Every hold now backdates a stop, including Keep and a short-sleep resume, and offline replays always did, so "discarded" was often false. Backdated stops and starts now record `backdatedSeconds`. A Keep shows as a start backdated by the idle stretch; a Discard shows as one that isn't.
 - The decisions live in a pure module (`src/renderer/idle-hold.ts`), tested by table across thresholds, return times and modes. The renderer's behaviour is tested end to end by running the real renderer in jsdom (`renderer-tracking-recovery.spec.ts`).
 
 ## Not verified
 
 - A real suspend and wake, which wasn't triggered on the development machine without the person's say-so.
-- The suspend and resume hooks in main are covered by typechecking, plus tests of the pieces they call: the hold store, the backdated durable stop, and the renderer's handling of a wake.
+- The suspend and resume hooks in main are covered by typechecking, plus tests of the pieces they call: the hold store, `whenInputStopped`, the backdated durable stop, and the renderer's handling of a wake.

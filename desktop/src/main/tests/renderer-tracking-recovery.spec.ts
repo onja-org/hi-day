@@ -166,6 +166,8 @@ function launch(scenario: Scenario) {
    * `limitReached` mid-test to have the next poll report a work limit. */
   const server = {
     revoked: false,
+    /** Set mid-test to have every start refused, as a work limit would. */
+    refuseStarts: false,
     limitReached: scenario.limitReached ?? null as
       | { kind: 'daily' | 'weekly'; limitHours: number }
       | null,
@@ -196,6 +198,13 @@ function launch(scenario: Scenario) {
       },
       listTasks: () => ok({ tasks: [] }),
       start: (projectId: string | null, _taskId?: string | null, startedAt?: string) => {
+        if (server.refuseStarts) {
+          return Promise.resolve({
+            ok: false,
+            message: 'You have reached your daily limit.',
+            status: 409,
+          });
+        }
         calls.start += 1;
         calls.startedWith.push(projectId);
         calls.startedAt.push(startedAt);
@@ -888,7 +897,7 @@ describe('renderer idle timeout', () => {
     await waitFor(() => app.idlePromptVisible());
 
     app.clickKeepIdle();
-    await waitFor(() => app.isRunning());
+    await waitFor(() => app.isRunning() && app.heldIdle() === null && !app.idlePromptVisible());
 
     expect(app.calls.startedAt.at(-1)).toBe(app.calls.stoppedAt[0]);
     expect(app.idlePromptVisible()).toBe(false);
@@ -912,6 +921,27 @@ describe('renderer idle timeout', () => {
 
     expect(app.calls.startedAt.at(-1)).toBe(returnedAt);
     expect(secondsOf(returnedAt) - secondsOf(app.calls.stoppedAt[0])).toBeGreaterThanOrEqual(25 * 60 - 12);
+    app.close();
+  });
+
+  it('keeps the question open when the restart is refused, so the idle time is not lost', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.server.refuseStarts = true;
+    app.clickKeepIdle();
+    await waitFor(() => app.trackingError() !== null);
+
+    expect(app.idlePromptVisible()).toBe(true);
+    expect(app.heldIdle()).not.toBeNull();
+
+    app.server.refuseStarts = false;
+    app.clickDiscardIdle();
+    await waitFor(() => app.isRunning() && app.heldIdle() === null);
+    expect(app.heldIdle()).toBeNull();
+    expect(app.idlePromptVisible()).toBe(false);
     app.close();
   });
 
@@ -942,7 +972,7 @@ describe('renderer after the machine sleeps', () => {
     app.holdForSleep({ projectId: PROJECT.id, taskId: null, idleStartedAt, returnedAt: null, reason: 'sleep' });
 
     app.wake();
-    await waitFor(() => app.isRunning());
+    await waitFor(() => app.isRunning() && app.heldIdle() === null);
 
     expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
     expect(app.idlePromptVisible()).toBe(false);

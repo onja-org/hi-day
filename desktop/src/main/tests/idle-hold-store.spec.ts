@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { IdleHoldStore, type IdleHold } from '../idle-hold-store';
+import { IdleHoldStore, whenInputStopped, type IdleHold } from '../idle-hold-store';
 
 const HOLD: IdleHold = {
   projectId: 'project-1',
@@ -43,5 +43,23 @@ describe('IdleHoldStore', () => {
   it('reads a torn file as no hold', () => {
     writeFileSync(join(dir, 'idle-hold.json'), '{"projectId":');
     expect(new IdleHoldStore(dir).load()).toBeNull();
+  });
+});
+
+describe('whenInputStopped', () => {
+  const now = Date.parse('2026-10-23T09:15:00.000Z');
+
+  it('counts back from a fresh reading — a laptop that suspended itself after 15 idle minutes', () => {
+    const reading = { seconds: 14 * 60 + 50, atMs: now - 10_000 };
+    expect(new Date(whenInputStopped(reading, now)).toISOString()).toBe('2026-10-23T09:00:00.000Z');
+  });
+
+  it('falls back to now with no reading, or a stale one', () => {
+    expect(whenInputStopped(null, now)).toBe(now);
+    expect(whenInputStopped({ seconds: 600, atMs: now - 2 * 60_000 }, now)).toBe(now);
+  });
+
+  it('never lands in the future', () => {
+    expect(whenInputStopped({ seconds: 0, atMs: now + 5_000 }, now)).toBe(now);
   });
 });
