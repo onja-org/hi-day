@@ -53,6 +53,35 @@ export class Subscription {
   @Column({ type: 'integer', nullable: true })
   trialReminderSentAtDaysLeft: number | null;
 
+  /**
+   * Stripe's own records, written only by the webhook handler. Null until an
+   * admin completes checkout — a self-hosted install, a free-by-config
+   * Organisation and anyone still on trial all stay null forever.
+   */
+  @Column({ type: 'text', nullable: true })
+  stripeCustomerId: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  @Index({ unique: true, where: '"stripeSubscriptionId" IS NOT NULL' })
+  stripeSubscriptionId: string | null;
+
+  /**
+   * Stripe's raw status, mirrored verbatim: `active`, `past_due`, `canceled`
+   * and the rest. Deliberately *not* folded into `status`, which is our own
+   * decision — one column holding both meanings is how a webhook silently
+   * overwrites a deliberate state.
+   */
+  @Column({ type: 'text', nullable: true })
+  stripeStatus: string | null;
+
+  /** Which price they are on; null until they pay. */
+  @Column({ type: 'text', nullable: true })
+  billingPeriod: string | null;
+
+  /** When the paid period ends — what a cancellation runs until. */
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  currentPeriodEnd: Date | null;
+
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
 

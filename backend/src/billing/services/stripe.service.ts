@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import { parseFreeOrganisationIds } from '../free-organisations';
 import { BILLING_PERIODS, CLOUD_PRICES, type BillingPeriod } from '../pricing';
 import {
   describeMismatches,
@@ -21,6 +22,7 @@ export class StripeService implements OnModuleInit {
   private readonly logger = new Logger(StripeService.name);
   private readonly client: Stripe | null;
   private readonly priceIds: Record<BillingPeriod, string | undefined>;
+  private readonly freeOrganisationIds: Set<number>;
 
   constructor(configService: ConfigService) {
     const secretKey = configService.get<string>('STRIPE_SECRET_KEY');
@@ -29,6 +31,14 @@ export class StripeService implements OnModuleInit {
       monthly: configService.get<string>('STRIPE_PRICE_MONTHLY'),
       annual: configService.get<string>('STRIPE_PRICE_ANNUAL'),
     };
+    this.freeOrganisationIds = parseFreeOrganisationIds(
+      configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
+    );
+  }
+
+  /** Whether this Organisation never pays. See free-organisations.ts. */
+  isFree(publicId: number): boolean {
+    return this.freeOrganisationIds.has(publicId);
   }
 
   get isConfigured(): boolean {
