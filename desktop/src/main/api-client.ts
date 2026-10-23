@@ -1,4 +1,4 @@
-import type { AppCaptureHealth } from './app-capture-health';
+import type { CaptureHealth } from './app-capture-health';
 import type { DesktopDevicePlatform } from './platform';
 import type { ReminderSettings } from "./tracking-reminder";
 import type { ActivitySample } from './activity-sampler';
@@ -7,7 +7,8 @@ import type { SyncResponseBody } from './url-capture/sync-contract';
 import type { TitleUnavailableReason } from './window-sample';
 
 export interface HeartbeatCaptureReport {
-  appCapture: AppCaptureHealth | null;
+  appCapture: CaptureHealth | null;
+  urlCapture?: CaptureHealth | null;
   displaySession: string | null;
 }
 
@@ -336,6 +337,12 @@ export class ApiClient {
         ? {
             appCaptureStatus: capture.appCapture.status,
             appCaptureDetail: capture.appCapture.detail,
+          }
+        : {}),
+      ...(capture.urlCapture
+        ? {
+            urlCaptureStatus: capture.urlCapture.status,
+            urlCaptureDetail: capture.urlCapture.detail,
           }
         : {}),
       ...(capture.displaySession ? { displaySession: capture.displaySession } : {}),

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { AppCaptureStatus } from './app-capture-status.enum';
 import { DevicePlatform } from './device-platform.enum';
+import { UrlCaptureStatus } from './url-capture-status.enum';
 import { Organisation } from './organisation.entity';
 import { User } from './user.entity';
 
@@ -59,6 +60,19 @@ export class Device {
   /** Why app capture is degraded or unavailable; null when it is ok. */
   @Column({ type: 'varchar', nullable: true })
   appCaptureDetail: string | null;
+
+  /** The same, for reading which website is open in the browser. */
+  @Column({
+    type: 'enum',
+    enum: UrlCaptureStatus,
+    enumName: 'UrlCaptureStatus',
+    nullable: true,
+  })
+  urlCaptureStatus: UrlCaptureStatus | null;
+
+  /** Why URL capture is degraded or unavailable; null when it is ok. */
+  @Column({ type: 'varchar', nullable: true })
+  urlCaptureDetail: string | null;
 
   /** Linux only: session type and desktop, e.g. "x11 · ubuntu:GNOME". */
   @Column({ type: 'varchar', nullable: true })

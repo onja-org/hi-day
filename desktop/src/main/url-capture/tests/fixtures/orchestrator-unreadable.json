@@ -1,0 +1,11 @@
+{
+  "ready": { "platform": "mock", "caps": ["focus", "url"] },
+  "events": [
+    { "afterMs": 10, "event": { "ev": "focus", "pid": 111, "hwnd": 222, "app": "Google Chrome", "title": "New Tab" } },
+    { "afterMs": 150, "event": { "ev": "focus", "pid": 333, "hwnd": 1, "app": "Terminal", "title": "bash" } }
+  ],
+  "rules": [
+    { "op": "resolve", "action": "error", "message": "[no-address-bar] The focused window exposes no address bar." },
+    { "op": "resolve", "action": "error", "message": "[no-address-bar] The focused window exposes no address bar." }
+  ]
+}

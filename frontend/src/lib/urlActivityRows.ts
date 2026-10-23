@@ -1,5 +1,6 @@
 import { formatElapsed } from "@/lib/formatElapsed";
 import { projectNameOrUntracked } from "@/lib/projectNameOrUntracked";
+import { unknownWebsiteLabel } from "@/lib/unknownWebsiteLabel";
 import type { UrlActivityDay } from "@/types/urlSession";
 import type { Project } from "@/types/project";
 
@@ -19,7 +20,7 @@ export function urlActivityRows(
     bucket.pages.map((page) => [
       formatHour(bucket.hourStart),
       ...(projectsEnabled ? [projectNameOrUntracked(projects, page.projectId)] : []),
-      page.url,
+      page.urlUnknown ? unknownWebsiteLabel(page.browser) : page.url,
       page.title ?? "",
       formatElapsed(page.activeMs),
       String(page.sessionCount),

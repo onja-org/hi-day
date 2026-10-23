@@ -35,6 +35,8 @@ describe("urlActivityRows", () => {
               projectId: "p-1",
               url: "https://example.com/docs",
               host: "example.com",
+              urlUnknown: false,
+              browser: "chrome",
               title: "Docs",
               activeMs: 3_600_000,
               sessionCount: 2,
@@ -63,6 +65,8 @@ describe("urlActivityRows", () => {
               projectId: null,
               url: "https://example.com",
               host: "example.com",
+              urlUnknown: false,
+              browser: "chrome",
               title: null,
               activeMs: 1000,
               sessionCount: 1,
@@ -75,6 +79,30 @@ describe("urlActivityRows", () => {
     const { rows } = urlActivityRows(day, projects);
     expect(rows[0]).toContain("No project");
     expect(rows[0]).toContain("");
+  });
+
+  it("labels unknown-URL time by its browser instead of an empty URL", () => {
+    const day = makeDay({
+      buckets: [
+        {
+          hourStart: "2026-09-18T09:00:00.000Z",
+          pages: [
+            {
+              projectId: null,
+              url: "",
+              host: "",
+              urlUnknown: true,
+              browser: "chrome",
+              title: null,
+              activeMs: 1000,
+              sessionCount: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(urlActivityRows(day, projects).rows[0]).toContain("Unknown website (Chrome)");
   });
 
   it("returns no rows for a day with no buckets", () => {

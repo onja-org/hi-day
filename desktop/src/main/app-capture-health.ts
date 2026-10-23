@@ -6,13 +6,14 @@ import type { SessionEnvironment } from './resolvers/linux/support-gate';
 export type CaptureSourceState = 'starting' | 'up' | 'down';
 
 /**
- * Mirrors the backend's AppCaptureStatus enum
- * (backend/src/database/entities/app-capture-status.enum.ts).
+ * Mirrors the backend's AppCaptureStatus and UrlCaptureStatus enums
+ * (backend/src/database/entities/app-capture-status.enum.ts,
+ * url-capture-status.enum.ts) — the same three values for both.
  */
-export type AppCaptureStatus = 'ok' | 'degraded' | 'unavailable';
+export type CaptureStatus = 'ok' | 'degraded' | 'unavailable';
 
-export interface AppCaptureHealth {
-  status: AppCaptureStatus;
+export interface CaptureHealth {
+  status: CaptureStatus;
   /** What an admin reads on the Devices page; null when status is 'ok'. */
   detail: string | null;
 }
@@ -45,7 +46,7 @@ function atspiCause(failure: AtspiFailure | null): string {
  */
 export function assessAppCapture(
   sources: AppCaptureSources,
-): AppCaptureHealth | null {
+): CaptureHealth | null {
   if (sources.platform !== 'linux') {
     return sources.nativeAddonLoaded
       ? { status: 'ok', detail: null }

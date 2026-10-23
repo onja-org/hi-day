@@ -52,6 +52,8 @@ import { hasTrackedFullWorkDay, shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
 import { assessAppCapture, describeDisplaySession } from "./app-capture-health";
+import { assessUrlCapture } from "./url-capture-health";
+import { displayName } from "./resolvers/linux/blind-browsers";
 import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
@@ -110,9 +112,16 @@ import { intervalFromEnv, offlineSimulated } from "./tuning";
 import { resolveWebAppUrl } from "./web-app-url";
 import { shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
+import {
+  identifyBrowser,
+  loadBrowserRegistry,
+  type RegistryPlatform,
+} from "./url-capture/browser-registry";
+import type { Source } from "./url-capture/protocol";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
-import type { UploadFn } from "./url-capture/sync-contract";
+import { syncWithOlderBackendFallback } from "./url-capture/older-backend-fallback";
+import type { SyncResponseBody, UploadFn } from "./url-capture/sync-contract";
 import { UrlCaptureService } from "./url-capture/url-capture-service";
 
 /**
@@ -393,13 +402,24 @@ function buildUrlSessionUploadFn(
   keepTitles: () => boolean,
 ): UploadFn {
   return async (batch) => {
-    const result = await apiClient.syncUrlSessions(
-      deviceToken,
-      keepTitles() ? batch : batch.map((session) => ({ ...session, title: null })),
-    );
-    if (result.ok) {
-      return result.data;
+    // The last failed response, for the handling below once the fallback
+    // (an older backend rejecting unknown-URL sessions) has had its go.
+    let failure: Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null = null;
+    const attempt = await syncWithOlderBackendFallback(batch, async (sessions) => {
+      const response = await apiClient.syncUrlSessions(
+        deviceToken,
+        keepTitles() ? sessions : sessions.map((session) => ({ ...session, title: null })),
+      );
+      if (response.ok) return { ok: true, acked: response.data.acked };
+      failure = response;
+      return { ok: false, status: response.status };
+    });
+    if (attempt.ok) {
+      return { acked: attempt.acked };
     }
+    // Cast because TypeScript can't see the assignment inside the callback.
+    const result = failure as Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null;
+    if (!result) return { acked: [] };
 
     if (result.unauthorized) {
       authStore.clear();
@@ -474,6 +494,7 @@ function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService 
       reportEvent: (event) => service.reportEvent(event),
       logger: (line) => console.log(line),
       debugSink: buildDebugSink(),
+      ...unreadableBrowserOptions(),
     });
     resolverOrchestrator.start();
   } else {
@@ -481,6 +502,45 @@ function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService 
   }
 
   return urlCaptureService;
+}
+
+/** Browsers running without their accessibility tree right now, by display name. */
+function findBlindBrowserNames(): string[] {
+  try {
+    const report = new BrowserRestartService().findBlind();
+    const names = [
+      ...report.restartable.map((browser) => browser.command),
+      ...report.manual.map((entry) => entry.browser.command),
+    ].map(displayName);
+    return [...new Set(names)];
+  } catch {
+    return []; // A /proc read that fails says nothing either way.
+  }
+}
+
+/**
+ * Lets a browser window whose URL cannot be read count as "URL unknown"
+ * instead of vanishing — a Linux browser opened without its accessibility
+ * tree, typically from a web-app shortcut, is the case that prompted it.
+ */
+function unreadableBrowserOptions(): {
+  identifyBrowser?: (app: string) => string | null;
+  platformSource?: Source;
+} {
+  const platform = process.platform;
+  if (platform !== "linux" && platform !== "darwin" && platform !== "win32") {
+    return {};
+  }
+  const registry = loadBrowserRegistry();
+  const sources: Record<RegistryPlatform, Source> = {
+    linux: "atspi",
+    darwin: "apple-events",
+    win32: "uia",
+  };
+  return {
+    identifyBrowser: (appName) => identifyBrowser(registry, platform, appName),
+    platformSource: sources[platform],
+  };
 }
 
 // Opt-in only (URL_TRACKING_CONTEXT.md's pinned rule: "never log a full
@@ -898,6 +958,12 @@ async function registerIpcHandlers(): Promise<void> {
         atspiFailure: gnomeWindowFocusTracker?.failureReason ?? null,
         // Never loaded on Linux: inside Electron on Wayland it segfaults.
         nativeAddonLoaded: platform !== 'linux' && loadActiveWindowModule() !== null,
+      }),
+      urlCapture: assessUrlCapture({
+        resolver: resolverOrchestrator?.healthSnapshot() ?? null,
+        // Scanned only while URL capture runs: off, there is nothing to report.
+        blindBrowsers:
+          platform === "linux" && resolverOrchestrator ? findBlindBrowserNames() : [],
       }),
       displaySession: describeDisplaySession(platform, readSessionEnvironment()),
     };

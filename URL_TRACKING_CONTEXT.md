@@ -86,6 +86,7 @@ One JSON object per line. Requests and responses on stdin/stdout; logs on **stde
 | `exact` | Real URL straight from the browser | Apple Events |
 | `displayed` | Normalized from the rendered address bar; scheme assumed | UIA, macOS AX, AT-SPI2 |
 | `guess` | Host inferred from a window title | title fallback |
+| `unknown` | A focused browser window whose address could not be read at all; url and host are empty | the orchestrator, never a resolver (`docs/adr/0027-...`) |
 
 ## Core data model
 
@@ -104,7 +105,7 @@ type UrlSession = {
   activeMs: number      // accumulated, NOT endedAt - startedAt
   tzOffsetMin: number
   source: 'apple-events' | 'ax' | 'uia' | 'atspi' | 'title'
-  confidence: 'exact' | 'displayed' | 'guess'
+  confidence: 'exact' | 'displayed' | 'guess' | 'unknown'
 }
 ```
 
@@ -150,6 +151,14 @@ Two cheaper-looking signals were measured against a real desktop and discarded: 
 be tied to a process (Chrome's entry runs a wrapper, `/usr/bin/google-chrome-stable`, while the
 process is `/opt/google/chrome/chrome`), and install-directory matching breaks for snaps, where
 `/snap/bin/firefox` resolves to `/usr/bin/snap`.
+
+A browser goes blind after the first run too, whenever its first process of the day starts
+without the flag: from a **Chrome web-app shortcut** (`chrome-*-Default.desktop`, which declares
+no `http` handler and so is never shadowed), an autostart entry or a terminal. Every window opened
+afterwards joins that process, so the whole browser stays untracked until it is fully closed.
+That is checked on every heartbeat, not just at setup: a blind browser marks the device's URL
+capture `degraded` on the Devices page, and its windows are kept as "URL unknown" time rather
+than dropped (`docs/adr/0027-...`). The restart offer below still appears only once.
 
 The agent offers to restart them, and does it on a button rather than on its own: ending a browser
 also ends whatever is unsaved in it, which no flag restores, so the timing is the person's to pick.

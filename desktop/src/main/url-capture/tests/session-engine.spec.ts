@@ -553,3 +553,107 @@ describe('segment checkpoints — long reads become visible before they end', ()
     expect(kinds(engine.processEvent(heartbeat(600_000)))).not.toContain('checkpoint');
   });
 });
+
+function urlUnreadable(
+  monotonicMs: number,
+  target: FocusTarget = CHROME,
+  wallClockMs = BASE_WALL + monotonicMs,
+): EngineEvent {
+  return {
+    type: 'urlUnreadable',
+    monotonicMs,
+    wallClockMs,
+    tzOffsetMin: 0,
+    pid: target.pid,
+    hwnd: target.hwnd,
+    browser: target.browser,
+    source: 'atspi',
+  };
+}
+
+/**
+ * A browser started without its accessibility tree never yields a reading
+ * for as long as it runs. Its time is kept as "URL unknown" — an empty url
+ * and host with confidence 'unknown' — rather than dropped.
+ */
+describe('SessionEngine — URL unknown', () => {
+  it('keeps a focused browser window it cannot read as an unknown-URL session', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    const opened = engine.processEvent(urlUnreadable(0));
+    expect(kinds(opened)).toEqual(['opened']);
+
+    engine.processEvent(heartbeat(5_000));
+    const closed = engine.processEvent(focusChanged(8_000, null));
+    expect(closed[closed.length - 1].session).toMatchObject({
+      url: '',
+      host: '',
+      path: null,
+      title: null,
+      browser: 'chrome',
+      private: null,
+      source: 'atspi',
+      confidence: 'unknown',
+      activeMs: 8_000,
+    });
+  });
+
+  it('never replaces a URL already read in the same window', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    openBaseline(engine, 'example.com/a');
+
+    expect(engine.processEvent(urlUnreadable(5_000))).toEqual([
+      expect.objectContaining({ kind: 'extended' }),
+    ]);
+    const closed = engine.processEvent(focusChanged(10_000, null));
+    expect(closed[closed.length - 1].session).toMatchObject({
+      url: 'example.com/a',
+      confidence: 'displayed',
+      activeMs: 10_000,
+    });
+  });
+
+  it('switches to the real URL once one is read', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    engine.processEvent(urlUnreadable(0));
+
+    const outputs = engine.processEvent(urlResolved(4_000, 'example.com/a', { source: 'atspi' }));
+    const closed = outputs.find((o) => o.kind === 'closed');
+    expect(closed?.session).toMatchObject({ confidence: 'unknown', activeMs: 4_000 });
+    expect(outputs.find((o) => o.kind === 'opened')?.session.url).toBe('example.com/a');
+  });
+
+  it('ignores a window that is not focused, and anything while the timer is off', () => {
+    const { engine } = makeEngine({ minSessionFloorMs: 0 });
+    engine.processEvent(focusChanged(0, CHROME));
+    expect(engine.processEvent(urlUnreadable(0))).toEqual([]); // timer off
+
+    engine.processEvent(timerStateChanged(1_000, true));
+    const other: FocusTarget = { browser: 'chrome', pid: 999, hwnd: 1 };
+    expect(engine.processEvent(urlUnreadable(1_000, other))).toEqual([]);
+  });
+
+  it("merges back into the same browser's unknown time, but never into another browser's", () => {
+    const { engine, ids } = makeEngine({ minSessionFloorMs: 0 });
+    const firefox: FocusTarget = { browser: 'firefox', pid: 300, hwnd: 400 };
+    engine.processEvent(timerStateChanged(0, true));
+    engine.processEvent(focusChanged(0, CHROME));
+    engine.processEvent(urlUnreadable(0));
+
+    engine.processEvent(focusChanged(3_000, firefox));
+    engine.processEvent(urlUnreadable(3_000, firefox));
+    expect(ids).toHaveLength(2);
+
+    engine.processEvent(focusChanged(6_000, CHROME));
+    engine.processEvent(urlUnreadable(6_000));
+    expect(ids).toHaveLength(3);
+
+    engine.processEvent(focusChanged(9_000, null));
+    engine.processEvent(focusChanged(10_000, CHROME));
+    const merged = engine.processEvent(urlUnreadable(10_000));
+    expect(merged[0].session.id).toBe(ids[2]);
+  });
+});

@@ -36,7 +36,7 @@ const urlDays: AppsUrlsMemberDay<UrlActivityDay>[] = [
       {
         hourStart: "2026-10-06T09:00:00.000Z",
         pages: [
-          { projectId: "p1", url: "https://github.com/a", host: "github.com", title: null, activeMs: 5000, sessionCount: 1 },
+          { projectId: "p1", url: "https://github.com/a", host: "github.com", urlUnknown: false, browser: "chrome", title: null, activeMs: 5000, sessionCount: 1 },
         ],
       },
     ],

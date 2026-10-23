@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CHROMIUM_GENERIC_KEY, lookupBrowser, loadBrowserRegistry } from '../browser-registry';
+import {
+  CHROMIUM_GENERIC_KEY,
+  identifyBrowser,
+  lookupBrowser,
+  loadBrowserRegistry,
+} from '../browser-registry';
 
 describe('loadBrowserRegistry', () => {
   it('loads the shipped registry and covers the required browsers', () => {
@@ -47,5 +52,21 @@ describe('lookupBrowser', () => {
   it('falls back to chromium-generic for an unknown browser', () => {
     const result = lookupBrowser(registry, 'win32', 'some-new-chromium-fork.exe');
     expect(result.key).toBe(CHROMIUM_GENERIC_KEY);
+  });
+});
+
+describe('identifyBrowser', () => {
+  const registry = loadBrowserRegistry();
+
+  it("matches each side-car's own way of naming the focused app", () => {
+    expect(identifyBrowser(registry, 'linux', 'Google Chrome')).toBe('chrome');
+    expect(identifyBrowser(registry, 'linux', 'Firefox')).toBe('firefox');
+    expect(identifyBrowser(registry, 'win32', 'msedge.exe')).toBe('edge');
+    expect(identifyBrowser(registry, 'darwin', 'Brave Browser')).toBe('brave');
+  });
+
+  it('is null for anything that is not a known browser, rather than falling back', () => {
+    expect(identifyBrowser(registry, 'linux', 'gnome-terminal-server')).toBeNull();
+    expect(identifyBrowser(registry, 'linux', 'slack')).toBeNull();
   });
 });

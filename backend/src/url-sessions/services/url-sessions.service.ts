@@ -12,6 +12,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { UrlSession } from '../../database/entities/url-session.entity';
+import { UrlSessionConfidence } from '../../database/entities/url-session-confidence.enum';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../dto/url-session-entry.dto';
@@ -20,6 +21,48 @@ const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+function isUrlUnknown(session: Pick<UrlSession, 'confidence'>): boolean {
+  return session.confidence === UrlSessionConfidence.UNKNOWN;
+}
+
+/**
+ * Rows a report shows: everything but private sessions. Both kinds carry an
+ * empty url, so the url alone can't tell them apart — the confidence can.
+ */
+function reportableSessions<T extends object>(where: T): T[] {
+  return [
+    { ...where, url: Not('') },
+    { ...where, url: '', confidence: UrlSessionConfidence.UNKNOWN },
+  ];
+}
+
+/**
+ * One row per browser for its unknown time, rather than every browser's
+ * unknown time on one row — which browser it was is all there is to say.
+ */
+function groupingKey(
+  session: Pick<UrlSession, 'url' | 'browser' | 'confidence'>,
+): string {
+  return isUrlUnknown(session) ? `unknown:${session.browser}` : session.url;
+}
+
+const BROWSER_NAMES: Record<string, string> = {
+  chrome: 'Chrome',
+  edge: 'Edge',
+  brave: 'Brave',
+  opera: 'Opera',
+  vivaldi: 'Vivaldi',
+  arc: 'Arc',
+  firefox: 'Firefox',
+  safari: 'Safari',
+};
+
+/** "Unknown website (Chrome)" — for anywhere a row needs a single label. */
+export function unknownWebsiteLabel(browser: string): string {
+  const name = BROWSER_NAMES[browser];
+  return name ? `Unknown website (${name})` : 'Unknown website';
+}
 
 // A personal "sites visited" view, not a report — mirrors
 // TimeEntriesService's own LIST_LIMIT precedent. Revisit with real
@@ -34,6 +77,9 @@ export interface SyncResult {
 export interface UrlSessionGroup {
   url: string;
   host: string;
+  /** Browser time whose address could not be read — url and host are empty. */
+  urlUnknown: boolean;
+  browser: string;
   /** From whichever session for this URL ended most recently. */
   title: string | null;
   /** Summed `activeMs` across every session for this URL. */
@@ -48,6 +94,9 @@ export interface UrlHourBucketPage {
   projectId: string | null;
   url: string;
   host: string;
+  /** Browser time whose address could not be read — url and host are empty. */
+  urlUnknown: boolean;
+  browser: string;
   title: string | null;
   /** Summed whole — a session's `activeMs` is never split across an hour
    * boundary (it isn't `endedAt - startedAt`, see UrlSession's own doc
@@ -150,6 +199,8 @@ export class UrlSessionsService {
    * visited first, with a summed `totalActiveMs` per URL. Private-session
    * rows (url stripped to `''` on the client — see UrlSession's own doc
    * comment) are excluded; there is nothing meaningful to display for one.
+   * Unknown-URL rows, which carry an empty url too, are kept — one per
+   * browser, flagged `urlUnknown`.
    */
   async listGroupedByUrl(
     organisationId: string,
@@ -164,18 +215,18 @@ export class UrlSessionsService {
     );
 
     const rows = await this.urlSessions.find({
-      where: {
+      where: reportableSessions({
         organisationId,
         membershipId: subjectMembershipId,
-        url: Not(''),
-      },
+      }),
       order: { endedAt: 'DESC' },
       take: RAW_SESSION_LIMIT,
     });
 
     const byUrl = new Map<string, UrlSessionGroup>();
     for (const row of rows) {
-      const existing = byUrl.get(row.url);
+      const key = groupingKey(row);
+      const existing = byUrl.get(key);
       if (existing) {
         existing.totalActiveMs += row.activeMs;
         existing.sessionCount += 1;
@@ -184,9 +235,11 @@ export class UrlSessionsService {
         // from an older one.
         continue;
       }
-      byUrl.set(row.url, {
+      byUrl.set(key, {
         url: row.url,
         host: row.host,
+        urlUnknown: isUrlUnknown(row),
+        browser: row.browser,
         title: row.title,
         totalActiveMs: row.activeMs,
         lastVisitedAt: row.endedAt,
@@ -227,12 +280,11 @@ export class UrlSessionsService {
 
     const [rows, coveringEntries] = await Promise.all([
       this.urlSessions.find({
-        where: {
+        where: reportableSessions({
           organisationId,
           membershipId: subjectMembershipId,
-          url: Not(''),
           startedAt: Between(start, end),
-        },
+        }),
         order: { startedAt: 'ASC' },
       }),
       this.timeEntriesService.listCoveringWindow(
@@ -255,7 +307,7 @@ export class UrlSessionsService {
       const hourStart = new Date(
         Math.floor(row.startedAt.getTime() / MS_PER_HOUR) * MS_PER_HOUR,
       ).toISOString();
-      const key = `${hourStart}|${projectId ?? 'untracked'}|${row.url}`;
+      const key = `${hourStart}|${projectId ?? 'untracked'}|${groupingKey(row)}`;
 
       const existing = cells.get(key);
       if (existing) {
@@ -269,6 +321,8 @@ export class UrlSessionsService {
         projectId,
         url: row.url,
         host: row.host,
+        urlUnknown: isUrlUnknown(row),
+        browser: row.browser,
         title: row.title,
         activeMs: row.activeMs,
         sessionCount: 1,

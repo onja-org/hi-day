@@ -5,7 +5,7 @@ import { DEVICES_QUERY_KEY } from "@/hooks/useDevices";
 import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { signOutDevice } from "@/lib/signOutDevice";
 import type { Device, DevicePlatform } from "@/types/device";
-import { AppCaptureBadge } from "./AppCaptureBadge";
+import { CaptureBadge } from "./CaptureBadge";
 import { DeviceStatusBadge } from "./DeviceStatusBadge";
 
 type DeviceRowProps = {
@@ -20,7 +20,7 @@ function formatLastSeen(lastSeenAt: string | null): string {
   return new Date(lastSeenAt).toLocaleString();
 }
 
-/** Only the desktop agent records apps, so a phone has nothing to report. */
+/** Only the desktop agent records apps and websites, so a phone has nothing to report. */
 function isMobile(platform: DevicePlatform): boolean {
   return platform === "ios" || platform === "android";
 }
@@ -58,10 +58,18 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
         {isMobile(device.platform) ? (
           "—"
         ) : (
-          <AppCaptureBadge
-            status={device.appCaptureStatus}
-            detail={device.appCaptureDetail}
-          />
+          <div className="flex flex-col gap-2">
+            <CaptureBadge
+              label="Apps"
+              status={device.appCaptureStatus}
+              detail={device.appCaptureDetail}
+            />
+            <CaptureBadge
+              label="Websites"
+              status={device.urlCaptureStatus}
+              detail={device.urlCaptureDetail}
+            />
+          </div>
         )}
       </td>
       <td className="px-3 py-2 text-slate-900">{device.appVersion ?? "—"}</td>

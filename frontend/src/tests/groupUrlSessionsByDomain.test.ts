@@ -6,6 +6,8 @@ function page(overrides: Partial<UrlSessionGroup> = {}): UrlSessionGroup {
   return {
     url: "https://github.com/onja-org/repo",
     host: "github.com",
+    urlUnknown: false,
+    browser: "chrome",
     title: "repo",
     totalActiveMs: 1_000,
     lastVisitedAt: "2026-09-10T16:32:00.000Z",
@@ -71,6 +73,22 @@ describe("groupUrlSessionsByDomain", () => {
     expect(result[0].pages.map((p) => p.url)).toEqual([
       "https://new.test/b",
       "https://new.test/a",
+    ]);
+  });
+
+  it("gives each browser's unknown-URL time its own labelled row", () => {
+    const unknown = (browser: string) =>
+      page({ url: "", host: "", urlUnknown: true, browser, title: null });
+    const result = groupUrlSessionsByDomain([
+      unknown("chrome"),
+      unknown("firefox"),
+      page({ url: "https://github.com/a" }),
+    ]);
+
+    expect(result.map((domain) => domain.domain)).toEqual([
+      "Unknown website (Chrome)",
+      "Unknown website (Firefox)",
+      "github.com",
     ]);
   });
 
