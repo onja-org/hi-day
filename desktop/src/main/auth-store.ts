@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { safeStorage } from 'electron';
+import { withRecentProject } from './tray-menu';
 
 export interface StoredSession {
   email: string;
@@ -17,6 +18,12 @@ export interface StoredSession {
   lastProjectId?: string;
   /** The Task alongside `lastProjectId`, when one was chosen. */
   lastTaskId?: string | null;
+  /**
+   * The tray's "Recent projects", most recent first. Absent on a session
+   * saved before this field existed — `recentProjectIds` falls back to
+   * `lastProjectId` then.
+   */
+  recentProjectIds?: string[];
   /**
    * Where the Wayland screenshot grant used to be recorded, before it moved
    * to setup-state so signing out no longer forgets it. Still read, so a
@@ -77,7 +84,12 @@ export class AuthStore {
   rememberProject(projectId: string, taskId: string | null): void {
     const session = this.load();
     if (!session) return;
-    this.save({ ...session, lastProjectId: projectId, lastTaskId: taskId });
+    this.save({
+      ...session,
+      lastProjectId: projectId,
+      lastTaskId: taskId,
+      recentProjectIds: withRecentProject(recentProjectIds(session), projectId),
+    });
   }
 
   clear(): void {
@@ -85,4 +97,10 @@ export class AuthStore {
       unlinkSync(this.filePath);
     }
   }
+}
+
+/** The Projects the timer ran against lately, most recent first. */
+export function recentProjectIds(session: StoredSession): string[] {
+  if (session.recentProjectIds) return session.recentProjectIds;
+  return session.lastProjectId ? [session.lastProjectId] : [];
 }

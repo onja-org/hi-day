@@ -2280,6 +2280,22 @@ window.api.windowControls.onTrayToggleTimer(() => {
   if (!timerToggle.disabled) timerToggle.click();
 });
 
+/**
+ * A tray "Recent projects" pick, through the same path as clicking the
+ * Project's row. Except on the one already running: there the row pauses,
+ * and a menu item that reads as "track this" must not stop tracking.
+ */
+window.api.windowControls.onTrayTrackProject((projectId) => {
+  if (!projectsLoaded || timerToggle.disabled) return;
+  if (runningEntry?.projectId === projectId && !runningEntry.pausedAt) return;
+  if (!projects.some((project) => project.id === projectId)) return;
+  void selectProject(projectId);
+});
+
+window.api.windowControls.onTraySignOut(() => {
+  document.getElementById("logout-button")!.click();
+});
+
 window.api.windowControls.onTrackingNotice((notice) => {
   trackingNotice.textContent = notice ?? "";
   // Truthiness, not `!== null`: an older main process sends `undefined`,

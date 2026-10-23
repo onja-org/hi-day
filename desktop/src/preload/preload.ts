@@ -365,6 +365,16 @@ const api = {
     onTrayToggleTimer: (listener: () => void): void => {
       ipcRenderer.on("tray:toggleTimer", () => listener());
     },
+    /** A Project picked under the tray's "Recent projects". */
+    onTrayTrackProject: (listener: (projectId: string) => void): void => {
+      ipcRenderer.on("tray:trackProject", (_event, projectId: string) =>
+        listener(projectId),
+      );
+    },
+    /** The tray's Sign out, already confirmed, which presses Log out. */
+    onTraySignOut: (listener: () => void): void => {
+      ipcRenderer.on("tray:signOut", () => listener());
+    },
     onTrackingNotice: (listener: (notice: string | null) => void): void => {
       ipcRenderer.on("tracking:notice", (_event, notice: string | null) =>
         listener(notice),
