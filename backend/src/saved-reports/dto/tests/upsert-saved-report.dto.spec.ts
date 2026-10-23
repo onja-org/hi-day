@@ -43,6 +43,30 @@ describe('UpsertSavedReportDto', () => {
     expect(await isValid({ ...base, schedule })).toBe(true);
   });
 
+  it('accepts "This week" as a saved preset and as a schedule range', async () => {
+    expect(
+      await isValid({
+        ...base,
+        settings: { ...settings, datePreset: 'this_week' },
+      }),
+    ).toBe(true);
+    expect(
+      await isValid({
+        ...base,
+        schedule: { ...schedule, dateRange: 'this_week' },
+      }),
+    ).toBe(true);
+  });
+
+  it('still accepts "Last 7 days", so existing reports keep their range', async () => {
+    expect(
+      await isValid({
+        ...base,
+        schedule: { ...schedule, dateRange: 'last_7_days' },
+      }),
+    ).toBe(true);
+  });
+
   it('accepts a fixed custom range (no preset)', async () => {
     expect(
       await isValid({ ...base, settings: { ...settings, datePreset: null } }),

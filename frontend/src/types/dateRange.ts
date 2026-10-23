@@ -9,6 +9,7 @@ export type DateRange = {
 export type DateRangePreset =
   | "today"
   | "yesterday"
+  | "this_week"
   | "last_7_days"
   | "last_week"
   | "last_2_weeks"
