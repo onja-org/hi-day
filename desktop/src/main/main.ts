@@ -18,6 +18,7 @@ import type {
   AllowedApps,
   AppUrlTracking,
   CurrentTimer,
+  HeartbeatCaptureReport,
   PairingPollResult,
   TimeEntry,
   TrackingResult,
@@ -50,6 +51,8 @@ import { registerAppImageSchemeHandler } from "./linux-scheme-handler";
 import { hasTrackedFullWorkDay, shouldRemind } from "./tracking-reminder";
 import type { ReminderSettings } from "./tracking-reminder";
 import { X11WindowTracker } from "./x11-window-tracker";
+import { assessAppCapture, describeDisplaySession } from "./app-capture-health";
+import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
 import { OfflineQueue } from "./offline-queue";
@@ -292,6 +295,8 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
  * (which are wired outside that function) can pause the running timer.
  */
 let pauseRunningTimer: (() => Promise<void>) | null = null;
+/** Set alongside the window trackers, which live inside registerIpcHandlers. */
+let readCaptureReport: (() => HeartbeatCaptureReport) | null = null;
 /** Guards the async pause during before-quit, which must not re-enter. */
 let quitPauseComplete = false;
 
@@ -351,7 +356,11 @@ const TRACKING_ALERT_DWELL_MS = 5_000;
 function startHeartbeat(apiClient: ApiClient, deviceToken: string): void {
   stopHeartbeat();
   const beat = (): void => {
-    void apiClient.heartbeat(deviceToken, app.getVersion());
+    void apiClient.heartbeat(
+      deviceToken,
+      app.getVersion(),
+      readCaptureReport?.() ?? undefined,
+    );
   };
   beat(); // immediately — a fresh login shouldn't wait a full interval to show active
   heartbeatTimer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
@@ -878,6 +887,22 @@ async function registerIpcHandlers(): Promise<void> {
       ? new X11WindowTracker({ logger: (line) => console.log(line) })
       : null;
   void x11WindowTracker?.start();
+  readCaptureReport = () => {
+    const platform = toDevicePlatform(process.platform);
+    return {
+      appCapture: assessAppCapture({
+        platform,
+        isWayland: isWaylandSession(),
+        x11: x11WindowTracker?.state ?? 'down',
+        atspi: gnomeWindowFocusTracker?.state ?? 'down',
+        atspiFailure: gnomeWindowFocusTracker?.failureReason ?? null,
+        // Never loaded on Linux: inside Electron on Wayland it segfaults.
+        nativeAddonLoaded: platform !== 'linux' && loadActiveWindowModule() !== null,
+      }),
+      displaySession: describeDisplaySession(platform, readSessionEnvironment()),
+    };
+  };
+
   // Linux-only, best-effort — see gnome-idle-monitor.ts.
   const gnomeIdleMonitor =
     process.platform === "linux"

@@ -37,9 +37,9 @@ let initialized = false;
  * which is what crashed every vitest worker that so much as imported this
  * file (none of them call the real getActiveWindow — they all inject a
  * fake — but the import alone was enough). Deferring the `require()` to
- * first actual use means it only ever runs from real app code paths that
- * are already gated to platforms with a display (see `tick()`'s Wayland
- * guard below), never from a test file merely importing this module.
+ * first actual use means it only ever runs from real app code paths — on
+ * Windows and macOS only, since `tick()` reads X11 itself on Linux — never
+ * from a test file merely importing this module.
  *
  * (@paymoapp/active-window is a genuine dual ESM/CommonJS package — its
  * "require" export condition resolves to a real CJS build, so a plain
@@ -92,16 +92,20 @@ export interface WindowSamplerDeps {
   sink?: WindowSampleSink;
   getPlatform?: () => DesktopDevicePlatform;
   isWayland?: () => boolean;
-  /** The focused XWayland window, or null when a Wayland-native one has focus. */
+  /**
+   * The focused X11 window — on Wayland, an XWayland one. Null when nothing
+   * has focus on Xorg, or a Wayland-native window has it on Wayland.
+   */
   getX11Focus?: () => GnomeWindowFocus | null;
   isMacScreenRecordingGranted?: () => boolean;
+  /** Windows and macOS only — Linux reads X11 and AT-SPI instead. */
   getActiveWindow?: GetActiveWindowFn;
   /**
    * The last window AT-SPI2 saw activated on a GNOME session (see
    * docs/adr/0016-..., `gnome-window-focus-tracker.ts`) — `null` when
    * nothing has been seen yet, or the tracker isn't running at all
-   * (non-GNOME/non-Linux). Consulted only on Linux+Wayland, where
-   * `getActiveWindow` above is never even reachable.
+   * (non-GNOME/non-Linux). Consulted only on Linux+Wayland, when X11
+   * reports nothing.
    */
   getGnomeFocus?: () => { appName: string; title: string } | null;
 }
@@ -158,6 +162,27 @@ export class WindowSampler {
     }
   }
 
+  /** A focus read from X11 or AT-SPI — neither is subject to the gap `isWayland` models. */
+  private emitFocus(
+    platform: DesktopDevicePlatform,
+    focus: GnomeWindowFocus,
+    sampledAt: string,
+  ): void {
+    const reason = classifyTitleUnavailability({
+      platform,
+      macScreenRecordingGranted: true, // meaningless off macOS
+      isWayland: false,
+      rawTitle: focus.title || undefined,
+      rawOwnerName: focus.appName || undefined,
+    });
+    this.sink({
+      appName: focus.appName || null,
+      title: reason === null ? focus.title || null : null,
+      titleUnavailableReason: reason,
+      sampledAt,
+    });
+  }
+
   start(): void {
     if (this.handle) return;
     this.tick();
@@ -184,36 +209,28 @@ export class WindowSampler {
     const platform = this.getPlatform();
     const sampledAt = new Date().toISOString();
 
-    // Two complementary sources on Linux: X11 sees every XWayland client —
-    // on a Wayland session, still most applications — while AT-SPI sees only
-    // what publishes an accessibility tree. PyCharm, VLC and Teams appear in
-    // the first and not the second, so X11 is read first. A null from X11
-    // means a Wayland-native window has focus, which is AT-SPI's half.
-    if (platform === 'linux' && this.isWayland()) {
+    // X11 is read on every Linux session. On Xorg it sees every window; on
+    // Wayland it still sees every XWayland client — most applications,
+    // including PyCharm, VLC and Teams, which publish no accessibility tree.
+    // The native addon is never used on Linux: its prebuilt binary needs
+    // glibc 2.38, so on Ubuntu 22.04 it failed to load and an Xorg session
+    // recorded no apps at all, silently.
+    if (platform === 'linux') {
       const fromX11 = this.getX11Focus();
       if (fromX11) {
-        const reason = classifyTitleUnavailability({
-          platform,
-          macScreenRecordingGranted: true, // meaningless off macOS
-          isWayland: false, // an XWayland client is an X11 client
-          rawTitle: fromX11.title || undefined,
-          rawOwnerName: fromX11.appName || undefined,
-        });
-        this.sink({
-          appName: fromX11.appName || null,
-          title: reason === null ? fromX11.title || null : null,
-          titleUnavailableReason: reason,
-          sampledAt,
-        });
+        this.emitFocus(platform, fromX11, sampledAt);
         return;
       }
-    }
 
-    if (platform === 'linux' && this.isWayland()) {
-      // Falls back to the original 'not-exposed' only when nothing has been
-      // seen yet (nothing to report before the very first window activation
-      // this session, or a non-GNOME/non-Linux caller that never wires
-      // getGnomeFocus at all).
+      // On Xorg a null from X11 means nothing has focus — the desktop itself.
+      if (!this.isWayland()) {
+        this.sink({ appName: null, title: null, titleUnavailableReason: null, sampledAt });
+        return;
+      }
+
+      // On Wayland it means a Wayland-native window has focus, which is
+      // AT-SPI's half. 'not-exposed' only when AT-SPI has seen nothing yet
+      // this session, or isn't running at all.
       const gnomeFocus = this.getGnomeFocus();
       if (!gnomeFocus) {
         this.sink({
@@ -225,20 +242,7 @@ export class WindowSampler {
         return;
       }
 
-      const reason = classifyTitleUnavailability({
-        platform,
-        macScreenRecordingGranted: true, // meaningless off macOS
-        isWayland: false, // AT-SPI is unaffected by the gap this flag models
-        rawTitle: gnomeFocus.title || undefined,
-        rawOwnerName: gnomeFocus.appName || undefined,
-      });
-
-      this.sink({
-        appName: gnomeFocus.appName || null,
-        title: reason === null ? gnomeFocus.title || null : null,
-        titleUnavailableReason: reason,
-        sampledAt,
-      });
+      this.emitFocus(platform, gnomeFocus, sampledAt);
       return;
     }
 

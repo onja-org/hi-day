@@ -154,7 +154,7 @@ describe('WindowSampler', () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
-      getPlatform: () => 'linux',
+      getPlatform: () => 'windows',
       isWayland: () => false,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow: () => ({
@@ -179,7 +179,7 @@ describe('WindowSampler', () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
-      getPlatform: () => 'linux',
+      getPlatform: () => 'windows',
       isWayland: () => false,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow: () => {
@@ -197,7 +197,7 @@ describe('WindowSampler', () => {
     const { sink, samples } = makeSink();
     const sampler = new WindowSampler({
       sink,
-      getPlatform: () => 'linux',
+      getPlatform: () => 'windows',
       isWayland: () => false,
       isMacScreenRecordingGranted: () => true,
       getActiveWindow: () => {
@@ -326,5 +326,84 @@ describe('WindowSampler — Wayland with XWayland available', () => {
     sampler.tick();
 
     expect(getActiveWindow).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The bug this ordering fixed: on Xorg the sampler used to call the native
+ * addon, whose Linux binary needs glibc 2.38 — on Ubuntu 22.04 it never
+ * loaded, and every sample came back empty.
+ */
+describe('WindowSampler — Xorg', () => {
+  function makeSink() {
+    const samples: WindowSample[] = [];
+    return { sink: (sample: WindowSample) => samples.push(sample), samples };
+  }
+
+  it('reads the focused window from X11 and never touches the native addon', () => {
+    const { sink, samples } = makeSink();
+    const getActiveWindow = vi.fn(() => {
+      throw new Error("version `GLIBC_2.38' not found");
+    });
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+      isMacScreenRecordingGranted: () => true,
+      getActiveWindow,
+      getX11Focus: () => ({ appName: 'Google-chrome', title: 'Inbox - Google Chrome' }),
+    });
+
+    sampler.tick();
+
+    expect(getActiveWindow).not.toHaveBeenCalled();
+    expect(samples[0]).toEqual({
+      appName: 'Google-chrome',
+      title: 'Inbox - Google Chrome',
+      titleUnavailableReason: null,
+      sampledAt: samples[0].sampledAt,
+    });
+  });
+
+  it("tags 'hidden-by-app' when the X11 window has a class but no title", () => {
+    const { sink, samples } = makeSink();
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+      isMacScreenRecordingGranted: () => true,
+      getX11Focus: () => ({ appName: 'Signal', title: '' }),
+    });
+
+    sampler.tick();
+
+    expect(samples[0]).toMatchObject({
+      appName: 'Signal',
+      title: null,
+      titleUnavailableReason: 'hidden-by-app',
+    });
+  });
+
+  it('reports nothing focused, without falling back to AT-SPI, when X11 has no active window', () => {
+    const { sink, samples } = makeSink();
+    const getGnomeFocus = vi.fn(() => ({ appName: 'stale', title: 'stale' }));
+    const sampler = new WindowSampler({
+      sink,
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+      isMacScreenRecordingGranted: () => true,
+      getX11Focus: () => null,
+      getGnomeFocus,
+    });
+
+    sampler.tick();
+
+    expect(getGnomeFocus).not.toHaveBeenCalled();
+    expect(samples[0]).toEqual({
+      appName: null,
+      title: null,
+      titleUnavailableReason: null,
+      sampledAt: samples[0].sampledAt,
+    });
   });
 });

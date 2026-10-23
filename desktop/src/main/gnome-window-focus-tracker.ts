@@ -1,5 +1,12 @@
 import dbus from 'dbus-next';
-import { AtspiClient, type AtspiWindow } from './resolvers/linux/atspi';
+import type { CaptureSourceState } from './app-capture-health';
+import {
+  AtspiClient,
+  EventRegistrationError,
+  type AtspiWindow,
+} from './resolvers/linux/atspi';
+
+export type AtspiFailure = 'bus-unavailable' | 'event-registration-failed';
 
 export interface GnomeWindowFocus {
   appName: string;
@@ -85,6 +92,8 @@ export class GnomeWindowFocusTracker {
   private readonly enableAccessibilityBridge: () => Promise<void>;
   private client: AtspiClientLike | null = null;
   private lastFocus: GnomeWindowFocus | null = null;
+  private sourceState: CaptureSourceState = 'starting';
+  private failure: AtspiFailure | null = null;
 
   constructor(deps: GnomeWindowFocusTrackerDeps = {}) {
     this.logger = deps.logger ?? ((): void => undefined);
@@ -117,11 +126,17 @@ export class GnomeWindowFocusTracker {
         logger: this.logger,
       });
       await this.client.start();
+      this.sourceState = 'up';
     } catch (error) {
       this.logger(
         `[gnome-window-focus] accessibility bus unavailable: ${String(error)}`,
       );
       this.client = null;
+      this.sourceState = 'down';
+      this.failure =
+        error instanceof EventRegistrationError
+          ? 'event-registration-failed'
+          : 'bus-unavailable';
     }
   }
 
@@ -129,6 +144,20 @@ export class GnomeWindowFocusTracker {
     this.client?.stop();
     this.client = null;
     this.lastFocus = null;
+  }
+
+  /**
+   * 'up' only once the registry has recorded the window:activate listener —
+   * AtspiClient.start() checks that, rather than trusting RegisterEvent's
+   * reply, which at-spi2-core 2.44 gives for a registration it drops.
+   */
+  get state(): CaptureSourceState {
+    return this.sourceState;
+  }
+
+  /** Why the state is 'down'; null otherwise. */
+  get failureReason(): AtspiFailure | null {
+    return this.failure;
   }
 
   /** `null` until the first window:activate this session ever sees — see WindowSampler.tick()'s fallback for that case. */
