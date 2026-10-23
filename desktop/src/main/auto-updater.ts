@@ -138,6 +138,21 @@ export function startAutoUpdater(logger: (line: string) => void): void {
   setInterval(check, CHECK_INTERVAL_MS);
 }
 
+/**
+ * A check asked for by hand (the tray's "Check for updates…"), settled
+ * before it returns: electron-updater announces what it found before its
+ * promise resolves, so `state` already says whether a download began.
+ */
+export async function checkForUpdatesNow(): Promise<AutoUpdateState> {
+  if (!app.isPackaged || state.phase === 'unsupported') return getAutoUpdateState();
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch {
+    state = { phase: 'unsupported' };
+  }
+  return getAutoUpdateState();
+}
+
 /** Only meaningful once `state.phase === 'downloaded'`; quits and relaunches into the new version. */
 export function restartToApplyUpdate(): void {
   autoUpdater.quitAndInstall();

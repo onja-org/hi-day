@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -28,7 +29,7 @@ import { resolveApiBaseUrl } from "./api-base-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
-import { AuthStore } from "./auth-store";
+import { AuthStore, recentProjectIds } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
 import { OfflineCache } from "./offline-cache";
 import { keepActionFor, recoveryActionFor } from "./recovered-timer";
@@ -174,10 +175,15 @@ import { RELEASES_PAGE_URL, checkForUpdate } from "./update-checker";
 import { syncAutoLaunch } from "./auto-launch";
 import type { AutoUpdateState } from "./auto-updater";
 import {
+  checkForUpdatesNow,
   getAutoUpdateState,
   restartToApplyUpdate,
   startAutoUpdater,
+  supportsSilentAutoUpdate,
 } from "./auto-updater";
+import { manualUpdateOutcome, updateDialogFor } from "./update-check-dialog";
+import { recentProjectsFor, trayMenuTemplate } from "./tray-menu";
+import type { TrayMenuState, TraySession } from "./tray-menu";
 import {
   loadRelaunchHistory,
   recordRelaunch,
@@ -276,6 +282,21 @@ const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
 let trayTimerRunning = false;
 /** Asks the renderer to do what pressing its own play/stop button does. */
 let toggleTimerFromTray: (() => void) | null = null;
+/** Asks the renderer to do what clicking a Project row does. */
+let trackProjectFromTray: ((projectId: string) => void) | null = null;
+/** Asks the renderer to do what its own Log out button does. */
+let signOutFromTray: (() => void) | null = null;
+/**
+ * The session and cached Projects the menu shows, both of which live
+ * inside `registerIpcHandlers`. Null until it has run: the menu then
+ * reads as signed out.
+ */
+let trayAccount:
+  | (() => {
+      session: TraySession | null;
+      recentProjects: { id: string; name: string }[];
+    })
+  | null = null;
 
 let isQuitting = false;
 /**
@@ -813,66 +834,107 @@ function applyRecordingIndicator(isRecording: boolean): void {
   }
 }
 
+/**
+ * What the menu was last built from. Some callers run on every status
+ * poll, and rebuilding an unchanged menu can snap an open one shut under
+ * AppIndicator.
+ */
+let lastTrayMenuState: string | null = null;
+
 function refreshTrayMenu(): void {
   if (!tray) return;
   const userDataDir = app.getPath("userData");
-  const remembered = rememberedCloseAction(userDataDir) !== null;
   const pinned = compactAlwaysOnTop(userDataDir);
-  const webAppUrl = resolveWebAppUrl(
-    app.isPackaged,
-    cachedWebAppUrl(userDataDir),
-  );
+  const account = trayAccount?.() ?? { session: null, recentProjects: [] };
+  const state: TrayMenuState = {
+    session: account.session,
+    timerRunning: trayTimerRunning,
+    recentProjects: account.recentProjects,
+    webAppUrl: resolveWebAppUrl(app.isPackaged, cachedWebAppUrl(userDataDir)),
+    compactAlwaysOnTop: pinned,
+    closeChoiceRemembered: rememberedCloseAction(userDataDir) !== null,
+  };
+  const key = JSON.stringify(state);
+  if (key === lastTrayMenuState) return;
+  lastTrayMenuState = key;
   tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Open Hi Day", click: reopenMainWindow },
-      // Absent only when a packaged build has never paired, and so has
-      // nothing but a guess to offer — see `resolveWebAppUrl`.
-      ...(webAppUrl
-        ? [
-            {
-              label: "Open dashboard",
-              click: () => void shell.openExternal(webAppUrl),
-            },
-          ]
-        : []),
-      // One item reading whichever way the timer is not; a greyed
-      // "Stop timer" says nothing the label cannot. Routed through the
-      // renderer so this is not a second way to start a timer.
-      {
-        label: trayTimerRunning ? "Stop timer" : "Start timer",
-        click: () => toggleTimerFromTray?.(),
-      },
-      { type: "separator" },
-      // A checkbox, so undoing it is the same item with its tick gone.
-      // Named for what it governs: the full window never floats, and a
-      // bare "Always on top" ticked while it is open would look broken.
-      {
-        label: "Always on top (compact views)",
-        type: "checkbox",
-        checked: pinned,
-        click: () => {
+    Menu.buildFromTemplate(
+      trayMenuTemplate(state, {
+        openApp: reopenMainWindow,
+        toggleTimer: () => toggleTimerFromTray?.(),
+        trackProject: (projectId) => trackProjectFromTray?.(projectId),
+        signOut: () => void confirmSignOutFromTray(),
+        openWeb: (url) => void shell.openExternal(url),
+        toggleCompactAlwaysOnTop: () => {
           setCompactAlwaysOnTop(userDataDir, !pinned);
           applyPinning();
           refreshTrayMenu();
         },
-      },
-      // The only way back from a remembered close choice short of wiping
-      // the app's data — without it, a remembered "Quit" is permanent.
-      ...(remembered
-        ? [
-            {
-              label: "Ask Before Closing Again",
-              click: () => {
-                rememberCloseAction(app.getPath("userData"), null);
-                refreshTrayMenu();
-              },
-            },
-          ]
-        : []),
-      { type: "separator" },
-      { label: "Quit Hi Day", click: () => app.quit() },
-    ]),
+        forgetCloseChoice: () => {
+          rememberCloseAction(userDataDir, null);
+          refreshTrayMenu();
+        },
+        checkForUpdates: () => void checkForUpdatesFromTray(),
+        showAbout: () => void showAboutFromTray(),
+        quit: () => app.quit(),
+      }),
+    ),
   );
+}
+
+/**
+ * Signing out costs a trip to the browser to sign back in, and pauses a
+ * running timer — too much for one stray click on a menu item.
+ */
+async function confirmSignOutFromTray(): Promise<void> {
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    message: "Sign out of Hi Day?",
+    detail: trayTimerRunning
+      ? "Your timer will be paused, and signing back in means approving this device in your browser again."
+      : "Signing back in means approving this device in your browser again.",
+    buttons: ["Sign out", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (response === 0) signOutFromTray?.();
+}
+
+/** Always answers, even with "nothing found": a click that shows nothing reads as broken. */
+async function checkForUpdatesFromTray(): Promise<void> {
+  const outcome = await manualUpdateOutcome(
+    getAutoUpdateState(),
+    app.isPackaged && supportsSilentAutoUpdate(process.platform),
+    checkForUpdatesNow,
+    () => checkForUpdate(app.getVersion()),
+  );
+  const shown = updateDialogFor(outcome, app.getVersion());
+  const { response } = await dialog.showMessageBox({
+    type: "info",
+    message: shown.message,
+    detail: shown.detail,
+    buttons: shown.buttons,
+    defaultId: 0,
+    cancelId: shown.buttons.length - 1,
+  });
+  if (response !== 0) return;
+  if (shown.action === "restart") {
+    // As the window's own restart button does — see `update:restart`.
+    isQuitting = true;
+    restartToApplyUpdate();
+  } else if (shown.action === "openReleases") {
+    await shell.openExternal(RELEASES_PAGE_URL);
+  }
+}
+
+/** A message box rather than `app.showAboutPanel`, which Linux barely has. */
+async function showAboutFromTray(): Promise<void> {
+  await dialog.showMessageBox({
+    type: "info",
+    message: "Hi Day",
+    detail: `Version ${app.getVersion()}`,
+    buttons: ["OK"],
+  });
 }
 
 async function registerIpcHandlers(): Promise<void> {
@@ -1519,6 +1581,32 @@ async function registerIpcHandlers(): Promise<void> {
     showMainWindow();
     mainWindow?.webContents.send("tray:toggleTimer");
   };
+  trackProjectFromTray = (projectId: string): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:trackProject", projectId);
+  };
+  // Through the window's own button, so it lands on the login view too.
+  signOutFromTray = (): void => {
+    showMainWindow();
+    mainWindow?.webContents.send("tray:signOut");
+  };
+  trayAccount = () => {
+    const session = authStore.load();
+    if (!session) return { session: null, recentProjects: [] };
+    const cached = offlineCache.read();
+    return {
+      session: {
+        email: session.email,
+        name: session.name,
+        organisationName: session.organisationName,
+      },
+      // Off for the organisation means no Project to start a timer on.
+      recentProjects:
+        cached.projectsEnabled === false
+          ? []
+          : recentProjectsFor(recentProjectIds(session), cached.projects),
+    };
+  };
 
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
@@ -1590,6 +1678,7 @@ async function registerIpcHandlers(): Promise<void> {
       // that it depends on a setting.
       void captureSettingsGate.pollOnce();
       void timerStatusGate.pollOnce();
+      refreshTrayMenu();
     } else if (result.status === "expired") {
       pendingPairingCode = null;
     }
@@ -1619,6 +1708,7 @@ async function registerIpcHandlers(): Promise<void> {
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
     void timerStatusGate.pollOnce();
+    refreshTrayMenu();
     return { loggedIn: false };
   });
 
@@ -1932,7 +2022,10 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle("tracking:projectsSetting", () =>
     cachedDeviceRead(
       (token) => apiClient.getProjectsSetting(token),
-      ({ projectsEnabled }) => offlineCache.remember({ projectsEnabled }),
+      ({ projectsEnabled }) => {
+        offlineCache.remember({ projectsEnabled });
+        refreshTrayMenu();
+      },
       () => {
         const enabled = offlineCache.read().projectsEnabled;
         return enabled === null ? null : { projectsEnabled: enabled };
@@ -1943,7 +2036,11 @@ async function registerIpcHandlers(): Promise<void> {
   ipcMain.handle("tracking:listProjects", () =>
     cachedDeviceRead(
       (token) => apiClient.listProjects(token),
-      (projects) => offlineCache.remember({ projects }),
+      (projects) => {
+        offlineCache.remember({ projects });
+        // The names under "Recent projects" come from this list.
+        refreshTrayMenu();
+      },
       () => offlineCache.read().projects,
     ),
   );

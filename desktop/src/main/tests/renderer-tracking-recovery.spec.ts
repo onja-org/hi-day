@@ -126,6 +126,9 @@ function launch(scenario: Scenario) {
     idlePolicy: 0,
     /** The project each start named, in order. */
     startedWith: [] as (string | null)[],
+    pause: 0,
+    /** The project each switch named, in order. */
+    switchedTo: [] as (string | null)[],
     /** Bodies passed to main's raise-the-window alert. */
     trackingAlerts: [] as string[],
     /** The backdated start each start asked for, in order — undefined for "now". */
@@ -151,6 +154,8 @@ function launch(scenario: Scenario) {
   const reopenListeners: (() => void)[] = [];
   const reminderListeners: ((message: string) => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
+  const trayTrackProjectListeners: ((projectId: string) => void)[] = [];
+  const traySignOutListeners: (() => void)[] = [];
   const completed: {
     id: string;
     projectId: string | null;
@@ -220,7 +225,10 @@ function launch(scenario: Scenario) {
         if (!server.revoked) running = started;
         return ok(started);
       },
-      switchTo: () => ok(entry),
+      switchTo: (projectId: string | null) => {
+        calls.switchedTo.push(projectId);
+        return ok(entry);
+      },
       stop: (endedAt?: string) => {
         calls.stoppedAt.push(endedAt);
         const ended = { ...(running ?? entry), endedAt: endedAt ?? new Date(now()).toISOString() };
@@ -238,6 +246,7 @@ function launch(scenario: Scenario) {
       },
       // Pausing ends the entry, as the backend does now.
       pause: () => {
+        calls.pause += 1;
         const ended = { ...(running ?? entry), endedAt: new Date(now()).toISOString() };
         if (!server.revoked && running) {
           completed.push({
@@ -339,6 +348,12 @@ function launch(scenario: Scenario) {
       onSyncDraining: () => {},
       closeSyncDraining: () => {},
       onTrayToggleTimer: () => {},
+      onTrayTrackProject: (listener: (projectId: string) => void) => {
+        trayTrackProjectListeners.push(listener);
+      },
+      onTraySignOut: (listener: () => void) => {
+        traySignOutListeners.push(listener);
+      },
       onTrackingReminder: (listener: (message: string) => void) => {
         reminderListeners.push(listener);
       },
@@ -413,6 +428,11 @@ function launch(scenario: Scenario) {
     /** Main asking the renderer how a close should go. */
     requestClose: () => closeRequestListeners.forEach((listener) => listener()),
     closePromptVisible: () => !document.getElementById('close-prompt')!.hidden,
+    /** A Project picked under the tray's "Recent projects". */
+    trayTrackProject: (projectId: string) =>
+      trayTrackProjectListeners.forEach((listener) => listener(projectId)),
+    /** The tray's Sign out, after its confirmation. */
+    traySignOut: () => traySignOutListeners.forEach((listener) => listener()),
     /** Main's signal that the window came back from the tray. */
     reopen: () => reopenListeners.forEach((listener) => listener()),
     remind: (message: string) =>
@@ -817,6 +837,68 @@ describe('renderer close prompt', () => {
     app.requestClose();
 
     expect(app.closePromptVisible()).toBe(true);
+    app.close();
+  });
+});
+
+describe('renderer takes the tray menu', () => {
+  const OTHER = { ...PROJECT, id: 'p2', name: 'Project Two' };
+
+  // Clicking the running Project's row pauses it; a menu item that reads
+  // as "track this" must not.
+  it('keeps tracking when the running Project is picked from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await startTimer(app);
+
+    app.trayTrackProject(PROJECT.id);
+    await settle(FAST_POLL_MS * 2);
+
+    expect(app.calls.pause).toBe(0);
+    expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+
+  it('switches to another Project picked from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await startTimer(app);
+
+    app.trayTrackProject(OTHER.id);
+    await waitFor(() => app.calls.switchedTo.length > 0);
+
+    expect(app.calls.switchedTo).toEqual([OTHER.id]);
+    app.close();
+  });
+
+  it('starts on a Project picked from the tray while stopped', async () => {
+    const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
+    await waitForSetup(app);
+
+    app.trayTrackProject(OTHER.id);
+    await waitFor(() => app.isRunning());
+
+    expect(app.calls.startedWith).toEqual([OTHER.id]);
+    app.close();
+  });
+
+  it('ignores a Project the list no longer has', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    app.trayTrackProject('archived');
+    await settle(FAST_POLL_MS * 2);
+
+    expect(app.calls.start).toBe(0);
+    app.close();
+  });
+
+  it('lands on the login view after signing out from the tray', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    app.traySignOut();
+    await waitFor(() => app.visibleView() === 'login-view');
+
+    expect(app.visibleView()).toBe('login-view');
     app.close();
   });
 });

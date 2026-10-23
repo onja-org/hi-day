@@ -125,15 +125,30 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
-The **tray menu** carries the controls that have to be reachable from
-every size: **Open dashboard** (the web app, whose address the
-backend sends on the capture-settings poll from its own `FRONTEND_URL` —
+The **tray menu** is laid out like Hubstaff's (`src/main/tray-menu.ts`,
+a pure template builder with its own spec): the timer (**Start/Stop
+timer**, **Add time note…**, **Open Hi Day**), **Recent projects** (the
+last three the timer ran against, kept in the session so signing out
+forgets them; picking one goes through the renderer's own Project-row
+click, except on the Project already running, where that click would
+pause), the account (**Signed in as …**, the email and organisation,
+**Sign out…**, confirmed first and then routed through the window's Log
+out button), the web app (**Open dashboard**, **Add/Edit time**), and
+the app (**Preferences**, **Check for updates…**, which always answers
+with a dialog, **About Hi Day**, **Quit Hi Day**). Signed out, only the
+items that need no account remain. **Add time note…** and **Add/Edit
+time** open the web app's `/open/notes` and `/open/timesheet`, which
+redirect into the signed-in organisation; the device knows its
+organisation's name but not its id.
+
+**Open dashboard** links to the web app. The backend sends that address on the
+capture-settings poll from its own `FRONTEND_URL`,
 so there is no second URL constant to keep in step with
 `api-base-url.ts`, and moving to a new domain reaches every device
 without a desktop release; `DESKTOP_WEB_URL` overrides it and `pnpm dev`
-falls back to `http://localhost:3000`), **Start/Stop timer** (which presses the renderer's own play
-button, so the Project resolution and conflict handling are the same) and
-**Always on top (compact views)**, a checkbox covering the 360×72 bar and
+falls back to `http://localhost:3000`. **Start/Stop timer** presses the renderer's own play
+button, so the Project resolution and conflict handling are the same.
+**Preferences → Always on top (compact views)** is a checkbox covering the 360×72 bar and
 the 68×68 square — unticking it is how you undo it. The full window never
 floats: at 360×600 it is the app rather than a widget, and floating it
 would put it over the work being tracked (`shouldPin`,
