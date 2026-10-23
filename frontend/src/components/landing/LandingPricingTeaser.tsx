@@ -1,3 +1,4 @@
+import { CLOUD_PRICE_PER_PERSON, TRIAL_PROMISE } from "@/lib/pricing";
 import { LandingButtonLink } from "./LandingButtonLink";
 
 export function LandingPricingTeaser() {
@@ -10,8 +11,8 @@ export function LandingPricingTeaser() {
             Or let us run it for you.
           </h2>
           <p className="text-lg text-ink-muted">
-            $3.50 per person a month, everything included: hosting, updates, backups and support.
-            14-day free trial, no credit card required.
+            {CLOUD_PRICE_PER_PERSON.annual} per person a month, everything included: hosting,
+            updates, backups and support. {TRIAL_PROMISE}
           </p>
         </div>
         <div className="flex flex-wrap gap-3.5">

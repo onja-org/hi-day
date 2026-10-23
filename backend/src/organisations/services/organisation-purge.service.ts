@@ -38,6 +38,7 @@ export const PURGED_TABLES_BY_ORGANISATION_ID = [
   'teams',
   'memberships',
   'organisation_deletion_requests',
+  'subscriptions',
 ] as const;
 
 /** Tables referencing a device that another organisation may still use. */
