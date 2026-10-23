@@ -714,7 +714,7 @@ describe('OrganisationsService', () => {
           makeMembershipsRepo(),
           makeTeamsRepo(),
           makeAuditLogService().auditLogService,
-          makeTimeEntriesService(running),
+          makeTimeEntriesService(),
           makeTrialService().trialService,
         );
         return { service, save };
