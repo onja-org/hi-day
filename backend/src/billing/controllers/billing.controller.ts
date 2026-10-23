@@ -4,6 +4,8 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import type { BilledSeats } from '../services/billed-seats.service';
+import { BilledSeatsService } from '../services/billed-seats.service';
 import type { TrialStatus } from '../services/trial.service';
 import { TrialService } from '../services/trial.service';
 
@@ -15,7 +17,10 @@ import { TrialService } from '../services/trial.service';
 @UseGuards(JwtAuthGuard, RoleGuard)
 @RequireRole(MembershipRole.ADMIN)
 export class BillingController {
-  constructor(private readonly trialService: TrialService) {}
+  constructor(
+    private readonly trialService: TrialService,
+    private readonly billedSeatsService: BilledSeatsService,
+  ) {}
 
   /**
    * `trial: null` for an Organisation created before trials existed — a
@@ -26,6 +31,12 @@ export class BillingController {
    * Organisation that never pays has nothing counting down, whatever its
    * subscription row says.
    */
+  /** Who the Organisation pays for, and how many — the same query for both. */
+  @Get('seats')
+  getSeats(@Req() request: AuthenticatedRequest): Promise<BilledSeats> {
+    return this.billedSeatsService.forOrganisation(request.organisationId!);
+  }
+
   @Get('trial')
   async getTrial(
     @Req() request: AuthenticatedRequest,

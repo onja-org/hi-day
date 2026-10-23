@@ -8,6 +8,7 @@ import {
   CLOUD_PRICE_PER_PERSON,
   TRIAL_DAYS,
 } from "@/lib/pricing.generated";
+import { BilledPeople } from "./BilledPeople";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
 import { TrialSummary } from "./TrialSummary";
@@ -72,6 +73,12 @@ export function SubscriptionSettings({
             </p>
           )}
       </section>
+
+      {/* An organisation that never pays is billed for nobody, so a count of
+          the people it would be billed for is just a wrong number. */}
+      {!trialQuery.data?.isFree && (
+        <BilledPeople organisationId={organisationId} />
+      )}
 
       {!trialQuery.data?.isFree && (
         <section className="rounded-brand-sm border-2 border-ink bg-white p-6">
