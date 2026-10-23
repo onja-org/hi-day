@@ -70,6 +70,15 @@ export function browserTokens(desktopFileNames: string[]): string[] {
  */
 const CHILD_PROCESS_ARGS = ['--type=', '-contentproc'];
 
+/**
+ * An extension's native-messaging host, which the browser starts with the
+ * calling extension's origin as an argument. Its binary is often named after
+ * the browser — Claude Desktop ships `chrome-native-host` — so the name
+ * match alone counted it as a Chrome with no accessibility flag, and every
+ * machine running one read as having a blind browser.
+ */
+const NATIVE_MESSAGING_ARGS = ['chrome-extension://'];
+
 /** The one process per browser a person actually sees — helpers dropped. */
 function mainBrowserProcesses(
   processes: BrowserProcess[],
@@ -79,8 +88,10 @@ function mainBrowserProcesses(
     .filter((process) => isBrowserProcess(process, tokens))
     .filter(
       (process) =>
-        !process.cmdline.some((arg) =>
-          CHILD_PROCESS_ARGS.some((marker) => arg.startsWith(marker)),
+        !process.cmdline.some(
+          (arg) =>
+            CHILD_PROCESS_ARGS.some((marker) => arg.startsWith(marker)) ||
+            NATIVE_MESSAGING_ARGS.some((marker) => arg.startsWith(marker)),
         ),
     );
 }
@@ -138,6 +149,8 @@ const HELPER_BINARY_WORDS = [
   'sandbox',
   'helper',
   'updater',
+  // Native-messaging hosts: `chrome-native-host` and the like.
+  'native',
 ];
 
 /** Matched on the executable's filename: a path match would claim anything
