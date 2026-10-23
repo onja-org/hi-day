@@ -35,6 +35,13 @@ Reproduced with the real resolver code against throwaway Chrome profiles (`--use
 - **Reports show it, once per browser, as "Unknown website (Chrome)".** Private sessions also carry an empty url, so the report queries now exclude only private rows (`url = ''` without `confidence = 'unknown'`). Unknown rows have no link and no delete button, and `deleteByUrl` already refuses an empty url.
 - **Native-messaging hosts are no longer taken for browsers.** Claude Desktop's `chrome-native-host`, started by Chrome for an extension, matched the `chrome` token and had no flag, so it counted as a blind Chrome on any machine running it. That would have made such machines permanently `degraded`. Processes carrying a `chrome-extension://` argument, or with `native` in the binary name, are now dropped as helpers.
 
+- **A desktop release need not wait for the backend.** The sync endpoint validates every session, so a backend older than `'unknown'` rejects a whole batch containing one. The queue resends the same batch, so a single unknown session would have stopped every real URL from that device uploading. On a 400, the agent resends without the unknown sessions and acks them (`older-backend-fallback.ts`). An older backend could never store them, and left pending they would fill whole batches ahead of real sessions.
+
+## Known effects
+
+- **Unaffected machines get unknown rows too.** `no-address-bar` also comes from browser windows that have no address bar even with the flag: PWA windows, DevTools. So anyone who uses Chrome web apps will see an "Unknown website (Chrome)" row. That is real browser time correctly labelled, not the bug persisting.
+- **The last URL status stays when capture stops.** With URL tracking switched off, the heartbeat sends no URL status, and the Devices page keeps the last one. App capture behaves the same way (`docs/adr/0026-...`).
+
 ## Verification
 
 - With the real side-car, orchestrator and session engine on GNOME Wayland: a web-app-first Chrome produced `urlUnreadable` events and closed sessions `{ url: '', confidence: 'unknown', source: 'atspi', browser: 'chrome' }`. `findBlind` named Chrome, and health came back `degraded` with the reason. The person's own Chrome (launched with the flag) was not flagged once the native-messaging fix was in.

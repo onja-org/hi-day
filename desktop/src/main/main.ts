@@ -120,7 +120,8 @@ import {
 import type { Source } from "./url-capture/protocol";
 import type { ResolverSpawnConfig } from "./url-capture/resolver-manager";
 import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
-import type { UploadFn } from "./url-capture/sync-contract";
+import { syncWithOlderBackendFallback } from "./url-capture/older-backend-fallback";
+import type { SyncResponseBody, UploadFn } from "./url-capture/sync-contract";
 import { UrlCaptureService } from "./url-capture/url-capture-service";
 
 /**
@@ -401,13 +402,24 @@ function buildUrlSessionUploadFn(
   keepTitles: () => boolean,
 ): UploadFn {
   return async (batch) => {
-    const result = await apiClient.syncUrlSessions(
-      deviceToken,
-      keepTitles() ? batch : batch.map((session) => ({ ...session, title: null })),
-    );
-    if (result.ok) {
-      return result.data;
+    // The last failed response, for the handling below once the fallback
+    // (an older backend rejecting unknown-URL sessions) has had its go.
+    let failure: Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null = null;
+    const attempt = await syncWithOlderBackendFallback(batch, async (sessions) => {
+      const response = await apiClient.syncUrlSessions(
+        deviceToken,
+        keepTitles() ? sessions : sessions.map((session) => ({ ...session, title: null })),
+      );
+      if (response.ok) return { ok: true, acked: response.data.acked };
+      failure = response;
+      return { ok: false, status: response.status };
+    });
+    if (attempt.ok) {
+      return { acked: attempt.acked };
     }
+    // Cast because TypeScript can't see the assignment inside the callback.
+    const result = failure as Exclude<TrackingResult<SyncResponseBody>, { ok: true }> | null;
+    if (!result) return { acked: [] };
 
     if (result.unauthorized) {
       authStore.clear();
@@ -949,7 +961,9 @@ async function registerIpcHandlers(): Promise<void> {
       }),
       urlCapture: assessUrlCapture({
         resolver: resolverOrchestrator?.healthSnapshot() ?? null,
-        blindBrowsers: platform === "linux" ? findBlindBrowserNames() : [],
+        // Scanned only while URL capture runs: off, there is nothing to report.
+        blindBrowsers:
+          platform === "linux" && resolverOrchestrator ? findBlindBrowserNames() : [],
       }),
       displaySession: describeDisplaySession(platform, readSessionEnvironment()),
     };
