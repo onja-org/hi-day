@@ -54,6 +54,7 @@ import { X11WindowTracker } from "./x11-window-tracker";
 import { assessAppCapture, describeDisplaySession } from "./app-capture-health";
 import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
+import { IdleHoldStore, type IdleHold } from "./idle-hold-store";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
 import { OfflineQueue } from "./offline-queue";
 import { OfflineQueueStore } from "./offline-queue-store";
@@ -295,6 +296,11 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
  * (which are wired outside that function) can pause the running timer.
  */
 let pauseRunningTimer: (() => Promise<void>) | null = null;
+/** Set once IPC handlers are registered, like `pauseRunningTimer`: what suspend and wake do with a running timer. */
+let holdRunningTimerForSleep: (() => void) | null = null;
+let markIdleReturnedOnWake: (() => void) | null = null;
+/** The renderer's latest idle reading, for working out when input stopped as the machine sleeps. */
+let lastIdleReading: { seconds: number; atMs: number } | null = null;
 /** Set alongside the window trackers, which live inside registerIpcHandlers. */
 let readCaptureReport: (() => HeartbeatCaptureReport) | null = null;
 /** Guards the async pause during before-quit, which must not re-enter. */
@@ -840,6 +846,8 @@ async function registerIpcHandlers(): Promise<void> {
    * `cachedDeviceRead` below writes through to it on the way past.
    */
   const offlineCache = new OfflineCache(app.getPath("userData"));
+  /** An idle stretch the timer is stopped for, until it is kept or discarded. */
+  const idleHoldStore = new IdleHoldStore(app.getPath("userData"));
   // Backed by the cache rather than memory, so a timer started offline can
   // still be stopped after a restart — before this, it could not.
   const pendingOps = new PendingTimerOps(app.getPath("userData"), {
@@ -1519,6 +1527,7 @@ async function registerIpcHandlers(): Promise<void> {
       // ended — none of it is this machine's to keep, or to show whoever
       // signs in next.
       offlineCache.clear();
+      idleHoldStore.clear();
     }
     stopUrlCapture();
     stopHeartbeat();
@@ -1607,6 +1616,49 @@ async function registerIpcHandlers(): Promise<void> {
     // So the day the machine comes back to still knows about the stretch
     // that ended as it went away.
     rememberWorkFinishedOffline(result);
+  };
+
+  // Sleep is idle time too. Rather than ending the entry at the moment of
+  // sleep and leaving it ended — which stopped tracking for someone back
+  // well inside the timeout, since a laptop on battery suspends after 15
+  // minutes and the timeout may be 20 — it is ended where input stopped and
+  // held. On wake the renderer picks it up again from there, or asks, by
+  // how long the person was away (src/renderer/idle-hold.ts). With idle
+  // handling off there is no timeout to measure against, so sleep still
+  // just pauses.
+  holdRunningTimerForSleep = (): void => {
+    const session = authStore.load();
+    const running = pendingOps.current();
+    const policy = offlineCache.read().idlePolicy;
+    if (!session || !running || running.pausedAt || !policy || policy.handling === "off") {
+      void pauseRunningTimer?.().catch((error: unknown) =>
+        console.error("[timer] pause on suspend failed:", error),
+      );
+      return;
+    }
+    const nowMs = Date.now();
+    // A reading from the renderer's 10s poll; an older one says little.
+    const idleStartedMs =
+      lastIdleReading && nowMs - lastIdleReading.atMs < 60_000
+        ? lastIdleReading.atMs - lastIdleReading.seconds * 1000
+        : nowMs;
+    const idleStartedAt = new Date(Math.min(idleStartedMs, nowMs)).toISOString();
+    // Written before the stop, so a machine that never wakes still has it.
+    idleHoldStore.save({
+      projectId: running.projectId,
+      taskId: running.taskId,
+      idleStartedAt,
+      returnedAt: null,
+      reason: "sleep",
+    });
+    void pendingOps
+      .pauseDurably(session.deviceToken, apiClient, idleStartedAt)
+      .then(rememberWorkFinishedOffline)
+      .catch((error: unknown) => console.error("[timer] hold on suspend failed:", error));
+  };
+  markIdleReturnedOnWake = (): void => {
+    const hold = idleHoldStore.markReturned(new Date().toISOString());
+    if (hold) mainWindow?.webContents.send("idle:wake");
   };
 
   // Offline pauses/starts are only real to the server once this lands, so
@@ -2084,11 +2136,20 @@ async function registerIpcHandlers(): Promise<void> {
   // Prefers GNOME's D-Bus reading — powerMonitor only works under X11.
   ipcMain.handle("idle:seconds", async () => {
     const gnomeMs = await gnomeIdleMonitor?.getIdleMilliseconds();
-    if (gnomeMs !== null && gnomeMs !== undefined) {
-      return Math.floor(gnomeMs / 1000);
-    }
-    return powerMonitor.getSystemIdleTime();
+    const seconds =
+      gnomeMs !== null && gnomeMs !== undefined
+        ? Math.floor(gnomeMs / 1000)
+        : powerMonitor.getSystemIdleTime();
+    lastIdleReading = { seconds, atMs: Date.now() };
+    return seconds;
   });
+
+  ipcMain.handle("idle:hold", (): IdleHold | null => idleHoldStore.load());
+  ipcMain.handle("idle:setHold", (_event, hold: IdleHold): void => idleHoldStore.save(hold));
+  ipcMain.handle("idle:markReturned", (_event, at: string): IdleHold | null =>
+    idleHoldStore.markReturned(at),
+  );
+  ipcMain.handle("idle:clearHold", (): void => idleHoldStore.clear());
 
   // Fire-and-forget push, not invoke/handle — this is the only signal the
   // main process needs about timer state that it can't get from powerMonitor
@@ -2431,7 +2492,11 @@ if (!gotSingleInstanceLock) {
       console.error(`[timer] pause on ${label} failed:`, error),
     );
   };
-  powerMonitor.on("suspend", () => pauseForPowerEvent("suspend"));
+  powerMonitor.on("suspend", () => {
+    if (holdRunningTimerForSleep) holdRunningTimerForSleep();
+    else pauseForPowerEvent("suspend");
+  });
+  powerMonitor.on("resume", () => markIdleReturnedOnWake?.());
   powerMonitor.on("shutdown", () => {
     isQuitting = true;
     quittingForPowerEvent = true;

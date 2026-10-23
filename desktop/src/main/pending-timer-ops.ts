@@ -239,6 +239,12 @@ export class PendingTimerOps {
   async pauseDurably(
     deviceToken: string,
     client: PendingTimerClient,
+    /**
+     * Ends the entry here rather than now — when input stopped, for a
+     * machine going to sleep mid-idle — and as a stop, since only a stop
+     * carries a time.
+     */
+    endedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     const current = this.running.read();
     // Nothing is known to be running here, but the server may still hold
@@ -246,7 +252,7 @@ export class PendingTimerOps {
     // unconditionally before, and is still the only way to catch that.
     if (!current) return await this.pause(deviceToken, client);
 
-    const at = new Date().toISOString();
+    const at = endedAt ?? new Date().toISOString();
     const opId = randomUUID();
     const waiting = this.load();
     this.save([...waiting, { type: 'stop', at, opId }]);
@@ -260,7 +266,9 @@ export class PendingTimerOps {
       return settled ? { ok: true, data: ended } : { ok: true, data: ended, fromCache: true };
     }
 
-    const result = await client.pauseTimer(deviceToken);
+    const result = endedAt
+      ? await client.stopTimer(deviceToken, endedAt, opId)
+      : await client.pauseTimer(deviceToken);
     if (!result.ok) return { ok: true, data: ended, fromCache: true };
     // It landed, so the record written ahead of it has nothing left to do.
     this.save(this.load().filter((op) => op.opId !== opId));

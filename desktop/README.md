@@ -536,6 +536,15 @@ output — not just assumed from source-mode success):
   dev environment; `npmRebuild` (electron-builder's default `true`) ran
   successfully here, but hasn't been confirmed on the other two OSes.
 
+**Idle handling** (`docs/adr/0028-...`): nothing happens before the
+organisation's idle timeout. Coming back inside it carries on as if nobody
+had left, and that includes the laptop having slept meanwhile. At the
+timeout, tracking stops where input stopped, and the Keep/Discard prompt
+waits for an answer: Keep counts the idle stretch, and Discard drops only
+it, restarting from when the person came back. The waiting prompt is kept on
+disk (`idle-hold.json`), so a reload, a relaunch or a crash brings it back
+rather than losing the time.
+
 ## Known limitations (this pass)
 
 - **On Linux, running this app turns on the session's accessibility bridge

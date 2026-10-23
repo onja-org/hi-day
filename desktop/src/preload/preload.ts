@@ -179,6 +179,15 @@ export interface ConsentStatus {
   text: string | null;
 }
 
+/** Mirrors main's idle-hold-store.ts. */
+interface IdleHold {
+  projectId: string | null;
+  taskId: string | null;
+  idleStartedAt: string;
+  returnedAt: string | null;
+  reason: "timeout" | "sleep";
+}
+
 interface TrackingReminder {
   untrackedMinutes: number;
   signedOut: boolean;
@@ -293,6 +302,19 @@ const api = {
   idle: {
     seconds: (): Promise<number> =>
       ipcRenderer.invoke("idle:seconds") as Promise<number>,
+    /** The idle stretch the timer is stopped for, if any — see src/renderer/idle-hold.ts. */
+    hold: (): Promise<IdleHold | null> =>
+      ipcRenderer.invoke("idle:hold") as Promise<IdleHold | null>,
+    setHold: (hold: IdleHold): Promise<void> =>
+      ipcRenderer.invoke("idle:setHold", hold) as Promise<void>,
+    markReturned: (at: string): Promise<IdleHold | null> =>
+      ipcRenderer.invoke("idle:markReturned", at) as Promise<IdleHold | null>,
+    clearHold: (): Promise<void> =>
+      ipcRenderer.invoke("idle:clearHold") as Promise<void>,
+    /** The machine woke with a hold waiting. */
+    onWake: (listener: () => void): void => {
+      ipcRenderer.on("idle:wake", () => listener());
+    },
   },
   urlCapture: {
     // Fire-and-forget push, not invoke — main has nothing to return, and the
