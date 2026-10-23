@@ -319,6 +319,11 @@ export class ApiClient {
    * Also carries whether app capture works here, so a machine recording no
    * apps shows as such on the Devices page instead of just looking quiet.
    * A null `appCapture` (sources still starting) leaves the stored value be.
+   *
+   * A backend older than these fields rejects them outright
+   * (`forbidNonWhitelisted`), which would stop `lastSeenAt` moving and show
+   * every upgraded device offline — so a 400 is retried with the version
+   * alone, and a desktop release need not wait for the backend's.
    */
   async heartbeat(
     deviceToken: string,
@@ -326,29 +331,42 @@ export class ApiClient {
     capture: HeartbeatCaptureReport = { appCapture: null, displaySession: null },
   ): Promise<boolean> {
     if (this.isOffline()) return false;
+    const captureFields = {
+      ...(capture.appCapture
+        ? {
+            appCaptureStatus: capture.appCapture.status,
+            appCaptureDetail: capture.appCapture.detail,
+          }
+        : {}),
+      ...(capture.displaySession ? { displaySession: capture.displaySession } : {}),
+    };
     try {
-      const response = await fetch(`${this.baseUrl}/devices/heartbeat`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${deviceToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appVersion,
-          ...(capture.appCapture
-            ? {
-                appCaptureStatus: capture.appCapture.status,
-                appCaptureDetail: capture.appCapture.detail,
-              }
-            : {}),
-          ...(capture.displaySession ? { displaySession: capture.displaySession } : {}),
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      const response = await this.postHeartbeat(deviceToken, {
+        appVersion,
+        ...captureFields,
       });
+      if (response.status === 400 && Object.keys(captureFields).length > 0) {
+        return (await this.postHeartbeat(deviceToken, { appVersion })).ok;
+      }
       return response.ok;
     } catch {
       return false;
     }
+  }
+
+  private postHeartbeat(
+    deviceToken: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    return fetch(`${this.baseUrl}/devices/heartbeat`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${deviceToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   }
 
   /** Whether to offer a Project picker, or just a timer. */

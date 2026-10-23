@@ -24,7 +24,7 @@ URL tracking kept working because it never used this path. It reads the browser 
 ## What this ADR decided
 
 - **The addon is never used on Linux.** `X11WindowTracker` is read first on every Linux session. On Xorg it sees every window; on Wayland, every XWayland client. AT-SPI is consulted only on Wayland, only when X11 reports no focused window. On Xorg, a null from X11 means the desktop itself has focus, and the sample is empty without a `not-exposed` tag.
-- **App names don't change.** The addon reported the `WM_CLASS` class on Linux, which is exactly what `X11WindowTracker` reads. This was checked side by side on the same windows: `zenity` gave `zenity` from both; Chrome gave `Google-chrome` from both. Existing Xorg users on 24.04, whose tracking already worked, keep the same rows in the Apps tab.
+- **App names don't change.** The addon reported the `WM_CLASS` class on Linux, which is exactly what `X11WindowTracker` reads. This was checked side by side on the same windows: `zenity` gave `zenity` from both; Chrome gave `Google-chrome` from both. Existing Xorg users on 24.04, whose tracking already worked, keep the same rows in the Apps tab. Titles match too: `X11WindowTracker` falls back to the legacy `WM_NAME` when `_NET_WM_NAME` is empty, as the addon did (`XGetWMName`).
 - **The agent reports app-capture health on its heartbeat**, and the Devices page shows it. `assessAppCapture()` (`desktop/src/main/app-capture-health.ts`) judges from whether each window source came up, not from samples coming back empty, since an empty sample is ordinary whenever the desktop has focus:
 
   | Session | X11 | AT-SPI | Status |
@@ -38,11 +38,12 @@ URL tracking kept working because it never used this path. It reads the browser 
   | Windows / macOS | addon loaded | | `ok`, otherwise `unavailable` |
 
   AT-SPI counts as "up" only once the registry has recorded the `window:activate` listener. `AtspiClient.start()` already checks this, because at-spi2-core 2.44 accepts a registration and then drops it. The heartbeat also carries the session type and desktop (`x11 · ubuntu:GNOME`), the variable that separates two machines that look alike.
+- **A desktop release need not wait for the backend.** The backend validates with `forbidNonWhitelisted`, so a backend older than these fields rejects the heartbeat with a 400. That would stop `lastSeenAt` moving and show the device offline. The agent retries a 400 with the version alone.
 - **Stored on the Device**, as `appCaptureStatus` (enum), `appCaptureDetail` and `displaySession`. A heartbeat without a status (an older agent, or a newer one whose sources are still starting) leaves the last report standing rather than clearing it.
 
 ## Supported set
 
-- **Xorg, any window manager:** full coverage via the X protocol.
+- **Xorg, any EWMH-compliant window manager** (GNOME, KDE, Xfce, Cinnamon, MATE and most others): full coverage via the X protocol. A window manager that doesn't publish `_NET_ACTIVE_WINDOW` reports `ok` but records nothing. The addon needed the same property, so this was never covered.
 - **GNOME on Wayland:** full coverage via X11 (XWayland clients) plus AT-SPI (Wayland-native windows).
 - **Other Wayland desktops:** whichever of the two sources answers. XWayland clients are always covered while XWayland runs; Wayland-native windows only if that compositor emits AT-SPI `window:activate`, which was verified only on GNOME. The Devices page shows `degraded` when one source is missing.
 

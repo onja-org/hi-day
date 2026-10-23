@@ -3,6 +3,7 @@ import type { GnomeWindowFocus } from './gnome-window-focus-tracker';
 
 /** Predefined X11 atoms. */
 const ANY_PROPERTY_TYPE = 0;
+const WM_NAME = 39;
 const WM_CLASS = 67;
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
@@ -108,7 +109,7 @@ export class X11WindowTracker {
         return;
       }
       const [title, appName] = await Promise.all([
-        this.readString(windowId, this.nameAtom),
+        this.readTitle(windowId),
         this.readWmClass(windowId),
       ]);
       this.lastFocus = appName || title ? { appName, title } : null;
@@ -122,6 +123,17 @@ export class X11WindowTracker {
   private async readActiveWindowId(): Promise<number> {
     const data = await this.getProperty(this.root, this.activeWindowAtom, 4);
     return data && data.length >= 4 ? data.readUInt32LE(0) : 0;
+  }
+
+  /**
+   * `_NET_WM_NAME`, else the legacy `WM_NAME` — older toolkits set only the
+   * latter, and the addon this replaced on Xorg read it.
+   */
+  private async readTitle(windowId: number): Promise<string> {
+    return (
+      (await this.readString(windowId, this.nameAtom)) ||
+      (await this.readString(windowId, WM_NAME))
+    );
   }
 
   private async readString(windowId: number, atom: number): Promise<string> {

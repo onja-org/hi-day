@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DEVICES_QUERY_KEY } from "@/hooks/useDevices";
 import { devicePlatformLabel } from "@/lib/devicePlatformLabel";
 import { signOutDevice } from "@/lib/signOutDevice";
-import type { Device } from "@/types/device";
+import type { Device, DevicePlatform } from "@/types/device";
 import { AppCaptureBadge } from "./AppCaptureBadge";
 import { DeviceStatusBadge } from "./DeviceStatusBadge";
 
@@ -18,6 +18,11 @@ function formatLastSeen(lastSeenAt: string | null): string {
     return "Never";
   }
   return new Date(lastSeenAt).toLocaleString();
+}
+
+/** Only the desktop agent records apps, so a phone has nothing to report. */
+function isMobile(platform: DevicePlatform): boolean {
+  return platform === "ios" || platform === "android";
 }
 
 export function DeviceRow({ organisationId, device }: DeviceRowProps) {
@@ -50,10 +55,14 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
         )}
       </td>
       <td className="px-3 py-2 text-slate-900">
-        <AppCaptureBadge
-          status={device.appCaptureStatus}
-          detail={device.appCaptureDetail}
-        />
+        {isMobile(device.platform) ? (
+          "—"
+        ) : (
+          <AppCaptureBadge
+            status={device.appCaptureStatus}
+            detail={device.appCaptureDetail}
+          />
+        )}
       </td>
       <td className="px-3 py-2 text-slate-900">{device.appVersion ?? "—"}</td>
       <td className="px-3 py-2 text-slate-900">{formatLastSeen(device.lastSeenAt)}</td>
