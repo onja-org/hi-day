@@ -81,19 +81,23 @@ export function UrlActivityDomainRow({
               </TableHeader>
               <TableBody>
                 {domain.pages.map((page) => (
-                  <TableRow key={page.url}>
+                  <TableRow key={page.urlUnknown ? `unknown:${page.browser}` : page.url}>
                     <TableCell size="compact" className="max-w-0 truncate">
                       {page.title ?? "—"}
                     </TableCell>
                     <TableCell size="compact" className="max-w-0 truncate">
-                      <a
-                        href={page.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        {page.url}
-                      </a>
+                      {page.urlUnknown ? (
+                        "Address not readable"
+                      ) : (
+                        <a
+                          href={page.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          {page.url}
+                        </a>
+                      )}
                     </TableCell>
                     <TableCell size="compact" align="right">
                       {formatElapsed(page.totalActiveMs)}

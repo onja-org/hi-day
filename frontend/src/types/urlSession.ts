@@ -3,6 +3,10 @@ import type { ApiResult } from "./api";
 export type UrlSessionGroup = {
   url: string;
   host: string;
+  /** Browser time whose address could not be read — url and host are empty. */
+  urlUnknown: boolean;
+  /** Registry key, e.g. "chrome". */
+  browser: string;
   /** From whichever tracked visit to this URL ended most recently. */
   title: string | null;
   /** Summed active (focused) time across every visit to this URL, in ms. */
@@ -21,6 +25,9 @@ export type UrlHourBucketPage = {
   projectId: string | null;
   url: string;
   host: string;
+  /** Browser time whose address could not be read — url and host are empty. */
+  urlUnknown: boolean;
+  browser: string;
   title: string | null;
   activeMs: number;
   sessionCount: number;

@@ -1,3 +1,4 @@
+import { unknownWebsiteLabel } from "@/lib/unknownWebsiteLabel";
 import type { UrlSessionGroup } from "@/types/urlSession";
 
 export type UrlSessionDomainGroup = {
@@ -36,7 +37,10 @@ export function groupUrlSessionsByDomain(
   const byDomain = new Map<string, UrlSessionDomainGroup>();
 
   for (const group of groups) {
-    const domain = toDomain(group.host);
+    // Unknown-URL time has no host; it gets one row per browser instead.
+    const domain = group.urlUnknown
+      ? unknownWebsiteLabel(group.browser)
+      : toDomain(group.host);
     const existing = byDomain.get(domain);
 
     if (!existing) {

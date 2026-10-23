@@ -50,23 +50,29 @@ export function UrlSessionDomainAccordion({
       <ul className="flex flex-col border-t border-input-border">
         {visiblePages.map((page) => (
           <li
-            key={page.url}
+            key={page.urlUnknown ? `unknown:${page.browser}` : page.url}
             className="flex items-center justify-between gap-3 border-b border-input-border px-3 py-2 last:border-b-0"
           >
             <div className="flex min-w-0 flex-col gap-0.5">
-              <a
-                href={page.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-primary underline-offset-2 hover:underline"
-              >
-                {page.url}
-              </a>
+              {page.urlUnknown ? (
+                <span className="text-slate-900">
+                  The browser was in use, but its address could not be read.
+                </span>
+              ) : (
+                <a
+                  href={page.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-primary underline-offset-2 hover:underline"
+                >
+                  {page.url}
+                </a>
+              )}
               <span className="text-sm text-slate-900/70">
                 Time Spent {formatElapsed(page.totalActiveMs)}
               </span>
             </div>
-            {onDelete && (
+            {onDelete && !page.urlUnknown && (
               <button
                 type="button"
                 onClick={() => onDelete(page.url)}

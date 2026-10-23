@@ -37,12 +37,20 @@ interface UrlSession {
   activeMs: number;         // accumulated active time — NOT endedAt - startedAt
   tzOffsetMin: number;
   source: 'apple-events' | 'ax' | 'uia' | 'atspi' | 'title';
-  confidence: 'exact' | 'displayed' | 'guess';
+  confidence: 'exact' | 'displayed' | 'guess' | 'unknown';
 }
 ```
 
 This is the pinned model from `CLAUDE.md` — the client never sends a session with
 `endedAt: null` (an open, still-accumulating session). Only closed sessions are synced.
+
+**`confidence: 'unknown'`** is browser time whose address could not be read at all — a
+focused browser window the resolver found no address bar in, typically a Linux browser
+started without its accessibility tree (`docs/adr/0027-...`). It is sent with `url: ''`
+and `host: ''`, like a private session, and `private: null`; `source` is the platform's
+own reading method, the one that came back empty. Reports show it as "Unknown website
+(<browser>)", one row per browser, and never offer it for deletion by URL. It is the only
+empty-url session reports show: a private one (`private: true`) stays hidden.
 
 ### Response body
 

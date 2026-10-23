@@ -37,7 +37,10 @@ import { SavedReport } from '../../database/entities/saved-report.entity';
 import { EmailService } from '../../email/services/email.service';
 import { MembershipsService } from '../../members/services/memberships.service';
 import { ManualTimeEditsService } from '../../reports/services/manual-time-edits.service';
-import { UrlSessionsService } from '../../url-sessions/services/url-sessions.service';
+import {
+  UrlSessionsService,
+  unknownWebsiteLabel,
+} from '../../url-sessions/services/url-sessions.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 
@@ -349,7 +352,9 @@ export class ScheduledReportsService {
               dateKey: date,
               projectName: projectName(page.projectId),
               memberName: member.name,
-              label: page.host,
+              label: page.urlUnknown
+                ? unknownWebsiteLabel(page.browser)
+                : page.host,
               seconds: page.activeMs / 1000,
             });
           }

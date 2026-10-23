@@ -103,7 +103,7 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
               <th className="px-3 py-2 font-medium">User</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Platform</th>
-              <th className="px-3 py-2 font-medium">App tracking</th>
+              <th className="px-3 py-2 font-medium">Tracking</th>
               <th className="px-3 py-2 font-medium">App version</th>
               <th className="px-3 py-2 font-medium">Last seen</th>
               <th className="px-3 py-2 font-medium" />
