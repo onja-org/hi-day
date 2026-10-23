@@ -885,7 +885,7 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('backdates the stop when given an explicit endedAt, and notes it was idle-discarded', async () => {
+    it('backdates the stop when given an explicit endedAt, and records by how much — not that anything was discarded', async () => {
       const timeEntriesRepo = makeTimeEntriesRepo({
         findOne: jest.fn().mockResolvedValue({ ...runningEntry }),
       });
@@ -904,9 +904,12 @@ describe('TimeEntriesService', () => {
       expect(record).toHaveBeenCalledTimes(1);
       const call = record.mock.calls[0] as [
         unknown,
-        { metadata: { reason: string } },
+        { metadata: Record<string, unknown> },
       ];
-      expect(call[1].metadata.reason).toBe('idle');
+      // The desktop also backdates a stop while it waits to hear whether
+      // idle time is kept, so "discarded" would often be false (ADR-0028).
+      expect(call[1].metadata).not.toHaveProperty('discardedSeconds');
+      expect(call[1].metadata.backdatedSeconds).toBeGreaterThanOrEqual(59);
     });
 
     it('rejects a backdated stop at or before the entry started', async () => {

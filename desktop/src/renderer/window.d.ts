@@ -76,6 +76,15 @@ declare global {
 
   type IdleHandling = 'off' | 'flag' | 'auto_subtract';
 
+  /** Mirrors src/renderer/idle-hold.ts and main's idle-hold-store.ts. */
+  interface IdleHold {
+    projectId: string | null;
+    taskId: string | null;
+    idleStartedAt: string;
+    returnedAt: string | null;
+    reason: 'timeout' | 'sleep';
+  }
+
   interface IdlePolicy {
     handling: IdleHandling;
     thresholdMinutes: number;
@@ -190,6 +199,11 @@ declare global {
       };
       idle: {
         seconds: () => Promise<number>;
+        hold: () => Promise<IdleHold | null>;
+        setHold: (hold: IdleHold) => Promise<void>;
+        markReturned: (at: string) => Promise<IdleHold | null>;
+        clearHold: () => Promise<void>;
+        onWake: (listener: () => void) => void;
       };
       urlCapture: {
         timerStateChanged: (running: boolean) => void;

@@ -1,3 +1,9 @@
+import {
+  awaySeconds,
+  decideOnReturn,
+  discardStartedAt,
+  keepStartedAt,
+} from "./idle-hold.js";
 import { reminderMessage } from "./reminder-message.js";
 
 export {};
@@ -639,9 +645,13 @@ let idlePolicy: IdlePolicy | null = null;
 let idlePolicyLoadedAt = 0;
 let lastIdleSeconds = 0;
 let idleHandled = false;
-let pendingIdleDiscardAt: string | null = null;
-// When input resumed while the idle prompt was still open — freezes "Idle for".
-let idleEndedAtMs: number | null = null;
+/**
+ * The idle stretch tracking is stopped for while the prompt waits — see
+ * idle-hold.ts. Mirrored on disk by main, so it outlives a reload.
+ */
+let idleHold: IdleHold | null = null;
+/** Keep, Discard and a resume on wake all restart the timer; only one may run at a time, start to totals. */
+let idleRestartInFlight = false;
 
 function showTrackingError(message: string): void {
   trackingError.textContent = message;
@@ -921,8 +931,17 @@ function setRunning(entry: TimeEntry | null): void {
   renderProjects();
   if (!entry) {
     idleHandled = false;
-    lastIdleSeconds = 0;
+    // A held idle stretch has no entry by design: its prompt stays up, and
+    // it keeps its last reading, or a return before the next poll is missed.
+    if (!idleHold) {
+      lastIdleSeconds = 0;
+      hideIdleBanner();
+    }
+  } else if (idleHold) {
+    // A timer started some other way — play, the tray, the web — settles
+    // the question: whatever it was, the person is tracking again.
     hideIdleBanner();
+    void window.api.idle.clearHold();
   }
   // The only place "is time being tracked" changes — mirrored to main so
   // the session engine can gate on it. Pausing closes the open URL session.
@@ -940,29 +959,33 @@ function formatClockTime(iso: string): string {
   });
 }
 
-function updateIdleStats(idleSeconds: number, idleStartedAtIso: string): void {
-  idleDurationEl.textContent = formatElapsed(idleSeconds * 1000);
-  idleSinceEl.textContent = formatClockTime(idleStartedAtIso);
+function updateIdleStats(hold: IdleHold): void {
+  idleDurationEl.textContent = formatElapsed(
+    awaySeconds(hold, Date.now() + serverOffsetMs) * 1000,
+  );
+  idleSinceEl.textContent = formatClockTime(hold.idleStartedAt);
 
   idleBannerMessage.textContent = "";
   idleBannerMessage.append(
-    document.createTextNode("No keyboard or mouse activity while tracking "),
+    document.createTextNode(
+      hold.reason === "sleep"
+        ? "Your computer was asleep while tracking "
+        : "No keyboard or mouse activity while tracking ",
+    ),
   );
   const projectNameStrong = document.createElement("strong");
-  projectNameStrong.textContent = runningEntry
-    ? projectNameFor(runningEntry.projectId)
-    : "";
+  projectNameStrong.textContent = projectNameFor(hold.projectId);
   idleBannerMessage.append(projectNameStrong);
   idleBannerMessage.append(
     document.createTextNode(
-      ". The timer is still running — choose what to do with the idle time.",
+      ". Tracking is paused — choose what to do with the idle time.",
     ),
   );
 }
 
-function showIdleBanner(idleSeconds: number, idleStartedAtIso: string): void {
-  pendingIdleDiscardAt = idleStartedAtIso;
-  updateIdleStats(idleSeconds, idleStartedAtIso);
+function showIdleBanner(hold: IdleHold): void {
+  idleHold = hold;
+  updateIdleStats(hold);
   idlePrompt.hidden = false;
   // Needs an answer, so it can't wait behind the compact bar or in the tray.
   setCompact(false);
@@ -972,8 +995,7 @@ function showIdleBanner(idleSeconds: number, idleStartedAtIso: string): void {
 function hideIdleBanner(): void {
   idlePrompt.hidden = true;
   idleAssignList.hidden = true;
-  pendingIdleDiscardAt = null;
-  idleEndedAtMs = null;
+  idleHold = null;
 }
 
 function showIdleNotice(message: string): void {
@@ -985,6 +1007,11 @@ function showIdleNotice(message: string): void {
 }
 
 async function checkIdle(): Promise<void> {
+  if (idleHold) {
+    await watchHeldIdle(idleHold);
+    return;
+  }
+
   // A manual pause is the person explicitly saying "not tracking right
   // now" — idle detection re-flagging or auto-subtracting on top of that
   // would just be fighting their own choice.
@@ -1003,27 +1030,13 @@ async function checkIdle(): Promise<void> {
   const inputResumed = idleSeconds < lastIdleSeconds;
   lastIdleSeconds = idleSeconds;
 
-  if (!idlePrompt.hidden) {
-    // Stays open until answered, even after input resumes (like Hubstaff);
-    // the timer keeps running meanwhile.
-    if (inputResumed && idleEndedAtMs === null) {
-      idleEndedAtMs = Date.now() + serverOffsetMs - idleSeconds * 1000;
-    }
-    if (pendingIdleDiscardAt) {
-      const blockEndMs = idleEndedAtMs ?? Date.now() + serverOffsetMs;
-      const blockSeconds = Math.floor(
-        (blockEndMs - Date.parse(pendingIdleDiscardAt)) / 1000,
-      );
-      updateIdleStats(blockSeconds, pendingIdleDiscardAt);
-    }
-    return;
-  }
-
   if (inputResumed) {
     // Real input happened since the last check.
     idleHandled = false;
   }
 
+  // Before the timeout nothing happens at all: the timer keeps running and
+  // coming back carries on as if nobody had left.
   if (idleSeconds < thresholdSeconds) return;
 
   const idleStartedAtIso = new Date(
@@ -1047,7 +1060,128 @@ async function checkIdle(): Promise<void> {
 
   if (idleHandled) return;
   idleHandled = true;
-  showIdleBanner(idleSeconds, idleStartedAtIso);
+  await holdAtTimeout(idleStartedAtIso);
+}
+
+/**
+ * The timeout is reached: tracking stops where input stopped and waits for
+ * an answer, rather than running on — a question nobody answers must not
+ * run up hours on its own. The hold is written first, so the stop that
+ * empties the timer cannot also close the prompt.
+ */
+async function holdAtTimeout(idleStartedAt: string): Promise<void> {
+  if (!runningEntry) return;
+  const hold: IdleHold = {
+    projectId: runningEntry.projectId,
+    taskId: runningEntry.taskId,
+    idleStartedAt,
+    returnedAt: null,
+    reason: "timeout",
+  };
+  await window.api.idle.setHold(hold);
+  idleHold = hold;
+
+  const result = await callTracking(() => window.api.tracking.stop(idleStartedAt));
+  if (!result.ok) {
+    idleHold = null;
+    await window.api.idle.clearHold();
+    handleTrackingFailure(result);
+    return;
+  }
+  setRunning(null);
+  showIdleBanner(hold);
+}
+
+/** While the prompt waits: notes when input comes back, and keeps "Idle for" current until it does. */
+async function watchHeldIdle(hold: IdleHold): Promise<void> {
+  if (hold.returnedAt === null) {
+    const idleSeconds = await window.api.idle.seconds();
+    const inputResumed = idleSeconds < lastIdleSeconds;
+    lastIdleSeconds = idleSeconds;
+    if (inputResumed) {
+      const returnedAt = new Date(
+        Date.now() + serverOffsetMs - idleSeconds * 1000,
+      ).toISOString();
+      const updated = await window.api.idle.markReturned(returnedAt);
+      if (idleHold && updated) idleHold = updated;
+    }
+  }
+  if (idleHold) updateIdleStats(idleHold);
+}
+
+/**
+ * A hold left from a sleep, or from before a reload or relaunch: resumes
+ * it, asks about it, or lets it go, by how long the person was away.
+ * Whoever is at the machine when this runs is back, so a hold with no
+ * return recorded gets one now.
+ */
+async function settleIdleHold(): Promise<void> {
+  const stored = await window.api.idle.hold();
+  if (!stored) return;
+  // Tracking again already — started on the web, say — so nothing is held.
+  if (runningEntry) {
+    await window.api.idle.clearHold();
+    return;
+  }
+  const hold = stored.returnedAt
+    ? stored
+    : ((await window.api.idle.markReturned(new Date().toISOString())) ?? stored);
+
+  if (!idlePolicy) await loadIdlePolicy();
+  // With no policy to measure against, asking is the one choice that loses nothing.
+  const decision = idlePolicy
+    ? decideOnReturn(hold, idlePolicy, Date.now())
+    : ({ kind: "ask" } as const);
+
+  if (decision.kind === "resume") {
+    idleHold = hold;
+    await restartAfterIdle(decision.startedAt);
+    return;
+  }
+  if (decision.kind === "ask") {
+    showIdleBanner(hold);
+    return;
+  }
+  await window.api.idle.clearHold();
+  showIdleNotice(
+    `Timer stopped after ${Math.floor(awaySeconds(hold, Date.now()) / 60)} min away; the idle time was not counted.`,
+  );
+}
+
+/**
+ * Starts tracking again after a hold — from `startedAt` on the held
+ * Project and Task, or on `assignTo` with no Task, since a Task belongs to
+ * one Project and can't follow the time elsewhere.
+ */
+async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<void> {
+  const hold = idleHold;
+  if (!hold || idleRestartInFlight) return;
+  const projectId = assignTo ?? hold.projectId;
+  const taskId = assignTo ? null : hold.taskId;
+
+  // Held until the totals are in too, so a second click can't start over
+  // a restart that is still finishing.
+  idleRestartInFlight = true;
+  try {
+    const startResult = await callTracking(() =>
+      window.api.tracking.start(projectId, taskId, startedAt),
+    );
+    if (!startResult.ok) {
+      // Still unanswered — a work limit, say, refused it — so the hold
+      // stays and the prompt with it: dropping them here would lose the
+      // idle time with no way left to keep or discard it.
+      showIdleBanner(hold);
+      handleTrackingFailure(startResult);
+      return;
+    }
+    hideIdleBanner();
+    await window.api.idle.clearHold();
+    // The held stretch is now either back on the Project, moved, or dropped.
+    await refreshTodayTotals();
+    setRunning(startResult.data);
+  } finally {
+    idleRestartInFlight = false;
+  }
 }
 
 /** Seconds already tracked against a Project today, plus the live entry if it is that Project's. */
@@ -1896,49 +2030,15 @@ switchButton.addEventListener("click", () => {
 });
 
 idleKeepButton.addEventListener("click", () => {
-  hideIdleBanner();
-  // Re-arm for the next idle stretch — input may have resumed polls ago,
-  // so checkIdle won't see a fresh drop to reset this itself.
-  idleHandled = false;
+  if (idleHold) void restartAfterIdle(keepStartedAt(idleHold));
 });
 
-/**
- * Ends the entry at when idleness started, then starts a fresh one on the
- * same Project and Task — either now, dropping the idle stretch, or back at
- * idle start onto `assignTo`, moving the stretch to that Project instead.
- */
-async function resolveIdleTime(assignTo?: string): Promise<void> {
-  if (!pendingIdleDiscardAt || !runningEntry) return;
-  const discardAt = pendingIdleDiscardAt;
-  const projectId = assignTo ?? runningEntry.projectId;
-  // A Task belongs to one Project, so it can't follow the time elsewhere.
-  const taskId = assignTo ? null : runningEntry.taskId;
-  hideIdleBanner();
-
-  const stopResult = await callTracking(() =>
-    window.api.tracking.stop(discardAt),
-  );
-  if (!stopResult.ok) {
-    handleTrackingFailure(stopResult);
-    return;
-  }
-  setRunning(null);
-
-  const startResult = await callTracking(() =>
-    window.api.tracking.start(projectId, taskId, assignTo ? discardAt : undefined),
-  );
-  // This device counted the idle stretch on the old Project; the server's
-  // totals have it dropped or moved.
-  await refreshTodayTotals();
-  if (startResult.ok) {
-    setRunning(startResult.data);
-  } else {
-    handleTrackingFailure(startResult);
-  }
-}
-
 idleDiscardButton.addEventListener("click", () => {
-  void resolveIdleTime();
+  if (idleHold) {
+    void restartAfterIdle(
+      discardStartedAt(idleHold, new Date(Date.now() + serverOffsetMs).toISOString()),
+    );
+  }
 });
 
 idleAssignToggle.addEventListener("click", () => {
@@ -1947,7 +2047,7 @@ idleAssignToggle.addEventListener("click", () => {
 
   idleAssignList.innerHTML = "";
   const otherProjects = projects.filter(
-    (project) => project.id !== runningEntry?.projectId,
+    (project) => project.id !== idleHold?.projectId,
   );
   for (const project of otherProjects) {
     const button = document.createElement("button");
@@ -1955,7 +2055,9 @@ idleAssignToggle.addEventListener("click", () => {
     button.textContent = project.name;
     button.addEventListener(
       "click",
-      () => void resolveIdleTime(project.id),
+      () => {
+        if (idleHold) void restartAfterIdle(keepStartedAt(idleHold), project.id);
+      },
     );
 
     const item = document.createElement("li");
@@ -2008,6 +2110,9 @@ async function runInitTracking(): Promise<void> {
   await loadIdlePolicy();
 
   await refreshStatus(true);
+
+  // Left from a sleep, or from before this window was reloaded or the app relaunched.
+  await settleIdleHold();
 
   // Never starts the timer: quitting stopped it, and only the person
   // pressing play starts it again. Shows what play would resume instead,
@@ -2200,6 +2305,9 @@ function showCapturePaused(paused: boolean): void {
 }
 
 window.api.windowControls.onCapturePaused(showCapturePaused);
+// Main stopped the timer as the machine slept, which this window, asleep
+// too, never saw — so the status is read before the hold is judged.
+window.api.idle.onWake(() => void refreshStatus().then(settleIdleHold));
 
 const recoveredTimerPrompt = document.getElementById("recovered-timer")!;
 const recoveredTimerMessage = document.getElementById(
