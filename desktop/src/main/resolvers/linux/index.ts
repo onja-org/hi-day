@@ -7,7 +7,11 @@ import type {
   ResolveRequest,
 } from '../../url-capture/protocol';
 import { parseRequestLine } from '../../url-capture/protocol';
-import { loadBrowserRegistry, lookupBrowser } from '../../url-capture/browser-registry';
+import {
+  loadBrowserRegistry,
+  lookupBrowser,
+  normalizeAppName,
+} from '../../url-capture/browser-registry';
 import { AtspiClient, EventRegistrationError, type AtspiWindow } from './atspi';
 import {
   accessibilityBusUnavailableReason,
@@ -23,14 +27,7 @@ import {
  * `window:activate` carries the same information.
  */
 
-/**
- * AT-SPI reports an application's display name ("Google Chrome"); the
- * registry keys Linux entries by process name ("google-chrome"). Normalize
- * before matching rather than duplicating every name in the registry.
- */
-export function normalizeAppName(appName: string): string {
-  return appName.trim().toLowerCase().replace(/\s+/g, '-');
-}
+export { normalizeAppName };
 
 /**
  * Derives the protocol's `hwnd` from an AT-SPI object path, whose trailing

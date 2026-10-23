@@ -36,6 +36,7 @@ describe('ApiClient#heartbeat', () => {
     const client = new ApiClient(BASE_URL);
     await client.heartbeat('device-token-123', '1.2.3', {
       appCapture: { status: 'unavailable', detail: 'No X display.' },
+      urlCapture: { status: 'degraded', detail: 'Chrome is running without website tracking.' },
       displaySession: 'x11 · ubuntu:GNOME',
     });
 
@@ -44,6 +45,8 @@ describe('ApiClient#heartbeat', () => {
       appVersion: '1.2.3',
       appCaptureStatus: 'unavailable',
       appCaptureDetail: 'No X display.',
+      urlCaptureStatus: 'degraded',
+      urlCaptureDetail: 'Chrome is running without website tracking.',
       displaySession: 'x11 · ubuntu:GNOME',
     });
   });

@@ -121,6 +121,12 @@ export class DeviceSessionService {
             appCaptureDetail: dto.appCaptureDetail ?? null,
           }
         : {}),
+      ...(dto.urlCaptureStatus !== undefined
+        ? {
+            urlCaptureStatus: dto.urlCaptureStatus,
+            urlCaptureDetail: dto.urlCaptureDetail ?? null,
+          }
+        : {}),
       ...(dto.displaySession !== undefined
         ? { displaySession: dto.displaySession }
         : {}),

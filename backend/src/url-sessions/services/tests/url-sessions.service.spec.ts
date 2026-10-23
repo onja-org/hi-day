@@ -235,6 +235,7 @@ describe('UrlSessionsService', () => {
         {
           url: 'https://example.com/page',
           host: 'example.com',
+          urlUnknown: false,
           title: 'Newer title',
           totalActiveMs: 420_000,
           lastVisitedAt: new Date('2026-01-02T09:00:00Z'),
@@ -243,7 +244,7 @@ describe('UrlSessionsService', () => {
       ]);
     });
 
-    it("queries excluding empty (private) urls, scoped to the caller's own membership by default", async () => {
+    it("queries excluding private sessions but keeping unknown-URL ones, scoped to the caller's own membership by default", async () => {
       const find = jest.fn().mockResolvedValue([]);
       const urlSessionsRepo = makeUrlSessionsRepo({ find });
       const service = makeService({ urlSessionsRepo });
@@ -252,9 +253,55 @@ describe('UrlSessionsService', () => {
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { organisationId: 'org-1', membershipId: 'm-1', url: Not('') },
+          where: [
+            { organisationId: 'org-1', membershipId: 'm-1', url: Not('') },
+            {
+              organisationId: 'org-1',
+              membershipId: 'm-1',
+              url: '',
+              confidence: UrlSessionConfidence.UNKNOWN,
+            },
+          ],
         }),
       );
+    });
+
+    it("groups unknown-URL time into one row per browser, never one browser's into another's", async () => {
+      const unknown = (browser: string, activeMs: number, endedAt: string) => ({
+        url: '',
+        host: '',
+        title: null,
+        browser,
+        confidence: UrlSessionConfidence.UNKNOWN,
+        activeMs,
+        endedAt: new Date(endedAt),
+      });
+      const urlSessionsRepo = makeUrlSessionsRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue([
+            unknown('chrome', 60_000, '2026-01-02T10:00:00Z'),
+            unknown('firefox', 30_000, '2026-01-02T09:30:00Z'),
+            unknown('chrome', 15_000, '2026-01-02T09:00:00Z'),
+          ]),
+      });
+      const service = makeService({ urlSessionsRepo });
+
+      const result = await service.listGroupedByUrl('org-1', 'user-1');
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          urlUnknown: true,
+          browser: 'chrome',
+          totalActiveMs: 75_000,
+          sessionCount: 2,
+        }),
+        expect.objectContaining({
+          urlUnknown: true,
+          browser: 'firefox',
+          totalActiveMs: 30_000,
+        }),
+      ]);
     });
 
     it("rejects a plain member trying to view another member's activity", async () => {
@@ -280,11 +327,10 @@ describe('UrlSessionsService', () => {
 
       expect(find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            organisationId: 'org-1',
-            membershipId: 'other-membership',
-            url: Not(''),
-          },
+          where: [
+            expect.objectContaining({ membershipId: 'other-membership' }),
+            expect.objectContaining({ membershipId: 'other-membership' }),
+          ],
         }),
       );
     });
@@ -296,6 +342,8 @@ describe('UrlSessionsService', () => {
         id: 'session-1',
         url: 'https://example.com/page',
         host: 'example.com',
+        browser: 'chrome',
+        confidence: UrlSessionConfidence.DISPLAYED,
         title: 'Example Page',
         startedAt: new Date('2026-09-08T09:00:00.000Z'),
         endedAt: new Date('2026-09-08T09:05:00.000Z'),
@@ -342,6 +390,8 @@ describe('UrlSessionsService', () => {
               projectId: 'project-day',
               url: 'https://example.com/page',
               host: 'example.com',
+              urlUnknown: false,
+              browser: 'chrome',
               title: 'Example Page',
               activeMs: 90_000,
               sessionCount: 2,
@@ -355,6 +405,8 @@ describe('UrlSessionsService', () => {
               projectId: 'project-day',
               url: 'https://other.example/',
               host: 'other.example',
+              urlUnknown: false,
+              browser: 'chrome',
               title: 'Example Page',
               activeMs: 15_000,
               sessionCount: 1,

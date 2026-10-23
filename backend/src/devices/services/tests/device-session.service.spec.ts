@@ -6,6 +6,7 @@ import { AppCaptureStatus } from '../../../database/entities/app-capture-status.
 import { Device } from '../../../database/entities/device.entity';
 import { DevicePlatform } from '../../../database/entities/device-platform.enum';
 import { DeviceSession } from '../../../database/entities/device-session.entity';
+import { UrlCaptureStatus } from '../../../database/entities/url-capture-status.enum';
 import { DeviceSessionService } from '../device-session.service';
 
 describe('DeviceSessionService', () => {
@@ -231,6 +232,27 @@ describe('DeviceSessionService', () => {
       );
     });
 
+    it('stores URL-capture health alongside app-capture health', async () => {
+      const update = jest.fn().mockResolvedValue(undefined);
+      const devicesRepo = makeDevicesRepo({ update });
+      const service = makeService({ devicesRepo });
+
+      await service.heartbeat('device-1', {
+        urlCaptureStatus: UrlCaptureStatus.DEGRADED,
+        urlCaptureDetail: 'Chrome is running without website tracking.',
+      });
+
+      const [, patch] = update.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(patch).toMatchObject({
+        urlCaptureStatus: UrlCaptureStatus.DEGRADED,
+        urlCaptureDetail: 'Chrome is running without website tracking.',
+      });
+      expect(patch).not.toHaveProperty('appCaptureStatus');
+    });
+
     it('leaves the last report standing when an agent sends none', async () => {
       const update = jest.fn().mockResolvedValue(undefined);
       const devicesRepo = makeDevicesRepo({ update });
@@ -245,6 +267,7 @@ describe('DeviceSessionService', () => {
       expect(patch).not.toHaveProperty('appCaptureStatus');
       expect(patch).not.toHaveProperty('appCaptureDetail');
       expect(patch).not.toHaveProperty('displaySession');
+      expect(patch).not.toHaveProperty('urlCaptureStatus');
     });
   });
 

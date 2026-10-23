@@ -15,6 +15,8 @@ describe("urlActivityToPdf", () => {
               projectId: "p-1",
               url: "https://example.com/docs",
               host: "example.com",
+              urlUnknown: false,
+              browser: "chrome",
               title: "Docs",
               activeMs: 3_600_000,
               sessionCount: 2,

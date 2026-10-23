@@ -55,6 +55,40 @@ describe('helper binaries that share a browser name', () => {
   });
 });
 
+/**
+ * Seen on a real session: Claude Desktop's native-messaging host, started by
+ * Chrome for its extension. Counted as a Chrome with no accessibility flag,
+ * it made every machine running it report a blind browser.
+ */
+describe('extension native-messaging hosts', () => {
+  const host = chrome({
+    pid: 6886,
+    command: 'chrome-native-h',
+    executablePath: '/usr/lib/claude-desktop/resources/chrome-native-host',
+    cmdline: [
+      '/usr/lib/claude-desktop/resources/chrome-native-host',
+      'chrome-extension://fcoeoabgfenejglbffodgkkbkcdhcgfn/',
+    ],
+  });
+
+  it('is never taken for a blind browser', () => {
+    expect(selectBlindBrowsers([host], tokens)).toEqual([]);
+  });
+
+  it('is dropped on its extension-origin argument even under an unrecognised name', () => {
+    const renamed = chrome({
+      command: 'chrome-gnome-sh',
+      executablePath: '/usr/bin/chrome-gnome-shell',
+      cmdline: ['/usr/bin/chrome-gnome-shell', 'chrome-extension://gphhapmejobijbbhgpjhcjognlahblep/'],
+    });
+    expect(selectBlindBrowsers([renamed], tokens)).toEqual([]);
+  });
+
+  it('leaves the blind Chrome beside it reported', () => {
+    expect(selectBlindBrowsers([host, chrome()], tokens).map((b) => b.pid)).toEqual([5614]);
+  });
+});
+
 describe('browserTokens', () => {
   it('keeps the words that name a browser', () => {
     expect(tokens).toContain('chrome');

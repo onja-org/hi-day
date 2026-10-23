@@ -16,6 +16,7 @@ import { DeviceSession } from '../../database/entities/device-session.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { UrlCaptureStatus } from '../../database/entities/url-capture-status.enum';
 import {
   computeDeviceStatus,
   DEFAULT_DEVICE_HEARTBEAT_WINDOW_MINUTES,
@@ -31,6 +32,8 @@ export interface DeviceSummary {
   appVersion: string | null;
   appCaptureStatus: AppCaptureStatus | null;
   appCaptureDetail: string | null;
+  urlCaptureStatus: UrlCaptureStatus | null;
+  urlCaptureDetail: string | null;
   displaySession: string | null;
   userId: string;
   userEmail: string;
@@ -272,6 +275,8 @@ export class DevicesService {
       appVersion: device.appVersion,
       appCaptureStatus: device.appCaptureStatus,
       appCaptureDetail: device.appCaptureDetail,
+      urlCaptureStatus: device.urlCaptureStatus,
+      urlCaptureDetail: device.urlCaptureDetail,
       displaySession: device.displaySession,
       userId: device.userId,
       userEmail: device.user.email,

@@ -34,6 +34,47 @@ describe('evaluateSupport — Step 20 support matrix', () => {
   });
 });
 
+/**
+ * Read from /proc/<pid>/environ of a real URL side-car after the app had
+ * auto-updated and relaunched itself: Electron copied its own `Unity` over
+ * ORIGINAL_XDG_CURRENT_DESKTOP, and URL capture switched off.
+ */
+describe('readSessionEnvironment — after the app relaunches itself', () => {
+  const relaunchedEnv = {
+    XDG_SESSION_TYPE: 'wayland',
+    XDG_CURRENT_DESKTOP: 'Unity',
+    ORIGINAL_XDG_CURRENT_DESKTOP: 'Unity',
+    XDG_SESSION_DESKTOP: 'ubuntu',
+    DESKTOP_SESSION: 'ubuntu',
+    GNOME_SHELL_SESSION_MODE: 'ubuntu',
+    XDG_MENU_PREFIX: 'gnome-',
+  };
+
+  it('recovers the real desktop from markers Electron leaves alone', () => {
+    expect(readSessionEnvironment(relaunchedEnv).currentDesktop).toBe('ubuntu:GNOME');
+  });
+
+  it('keeps that GNOME Wayland session supported', () => {
+    expect(evaluateSupport(readSessionEnvironment(relaunchedEnv)).supported).toBe(true);
+  });
+
+  it('names plain GNOME as GNOME', () => {
+    const env = { ...relaunchedEnv, XDG_SESSION_DESKTOP: 'gnome', DESKTOP_SESSION: 'gnome' };
+    expect(readSessionEnvironment(env).currentDesktop).toBe('GNOME');
+  });
+
+  it('falls back to the session name on a desktop that is not GNOME', () => {
+    const env = {
+      XDG_SESSION_TYPE: 'wayland',
+      XDG_CURRENT_DESKTOP: 'Unity',
+      ORIGINAL_XDG_CURRENT_DESKTOP: 'Unity',
+      XDG_SESSION_DESKTOP: 'KDE',
+    };
+    expect(readSessionEnvironment(env).currentDesktop).toBe('KDE');
+    expect(evaluateSupport(readSessionEnvironment(env)).supported).toBe(false);
+  });
+});
+
 describe('readSessionEnvironment — Electron rewrites XDG_CURRENT_DESKTOP', () => {
   // These are the literal values observed in a running Electron main
   // process on this machine (read from /proc/<pid>/environ) during a real

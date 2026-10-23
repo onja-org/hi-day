@@ -7,6 +7,8 @@ function page(overrides: Partial<UrlHourBucketPage> = {}): UrlHourBucketPage {
     projectId: "p-1",
     url: "https://github.com/onja-org/repo",
     host: "github.com",
+    urlUnknown: false,
+    browser: "chrome",
     title: "repo",
     activeMs: 1_000,
     sessionCount: 1,

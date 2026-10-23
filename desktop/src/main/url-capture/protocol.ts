@@ -7,7 +7,13 @@
  */
 
 export type Source = 'apple-events' | 'ax' | 'uia' | 'atspi' | 'title';
-export type Confidence = 'exact' | 'displayed' | 'guess';
+/**
+ * `unknown` is never produced by a resolver: the orchestrator records it for
+ * a focused browser window whose address bar could not be read at all, so
+ * that browser time is kept as "URL unknown" rather than dropped. Such a
+ * session carries an empty url and host, like a private one.
+ */
+export type Confidence = 'exact' | 'displayed' | 'guess' | 'unknown';
 
 export type ResolveRequest = { id: number; op: 'resolve'; pid: number; hwnd: number };
 export type PingRequest = { id: number; op: 'ping' };
