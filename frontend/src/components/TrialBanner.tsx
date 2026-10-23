@@ -4,6 +4,7 @@ import Link from "next/link";
 import { SealPercentIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useTrialStatus } from "@/hooks/useTrialStatus";
+import { shouldShowTrialBanner } from "@/lib/shouldShowTrialBanner";
 import { trialBannerCopy } from "@/lib/trialBannerCopy";
 
 type TrialBannerProps = {
@@ -28,6 +29,12 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
   // Nothing to count down for an organisation that never pays, so no banner
   // on any page — a payment prompt it can never act on is pure noise.
   if (!trialQuery.data?.trial || trialQuery.data.isFree) {
+    return null;
+  }
+
+  // Only near the end: a countdown on every page from day one is wallpaper
+  // by day three. The Billing section states the trial at any point.
+  if (!shouldShowTrialBanner(trialQuery.data.trial)) {
     return null;
   }
 
