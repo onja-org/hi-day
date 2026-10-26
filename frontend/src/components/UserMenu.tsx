@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SignOut, UserCircle } from "@phosphor-icons/react";
+import { DownloadSimple, SignOut, UserCircle } from "@phosphor-icons/react";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { logout } from "@/lib/logout";
 import { Spinner } from "./Spinner";
@@ -63,6 +63,16 @@ export function UserMenu() {
             className="rounded-md px-3 py-2 text-left text-slate-900 transition-colors duration-150 hover:bg-cream"
           >
             Account
+          </Link>
+          <Link
+            href="/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setMenuOpen(false)}
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-slate-900 transition-colors duration-150 hover:bg-cream"
+          >
+            <DownloadSimple size={18} aria-hidden="true" />
+            Desktop app
           </Link>
           <button
             type="button"
