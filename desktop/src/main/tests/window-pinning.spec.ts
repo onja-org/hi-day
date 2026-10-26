@@ -21,13 +21,12 @@ describe('which windows float above everything else', () => {
     expect(shouldPin('compact', false)).toBe(shouldPin('mini', false));
   });
 
-  // "floating" left the window unpinned on Windows: Electron puts it just
-  // behind the taskbar instead.
-  it('pins on Windows at a level outside its behind-the-taskbar set', () => {
+  it('clears the taskbar band on Windows', () => {
     expect(pinLevel('win32')).toBe('pop-up-menu');
   });
 
-  it('keeps "floating" on macOS and Linux', () => {
+  // The level they already used, so the fix cannot change them.
+  it('leaves macOS and Linux where they were', () => {
     expect(pinLevel('darwin')).toBe('floating');
     expect(pinLevel('linux')).toBe('floating');
   });

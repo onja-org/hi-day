@@ -13,10 +13,12 @@ export function shouldPin(mode: WindowMode, preference: boolean): boolean {
 }
 
 /**
- * The level to float at. Electron on Windows reads macOS's below-the-Dock
- * levels ("floating", its default, and the like) as "just behind the
- * taskbar", which leaves the window unpinned. "pop-up-menu" is the lowest
- * level that escapes that; macOS and Linux keep "floating".
+ * The level to float at. Electron bands these: `floating` — the default —
+ * up to `status` sits below the taskbar on Windows and below the Dock on
+ * macOS, and only `pop-up-menu` and above clear them. That band is why
+ * `floating` failed to keep the window on top on Windows. macOS belongs
+ * under its Dock, so it keeps `floating`, which is also what it already
+ * used; Linux ignores the level entirely.
  */
 export function pinLevel(
   platform: NodeJS.Platform,
