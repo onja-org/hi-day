@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { DashboardHeader } from "./DashboardHeader";
+import { DesktopAppPrompt } from "./DesktopAppPrompt";
 import { FadeIn } from "./FadeIn";
 import { Sidebar } from "./Sidebar";
 
@@ -30,6 +31,7 @@ export function DashboardLayoutShell({
           <FadeIn>{children}</FadeIn>
         </main>
       </div>
+      <DesktopAppPrompt />
     </div>
   );
 }
