@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldPin } from '../window-pinning';
+import { pinLevel, shouldPin } from '../window-pinning';
 
 describe('which windows float above everything else', () => {
   it('never floats the full window', () => {
@@ -19,5 +19,16 @@ describe('which windows float above everything else', () => {
 
   it('keeps the two small views in step', () => {
     expect(shouldPin('compact', false)).toBe(shouldPin('mini', false));
+  });
+
+  // "floating" left the window unpinned on Windows: Electron puts it just
+  // behind the taskbar instead.
+  it('pins on Windows at a level outside its behind-the-taskbar set', () => {
+    expect(pinLevel('win32')).toBe('pop-up-menu');
+  });
+
+  it('keeps "floating" on macOS and Linux', () => {
+    expect(pinLevel('darwin')).toBe('floating');
+    expect(pinLevel('linux')).toBe('floating');
   });
 });

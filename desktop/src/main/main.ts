@@ -112,7 +112,7 @@ import {
 } from "./url-capture/debug-harness";
 import { intervalFromEnv, offlineSimulated } from "./tuning";
 import { resolveWebAppUrl } from "./web-app-url";
-import { shouldPin } from "./window-pinning";
+import { pinLevel, shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
 import {
   identifyBrowser,
@@ -644,7 +644,7 @@ function createWindow(): void {
 function forceToFront(): void {
   if (!mainWindow) return;
   const pinned = mainWindow.isAlwaysOnTop();
-  mainWindow.setAlwaysOnTop(true);
+  mainWindow.setAlwaysOnTop(true, pinLevel(process.platform));
   mainWindow.moveTop();
   if (!pinned) mainWindow.setAlwaysOnTop(false);
   mainWindow.focus();
@@ -772,7 +772,7 @@ function applyPinning(): void {
   if (!mainWindow) return;
   mainWindow.setAlwaysOnTop(
     shouldPin(windowMode, compactAlwaysOnTop(app.getPath("userData"))),
-    "floating",
+    pinLevel(process.platform),
   );
 }
 
