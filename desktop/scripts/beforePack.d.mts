@@ -4,9 +4,14 @@
  */
 export declare function requirementFor(
   platform: string,
-): { path: string; build: string } | null;
+): { path: string; alongside: string[]; build: string } | null;
 
 export declare function missingArchitectures(lipoOutput: string): string[];
+
+export declare function missingDataFiles(required: {
+  path: string;
+  alongside: string[];
+}): string[];
 
 export default function beforePack(context: {
   electronPlatformName: string;
