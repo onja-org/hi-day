@@ -1,7 +1,10 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   missingArchitectures,
+  missingDataFiles,
   requirementFor,
 } from '../../../scripts/beforePack.mjs';
 
@@ -29,6 +32,62 @@ describe('requirementFor', () => {
   it('names the command that builds each side-car', () => {
     expect(requirementFor('win32')?.build).toContain('build:resolver:win');
     expect(requirementFor('darwin')?.build).toContain('build:resolver:mac');
+  });
+
+  it('requires the two JSON files the Windows resolver reads at startup', () => {
+    // v0.3.7 shipped a Windows publish output holding the .exe and neither of
+    // these. The resolver threw FileNotFoundException before answering a single
+    // request, so no Windows machine on that version recorded a URL.
+    expect(requirementFor('win32')?.alongside).toEqual([
+      'browser-registry.json',
+      'firefox-private-markers.json',
+    ]);
+  });
+
+  it('requires nothing beside the darwin helper, which reads no file of its own', () => {
+    expect(requirementFor('darwin')?.alongside).toEqual([]);
+  });
+});
+
+describe('missingDataFiles', () => {
+  /** A publish directory holding `present`, with the side-car binary in it. */
+  function publishDir(present: string[]): string {
+    const dir = mkdtempSync(join(tmpdir(), 'before-pack-'));
+    writeFileSync(join(dir, 'win-resolver.exe'), '');
+    for (const file of present) writeFileSync(join(dir, file), '{}');
+    return dir;
+  }
+
+  const alongside = ['browser-registry.json', 'firefox-private-markers.json'];
+
+  it('accepts a publish output holding every data file', () => {
+    const dir = publishDir(alongside);
+    expect(
+      missingDataFiles({ path: join(dir, 'win-resolver.exe'), alongside }),
+    ).toEqual([]);
+  });
+
+  it('names both files when the output has the binary alone', () => {
+    // Exactly what v0.3.7's Windows build produced, and what this guard now
+    // refuses to package.
+    const dir = publishDir([]);
+    expect(
+      missingDataFiles({ path: join(dir, 'win-resolver.exe'), alongside }),
+    ).toEqual(alongside);
+  });
+
+  it('names only the file that is absent in a half-copied output', () => {
+    const dir = publishDir(['browser-registry.json']);
+    expect(
+      missingDataFiles({ path: join(dir, 'win-resolver.exe'), alongside }),
+    ).toEqual(['firefox-private-markers.json']);
+  });
+
+  it('asks nothing of a side-car that requires no data file', () => {
+    const dir = publishDir([]);
+    expect(
+      missingDataFiles({ path: join(dir, 'win-resolver.exe'), alongside: [] }),
+    ).toEqual([]);
   });
 });
 
