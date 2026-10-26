@@ -1,7 +1,7 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   missingArchitectures,
   missingDataFiles,
@@ -50,13 +50,20 @@ describe('requirementFor', () => {
 });
 
 describe('missingDataFiles', () => {
+  const made: string[] = [];
+
   /** A publish directory holding `present`, with the side-car binary in it. */
   function publishDir(present: string[]): string {
     const dir = mkdtempSync(join(tmpdir(), 'before-pack-'));
+    made.push(dir);
     writeFileSync(join(dir, 'win-resolver.exe'), '');
     for (const file of present) writeFileSync(join(dir, file), '{}');
     return dir;
   }
+
+  afterAll(() => {
+    for (const dir of made) rmSync(dir, { recursive: true, force: true });
+  });
 
   const alongside = ['browser-registry.json', 'firefox-private-markers.json'];
 
