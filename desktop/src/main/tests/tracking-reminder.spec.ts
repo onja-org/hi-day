@@ -12,6 +12,7 @@ function input(overrides: Partial<ReminderInput> = {}): ReminderInput {
     isTracking: false,
     idleSeconds: 0,
     since: new Date('2026-10-14T09:00:00'),
+    stoppedByAgent: false,
     awaitingIdleAnswer: false,
     ...overrides,
   };
@@ -32,8 +33,22 @@ describe('shouldRemind', () => {
     expect(shouldRemind(input({ isTracking: true }))).toBe(false);
   });
 
+  it('nudges about a stop the person made themselves', () => {
+    expect(shouldRemind(input({ stoppedByAgent: false }))).toBe(true);
+  });
+
+  it('says nothing about a timer the agent stopped itself', () => {
+    expect(shouldRemind(input({ stoppedByAgent: true }))).toBe(false);
+  });
+
   it('stays quiet while an idle stretch is waiting to be kept or discarded', () => {
     expect(shouldRemind(input({ awaitingIdleAnswer: true }))).toBe(false);
+  });
+
+  it('stays quiet for a hold found after a relaunch, which no stop here explains', () => {
+    expect(
+      shouldRemind(input({ stoppedByAgent: false, awaitingIdleAnswer: true })),
+    ).toBe(false);
   });
 
   it('stays quiet at a machine nobody is sitting at', () => {

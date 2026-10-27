@@ -136,6 +136,10 @@ function launch(scenario: Scenario) {
     switchedTo: [] as (string | null)[],
     /** Bodies passed to main's raise-the-window alert. */
     trackingAlerts: [] as string[],
+    /** Bodies passed to the tray's quiet start/stop notification. */
+    timerNotices: [] as string[],
+    /** How many times the renderer asked main to bring the window forward. */
+    shows: 0,
     /** The backdated start each start asked for, in order — undefined for "now". */
     startedAt: [] as (string | undefined)[],
     /** The backdated end each stop asked for, in order. */
@@ -159,6 +163,7 @@ function launch(scenario: Scenario) {
   const reopenListeners: (() => void)[] = [];
   const reminderListeners: ((message: string) => void)[] = [];
   const closeRequestListeners: (() => void)[] = [];
+  const trayToggleListeners: (() => void)[] = [];
   const trayTrackProjectListeners: ((projectId: string) => void)[] = [];
   const traySignOutListeners: (() => void)[] = [];
   const completed: {
@@ -181,6 +186,18 @@ function launch(scenario: Scenario) {
     revoked: false,
     /** Set mid-test to have every start refused, as a work limit would. */
     refuseStarts: false,
+    /** What that refusal answers with — 403 is the one that opens a dialog of its own. */
+    refuseStartStatus: 409,
+    /** Set mid-test to have starts queued rather than sent, as they are with no connection. */
+    queueStarts: false,
+    /** Set mid-test to have the status read fail outright, as a wake on a dead network does. */
+    statusThrows: false,
+    /**
+     * What `status` reports as the running entry's worked seconds. Set to
+     * stand in for the cache's projection, which belongs to the entry that
+     * ended rather than the one running now.
+     */
+    workedSecondsOverride: null as number | null,
     limitReached: scenario.limitReached ?? null as
       | { kind: 'daily' | 'weekly'; limitHours: number }
       | null,
@@ -215,7 +232,7 @@ function launch(scenario: Scenario) {
           return Promise.resolve({
             ok: false,
             message: 'You have reached your daily limit.',
-            status: 409,
+            status: server.refuseStartStatus,
           });
         }
         calls.start += 1;
@@ -230,6 +247,11 @@ function launch(scenario: Scenario) {
           startedAt: startedAt ?? new Date(now()).toISOString(),
         };
         if (!server.revoked) running = started;
+        // An offline start is queued and answered from here, with the time
+        // it was pressed — `fromCache` is how the renderer knows.
+        if (server.queueStarts) {
+          return Promise.resolve({ ok: true, data: started, fromCache: true });
+        }
         return ok(started);
       },
       switchTo: (projectId: string | null) => {
@@ -258,10 +280,11 @@ function launch(scenario: Scenario) {
       },
       status: () => {
         calls.status += 1;
+        if (server.statusThrows) return Promise.reject(new Error('no network'));
         return ok({
           entry: running,
           now: new Date(now()).toISOString(),
-          workedSeconds: serverWorkedSeconds(),
+          workedSeconds: server.workedSecondsOverride ?? serverWorkedSeconds(),
           ...(server.limitReached ? { limitReached: server.limitReached } : {}),
         });
       },
@@ -358,7 +381,14 @@ function launch(scenario: Scenario) {
     urlCapture: { timerStateChanged: () => {} },
     windowControls: {
       minimise: async () => {},
-      show: async () => {},
+      show: () => {
+        calls.shows += 1;
+        return Promise.resolve();
+      },
+      timerNotice: (body: string) => {
+        calls.timerNotices.push(body);
+        return Promise.resolve();
+      },
       close: async () => {},
       setMode: async () => {},
       onTrackingNotice: () => {},
@@ -368,7 +398,9 @@ function launch(scenario: Scenario) {
       // The quit drain has its own tests; nothing is uploading here.
       onSyncDraining: () => {},
       closeSyncDraining: () => {},
-      onTrayToggleTimer: () => {},
+      onTrayToggleTimer: (listener: () => void) => {
+        trayToggleListeners.push(listener);
+      },
       onTrayTrackProject: (listener: (projectId: string) => void) => {
         trayTrackProjectListeners.push(listener);
       },
@@ -439,6 +471,10 @@ function launch(scenario: Scenario) {
       const el = document.getElementById('idle-notice')!;
       return el.hidden ? null : el.textContent;
     },
+    /** A timer appearing from somewhere else, started at a time of its own. */
+    startElsewhereAt: (startedAt: string) => {
+      running = { ...entry, id: `e${++entrySeq}`, startedAt };
+    },
     /** Main losing its copy of the hold, as a stray poll's clear does. */
     dropHold: () => {
       heldIdle = null;
@@ -455,6 +491,11 @@ function launch(scenario: Scenario) {
     idleRestartInFlight: () =>
       (window as unknown as { __idleRestartInFlight: () => boolean }).__idleRestartInFlight(),
     idleMessage: () => document.getElementById('idle-banner-message')!.textContent,
+    /** The refusal line inside the idle question — what it says, or null while hidden. */
+    idleError: () => {
+      const el = document.getElementById('idle-error')!;
+      return el.hidden ? null : el.textContent;
+    },
     clickKeepIdle: () => document.getElementById('idle-keep-button')!.click(),
     clickDiscardIdle: () => document.getElementById('idle-discard-button')!.click(),
     advanceClock: (ms: number) => {
@@ -466,6 +507,8 @@ function launch(scenario: Scenario) {
     /** A Project picked under the tray's "Recent projects". */
     trayTrackProject: (projectId: string) =>
       trayTrackProjectListeners.forEach((listener) => listener(projectId)),
+    /** The tray menu's own Start/Stop timer item. */
+    trayToggleTimer: () => trayToggleListeners.forEach((listener) => listener()),
     /** The tray's Sign out, after its confirmation. */
     traySignOut: () => traySignOutListeners.forEach((listener) => listener()),
     /** Main's signal that the window came back from the tray. */
@@ -881,6 +924,60 @@ describe('renderer takes the tray menu', () => {
 
   // Clicking the running Project's row pauses it; a menu item that reads
   // as "track this" must not.
+  it('starts from the tray without raising the window, and says so', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    const raisedBefore = app.calls.shows;
+
+    app.trayToggleTimer();
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    expect(app.calls.timerNotices).toEqual(['Started timer for Project One']);
+    // The point of the tray item: it does not drag the window back.
+    expect(app.calls.shows).toBe(raisedBefore);
+    app.close();
+  });
+
+  it('stops from the tray the same way, naming what it stopped', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await startTimer(app);
+    const raisedBefore = app.calls.shows;
+
+    app.trayToggleTimer();
+    await waitFor(() => !app.isRunning() && app.playReady());
+
+    expect(app.calls.timerNotices).toEqual(['Stopped timer for Project One']);
+    expect(app.calls.shows).toBe(raisedBefore);
+    app.close();
+  });
+
+  it('names no Project where the organisation has none', async () => {
+    const app = launch({ failingProjectLoads: 0, projectsEnabled: false });
+    await waitFor(() => app.calls.status > 0 && app.playReady());
+
+    app.trayToggleTimer();
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    expect(app.calls.timerNotices).toEqual(['Started timer']);
+    app.close();
+  });
+
+  it('claims nothing and comes forward when the tray start is refused', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    const raisedBefore = app.calls.shows;
+    app.server.refuseStarts = true;
+
+    app.trayToggleTimer();
+    await waitFor(() => app.trackingError() !== null);
+
+    expect(app.calls.timerNotices).toEqual([]);
+    // A refusal in a window nobody can see is a refusal nobody reads.
+    expect(app.calls.shows).toBeGreaterThan(raisedBefore);
+    expect(app.isRunning()).toBe(false);
+    app.close();
+  });
+
   it('keeps tracking when the running Project is picked from the tray', async () => {
     const app = launch({ failingProjectLoads: 0, projects: [PROJECT, OTHER] });
     await startTimer(app);
@@ -1079,16 +1176,71 @@ describe('renderer idle timeout', () => {
 
     app.server.refuseStarts = true;
     app.clickKeepIdle();
-    await waitFor(() => app.trackingError() !== null);
+    await waitFor(() => app.idleError() !== null);
 
     expect(app.idlePromptVisible()).toBe(true);
     expect(app.heldIdle()).not.toBeNull();
+    // Inside the question, not over it and not behind it: the red line
+    // above the timer sits under the question's own layer, so a refusal
+    // sent there leaves Keep looking like a dead button.
+    expect(app.idleError()).toContain('daily limit');
+    expect(app.trackingError()).toBeNull();
 
     app.server.refuseStarts = false;
     app.clickDiscardIdle();
     await waitForIdleRestart(app);
     expect(app.heldIdle()).toBeNull();
     expect(app.idlePromptVisible()).toBe(false);
+    app.close();
+  });
+
+  it('keeps them on the clock when the restart was queued offline', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      pollMs: 60_000,
+      idlePollMs: FAST_POLL_MS,
+    });
+    await startTimer(app);
+    app.advanceClock(40 * MINUTE_MS);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    // No connection: the start is queued, and anything `status` says is the
+    // cache's projection of a figure that belongs to the entry just ended.
+    app.server.queueStarts = true;
+    app.server.workedSecondsOverride = 0;
+    app.clickKeepIdle();
+    await waitForIdleRestart(app);
+
+    // Still the full forty minutes: the stale figure must not be allowed
+    // to overwrite one this device can work out exactly.
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(40 * 60 - 2);
+    app.close();
+  });
+
+  it('leaves the discarded minutes off it, on the same instant', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      pollMs: 60_000,
+      idlePollMs: FAST_POLL_MS,
+    });
+    await startTimer(app);
+    app.advanceClock(40 * MINUTE_MS);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+    // Back at the keyboard ten seconds ago.
+    app.setIdleSeconds(10);
+    await waitFor(() => app.heldIdle()?.returnedAt !== null);
+
+    app.clickDiscardIdle();
+    await waitForIdleRestart(app);
+
+    // The twenty minutes worked before going idle, and nothing for the
+    // twenty spent away — the mirror of Keep, on the same code path.
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(20 * 60);
+    expect(app.timerSeconds()).toBeLessThanOrEqual(20 * 60 + 30);
     app.close();
   });
 
@@ -1114,6 +1266,23 @@ describe('renderer idle timeout', () => {
     // twenty minutes Keep was pressed to keep vanished off the display.
     expect(app.timerSeconds()).toBeGreaterThanOrEqual(40 * 60 - 2);
     expect(app.timerSeconds()).toBeLessThanOrEqual(40 * 60 + 2);
+    app.close();
+  });
+
+  it('says a refused answer inside the question rather than in a dialog over it', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.server.refuseStarts = true;
+    app.server.refuseStartStatus = 403;
+    app.clickKeepIdle();
+    await waitFor(() => app.idleError() !== null);
+
+    expect(app.limitDialogVisible()).toBe(false);
+    expect(app.idlePromptVisible()).toBe(true);
+    expect(app.heldIdle()).not.toBeNull();
     app.close();
   });
 
@@ -1150,6 +1319,39 @@ describe('renderer asks one question at a time', () => {
 
     expect(app.reminderVisible()).toBe(false);
     expect(app.idlePromptVisible()).toBe(true);
+    app.close();
+  });
+
+  it.each([
+    ['the tray menu\'s Start timer', (app: ReturnType<typeof launch>) => app.trayToggleTimer()],
+    ['a Project picked from the tray', (app: ReturnType<typeof launch>) => app.trayTrackProject(PROJECT.id)],
+    ['the play button', (app: ReturnType<typeof launch>) => app.clickPlay()],
+  ])('takes the reminder down when tracking starts from %s', async (_label, start) => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    app.remind('You have not tracked time in 10 minutes.');
+    expect(app.reminderVisible()).toBe(true);
+
+    start(app);
+    await waitFor(() => app.isRunning() && app.playReady());
+
+    // It used to come down only for its own two buttons, so starting from
+    // the tray left it over the window — and over the idle question when
+    // that arrived underneath it.
+    expect(app.reminderVisible()).toBe(false);
+    app.close();
+  });
+
+  it('takes it down when the idle question needs the screen', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    // Up before the question: a nudge that was already on screen when the
+    // timeout landed must not be left on top of it.
+    app.remind('You have not tracked time in 10 minutes.');
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    expect(app.reminderVisible()).toBe(false);
     app.close();
   });
 
@@ -1191,6 +1393,9 @@ describe('renderer asks one question at a time', () => {
     await startTimer(app);
     app.setIdleSeconds(25 * 60);
     await waitFor(() => app.idlePromptVisible());
+    // Back at the keyboard — whoever starts a timer is.
+    app.setIdleSeconds(2);
+    await waitFor(() => app.heldIdle()?.returnedAt !== null);
 
     // Started from the tray while the question sits unanswered: the idle
     // stretch cannot be kept now, so the person is told it was not.
@@ -1198,7 +1403,27 @@ describe('renderer asks one question at a time', () => {
     await waitFor(() => !app.idlePromptVisible());
 
     expect(app.idleNotice()).toContain('not counted');
-    expect(app.idleNotice()).toContain('25 min');
+    expect(app.idleNotice()).toMatch(/2[45] min idle/);
+    expect(app.heldIdle()).toBeNull();
+    app.close();
+  });
+
+  it('says nothing of the sort when the timer that turned up covers the idle time', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.idlePromptVisible());
+    const idleStartedAt = app.heldIdle()!.idleStartedAt;
+    app.setIdleSeconds(2);
+    await waitFor(() => app.heldIdle()?.returnedAt !== null);
+
+    // An entry reaching back over the held stretch — a backdated start
+    // from the web, or an answer whose reply was lost coming back. The
+    // time is inside it, so nothing went uncounted.
+    app.startElsewhereAt(idleStartedAt);
+    await waitFor(() => !app.idlePromptVisible());
+
+    expect(app.idleNotice()).toBeNull();
     expect(app.heldIdle()).toBeNull();
     app.close();
   });
@@ -1251,6 +1476,47 @@ describe('renderer after the machine sleeps', () => {
     app.clickKeepIdle();
     await waitForIdleRestart(app);
     expect(app.calls.startedAt.at(-1)).toBe(idleStartedAt);
+    app.close();
+  });
+
+  it('asks after a wake the status read could not survive', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.holdForSleep({
+      projectId: PROJECT.id,
+      taskId: null,
+      idleStartedAt: sleptAt(90),
+      returnedAt: null,
+      reason: 'sleep',
+    });
+
+    // Woken somewhere with no usable network: the read that normally runs
+    // first throws, and the question used to go with it.
+    app.server.statusThrows = true;
+    app.wake();
+    await waitFor(() => app.idlePromptVisible());
+
+    expect(app.idlePromptVisible()).toBe(true);
+    expect(app.heldIdle()).not.toBeNull();
+    app.close();
+  });
+
+  it('asks when the window comes back, for a wake the OS never reported', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.holdForSleep({
+      projectId: PROJECT.id,
+      taskId: null,
+      idleStartedAt: sleptAt(90),
+      returnedAt: null,
+      reason: 'sleep',
+    });
+
+    // No `wake()` at all — just the person opening the window again.
+    app.reopen();
+    await waitFor(() => app.idlePromptVisible());
+
+    expect(app.idlePromptVisible()).toBe(true);
     app.close();
   });
 
