@@ -924,6 +924,25 @@ describe('renderer takes the tray menu', () => {
 
   // Clicking the running Project's row pauses it; a menu item that reads
   // as "track this" must not.
+  it.each([
+    ['the play button', (app: ReturnType<typeof launch>) => app.clickPlay()],
+    ['the tray menu', (app: ReturnType<typeof launch>) => app.trayToggleTimer()],
+  ])('confirms a start and a stop made from %s', async (_label, toggle) => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    toggle(app);
+    await waitFor(() => app.isRunning() && app.playReady());
+    toggle(app);
+    await waitFor(() => !app.isRunning() && app.playReady());
+
+    expect(app.calls.timerNotices).toEqual([
+      'Started timer for Project One',
+      'Stopped timer for Project One',
+    ]);
+    app.close();
+  });
+
   it('starts from the tray without raising the window, and says so', async () => {
     const app = launch({ failingProjectLoads: 0 });
     await waitForSetup(app);
@@ -946,7 +965,8 @@ describe('renderer takes the tray menu', () => {
     app.trayToggleTimer();
     await waitFor(() => !app.isRunning() && app.playReady());
 
-    expect(app.calls.timerNotices).toEqual(['Stopped timer for Project One']);
+    // The play button that started it said so too; this is the last word.
+    expect(app.calls.timerNotices.at(-1)).toBe('Stopped timer for Project One');
     expect(app.calls.shows).toBe(raisedBefore);
     app.close();
   });

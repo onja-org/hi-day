@@ -2081,19 +2081,34 @@ async function startTracking(): Promise<void> {
 /** Set while the organisation tracks from another client. */
 let trackingToggleBlocked = false;
 
-async function toggleTimer(): Promise<void> {
-  {
-    timerToggle.disabled = true;
-    try {
-      if (!runningEntry) {
-        await startTracking();
-        return;
-      }
+/** Whether time is accruing right now — a paused entry is not. */
+function isTracking(): boolean {
+  return runningEntry !== null && runningEntry.pausedAt === null;
+}
 
+/** The Project a notice should name, where there is one to name. */
+function trackedProjectName(): string | null {
+  if (!projectsEnabled || !runningEntry?.projectId) return null;
+  return projectNameFor(runningEntry.projectId);
+}
+
+/**
+ * Start or stop, for the play button, both small bars and the tray's own
+ * menu item. Each confirms itself with a desktop notification, which is
+ * the only sign of it at all when the window is not on screen.
+ */
+async function toggleTimer(): Promise<void> {
+  const wasTracking = isTracking();
+  const stopping = wasTracking ? trackedProjectName() : null;
+  timerToggle.disabled = true;
+  try {
+    if (!runningEntry) {
+      await startTracking();
+    } else {
       clearTrackingError();
       // `pausedAt` is never set any more — pausing ends the entry — so this
-      // always pauses, and starting again goes through the `!runningEntry`
-      // branch above. `resume` stays reachable for an older agent.
+      // always pauses, and starting again goes through the branch above.
+      // `resume` stays reachable for an older agent.
       const result = runningEntry.pausedAt
         ? await window.api.tracking.resume()
         : await window.api.tracking.pause();
@@ -2105,10 +2120,18 @@ async function toggleTimer(): Promise<void> {
       } else {
         handleTrackingFailure(result);
       }
-    } finally {
-      timerToggle.disabled = trackingToggleBlocked;
     }
+  } finally {
+    timerToggle.disabled = trackingToggleBlocked;
   }
+  // Unchanged means it was refused, and the refusal brings the window
+  // forward by itself — claiming a start that did not happen would be
+  // worse than saying nothing.
+  if (isTracking() === wasTracking) return;
+  const name = isTracking() ? trackedProjectName() : stopping;
+  void window.api.windowControls.timerNotice(
+    `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
+  );
 }
 
 timerToggle.addEventListener("click", () => void toggleTimer());
@@ -2528,34 +2551,11 @@ window.api.windowControls.onRefusedTime((refused) => {
  * rather than a second path into starting: that one already resolves the
  * Project, handles a timer running elsewhere, and honours a refusal.
  */
-/** Whether time is accruing right now — a paused entry is not. */
-function isTracking(): boolean {
-  return runningEntry !== null && runningEntry.pausedAt === null;
-}
-
-/** The Project a tray notice should name, where there is one to name. */
-function trackedProjectName(): string | null {
-  if (!projectsEnabled || !runningEntry?.projectId) return null;
-  return projectNameFor(runningEntry.projectId);
-}
-
 window.api.windowControls.onTrayToggleTimer(() => {
   // The button's own path, including its disabled guard: the tray must
   // never be a second way to start a timer the window would refuse.
   if (timerToggle.disabled) return;
-  void (async () => {
-    const wasTracking = isTracking();
-    const stopping = wasTracking ? trackedProjectName() : null;
-    await toggleTimer();
-    // Unchanged means it was refused, and the refusal brings the window
-    // forward by itself — claiming a start that did not happen would be
-    // worse than saying nothing.
-    if (isTracking() === wasTracking) return;
-    const name = isTracking() ? trackedProjectName() : stopping;
-    void window.api.windowControls.timerNotice(
-      `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
-    );
-  })();
+  void toggleTimer();
 });
 
 /**

@@ -127,8 +127,9 @@ tracking error expands back to the full window automatically.
 
 **Start/Stop timer in the tray leaves the window where it is** — hidden
 stays hidden, since that item is for someone who did not want to come back
-to it. What it did arrives as a desktop notification instead ("Stopped timer
-for Onja"), the way Hubstaff's does, and clicking that opens the app. A
+to it. Every start and stop confirms itself with a desktop notification
+("Stopped timer for Onja"), the way Hubstaff's does, whether it came from
+the tray or the play button; clicking it opens the app. A
 refusal is the exception: a work time limit, or no Project to track against,
 brings the window forward with the message, because an error in a window
 nobody can see is an error nobody reads.
