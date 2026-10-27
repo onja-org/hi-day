@@ -516,6 +516,7 @@ const projectsChangeOkButton = document.getElementById(
   "projects-change-ok-button",
 )!;
 const idleBannerMessage = document.getElementById("idle-banner-message")!;
+const idleError = document.getElementById("idle-error")!;
 const idleKeepButton = document.getElementById(
   "idle-keep-button",
 ) as HTMLButtonElement;
@@ -658,6 +659,10 @@ function showTrackingError(message: string): void {
   trackingError.hidden = false;
   // The compact bar has no room for it — open the full window instead.
   setCompact(false);
+  // And bring that window forward: a refusal can only arrive while it is
+  // hidden if the action came from outside it, and an error nobody can
+  // see is an error nobody reads.
+  void window.api.windowControls.show();
 }
 
 async function callTracking<T>(
@@ -670,13 +675,35 @@ async function callTracking<T>(
   return result;
 }
 
-function handleTrackingFailure(result: {
-  message: string;
-  unauthorized?: boolean;
-  status?: number;
-}): void {
+function handleTrackingFailure(
+  result: {
+    message: string;
+    unauthorized?: boolean;
+    status?: number;
+  },
+  /**
+   * Where to put the message when a question is already on screen: a dialog
+   * would cover it, and the red line above the timer sits behind it, so the
+   * refusal goes unseen and the button pressed looks dead. Signing out
+   * still wins — the login view replaces the lot.
+   */
+  showInside?: (message: string) => void,
+): void {
   if (result.unauthorized) {
     showLoginView(result.message);
+    return;
+  }
+  if (showInside) {
+    showInside(
+      result.status === undefined
+        ? "Hi Day can't be reached right now. Your idle time is safe — try again in a moment."
+        : result.message,
+    );
+    // Still the sync line's business, even though the question says it too.
+    if (result.status === undefined) {
+      syncFailing = true;
+      updateSyncStatus();
+    }
     return;
   }
   // No status means the request never reached the server. That is a
@@ -715,6 +742,8 @@ const timerBlockedDismiss = document.getElementById(
  */
 function showTimerBlocked(message: string): void {
   setMode("full", true);
+  // Resizing alone leaves a hidden window hidden — see `showTrackingError`.
+  void window.api.windowControls.show();
   timerBlockedMessage.textContent = message;
   timerBlocked.hidden = false;
   timerBlockedDismiss.focus();
@@ -887,11 +916,13 @@ function setRunning(entry: TimeEntry | null): void {
         );
       }
     }
-    // A new entry counts from now, not from the last poll's baseline — that
-    // stale baseline is what made a restarted timer jump ahead, then back.
-    accountWorkedMs = 0;
+    // A new entry counts from its own start, never from the last poll's
+    // baseline — that stale baseline made a restarted timer jump ahead,
+    // then back. A backdated start is minutes old on arrival, and counting
+    // it from "now" dropped the stretch Keep was pressed to keep.
+    accountWorkedMs = entry ? workedSoFarMs(entry) : 0;
     accountWorkedMsAt = entry ? Date.now() : null;
-    pausedAtWorkedMs = 0;
+    pausedAtWorkedMs = entry?.pausedAt ? workedSoFarMs(entry) : 0;
   } else if (entry && previous && entry.pausedAt && !previous.pausedAt) {
     pausedAtWorkedMs = liveElapsedMs();
   } else if (entry && previous && !entry.pausedAt && previous.pausedAt) {
@@ -923,6 +954,9 @@ function setRunning(entry: TimeEntry | null): void {
     button.setAttribute("aria-label", toggleLabel);
     button.classList.toggle("is-running", isRunning);
   }
+  // Tracking answers the not-tracking nudge, however it was started: its
+  // own button, the tray menu, the web, another device.
+  if (isRunning) hideTrackingReminder();
   timerCard.classList.toggle("is-running", isRunning);
   compactView.classList.toggle("is-running", isRunning);
   miniView.classList.toggle("is-running", isRunning);
@@ -938,10 +972,19 @@ function setRunning(entry: TimeEntry | null): void {
       hideIdleBanner();
     }
   } else if (idleHold) {
-    // A timer started some other way — play, the tray, the web — settles
-    // the question: whatever it was, the person is tracking again.
+    // A timer started some other way — the tray, the web, another device —
+    // settles the question: tracking runs from when they pressed it, so the
+    // idle stretch goes uncounted, and is said rather than dropped quietly.
+    // A Keep or Discard in flight keeps its own stretch, and so does an
+    // entry that reaches back over it; neither has lost anything.
+    const unanswered =
+      idleRestartInFlight || coversHeldStretch(entry, idleHold) ? null : idleHold;
+    const uncounted = unanswered
+      ? awaySeconds(unanswered, Date.now() + serverOffsetMs)
+      : 0;
     hideIdleBanner();
     void window.api.idle.clearHold();
+    noticeUncountedIdle("Timer started", uncounted);
   }
   // The only place "is time being tracked" changes — mirrored to main so
   // the session engine can gate on it. Pausing closes the open URL session.
@@ -983,8 +1026,35 @@ function updateIdleStats(hold: IdleHold): void {
   );
 }
 
+/** Whether `entry` reaches back over the held stretch, so none of it went uncounted. */
+function coversHeldStretch(entry: TimeEntry, hold: IdleHold): boolean {
+  return Date.parse(entry.startedAt) <= Date.parse(hold.idleStartedAt);
+}
+
+/** What a timer started some other way left uncounted; under a minute is not worth saying. */
+function noticeUncountedIdle(lead: string, seconds: number): void {
+  if (seconds < 60) return;
+  showIdleNotice(
+    `${lead} — the ${Math.floor(seconds / 60)} min idle before it was not counted.`,
+  );
+}
+
+function showIdleError(message: string): void {
+  idleError.textContent = message;
+  idleError.hidden = false;
+}
+
 function showIdleBanner(hold: IdleHold): void {
   idleHold = hold;
+  // Never underneath the nudge, which is about this very stretch.
+  hideTrackingReminder();
+  // Unanswered again, so whatever a previous answer was refused for is stale.
+  idleError.textContent = "";
+  idleError.hidden = true;
+  // On disk as well as on screen, every time: the reminder stays quiet for
+  // as long as a hold is stored, so a prompt with nothing behind it
+  // collects a second popup on top — and a reload would lose it outright.
+  void window.api.idle.setHold(hold);
   updateIdleStats(hold);
   idlePrompt.hidden = false;
   // Needs an answer, so it can't wait behind the compact bar or in the tray.
@@ -994,6 +1064,7 @@ function showIdleBanner(hold: IdleHold): void {
 
 function hideIdleBanner(): void {
   idlePrompt.hidden = true;
+  idleError.hidden = true;
   idleAssignList.hidden = true;
   idleHold = null;
 }
@@ -1119,8 +1190,19 @@ async function settleIdleHold(): Promise<void> {
   const stored = await window.api.idle.hold();
   if (!stored) return;
   // Tracking again already — started on the web, say — so nothing is held.
-  if (runningEntry) {
+  // Asked for rather than assumed: `runningEntry` is this window's last
+  // belief, and after a sleep it is stale — main ended that entry while the
+  // machine was off. No answer at all means ask, which loses nothing.
+  const live = await window.api.tracking.status().catch(() => null);
+  const liveEntry = live?.ok ? live.data.entry : null;
+  if (liveEntry) {
     await window.api.idle.clearHold();
+    if (!coversHeldStretch(liveEntry, stored)) {
+      noticeUncountedIdle(
+        "Tracking resumed elsewhere",
+        awaySeconds(stored, Date.now() + serverOffsetMs),
+      );
+    }
     return;
   }
   const hold = stored.returnedAt
@@ -1168,17 +1250,25 @@ async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<v
     );
     if (!startResult.ok) {
       // Still unanswered — a work limit, say, refused it — so the hold
-      // stays and the prompt with it: dropping them here would lose the
-      // idle time with no way left to keep or discard it.
-      showIdleBanner(hold);
-      handleTrackingFailure(startResult);
+      // stays and the prompt with it: dropping them would lose the idle
+      // time with no way left to keep or discard it. Re-read rather than
+      // reused: they may have come back while the start was in flight.
+      showIdleBanner((await window.api.idle.hold()) ?? hold);
+      handleTrackingFailure(startResult, showIdleError);
       return;
     }
     hideIdleBanner();
     await window.api.idle.clearHold();
     // The held stretch is now either back on the Project, moved, or dropped.
     await refreshTodayTotals();
+    // On the clock straight away, counted from the entry's own start.
     setRunning(startResult.data);
+    // Then confirmed against the server, which counts it the same way
+    // (`workedSeconds` is the union of the open entries, from their own
+    // starts) — the resync a relaunch does. Not for a start that was only
+    // queued: offline that figure is the cache's projection for the entry
+    // which just ended, and it would overwrite an exact one with an old one.
+    if (!startResult.fromCache) await refreshStatus(true);
   } finally {
     idleRestartInFlight = false;
   }
@@ -1191,6 +1281,25 @@ function displayedSecondsFor(projectId: string | null): number {
     return recorded;
   }
   return recorded + Math.max(0, Math.floor(liveElapsedMs() / 1000));
+}
+
+/**
+ * What an entry has already run for when this device adopts it: nothing for
+ * an ordinary start at "now", minutes for a backdated one — Keep after an
+ * idle stretch, or a start queued offline and replayed later. Today's share
+ * of it only, since the per-day totals it joins are the day's alone.
+ */
+function workedSoFarMs(entry: TimeEntry): number {
+  const startedMs = Date.parse(entry.startedAt);
+  if (Number.isNaN(startedMs)) return 0;
+  const from = Math.max(startedMs, startOfToday());
+  const now = Date.now() + serverOffsetMs;
+  const pausedMs = entry.pausedAt ? Date.parse(entry.pausedAt) : NaN;
+  const to = Number.isNaN(pausedMs) ? now : pausedMs;
+  // `?? 0`, as main does: this goes straight onto the clock, where one
+  // `undefined` — an entry cached by an older build — reads as NaN.
+  const paused = (entry.pausedSeconds ?? 0) * 1000;
+  return Math.max(0, to - from - paused);
 }
 
 /**
@@ -1972,8 +2081,8 @@ async function startTracking(): Promise<void> {
 /** Set while the organisation tracks from another client. */
 let trackingToggleBlocked = false;
 
-timerToggle.addEventListener("click", () => {
-  void (async () => {
+async function toggleTimer(): Promise<void> {
+  {
     timerToggle.disabled = true;
     try {
       if (!runningEntry) {
@@ -1999,8 +2108,10 @@ timerToggle.addEventListener("click", () => {
     } finally {
       timerToggle.disabled = trackingToggleBlocked;
     }
-  })();
-});
+  }
+}
+
+timerToggle.addEventListener("click", () => void toggleTimer());
 
 // Both bars' buttons do exactly what the full window's does.
 for (const button of [compactTimerToggle, miniTimerToggle]) {
@@ -2109,9 +2220,15 @@ async function runInitTracking(): Promise<void> {
 
   await loadIdlePolicy();
 
-  await refreshStatus(true);
+  try {
+    await refreshStatus(true);
+  } catch (error) {
+    console.error("[tracking] first status refresh failed:", error);
+  }
 
-  // Left from a sleep, or from before this window was reloaded or the app relaunched.
+  // Left from a sleep, or from before a reload or relaunch. After the
+  // refresh above, never behind it: a failed read must not swallow a
+  // question nobody has answered.
   await settleIdleHold();
 
   // Never starts the timer: quitting stopped it, and only the person
@@ -2154,7 +2271,22 @@ reminderStartButton.addEventListener("click", () => {
   if (!timerToggle.disabled) timerToggle.click();
 });
 
+/**
+ * Whether something is already asking for an answer. Each covers the whole
+ * window, so a second buries the question and takes the clicks meant for it.
+ */
+function aDialogIsOpen(): boolean {
+  return [...document.querySelectorAll<HTMLElement>(".close-prompt")].some(
+    (dialog) => dialog !== reminderBanner && !dialog.hidden,
+  );
+}
+
 window.api.windowControls.onTrackingReminder((reminder) => {
+  // One question at a time: over the idle question this buries it, and its
+  // "Start timer" answers that question by accident — a fresh entry from
+  // now, the idle stretch dropped. Dropped rather than queued; the next one
+  // is due in an interval, by when the question is usually answered.
+  if (aDialogIsOpen()) return;
   // The banner lives in the tracking view, which the smaller sizes
   // hide; centred, because growing from a corner runs off screen.
   setMode("full", true);
@@ -2307,7 +2439,19 @@ function showCapturePaused(paused: boolean): void {
 window.api.windowControls.onCapturePaused(showCapturePaused);
 // Main stopped the timer as the machine slept, which this window, asleep
 // too, never saw — so the status is read before the hold is judged.
-window.api.idle.onWake(() => void refreshStatus().then(settleIdleHold));
+window.api.idle.onWake(() => {
+  void (async () => {
+    // Refreshed first, so the hold is judged against what is really
+    // running — but never depended on: chaining the question behind this
+    // read let one rejected call swallow it until the next relaunch.
+    try {
+      await refreshStatus();
+    } catch (error) {
+      console.error("[idle] status refresh on wake failed:", error);
+    }
+    await settleIdleHold();
+  })();
+});
 
 const recoveredTimerPrompt = document.getElementById("recovered-timer")!;
 const recoveredTimerMessage = document.getElementById(
@@ -2384,8 +2528,34 @@ window.api.windowControls.onRefusedTime((refused) => {
  * rather than a second path into starting: that one already resolves the
  * Project, handles a timer running elsewhere, and honours a refusal.
  */
+/** Whether time is accruing right now — a paused entry is not. */
+function isTracking(): boolean {
+  return runningEntry !== null && runningEntry.pausedAt === null;
+}
+
+/** The Project a tray notice should name, where there is one to name. */
+function trackedProjectName(): string | null {
+  if (!projectsEnabled || !runningEntry?.projectId) return null;
+  return projectNameFor(runningEntry.projectId);
+}
+
 window.api.windowControls.onTrayToggleTimer(() => {
-  if (!timerToggle.disabled) timerToggle.click();
+  // The button's own path, including its disabled guard: the tray must
+  // never be a second way to start a timer the window would refuse.
+  if (timerToggle.disabled) return;
+  void (async () => {
+    const wasTracking = isTracking();
+    const stopping = wasTracking ? trackedProjectName() : null;
+    await toggleTimer();
+    // Unchanged means it was refused, and the refusal brings the window
+    // forward by itself — claiming a start that did not happen would be
+    // worse than saying nothing.
+    if (isTracking() === wasTracking) return;
+    const name = isTracking() ? trackedProjectName() : stopping;
+    void window.api.windowControls.timerNotice(
+      `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
+    );
+  })();
 });
 
 /**
@@ -2420,7 +2590,13 @@ window.api.windowControls.onTrackingNotice((notice) => {
 // setup — re-read the day's time from the server here instead.
 window.api.windowControls.onReopened(() => {
   if (pollHandle) {
-    void refreshStatus(true);
+    // Settled here too: a wake the OS never reported leaves the question on
+    // disk with nothing to put it back, and this is what they do next.
+    void refreshStatus(true)
+      .catch((error: unknown) =>
+        console.error("[tracking] status refresh on reopen failed:", error),
+      )
+      .then(settleIdleHold);
     void refreshProjectsSetting();
   }
 });

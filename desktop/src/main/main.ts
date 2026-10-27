@@ -1108,6 +1108,8 @@ async function registerIpcHandlers(): Promise<void> {
   let allowedApps: AllowedApps = "all";
   /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
   let trackingNotification: Notification | null = null;
+  /** The tray's own start/stop confirmation, kept apart from the alert above. */
+  let timerNotification: Notification | null = null;
   let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
@@ -1272,6 +1274,9 @@ async function registerIpcHandlers(): Promise<void> {
   }
 
   function alertTrackingStopped(body: string): void {
+    // Only ever raised for a timer stopped *for* the person — a work time
+    // limit, an app the organisation does not allow.
+    timerStoppedByAgent = true;
     if (Notification.isSupported()) {
       // Replaces rather than stacks: two of these say the same thing.
       trackingNotification?.close();
@@ -1292,6 +1297,15 @@ async function registerIpcHandlers(): Promise<void> {
   /** When this untracked stretch last got attention: the app starting, a
    * timer stopping, or the last reminder. */
   let untrackedSince = new Date();
+  /**
+   * Whether the agent ended the timer itself — an idle timeout, a sleep, a
+   * day boundary, a limit the organisation set — rather than the person
+   * pressing stop. The not-tracking reminder is for someone who forgot to
+   * start their timer, so it stays quiet for a stop they did not make. Set
+   * wherever a timer ends, cleared wherever one runs again; the handlers
+   * below are the only places either happens.
+   */
+  let timerStoppedByAgent = false;
 
   function deliverReminder(
     settings: ReminderSettings,
@@ -1331,17 +1345,16 @@ async function registerIpcHandlers(): Promise<void> {
       ? cachedReminderSettings(app.getPath("userData"))
       : reminderSettings;
 
-    // Waiting on the idle prompt is not forgetting to track: it already
-    // asks, and a reminder on top would only bury it.
-    if (idleHoldStore.load()) return;
-
     const now = new Date();
+    const idleSeconds = await readIdleSeconds();
     const due = shouldRemind({
       settings,
       now,
       isTracking: signedOut ? false : timerRunning,
-      idleSeconds: await readIdleSeconds(),
+      idleSeconds,
       since: untrackedSince,
+      stoppedByAgent: timerStoppedByAgent,
+      awaitingIdleAnswer: idleHoldStore.load() !== null,
     });
     if (!due || !settings) return;
 
@@ -1353,6 +1366,12 @@ async function registerIpcHandlers(): Promise<void> {
       untrackedSince = now;
       return;
     }
+
+    // Read again, as late as possible: the totals above are a network round
+    // trip, and an idle timeout landing inside it would otherwise collect
+    // this reminder on top of its question. The slot is not spent — the
+    // nudge is still owed once that question is answered.
+    if (idleHoldStore.load()) return;
 
     const untrackedMinutes = Math.round(
       (now.getTime() - untrackedSince.getTime()) / 60_000,
@@ -1578,7 +1597,10 @@ async function registerIpcHandlers(): Promise<void> {
    * one nobody reads. Same escalation as the capture-settings alert. */
   // Nothing is decided here; the renderer owns all of it.
   toggleTimerFromTray = (): void => {
-    showMainWindow();
+    // Deliberately not raised: the tray item is for someone who did not
+    // want to come back to the window. It still has to exist to be told,
+    // and creating one shows it — rare enough to live with.
+    if (!mainWindow) showMainWindow();
     mainWindow?.webContents.send("tray:toggleTimer");
   };
   trackProjectFromTray = (projectId: string): void => {
@@ -1610,6 +1632,19 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle("tracking:alert", (_event, body: string): void => {
     alertTrackingStopped(typeof body === "string" ? body : "");
+  });
+
+  /**
+   * What the tray's Start/Stop did, for someone who is not looking at the
+   * window — the only sign of it otherwise is the menu's own label. Quiet
+   * on purpose: no raise, no flashing taskbar, unlike `tracking:alert`.
+   */
+  ipcMain.handle("window:timerNotice", (_event, body: string): void => {
+    if (!Notification.isSupported() || typeof body !== "string") return;
+    timerNotification?.close();
+    timerNotification = new Notification({ title: "Hi Day", body });
+    timerNotification.on("click", showMainWindow);
+    timerNotification.show();
   });
 
   ipcMain.handle("auth:status", (): AuthStatus => {
@@ -1700,6 +1735,7 @@ async function registerIpcHandlers(): Promise<void> {
       // signs in next.
       offlineCache.clear();
       idleHoldStore.clear();
+      timerStoppedByAgent = false;
     }
     stopUrlCapture();
     stopHeartbeat();
@@ -1744,6 +1780,9 @@ async function registerIpcHandlers(): Promise<void> {
     }
     if (!result.ok && result.unauthorized) {
       authStore.clear();
+      // That session is over, and the signed-out reminder is about logging
+      // back in rather than about any stop.
+      timerStoppedByAgent = false;
       // None of it is this machine's to keep once the session is gone.
       offlineCache.clear();
       stopUrlCapture();
@@ -1803,6 +1842,9 @@ async function registerIpcHandlers(): Promise<void> {
     const session = authStore.load();
     const running = pendingOps.current();
     const policy = offlineCache.read().idlePolicy;
+    // Only when there is a running timer for the sleep to end: marking a
+    // sleep that stopped nothing would silence the next morning's nudge.
+    if (running && !running.pausedAt) timerStoppedByAgent = true;
     if (!session || !running || running.pausedAt || !policy || policy.handling === "off") {
       void pauseRunningTimer?.().catch((error: unknown) =>
         console.error("[timer] pause on suspend failed:", error),
@@ -2073,6 +2115,9 @@ async function registerIpcHandlers(): Promise<void> {
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);
       }
+      // Tracking again: whatever stopped the last timer is settled, and
+      // the next stop speaks for itself.
+      if (result.ok) timerStoppedByAgent = false;
       // Instant local feedback for window tracking rather than waiting on
       // TimerStatusGate's poll; the periodic poll still covers a timer
       // started or stopped elsewhere.
@@ -2090,6 +2135,7 @@ async function registerIpcHandlers(): Promise<void> {
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);
       }
+      if (result.ok) timerStoppedByAgent = false;
       applyLocalTimerState();
       return result;
     },
@@ -2108,6 +2154,9 @@ async function registerIpcHandlers(): Promise<void> {
   // no connection used to fail outright, leaving the timer running
   // through exactly the stretch it was meant to cut off.
   ipcMain.handle("tracking:stop", async (_event, endedAt?: string) => {
+    // Never the stop button: the renderer only reaches for this at the
+    // idle timeout, on an auto-subtract, and at a day boundary.
+    timerStoppedByAgent = true;
     await flushPendingOps();
     const result = await callDeviceApi((token) =>
       pendingOps.stopAt(token, apiClient, endedAt),
@@ -2159,6 +2208,9 @@ async function registerIpcHandlers(): Promise<void> {
   });
 
   ipcMain.handle("tracking:pause", async () => {
+    // The stop button, in the window or the tray. Pausing ends the entry,
+    // so this is what "the person stopped tracking" looks like.
+    timerStoppedByAgent = false;
     const result = await callDeviceApi((token) =>
       pendingOps.pause(token, apiClient),
     );
@@ -2171,6 +2223,7 @@ async function registerIpcHandlers(): Promise<void> {
 
   ipcMain.handle("tracking:resume", async () => {
     const result = await callDeviceApi((token) => apiClient.resumeTimer(token));
+    if (result.ok) timerStoppedByAgent = false;
     void timerStatusGate.pollOnce();
     return result;
   });

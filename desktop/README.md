@@ -125,6 +125,14 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
+**Start/Stop timer in the tray leaves the window where it is** — hidden
+stays hidden, since that item is for someone who did not want to come back
+to it. What it did arrives as a desktop notification instead ("Stopped timer
+for Onja"), the way Hubstaff's does, and clicking that opens the app. A
+refusal is the exception: a work time limit, or no Project to track against,
+brings the window forward with the message, because an error in a window
+nobody can see is an error nobody reads.
+
 The **tray menu** is laid out like Hubstaff's (`src/main/tray-menu.ts`,
 a pure template builder with its own spec): the timer (**Start/Stop
 timer**, **Add time note…**, **Open Hi Day**), **Recent projects** (the
@@ -558,7 +566,27 @@ timeout, tracking stops where input stopped, and the Keep/Discard prompt
 waits for an answer: Keep counts the idle stretch, and Discard drops only
 it, restarting from when the person came back. The waiting prompt is kept on
 disk (`idle-hold.json`), so a reload, a relaunch or a crash brings it back
-rather than losing the time.
+rather than losing the time — and it is written again every time the prompt
+goes up, since the not-tracking reminder stays quiet for exactly as long as
+a hold is stored. One question at a time: no dialog opens over another. If a
+timer is started some other way while the question waits — the tray, the
+web, another device — the question is settled by that start, and the notice
+line says how many idle minutes went uncounted rather than letting them
+disappear quietly.
+
+If Keep or Discard is refused, the reason is shown inside the question
+itself — a dialog over it would bury it, and the red line above the timer
+sits behind it. Offline neither is refused: both are queued and replayed
+with their original times.
+
+**The not-tracking reminder** only ever nudges about a timer *the person*
+stopped, or one they never started. A timer the agent stopped itself — an
+idle timeout, an auto-subtract, a sleep, a day boundary, a work time limit —
+is never nudged about: each of those says so where it happens, and the nudge
+landing on top of the idle question is what let its "Start timer" button
+throw the held idle time away. It comes down as soon as a timer is running,
+whoever started it — the tray menu included — rather than only for its own
+two buttons. See `docs/adr/0028-...`.
 
 ## Known limitations (this pass)
 
