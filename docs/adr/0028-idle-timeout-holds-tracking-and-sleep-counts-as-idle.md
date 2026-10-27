@@ -30,6 +30,40 @@ Tracking stopped before the organisation's idle timeout was reached. The rendere
 - **The audit trail states facts, not conclusions.** A backdated stop used to be logged as `{ reason: 'idle', discardedSeconds }`. Every hold now backdates a stop, including Keep and a short-sleep resume, and offline replays always did, so "discarded" was often false. Backdated stops and starts now record `backdatedSeconds`. A Keep shows as a start backdated by the idle stretch; a Discard shows as one that isn't.
 - The decisions live in a pure module (`src/renderer/idle-hold.ts`), tested by table across thresholds, return times and modes. The renderer's behaviour is tested end to end by running the real renderer in jsdom (`renderer-tracking-recovery.spec.ts`).
 
+## Holes found after it shipped
+
+Reported from a packaged build: the not-tracking reminder was sitting on top
+of an open idle question, and the idle time was gone afterwards. "No
+not-tracking reminder while a hold waits" was decided above and implemented,
+but only as a single check against the hold file, at the top of a tick that
+then awaits two more things. Four holes, all now closed:
+
+- **The rule is now an input to `shouldRemind`** (`awaitingIdleAnswer`), not
+  an early return beside it, and main reads the hold file for it as late as
+  it can — once before the decision, and again after the day-totals request,
+  which is a network round trip an idle timeout can land inside.
+- **The question re-saves its hold whenever it goes back up.** A prompt on
+  screen with no hold on disk is what let a reminder through on top of it,
+  and a reload would have lost such a question outright. The two now go up
+  and come down together, so "the question is open" has one answer.
+- **A timer started some other way says what it cost.** The tray, the web
+  or another device starting one while the question waits settles it the
+  only way it can — tracking from the moment they pressed, with the idle
+  stretch uncounted. That was done silently, which is exactly how "I
+  answered and my time vanished" happens; it now says so in the notice line.
+  A Keep or Discard still in flight is not that case and says nothing.
+- **A backdated start keeps its time on the clock.** The renderer counted
+  every newly adopted entry from "now", so right after Keep the kept
+  minutes left the display and only came back when the entry ended or the
+  window was reopened. The time was on the server throughout — but a
+  timesheet that shows the time it just promised to keep as gone is not
+  one anybody should be asked to trust. It now counts from the entry's own
+  start (today's share of it, less any paused time).
+
+The renderer also refuses to stack *any* two of these dialogs now: each
+covers the whole window, so a second one both buries the first question and
+takes the clicks meant for it.
+
 ## Not verified
 
 - A real suspend and wake, which wasn't triggered on the development machine without the person's say-so.

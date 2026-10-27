@@ -12,6 +12,7 @@ function input(overrides: Partial<ReminderInput> = {}): ReminderInput {
     isTracking: false,
     idleSeconds: 0,
     since: new Date('2026-10-14T09:00:00'),
+    awaitingIdleAnswer: false,
     ...overrides,
   };
 }
@@ -29,6 +30,10 @@ describe('shouldRemind', () => {
 
   it('never nudges someone whose timer is already running', () => {
     expect(shouldRemind(input({ isTracking: true }))).toBe(false);
+  });
+
+  it('stays quiet while an idle stretch is waiting to be kept or discarded', () => {
+    expect(shouldRemind(input({ awaitingIdleAnswer: true }))).toBe(false);
   });
 
   it('stays quiet at a machine nobody is sitting at', () => {

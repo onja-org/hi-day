@@ -1331,17 +1331,15 @@ async function registerIpcHandlers(): Promise<void> {
       ? cachedReminderSettings(app.getPath("userData"))
       : reminderSettings;
 
-    // Waiting on the idle prompt is not forgetting to track: it already
-    // asks, and a reminder on top would only bury it.
-    if (idleHoldStore.load()) return;
-
     const now = new Date();
+    const idleSeconds = await readIdleSeconds();
     const due = shouldRemind({
       settings,
       now,
       isTracking: signedOut ? false : timerRunning,
-      idleSeconds: await readIdleSeconds(),
+      idleSeconds,
       since: untrackedSince,
+      awaitingIdleAnswer: idleHoldStore.load() !== null,
     });
     if (!due || !settings) return;
 
@@ -1353,6 +1351,13 @@ async function registerIpcHandlers(): Promise<void> {
       untrackedSince = now;
       return;
     }
+
+    // Read again, as late as it can be: the day's totals above are a
+    // network round trip, and an idle timeout reached inside it would
+    // otherwise collect this reminder on top of the question it raises.
+    // The slot is deliberately not spent — the nudge is still owed once
+    // the question is answered.
+    if (idleHoldStore.load()) return;
 
     const untrackedMinutes = Math.round(
       (now.getTime() - untrackedSince.getTime()) / 60_000,

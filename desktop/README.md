@@ -558,7 +558,13 @@ timeout, tracking stops where input stopped, and the Keep/Discard prompt
 waits for an answer: Keep counts the idle stretch, and Discard drops only
 it, restarting from when the person came back. The waiting prompt is kept on
 disk (`idle-hold.json`), so a reload, a relaunch or a crash brings it back
-rather than losing the time.
+rather than losing the time — and it is written again every time the prompt
+goes up, since main keeps the not-tracking reminder quiet for exactly as
+long as a hold is stored. One question at a time: no dialog opens over
+another. If a timer is started some other way while the question waits — the
+tray, the web, another device — the question is settled by that start, and
+the notice line says how many idle minutes went uncounted rather than
+letting them disappear quietly.
 
 ## Known limitations (this pass)
 

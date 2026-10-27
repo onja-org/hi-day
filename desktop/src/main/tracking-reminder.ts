@@ -28,6 +28,13 @@ export interface ReminderInput {
    * covers the first nudge and every repeat.
    */
   since: Date;
+  /**
+   * Whether an idle stretch is sitting on screen waiting to be kept or
+   * discarded (main holds one on disk for exactly as long as the question
+   * is open). Read as late as possible by the caller: a timeout reached
+   * mid-tick must not get a reminder laid over its question.
+   */
+  awaitingIdleAnswer: boolean;
 }
 
 /**
@@ -59,11 +66,16 @@ export function hasTrackedFullWorkDay(
  * first nudge and keeps working untracked is exactly who it is for.
  */
 export function shouldRemind(input: ReminderInput): boolean {
-  const { settings, now, isTracking, idleSeconds, since } = input;
+  const { settings, now, isTracking, idleSeconds, since, awaitingIdleAnswer } =
+    input;
 
   if (!settings) return false;
   if (settings.intervalMinutes <= 0) return false;
   if (isTracking) return false;
+  // Waiting on the idle question is not forgetting to track: it already
+  // asks, and offers its own way back. A nudge on top would only bury it —
+  // and the nudge's own "Start timer" would answer it the lossy way.
+  if (awaitingIdleAnswer) return false;
   if (idleSeconds > PRESENCE_IDLE_LIMIT_SECONDS) return false;
 
   const elapsedMinutes = (now.getTime() - since.getTime()) / 60_000;

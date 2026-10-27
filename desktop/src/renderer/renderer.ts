@@ -887,11 +887,14 @@ function setRunning(entry: TimeEntry | null): void {
         );
       }
     }
-    // A new entry counts from now, not from the last poll's baseline — that
-    // stale baseline is what made a restarted timer jump ahead, then back.
-    accountWorkedMs = 0;
+    // A new entry counts from its own start, never from the last poll's
+    // baseline — that stale baseline is what made a restarted timer jump
+    // ahead, then back. Its own start is "now" for an ordinary play, but
+    // minutes back for one that is backdated: counting those from now
+    // dropped the very stretch "Keep it — I was working" was pressed to keep.
+    accountWorkedMs = entry ? workedSoFarMs(entry) : 0;
     accountWorkedMsAt = entry ? Date.now() : null;
-    pausedAtWorkedMs = 0;
+    pausedAtWorkedMs = entry?.pausedAt ? workedSoFarMs(entry) : 0;
   } else if (entry && previous && entry.pausedAt && !previous.pausedAt) {
     pausedAtWorkedMs = liveElapsedMs();
   } else if (entry && previous && !entry.pausedAt && previous.pausedAt) {
@@ -938,10 +941,24 @@ function setRunning(entry: TimeEntry | null): void {
       hideIdleBanner();
     }
   } else if (idleHold) {
-    // A timer started some other way — play, the tray, the web — settles
-    // the question: whatever it was, the person is tracking again.
+    // A timer started some other way — the tray, the web, another device —
+    // settles the question: the person is tracking again from the moment
+    // they pressed it, so the idle stretch goes uncounted. Said out loud
+    // rather than dropped quietly, which is how "I answered and my time
+    // vanished" happens. Not while a Keep or Discard is in flight: that
+    // start *is* the answer, and it keeps its own stretch.
+    const unanswered = idleRestartInFlight ? null : idleHold;
+    const uncountedSeconds = unanswered
+      ? awaySeconds(unanswered, Date.now() + serverOffsetMs)
+      : 0;
     hideIdleBanner();
     void window.api.idle.clearHold();
+    // Under a minute there is nothing worth telling anyone about.
+    if (uncountedSeconds >= 60) {
+      showIdleNotice(
+        `Timer started — the ${Math.floor(uncountedSeconds / 60)} min idle before it was not counted.`,
+      );
+    }
   }
   // The only place "is time being tracked" changes — mirrored to main so
   // the session engine can gate on it. Pausing closes the open URL session.
@@ -985,6 +1002,11 @@ function updateIdleStats(hold: IdleHold): void {
 
 function showIdleBanner(hold: IdleHold): void {
   idleHold = hold;
+  // Back on disk as well as on screen, every time the question goes up:
+  // main keeps the not-tracking reminder quiet while a hold is stored
+  // there, so a prompt with nothing behind it collects a second popup on
+  // top of the question — and a reload would lose it outright.
+  void window.api.idle.setHold(hold);
   updateIdleStats(hold);
   idlePrompt.hidden = false;
   // Needs an answer, so it can't wait behind the compact bar or in the tray.
@@ -1169,8 +1191,10 @@ async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<v
     if (!startResult.ok) {
       // Still unanswered — a work limit, say, refused it — so the hold
       // stays and the prompt with it: dropping them here would lose the
-      // idle time with no way left to keep or discard it.
-      showIdleBanner(hold);
+      // idle time with no way left to keep or discard it. Re-read rather
+      // than reused: the person may have come back while the start was in
+      // flight, and `hold` was taken before that return was stamped.
+      showIdleBanner((await window.api.idle.hold()) ?? hold);
       handleTrackingFailure(startResult);
       return;
     }
@@ -1191,6 +1215,21 @@ function displayedSecondsFor(projectId: string | null): number {
     return recorded;
   }
   return recorded + Math.max(0, Math.floor(liveElapsedMs() / 1000));
+}
+
+/**
+ * What an entry has already run for by the time this device adopts it:
+ * nothing for an ordinary start at "now", but minutes for a backdated one —
+ * Keep after an idle stretch, or a start queued while offline and replayed
+ * later. Only today's share of it, since the per-day totals it joins are
+ * the day's alone, and never the time it spent paused.
+ */
+function workedSoFarMs(entry: TimeEntry): number {
+  const startedMs = Date.parse(entry.startedAt);
+  if (Number.isNaN(startedMs)) return 0;
+  const from = Math.max(startedMs, startOfToday());
+  const to = entry.pausedAt ? Date.parse(entry.pausedAt) : Date.now() + serverOffsetMs;
+  return Math.max(0, to - from - entry.pausedSeconds * 1000);
 }
 
 /**
@@ -2154,7 +2193,24 @@ reminderStartButton.addEventListener("click", () => {
   if (!timerToggle.disabled) timerToggle.click();
 });
 
+/**
+ * Whether something is already asking for an answer. Each of these covers
+ * the whole window, so a second one on top both buries the question and
+ * takes the clicks meant for it.
+ */
+function aDialogIsOpen(): boolean {
+  return [...document.querySelectorAll<HTMLElement>(".close-prompt")].some(
+    (dialog) => dialog !== reminderBanner && !dialog.hidden,
+  );
+}
+
 window.api.windowControls.onTrackingReminder((reminder) => {
+  // One question at a time. This nudge over the idle question buries it,
+  // and its "Start timer" then answers that question by accident: a fresh
+  // entry from now, with the idle stretch dropped and no way left to keep
+  // it. Dropped rather than queued — the next one is due in an interval,
+  // by which time the question has usually been answered.
+  if (aDialogIsOpen()) return;
   // The banner lives in the tracking view, which the smaller sizes
   // hide; centred, because growing from a corner runs off screen.
   setMode("full", true);

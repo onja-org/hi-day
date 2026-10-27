@@ -22,7 +22,7 @@ const RENDERER_DIR = join(__dirname, '..', '..', 'renderer');
 /** Shrunk so a retry on the poll cadence lands within a short real-time wait. */
 const FAST_POLL_MS = 50;
 
-function rendererScript(pollMs: number): string {
+function rendererScript(pollMs: number, idlePollMs: number): string {
   // The renderer is a module in the app but is eval'd as a plain script
   // here, so its local imports are inlined rather than resolved.
   const imported = ['reminder-message.ts', 'idle-hold.ts']
@@ -38,7 +38,10 @@ function rendererScript(pollMs: number): string {
       'const STATUS_POLL_INTERVAL_MS = 15_000;',
       `const STATUS_POLL_INTERVAL_MS = ${pollMs};`,
     )
-    .replace('const IDLE_POLL_INTERVAL_MS = 10_000;', `const IDLE_POLL_INTERVAL_MS = ${pollMs};`);
+    .replace(
+      'const IDLE_POLL_INTERVAL_MS = 10_000;',
+      `const IDLE_POLL_INTERVAL_MS = ${idlePollMs};`,
+    );
   // Guards the guard: a renamed constant would silently keep the 15s cadence.
   expect(fastSource).not.toBe(source);
   // A window onto one renderer variable, appended inside its own scope: see
@@ -78,6 +81,8 @@ interface Scenario {
   runningElsewhere?: boolean;
   /** Overrides the shrunk poll cadence — a long one means no retry fires on its own. */
   pollMs?: number;
+  /** The idle check's own cadence, for a test that wants idle to fire while status polls do not. */
+  idlePollMs?: number;
   /** How far the server's count of each entry falls short of this device's clock. */
   serverShortfallSeconds?: number;
   /** The organisation's idle handling; one that never fires unless a test says otherwise. */
@@ -220,7 +225,9 @@ function launch(scenario: Scenario) {
           ...entry,
           projectId,
           id: `e${++entrySeq}`,
-          startedAt: new Date(now()).toISOString(),
+          // Honoured as the backend honours it: a Keep asks to start again
+          // back where input stopped, so the entry really is minutes old.
+          startedAt: startedAt ?? new Date(now()).toISOString(),
         };
         if (!server.revoked) running = started;
         return ok(started);
@@ -232,7 +239,21 @@ function launch(scenario: Scenario) {
       stop: (endedAt?: string) => {
         calls.stoppedAt.push(endedAt);
         const ended = { ...(running ?? entry), endedAt: endedAt ?? new Date(now()).toISOString() };
-        if (!server.revoked) running = null;
+        if (!server.revoked && running) {
+          completed.push({
+            id: running.id,
+            projectId: running.projectId,
+            durationSeconds: Math.max(
+              0,
+              Math.floor(
+                (new Date(ended.endedAt).getTime() -
+                  new Date(running.startedAt).getTime()) /
+                  1000,
+              ),
+            ),
+          });
+          running = null;
+        }
         return ok(ended);
       },
       status: () => {
@@ -377,7 +398,12 @@ function launch(scenario: Scenario) {
     },
   };
 
-  window.eval(rendererScript(scenario.pollMs ?? FAST_POLL_MS));
+  window.eval(
+    rendererScript(
+      scenario.pollMs ?? FAST_POLL_MS,
+      scenario.idlePollMs ?? scenario.pollMs ?? FAST_POLL_MS,
+    ),
+  );
 
   const document = dom.window.document;
   /** "HH:MM:SS" on the main timer, as seconds. */
@@ -408,6 +434,15 @@ function launch(scenario: Scenario) {
       wakeListeners.forEach((listener) => listener());
     },
     idlePromptVisible: () => !document.getElementById('idle-prompt')!.hidden,
+    /** The passing line above the timer — what it says, or null while hidden. */
+    idleNotice: () => {
+      const el = document.getElementById('idle-notice')!;
+      return el.hidden ? null : el.textContent;
+    },
+    /** Main losing its copy of the hold, as a stray poll's clear does. */
+    dropHold: () => {
+      heldIdle = null;
+    },
     /** The renderer has applied a running timer. */
     rendererShowsRunning: () => document.getElementById('timer-card')!.classList.contains('is-running'),
     /**
@@ -1057,6 +1092,31 @@ describe('renderer idle timeout', () => {
     app.close();
   });
 
+  it('puts the kept minutes on the clock, not only on the server', async () => {
+    // Long poll: nothing lands to re-seed the clock from the server, so
+    // what the person sees is what the restart itself left behind.
+    const app = launch({
+      failingProjectLoads: 0,
+      idlePolicy: flag20,
+      pollMs: 60_000,
+      idlePollMs: FAST_POLL_MS,
+    });
+    await startTimer(app);
+    app.advanceClock(40 * MINUTE_MS);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.clickKeepIdle();
+    await waitForIdleRestart(app);
+
+    // Forty minutes tracked, twenty of them idle and kept: all of it still
+    // on the clock. It used to count the new entry from "now", so the
+    // twenty minutes Keep was pressed to keep vanished off the display.
+    expect(app.timerSeconds()).toBeGreaterThanOrEqual(40 * 60 - 2);
+    expect(app.timerSeconds()).toBeLessThanOrEqual(40 * 60 + 2);
+    app.close();
+  });
+
   it('a held stretch survives a relaunch: the prompt comes back', async () => {
     const idleStartedAt = new Date(Date.now() - 30 * MINUTE_MS).toISOString();
     const app = launch({
@@ -1068,6 +1128,91 @@ describe('renderer idle timeout', () => {
 
     expect(app.calls.start).toBe(0);
     expect(app.heldIdle()?.returnedAt).not.toBeNull();
+    app.close();
+  });
+});
+
+/**
+ * The bug as reported: the not-tracking reminder landed on top of the open
+ * idle question, and the time the question was holding was gone afterwards.
+ */
+describe('renderer asks one question at a time', () => {
+  const flag20 = { handling: 'flag' as const, thresholdMinutes: 20 };
+
+  it('drops the not-tracking reminder while the idle question is open', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.remind('You have not tracked time in 10 minutes.');
+    await settle(FAST_POLL_MS);
+
+    expect(app.reminderVisible()).toBe(false);
+    expect(app.idlePromptVisible()).toBe(true);
+    app.close();
+  });
+
+  it('nudges again as usual once the question is answered', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+    app.clickDiscardIdle();
+    await waitForIdleRestart(app);
+
+    app.remind('You have not tracked time in 10 minutes.');
+
+    expect(app.reminderVisible()).toBe(true);
+    app.close();
+  });
+
+  it('keeps the hold stored for as long as the question is on screen', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    // The refused restart re-asks; main's copy went in the meantime, as a
+    // status poll landing mid-restart used to clear it. A question with no
+    // hold behind it is what let the reminder through on top of it.
+    app.server.refuseStarts = true;
+    app.dropHold();
+    app.clickKeepIdle();
+    await waitFor(() => app.trackingError() !== null);
+
+    expect(app.idlePromptVisible()).toBe(true);
+    expect(app.heldIdle()).not.toBeNull();
+    app.close();
+  });
+
+  it('says so when a timer started elsewhere leaves the idle time uncounted', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    // Started from the tray while the question sits unanswered: the idle
+    // stretch cannot be kept now, so the person is told it was not.
+    app.trayTrackProject(PROJECT.id);
+    await waitFor(() => !app.idlePromptVisible());
+
+    expect(app.idleNotice()).toContain('not counted');
+    expect(app.idleNotice()).toContain('25 min');
+    expect(app.heldIdle()).toBeNull();
+    app.close();
+  });
+
+  it('says nothing of the sort when Keep itself is what started the timer', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: flag20 });
+    await startTimer(app);
+    app.setIdleSeconds(20 * 60);
+    await waitFor(() => app.idlePromptVisible());
+
+    app.clickKeepIdle();
+    await waitForIdleRestart(app);
+
+    expect(app.idleNotice()).toBeNull();
     app.close();
   });
 });
