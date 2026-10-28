@@ -3,6 +3,7 @@ import {
   bootIdentity,
   decideAutoStart,
   isSameBoot,
+  parseWindowsBootId,
   type AutoStartInput,
 } from '../auto-start';
 
@@ -65,9 +66,47 @@ describe('decideAutoStart', () => {
   });
 });
 
+describe('parseWindowsBootId', () => {
+  it('takes the counter out of reg query output', () => {
+    const output = [
+      '',
+      'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters',
+      '    BootId    REG_DWORD    0x1f',
+      '',
+    ].join('\r\n');
+    expect(parseWindowsBootId(output)).toBe('0x1f');
+  });
+
+  // A machine with prefetch disabled, or a Windows that stops writing it.
+  it('answers nothing when the value is absent', () => {
+    expect(parseWindowsBootId('ERROR: The system was unable to find')).toBeNull();
+    expect(parseWindowsBootId('    BaseTime    REG_DWORD    0x1f')).toBeNull();
+  });
+});
+
 describe('bootIdentity', () => {
   it('prefers the id the kernel publishes, which a suspend does not change', () => {
     expect(bootIdentity({ readBootId: () => 'f1d2-3c4b\n' })).toBe('id:f1d2-3c4b');
+  });
+
+  // Each platform has its own, and none of them is the clock: see
+  // `readExactBootId` for why the computed form is a last resort.
+  it('reads one on every platform that publishes one', () => {
+    for (const platform of ['linux', 'darwin', 'win32'] as NodeJS.Platform[]) {
+      expect(
+        bootIdentity({ platform, readBootId: () => 'abc', uptimeSeconds: () => 1 }),
+      ).toBe('id:abc');
+    }
+  });
+
+  it('falls back to the clock where no platform id answers', () => {
+    expect(
+      bootIdentity({
+        readBootId: () => null,
+        uptimeSeconds: () => 60,
+        nowMs: () => 1_000_000,
+      }),
+    ).toBe('at:940000');
   });
 
   it('works the boot time out from the clock where there is no such id', () => {

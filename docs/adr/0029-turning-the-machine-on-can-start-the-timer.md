@@ -127,12 +127,45 @@ direction to go, not a schedule bolted onto the device.
   decision and the dialog but never that a machine coming on produces
   them.
 
+## Each platform is asked for its own boot id
+
+The clock-and-uptime form was originally the answer everywhere but Linux.
+Reading the sources showed it is a poor one on both of the others, in
+opposite directions, so each platform is now asked directly and the clock
+is only a fallback:
+
+- **Linux** — `/proc/sys/kernel/random/boot_id`. Exact, suspend-proof.
+- **macOS** — `sysctl kern.bootsessionuuid` (XNU, `bsd/kern/kern_sysctl.c`),
+  a per-boot UUID no clock change touches. Needed because `os.uptime()` on
+  darwin is `time(NULL) - kern.boottime` (libuv `src/unix/darwin.c`), and
+  XNU's `clock_set_calendar_microtime` deliberately moves `kern.boottime`
+  by the same delta whenever the calendar clock is stepped — so an NTP
+  correction past the two-minute tolerance read as a fresh power-on and
+  started a timer in the middle of the day.
+- **Windows** — the `BootId` counter under `Session Manager\Memory
+  Management\PrefetchParameters`. Undocumented (Microsoft's page for that
+  key covers only the VA-limit values), but it is the only per-boot
+  identifier reachable without a native addon, and a counter cannot be
+  moved by a clock.
+  `SystemBootEnvironmentInformation.BootIdentifier` is not an alternative:
+  that GUID names the BCD entry, and survives reboots. The clock form is
+  especially bad here — `os.uptime()` is `GetTickCount64()` (libuv
+  `src/win/util.c`), the *biased* counter that includes sleep and
+  hibernation, and Fast Startup makes a shutdown a kernel-session
+  hibernate, so turning the machine off and on again may not move it at
+  all.
+
 ## Not verified
 
-- The clock-and-uptime fallback on macOS and Windows, and the login-item
-  registration either of them does. Linux is covered by `boot_id`, which is
-  exact; the other two need a real machine to confirm that `os.uptime()`
-  does not drift across a sleep far enough to read as a fresh boot. Given
-  that the Linux login item was registering correctly and silently failing
-  to launch anything, treat "the code looks right" on those two as meaning
-  nothing until somebody turns a machine on.
+- **Anything on macOS or Windows.** Neither the boot ids above nor the
+  login-item registration has been run on either. The reasoning is from
+  libuv, XNU and Microsoft's own sources rather than from a machine, and
+  the Linux bug above is the standing argument for how little that is
+  worth: the login item there was registering perfectly and launching
+  nothing. Two specific doubts to settle first on a real machine: whether
+  Windows bumps `BootId` on a Fast Startup resume (if it does not, the
+  timer never starts on the one action this is for), and whether
+  `openAtLogin` does anything at all on macOS while the build is ad-hoc
+  signed — Electron's docs say it "may silently fail" un-notarized, and
+  `electron-builder.yml` is `identity: "-"`. `syncAutoLaunch` never reads
+  `getLoginItemSettings` back, so it would not notice either way.
