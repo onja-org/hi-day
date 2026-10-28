@@ -13,6 +13,8 @@ interface SetupState {
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
+  autoStartTimer?: boolean;
+  lastAutoStartedBoot?: string;
   webAppUrl?: string;
 }
 
@@ -85,6 +87,32 @@ export function setCompactAlwaysOnTop(
   pinned: boolean,
 ): void {
   write(userDataDir, { ...read(userDataDir), compactAlwaysOnTop: pinned });
+}
+
+/**
+ * Whether turning the machine on starts the timer too — see
+ * `auto-start.ts`. A machine preference, not an account one: "this is the
+ * laptop I work on" is a property of the laptop. Off until asked for,
+ * since a timer nobody started is a surprise worth opting into.
+ */
+export function autoStartTimer(userDataDir: string): boolean {
+  return read(userDataDir).autoStartTimer === true;
+}
+
+export function setAutoStartTimer(userDataDir: string, on: boolean): void {
+  write(userDataDir, { ...read(userDataDir), autoStartTimer: on });
+}
+
+/**
+ * The power-on a timer was last started for, so a crash relaunch or an
+ * update restart on the same machine does not start a second one.
+ */
+export function lastAutoStartedBoot(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedBoot ?? null;
+}
+
+export function rememberAutoStartedBoot(userDataDir: string, boot: string): void {
+  write(userDataDir, { ...read(userDataDir), lastAutoStartedBoot: boot });
 }
 
 function write(userDataDir: string, state: SetupState): void {

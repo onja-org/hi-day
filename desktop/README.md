@@ -125,6 +125,16 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
+**Starting the timer when the machine comes on** (`docs/adr/0029-...`) is
+off until somebody turns it on, under **Preferences → Start timer when the
+computer starts** in the tray. It fires once per power-on rather than once
+per launch — a crash relaunch or an update restart is the same machine,
+still on — and tracks whatever the play button would. A dialog says it
+happened, with **Stop timer** and **OK**; if the start is refused (a day the
+organisation does not track, a spent work limit) a notification says why
+instead, since nobody clicked anything. An unanswered idle question comes
+first and suspends it entirely.
+
 **Start/Stop timer in the tray leaves the window where it is** — hidden
 stays hidden, since that item is for someone who did not want to come back
 to it. What it did arrives as a desktop notification instead ("Stopped timer

@@ -191,6 +191,7 @@ declare global {
         entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
         completedTotals: (from: string, to: string) => Promise<TrackingResult<CompletedTotals>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
+        autoStartDue: () => Promise<boolean>;
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;
         openPrivacySettings: (

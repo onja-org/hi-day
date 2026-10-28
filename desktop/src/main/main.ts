@@ -97,7 +97,12 @@ import {
   setCompactAlwaysOnTop,
   cachedReminderSettings,
   rememberedCloseAction,
+  autoStartTimer as autoStartTimerEnabled,
+  setAutoStartTimer,
+  lastAutoStartedBoot,
+  rememberAutoStartedBoot,
 } from "./setup-state";
+import { bootIdentity, shouldAutoStart } from "./auto-start";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -852,6 +857,7 @@ function refreshTrayMenu(): void {
     recentProjects: account.recentProjects,
     webAppUrl: resolveWebAppUrl(app.isPackaged, cachedWebAppUrl(userDataDir)),
     compactAlwaysOnTop: pinned,
+    autoStartTimer: autoStartTimerEnabled(userDataDir),
     closeChoiceRemembered: rememberedCloseAction(userDataDir) !== null,
   };
   const key = JSON.stringify(state);
@@ -868,6 +874,10 @@ function refreshTrayMenu(): void {
         toggleCompactAlwaysOnTop: () => {
           setCompactAlwaysOnTop(userDataDir, !pinned);
           applyPinning();
+          refreshTrayMenu();
+        },
+        toggleAutoStartTimer: () => {
+          setAutoStartTimer(userDataDir, !autoStartTimerEnabled(userDataDir));
           refreshTrayMenu();
         },
         forgetCloseChoice: () => {
@@ -2261,6 +2271,31 @@ async function registerIpcHandlers(): Promise<void> {
   // Cached like the rest, and for a sharper reason: with no policy the
   // renderer's idle check gives up entirely, so an offline machine left
   // running overnight records the whole night.
+  /**
+   * Whether this launch should start the timer by itself. Asked by the
+   * renderer once setup has settled, because starting a timer is its job
+   * and there must not be a second way to do it. Stamped here either way:
+   * once per power-on, whatever becomes of the start.
+   */
+  ipcMain.handle("tracking:autoStartDue", (): boolean => {
+    const userDataDir = app.getPath("userData");
+    const boot = bootIdentity();
+    const due = shouldAutoStart({
+      enabled: autoStartTimerEnabled(userDataDir),
+      boot,
+      lastAutoStartedBoot: lastAutoStartedBoot(userDataDir),
+      signedIn: authStore.load() !== null,
+      // The remembered entry as well as the gate's answer: with no
+      // connection the gate has nothing to report, and a machine still
+      // finding its network must not start a second timer.
+      timerRunning: timerRunning || pendingOps.current() !== null,
+      awaitingIdleAnswer: idleHoldStore.load() !== null,
+      awaitingRecoveredAnswer: recoveredTimer !== null,
+    });
+    if (due && boot) rememberAutoStartedBoot(userDataDir, boot);
+    return due;
+  });
+
   ipcMain.handle("tracking:idlePolicy", () =>
     cachedDeviceRead(
       (token) => apiClient.getIdlePolicy(token),

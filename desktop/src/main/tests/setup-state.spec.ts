@@ -14,6 +14,10 @@ import {
   markWaylandScreenshotGranted,
   rememberCloseAction,
   rememberedCloseAction,
+  autoStartTimer,
+  setAutoStartTimer,
+  lastAutoStartedBoot,
+  rememberAutoStartedBoot,
 } from '../setup-state';
 import type { ReminderSettings } from '../tracking-reminder';
 
@@ -62,6 +66,71 @@ describe('setup state', () => {
 
     expect(main).not.toContain('clearBrowserRestartPromptSeen');
     expect(store).not.toContain('clearBrowserRestartPromptSeen');
+  });
+});
+
+describe('starting the timer when the machine comes on', () => {
+  let userDataDir: string;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-auto-start-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  // A timer nobody started is a surprise worth opting into.
+  it('is off on a fresh install', () => {
+    expect(autoStartTimer(userDataDir)).toBe(false);
+  });
+
+  it('remembers being turned on, and off again', () => {
+    setAutoStartTimer(userDataDir, true);
+    expect(autoStartTimer(userDataDir)).toBe(true);
+
+    setAutoStartTimer(userDataDir, false);
+    expect(autoStartTimer(userDataDir)).toBe(false);
+  });
+
+  it('has started for no power-on yet', () => {
+    expect(lastAutoStartedBoot(userDataDir)).toBeNull();
+  });
+
+  it('remembers the power-on it started for, and replaces it with the next', () => {
+    rememberAutoStartedBoot(userDataDir, 'id:first');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:first');
+
+    rememberAutoStartedBoot(userDataDir, 'id:second');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:second');
+  });
+
+  // Both live in the one file every other preference does, so writing
+  // either must leave the rest of it alone.
+  it('keeps the other preferences while it writes its own', () => {
+    setCompactAlwaysOnTop(userDataDir, false);
+    rememberCloseAction(userDataDir, 'quit');
+
+    setAutoStartTimer(userDataDir, true);
+    rememberAutoStartedBoot(userDataDir, 'id:abc');
+
+    expect(compactAlwaysOnTop(userDataDir)).toBe(false);
+    expect(rememberedCloseAction(userDataDir)).toBe('quit');
+    expect(autoStartTimer(userDataDir)).toBe(true);
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:abc');
+  });
+
+  // Signing out deletes the session, never this file: the laptop is still
+  // the laptop somebody works on.
+  it('survives a file written by a build that knew nothing about it', () => {
+    writeFileSync(
+      join(userDataDir, 'setup-state.json'),
+      JSON.stringify({ compactAlwaysOnTop: true }),
+      'utf-8',
+    );
+
+    expect(autoStartTimer(userDataDir)).toBe(false);
+    expect(lastAutoStartedBoot(userDataDir)).toBeNull();
   });
 });
 
