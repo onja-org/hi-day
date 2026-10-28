@@ -18,7 +18,7 @@ const signedIn: TrayMenuState = {
   ],
   webAppUrl: 'https://app.example.com/',
   compactAlwaysOnTop: false,
-  autoStartTimer: false,
+  autoStartTimer: true,
   closeChoiceRemembered: false,
 };
 
@@ -183,8 +183,11 @@ describe('the tray menu', () => {
     });
 
     it('ticks the automatic start to match the preference, and toggles it', () => {
-      const on = preferences({ ...signedIn, autoStartTimer: true });
-      expect(item(on, 'Start timer when the computer starts').checked).toBe(true);
+      expect(item(preferences(signedIn), 'Start timer when the computer starts').checked).toBe(
+        true,
+      );
+      const off = preferences({ ...signedIn, autoStartTimer: false });
+      expect(item(off, 'Start timer when the computer starts').checked).toBe(false);
 
       const handlers = actions();
       click(

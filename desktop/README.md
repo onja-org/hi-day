@@ -126,14 +126,20 @@ smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
 **Starting the timer when the machine comes on** (`docs/adr/0029-...`) is
-off until somebody turns it on, under **Preferences → Start timer when the
-computer starts** in the tray. It fires once per power-on rather than once
-per launch — a crash relaunch or an update restart is the same machine,
-still on — and tracks whatever the play button would. A dialog says it
-happened, with **Stop timer** and **OK**; if the start is refused (a day the
-organisation does not track, a spent work limit) a notification says why
-instead, since nobody clicked anything. An unanswered idle question comes
-first and suspends it entirely.
+**on** unless somebody turns it off, under **Preferences → Start timer when
+the computer starts** in the tray. It fires once per power-on rather than
+once per launch — a crash relaunch or an update restart is the same
+machine, still on — and tracks whatever the play button would. A dialog
+says it happened, with **Stop timer** and **OK**; if the start is refused (a
+day the organisation does not track, a spent work limit) a notification
+says why instead, since nobody clicked anything.
+
+Boot while signed out and it waits: the app launches regardless (login item
+registration happens before any auth check), and the timer starts at the
+sign-in instead — once, so signing out and back in later the same day does
+nothing. An unanswered idle question or a crash-recovered timer comes
+first and takes that power-on's start with it, rather than leaving it to be
+collected hours later.
 
 **Start/Stop timer in the tray leaves the window where it is** — hidden
 stays hidden, since that item is for someone who did not want to come back

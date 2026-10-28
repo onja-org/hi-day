@@ -102,7 +102,7 @@ import {
   lastAutoStartedBoot,
   rememberAutoStartedBoot,
 } from "./setup-state";
-import { bootIdentity, shouldAutoStart } from "./auto-start";
+import { bootIdentity, decideAutoStart } from "./auto-start";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -2268,19 +2268,17 @@ async function registerIpcHandlers(): Promise<void> {
       ),
   );
 
-  // Cached like the rest, and for a sharper reason: with no policy the
-  // renderer's idle check gives up entirely, so an offline machine left
-  // running overnight records the whole night.
   /**
    * Whether this launch should start the timer by itself. Asked by the
    * renderer once setup has settled, because starting a timer is its job
-   * and there must not be a second way to do it. Stamped here either way:
-   * once per power-on, whatever becomes of the start.
+   * and there must not be a second way to do it. The power-on is spent as
+   * the decision is taken rather than once a timer is running — see
+   * `decideAutoStart`.
    */
   ipcMain.handle("tracking:autoStartDue", (): boolean => {
     const userDataDir = app.getPath("userData");
     const boot = bootIdentity();
-    const due = shouldAutoStart({
+    const decision = decideAutoStart({
       enabled: autoStartTimerEnabled(userDataDir),
       boot,
       lastAutoStartedBoot: lastAutoStartedBoot(userDataDir),
@@ -2292,10 +2290,13 @@ async function registerIpcHandlers(): Promise<void> {
       awaitingIdleAnswer: idleHoldStore.load() !== null,
       awaitingRecoveredAnswer: recoveredTimer !== null,
     });
-    if (due && boot) rememberAutoStartedBoot(userDataDir, boot);
-    return due;
+    if (decision !== "wait" && boot) rememberAutoStartedBoot(userDataDir, boot);
+    return decision === "start";
   });
 
+  // Cached like the rest, and for a sharper reason: with no policy the
+  // renderer's idle check gives up entirely, so an offline machine left
+  // running overnight records the whole night.
   ipcMain.handle("tracking:idlePolicy", () =>
     cachedDeviceRead(
       (token) => apiClient.getIdlePolicy(token),

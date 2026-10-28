@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   bootIdentity,
+  decideAutoStart,
   isSameBoot,
-  shouldAutoStart,
   type AutoStartInput,
 } from '../auto-start';
 
@@ -19,39 +19,49 @@ function input(overrides: Partial<AutoStartInput> = {}): AutoStartInput {
   };
 }
 
-describe('shouldAutoStart', () => {
-  it('starts on a power-on it has not started for', () => {
-    expect(shouldAutoStart(input())).toBe(true);
+describe('decideAutoStart', () => {
+  it('starts on a power-on it has not answered for', () => {
+    expect(decideAutoStart(input())).toBe('start');
   });
 
-  it('does nothing until the preference is turned on', () => {
-    expect(shouldAutoStart(input({ enabled: false }))).toBe(false);
+  it('does nothing once the preference is turned off', () => {
+    expect(decideAutoStart(input({ enabled: false }))).toBe('wait');
   });
 
-  it('starts only once for a power-on, however often the app launches', () => {
-    expect(shouldAutoStart(input({ lastAutoStartedBoot: 'id:9f2c' }))).toBe(false);
+  it('answers once for a power-on, however often the app launches', () => {
+    expect(decideAutoStart(input({ lastAutoStartedBoot: 'id:9f2c' }))).toBe('wait');
     // A crash relaunch or an update restart is the same machine, still on.
-    expect(shouldAutoStart(input({ lastAutoStartedBoot: 'id:earlier' }))).toBe(true);
+    expect(decideAutoStart(input({ lastAutoStartedBoot: 'id:earlier' }))).toBe('start');
   });
 
   it('stays out of the way of a timer that is already running', () => {
-    expect(shouldAutoStart(input({ timerRunning: true }))).toBe(false);
+    expect(decideAutoStart(input({ timerRunning: true }))).toBe('spend');
   });
 
   it('leaves an unanswered idle question to be answered first', () => {
-    expect(shouldAutoStart(input({ awaitingIdleAnswer: true }))).toBe(false);
+    expect(decideAutoStart(input({ awaitingIdleAnswer: true }))).toBe('spend');
   });
 
   it('leaves a crash-recovered timer to be answered first', () => {
-    expect(shouldAutoStart(input({ awaitingRecoveredAnswer: true }))).toBe(false);
+    expect(decideAutoStart(input({ awaitingRecoveredAnswer: true }))).toBe('spend');
   });
 
-  it('has nothing to start while signed out', () => {
-    expect(shouldAutoStart(input({ signedIn: false }))).toBe(false);
+  // The whole of "whether logged in or not".
+  it('waits for a sign-in rather than spending the power-on on nobody', () => {
+    expect(decideAutoStart(input({ signedIn: false }))).toBe('wait');
+  });
+
+  it('does not re-offer a start that something else displaced', () => {
+    const displaced = input({ awaitingIdleAnswer: true });
+    expect(decideAutoStart(displaced)).toBe('spend');
+    // Main stamps on anything but `wait`, so the next ask sees this:
+    expect(
+      decideAutoStart({ ...displaced, awaitingIdleAnswer: false, lastAutoStartedBoot: displaced.boot }),
+    ).toBe('wait');
   });
 
   it('refuses rather than guesses when power-ons cannot be told apart', () => {
-    expect(shouldAutoStart(input({ boot: null }))).toBe(false);
+    expect(decideAutoStart(input({ boot: null }))).toBe('wait');
   });
 });
 

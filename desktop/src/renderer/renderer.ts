@@ -774,10 +774,12 @@ autoStartStop.addEventListener("click", () => {
  * so it can only ever start what play itself would.
  */
 async function autoStartTimerIfDue(): Promise<void> {
-  // This renderer's own view of what main checks: something running, or a
-  // question waiting, means this is not an untouched machine coming on.
-  if (runningEntry || idleHold || aDialogIsOpen()) return;
+  // Asked before the checks below, never after: main spends the power-on
+  // as it answers, and a start declined here must not be offered again
+  // later in the same one.
   if (!(await window.api.tracking.autoStartDue())) return;
+  // Main checked these too; a question can go up in between.
+  if (runningEntry || idleHold || aDialogIsOpen()) return;
 
   await startTracking((message) => {
     void window.api.windowControls.timerNotice(
@@ -2139,7 +2141,14 @@ async function startTracking(
     return;
   }
 
-  handleTrackingFailure(result, reportRefusal);
+  // Only a refusal reaches the shelf. An unreached request is not one: the
+  // start was queued and will be replayed with its real time
+  // (docs/adr/0025-...), so the sync line owns it — and that path's wording
+  // is about idle time being safe, which this is not.
+  handleTrackingFailure(
+    result,
+    result.status === undefined ? undefined : reportRefusal,
+  );
   if (result.runningEntry && !result.unauthorized) {
     pendingSwitch = { projectId: target.projectId, taskId: target.taskId };
     switchButton.hidden = false;

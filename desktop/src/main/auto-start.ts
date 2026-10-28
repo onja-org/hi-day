@@ -2,22 +2,25 @@ import { readFileSync } from 'node:fs';
 import { uptime } from 'node:os';
 
 /**
- * Starting the timer by itself when the machine is turned on, for someone
- * who has asked for it (Preferences → "Start timer when the computer
- * starts"). Once per power-on, never per app launch: the agent relaunches
- * itself after a crash and after an update, and neither of those is a
- * working day beginning.
+ * Starting the timer by itself when the machine is turned on. On unless
+ * somebody turns it off (Preferences → "Start timer when the computer
+ * starts"): the working day this agent is most likely to miss is the one
+ * nobody remembered to press play for.
+ *
+ * Once per power-on, never per app launch: the agent relaunches itself
+ * after a crash and after an update, and neither of those is a working day
+ * beginning.
  *
  * The decision is pure so it can be read in one place and tested by table;
  * main holds the state it needs and the renderer does the starting, since
  * there must never be a second way to start a timer.
  */
 export interface AutoStartInput {
-  /** The preference. Off until somebody turns it on. */
+  /** The preference. On until somebody turns it off. */
   enabled: boolean;
   /** This power-on — see `bootIdentity`. Null when it cannot be told. */
   boot: string | null;
-  /** The power-on a timer was last started for, remembered on disk. */
+  /** The power-on this already answered for, remembered on disk. */
   lastAutoStartedBoot: string | null;
   signedIn: boolean;
   /** A timer already running anywhere — this device, the web, another machine. */
@@ -28,18 +31,29 @@ export interface AutoStartInput {
   awaitingRecoveredAnswer: boolean;
 }
 
-export function shouldAutoStart(input: AutoStartInput): boolean {
-  if (!input.enabled) return false;
-  // Nothing to start against, and nothing to start it with.
-  if (!input.signedIn) return false;
-  // Unknown is not "new": without a way to tell power-ons apart this would
-  // start a timer on every launch, which is the one outcome to avoid.
-  if (input.boot === null) return false;
-  if (isSameBoot(input.boot, input.lastAutoStartedBoot)) return false;
-  if (input.timerRunning) return false;
-  if (input.awaitingIdleAnswer) return false;
-  if (input.awaitingRecoveredAnswer) return false;
-  return true;
+/**
+ * `spend` is the one that is easy to miss: do not start, but use the
+ * power-on up anyway, so a start something displaced cannot turn up hours
+ * later. `wait` spends nothing — signed out, it becomes `start` at the
+ * sign-in, which is the whole of "whether logged in or not".
+ */
+export type AutoStartDecision = 'start' | 'spend' | 'wait';
+
+export function decideAutoStart(input: AutoStartInput): AutoStartDecision {
+  if (!input.enabled) return 'wait';
+  // A machine at its login screen has not had its chance yet.
+  if (!input.signedIn) return 'wait';
+  // Unknown is not "new": with no way to tell power-ons apart, starting on
+  // every launch is the one outcome to avoid.
+  if (input.boot === null) return 'wait';
+  if (isSameBoot(input.boot, input.lastAutoStartedBoot)) return 'wait';
+
+  // Spent from here down: a timer announcing that the machine has just
+  // come on would be lying by the time any of these clears.
+  if (input.timerRunning) return 'spend';
+  if (input.awaitingIdleAnswer) return 'spend';
+  if (input.awaitingRecoveredAnswer) return 'spend';
+  return 'start';
 }
 
 export const LINUX_BOOT_ID_PATH = '/proc/sys/kernel/random/boot_id';

@@ -80,17 +80,16 @@ describe('starting the timer when the machine comes on', () => {
     rmSync(userDataDir, { recursive: true, force: true });
   });
 
-  // A timer nobody started is a surprise worth opting into.
-  it('is off on a fresh install', () => {
-    expect(autoStartTimer(userDataDir)).toBe(false);
+  it('is on on a fresh install', () => {
+    expect(autoStartTimer(userDataDir)).toBe(true);
   });
 
-  it('remembers being turned on, and off again', () => {
-    setAutoStartTimer(userDataDir, true);
-    expect(autoStartTimer(userDataDir)).toBe(true);
-
+  it('remembers being turned off, and on again', () => {
     setAutoStartTimer(userDataDir, false);
     expect(autoStartTimer(userDataDir)).toBe(false);
+
+    setAutoStartTimer(userDataDir, true);
+    expect(autoStartTimer(userDataDir)).toBe(true);
   });
 
   it('has started for no power-on yet', () => {
@@ -111,17 +110,18 @@ describe('starting the timer when the machine comes on', () => {
     setCompactAlwaysOnTop(userDataDir, false);
     rememberCloseAction(userDataDir, 'quit');
 
-    setAutoStartTimer(userDataDir, true);
+    setAutoStartTimer(userDataDir, false);
     rememberAutoStartedBoot(userDataDir, 'id:abc');
 
     expect(compactAlwaysOnTop(userDataDir)).toBe(false);
     expect(rememberedCloseAction(userDataDir)).toBe('quit');
-    expect(autoStartTimer(userDataDir)).toBe(true);
+    expect(autoStartTimer(userDataDir)).toBe(false);
     expect(lastAutoStartedBoot(userDataDir)).toBe('id:abc');
   });
 
   // Signing out deletes the session, never this file: the laptop is still
-  // the laptop somebody works on.
+  // the laptop somebody works on. An upgrade from a build predating the
+  // preference therefore lands on the default, which is on.
   it('survives a file written by a build that knew nothing about it', () => {
     writeFileSync(
       join(userDataDir, 'setup-state.json'),
@@ -129,7 +129,7 @@ describe('starting the timer when the machine comes on', () => {
       'utf-8',
     );
 
-    expect(autoStartTimer(userDataDir)).toBe(false);
+    expect(autoStartTimer(userDataDir)).toBe(true);
     expect(lastAutoStartedBoot(userDataDir)).toBeNull();
   });
 });

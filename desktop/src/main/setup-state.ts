@@ -92,11 +92,15 @@ export function setCompactAlwaysOnTop(
 /**
  * Whether turning the machine on starts the timer too — see
  * `auto-start.ts`. A machine preference, not an account one: "this is the
- * laptop I work on" is a property of the laptop. Off until asked for,
- * since a timer nobody started is a surprise worth opting into.
+ * laptop I work on" is a property of the laptop.
+ *
+ * On unless turned off, hence `!== false` rather than `=== true`: a
+ * preference somebody has to find before the feature does anything is a
+ * feature nobody has, and the dialog it raises offers to stop the timer it
+ * started.
  */
 export function autoStartTimer(userDataDir: string): boolean {
-  return read(userDataDir).autoStartTimer === true;
+  return read(userDataDir).autoStartTimer !== false;
 }
 
 export function setAutoStartTimer(userDataDir: string, on: boolean): void {
@@ -104,8 +108,10 @@ export function setAutoStartTimer(userDataDir: string, on: boolean): void {
 }
 
 /**
- * The power-on a timer was last started for, so a crash relaunch or an
- * update restart on the same machine does not start a second one.
+ * The power-on this last answered for — started a timer, or deliberately
+ * declined to. Remembered so that a crash relaunch or an update restart on
+ * the same machine does not start a second timer, and so that a start
+ * something else displaced does not turn up hours later.
  */
 export function lastAutoStartedBoot(userDataDir: string): string | null {
   return read(userDataDir).lastAutoStartedBoot ?? null;

@@ -344,7 +344,8 @@ function launch(scenario: Scenario) {
       },
       autoStartDue: () => {
         calls.autoStartDue += 1;
-        // Main stamps the power-on as it answers, so it only says yes once.
+        // Main spends the power-on as it answers, so it only says yes once
+        // — however many times setup runs in this renderer.
         return Promise.resolve(
           (scenario.autoStartDue ?? false) && calls.autoStartDue === 1,
         );
@@ -736,6 +737,35 @@ describe('renderer starts the timer when the machine comes on', () => {
 
     expect(app.autoStartNoticeVisible()).toBe(false);
     expect(app.calls.start).toBe(0);
+    // Asked all the same: main spends the power-on as it answers, so the
+    // start this displaced cannot turn up at a sign-in hours later.
+    expect(app.calls.autoStartDue).toBe(1);
+    app.close();
+  });
+
+  // Autostart at OS login routinely beats the network up. Main is not
+  // asked until the projects are in, so the start lands on the retry.
+  it('still starts once a setup that failed at launch comes good', async () => {
+    const app = launch({ failingProjectLoads: 1, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  // Whatever reruns setup — a sign-in, a Projects setting flipping, the
+  // retry above — gets one answer between them.
+  it('starts once however often setup runs', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+    app.clickAutoStartOk();
+
+    app.trayToggleTimer();
+    await waitFor(() => !app.isRunning());
+    await settle(FAST_POLL_MS * 3);
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    expect(app.autoStartNoticeVisible()).toBe(false);
     app.close();
   });
 });
