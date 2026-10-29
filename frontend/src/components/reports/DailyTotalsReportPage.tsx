@@ -31,7 +31,7 @@ type DailyTotalsReportPageProps = {
   savedReport?: SavedReport;
 };
 
-/** Reuses the Time and activity report's controls and data, shown as a project-by-day grid. */
+/** Reuses the Time and activity report's controls and data, shown as a member-by-day grid. */
 export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTotalsReportPageProps) {
   const organisationQuery = useCurrentOrganisation();
   const [scheduling, setScheduling] = useState(false);

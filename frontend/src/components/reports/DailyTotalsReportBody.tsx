@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ClockIcon, FolderSimpleIcon } from "@phosphor-icons/react";
+import { ClockIcon, UsersIcon } from "@phosphor-icons/react";
 import { DAILY_TOTALS_CHART_SERIES } from "@/lib/dailyTotalsReportConfig";
 import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { formatElapsed } from "@/lib/formatElapsed";
@@ -24,7 +24,7 @@ export function DailyTotalsReportBody({ report, actions }: DailyTotalsReportBody
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <ReportsStatCard label="Projects worked" value={String(report.rows.length)} icon={FolderSimpleIcon} />
+        <ReportsStatCard label="Members worked" value={String(report.rows.length)} icon={UsersIcon} />
         <ReportsStatCard label="Avg. hours per day" value={formatElapsed(averageSeconds * 1000)} icon={ClockIcon} />
       </div>
 

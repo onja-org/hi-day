@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildDailyTotalsReport } from "@/lib/buildDailyTotalsReport";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
-function entry(projectId: string, day: string, seconds: number): TimeEntryListItem {
+function entry(membershipId: string, day: string, seconds: number): TimeEntryListItem {
   return {
-    id: `${projectId}-${day}-${seconds}`,
-    projectId,
-    projectName: `Project ${projectId}`,
+    id: `${membershipId}-${day}-${seconds}`,
+    membershipId,
+    memberName: `Member ${membershipId}`,
     startedAt: new Date(`${day}T10:00:00`).toISOString(),
     durationSeconds: seconds,
     source: "web",
@@ -32,12 +32,13 @@ describe("buildDailyTotalsReport", () => {
     expect(report.rows).toEqual([]);
   });
 
-  it("sums per project and per day into the total row", () => {
+  it("sums per member and per day into the total row", () => {
     const report = buildDailyTotalsReport(
       [entry("a", "2026-10-01", 3600), entry("a", "2026-10-01", 1800), entry("b", "2026-10-03", 60)],
       range,
     );
     expect(report.rows).toHaveLength(2);
+    expect(report.rows[0].cells.member).toBe("Member a");
     expect(report.rows[0].cells["2026-10-01"]).toBe("01:30:00");
     expect(report.rows[0].cells["2026-10-02"]).toBe("-");
     expect(report.totalRow.cells.total).toBe("01:31:00");

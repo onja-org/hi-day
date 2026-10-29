@@ -16,6 +16,7 @@ import type { IdleMember } from "@/types/idleMember";
 import type { ReportTableRow } from "@/types/reportTable";
 import type { MembershipTeamNames, TimeActivityGrouping } from "@/types/timeActivityGrouping";
 import type { TimeEntryListItem } from "@/types/timeEntry";
+import { abbreviateProjects } from "@/lib/abbreviateProjects";
 import { getInitials } from "@/lib/getInitials";
 import { AvatarStack } from "@/components/AvatarStack";
 import { ReportsBarChart } from "./ReportsBarChart";
@@ -37,6 +38,20 @@ function renderTeamCell(row: ReportTableRow) {
   return (
     <AvatarStack
       items={(row.teams ?? []).map((name) => ({ id: name, label: name, initials: getInitials(name) }))}
+      emptyLabel="-"
+    />
+  );
+}
+
+/** Several projects on a top-level row collapse to initial avatars; a single project, nested rows and exports keep the full name. */
+function renderProjectCell(row: ReportTableRow) {
+  const names = row.cells.project;
+  if (typeof names !== "string" || !row.teams) return names ?? "-";
+  const projects = names.split(", ");
+  if (projects.length < 2) return names;
+  return (
+    <AvatarStack
+      items={projects.map((name) => ({ id: name, label: name, initials: abbreviateProjects(name) }))}
       emptyLabel="-"
     />
   );
@@ -84,7 +99,7 @@ export function TimeActivityReportBody({ entries, grouping, teamNames, idleMembe
       <ReportsTable
         key={grouping}
         columns={timeActivityColumns(grouping, projectsEnabled).map((column) =>
-          column.key === "team" ? { ...column, renderCell: renderTeamCell } : column,
+          column.key === "team" ? { ...column, renderCell: renderTeamCell } : column.key === "project" ? { ...column, renderCell: renderProjectCell } : column,
         )}
         rows={buildTimeActivityRows(entries, grouping, {
           sumDates,

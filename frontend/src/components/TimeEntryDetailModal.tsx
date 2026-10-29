@@ -74,7 +74,9 @@ export function TimeEntryDetailModal({
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <span className="flex items-center gap-3">
-            <ProjectAvatar name={entryTitle(entry)} colour={entryProjectColour(entry)} />
+            {entry.projectId !== null && (
+              <ProjectAvatar name={entryTitle(entry)} colour={entryProjectColour(entry)} />
+            )}
             <span className="flex flex-col">
               <span className="text-sm text-slate-900">
                 {organisationQuery.data?.name ?? ""}
