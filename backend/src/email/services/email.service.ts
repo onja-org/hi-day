@@ -169,6 +169,45 @@ export class EmailService {
   }
 
   /**
+   * Tells an organisation's owner their trial is nearly up, or has just run
+   * out. `daysLeft` is rounded the way the in-app banner rounds it, so the
+   * two never disagree: `1` is the final day, `0` means it has ended.
+   */
+  async sendTrialReminderEmail(
+    to: string,
+    organisationName: string,
+    daysLeft: number,
+    accessEndsOn: string,
+  ): Promise<void> {
+    const pricingUrl = `${this.frontendUrl}/pricing`;
+    const name = escapeHtml(organisationName);
+
+    // `0` is the trial having actually run out, which is a different message
+    // from a warning: it names the date access stops rather than asking them
+    // to look at prices at their leisure.
+    const ended = daysLeft === 0;
+    const subject = ended
+      ? `Your ${APP_NAME} trial has ended`
+      : `Your ${APP_NAME} trial ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    const body = ended
+      ? `<p>The free trial of ${APP_NAME} for <strong>${name}</strong> has ended. Your team can carry on working until <strong>${escapeHtml(accessEndsOn)}</strong>; after that, tracking stops until a payment method is added.</p>`
+      : `<p>Your free trial of ${APP_NAME} for <strong>${name}</strong> ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject,
+      html: `${body}${this.button(pricingUrl, 'See pricing')}<p>You have not been charged.</p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send trial reminder to ${to}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Emails a report file on behalf of a member. Unlike the account emails
    * above, the caller is waiting on this one, so it reports whether it went
    * out instead of swallowing the failure. The sender's own text is escaped

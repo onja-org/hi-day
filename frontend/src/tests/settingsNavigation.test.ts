@@ -13,6 +13,7 @@ describe("SETTINGS_GROUPS", () => {
       "organization",
       "members",
       "projects",
+      "billing",
       "tracking",
     ]);
   });

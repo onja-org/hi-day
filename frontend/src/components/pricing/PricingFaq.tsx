@@ -1,3 +1,5 @@
+import { TRIAL_PROMISE } from "@/lib/pricing.generated";
+
 const QUESTIONS = [
   {
     question: "Why only one plan?",
@@ -10,7 +12,7 @@ const QUESTIONS = [
   },
   {
     question: "Is there a free trial?",
-    answer: "Yes. Hi Day Cloud starts with a 14-day free trial, no credit card required.",
+    answer: `Yes. Hi Day Cloud starts with a ${TRIAL_PROMISE.toLowerCase()}`,
   },
   {
     question: "Why pay when the code is free?",

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { TrialService } from '../../billing/services/trial.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -169,6 +170,7 @@ export class OrganisationsService {
     private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly trialService: TrialService,
   ) {}
 
   async createForUser(
@@ -218,6 +220,11 @@ export class OrganisationsService {
         role: MembershipRole.ADMIN,
       }),
     );
+
+    // Signup asks for no card, so every new Organisation starts its 14-day
+    // trial here rather than anyone choosing to — same transaction, so an
+    // Organisation never exists without one (see CONTEXT.md's Trial entry).
+    await this.trialService.startTrial(manager, organisation.id);
 
     await this.auditLogService.record(manager, {
       action: 'organisation.created',
