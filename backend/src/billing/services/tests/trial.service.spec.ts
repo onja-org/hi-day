@@ -176,19 +176,17 @@ describe('TrialService', () => {
     function serviceFor(subscriptions: Subscription[], organisation: unknown) {
       const update = jest.fn().mockResolvedValue(undefined);
       const { emailService, sendTrialReminderEmail } = makeEmailService();
+      const find = jest.fn().mockResolvedValue(subscriptions);
       const service = new TrialService(
-        makeSubscriptionsRepo({
-          find: jest.fn().mockResolvedValue(subscriptions),
-          update,
-        }),
+        makeSubscriptionsRepo({ find, update }),
         makeOrganisationsRepo(organisation),
         emailService,
         makeConfig(),
       );
-      return { service, update, sendTrialReminderEmail };
+      return { service, update, sendTrialReminderEmail, find };
     }
 
-    it('emails only the owner, and records the milestone', async () => {
+    it('emails the owner, and records the milestone', async () => {
       const { service, update, sendTrialReminderEmail } = serviceFor(
         [subscriptionEndingIn(2.5)],
         ACTIVE_ORGANISATION,
@@ -198,7 +196,7 @@ describe('TrialService', () => {
 
       expect(sendTrialReminderEmail).toHaveBeenCalledTimes(1);
       expect(sendTrialReminderEmail).toHaveBeenCalledWith(
-        'owner@acme.test',
+        ['owner@acme.test'],
         'Acme Inc',
         3,
         expect.any(String),
@@ -206,6 +204,45 @@ describe('TrialService', () => {
       expect(update).toHaveBeenCalledWith('sub-1', {
         trialReminderSentAtDaysLeft: 3,
       });
+    });
+
+    // The billing address is added, never substituted: it is unverified, so
+    // a typo must not be able to swallow this.
+    it('emails the billing address as well as the owner', async () => {
+      const { service, sendTrialReminderEmail } = serviceFor(
+        [subscriptionEndingIn(2.5)],
+        { ...ACTIVE_ORGANISATION, billingEmail: 'ap@acme.test' },
+      );
+
+      await service.sendDueTrialReminders();
+
+      expect(sendTrialReminderEmail).toHaveBeenCalledWith(
+        ['owner@acme.test', 'ap@acme.test'],
+        'Acme Inc',
+        3,
+        expect.any(String),
+      );
+    });
+
+    /**
+     * Turning an Organisation active is what stops the reminders: the sweep
+     * asks the database for trialing rows only, so there is no second list
+     * of paid Organisations to keep in step with this one. Asserted on the
+     * query rather than on an empty result, which would pass however the
+     * filter was written.
+     */
+    it('never reminds an organisation that has paid', async () => {
+      const { service, find, sendTrialReminderEmail } = serviceFor(
+        [],
+        ACTIVE_ORGANISATION,
+      );
+
+      await service.sendDueTrialReminders();
+
+      expect(find).toHaveBeenCalledWith({
+        where: { status: SubscriptionStatus.TRIALING },
+      });
+      expect(sendTrialReminderEmail).not.toHaveBeenCalled();
     });
 
     it('leaves the milestone due when the organisation is suspended', async () => {

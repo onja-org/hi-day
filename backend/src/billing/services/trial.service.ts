@@ -7,11 +7,13 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
+import { billingRecipients } from '../billing-recipients';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   accessEndsAfter,
   dueTrialReminderDaysLeft,
   isInTrialGrace,
+  isInGrace,
   isTrialExpired,
   trialDaysLeft,
   trialEndFrom,
@@ -20,11 +22,20 @@ import {
 /** What an admin is shown about their trial. */
 export interface TrialStatus {
   status: SubscriptionStatus;
+  /**
+   * Whether a payment has ever succeeded. **The one flag the UI switches
+   * on** — everything trial-shaped is hidden when it is true, rather than
+   * each surface re-deciding from dates and reaching a different answer.
+   */
+  isPaid: boolean;
+  /** ISO timestamps. History once paid, never behaviour. */
   trialStartedAt: string;
   trialEndsAt: string;
+  /** When the trial actually stopped: the first payment. Null if still on one. */
+  trialEndedAt: string | null;
   /** Rounded up; `0` only once the trial has actually run out. */
   daysLeft: number;
-  /** Nothing is blocked by this yet — see CONTEXT.md's Trial entry. */
+  /** Meaningless once paid, and not read there. */
   isExpired: boolean;
   /**
    * The trial has run out but access has not. Everything still works; the
@@ -33,6 +44,25 @@ export interface TrialStatus {
   isInGrace: boolean;
   /** ISO timestamp: when access stops, once enforcement exists. */
   accessEndsAt: string;
+  /**
+   * Set once they have paid: the end of the period paid for, which a
+   * cancellation runs until and a renewal moves forward. Null while on
+   * trial, and for an Organisation that never subscribed.
+   */
+  currentPeriodEnd: string | null;
+  /**
+   * The paid period has run out but access has not — the same grace the
+   * trial gets, measured from `currentPeriodEnd`. See `docs/adr/0030-...`.
+   */
+  isInPaidGrace: boolean;
+  /** `monthly` or `annual`, once they have chosen. Null while on trial. */
+  billingPeriod: string | null;
+  /**
+   * Stripe's own word for how collection is going — `active`, `past_due`,
+   * `canceled`. Deliberately separate from `status`: this is whether the
+   * money is arriving, that is whether they are a paying customer at all.
+   */
+  stripeStatus: string | null;
 }
 
 @Injectable()
@@ -101,14 +131,29 @@ export class TrialService {
       return null;
     }
 
+    // Once they have paid, the paid period is what access hangs off — the
+    // trial's own dates stay on the row as history, and reading them for
+    // the banner would say "your trial ended" to somebody who is paying.
+    const periodEnd = subscription.currentPeriodEnd;
+
     return {
       status: subscription.status,
+      isPaid: subscription.status === SubscriptionStatus.ACTIVE,
       trialStartedAt: subscription.trialStartedAt.toISOString(),
       trialEndsAt: subscription.trialEndsAt.toISOString(),
+      trialEndedAt: subscription.trialEndedAt
+        ? subscription.trialEndedAt.toISOString()
+        : null,
       daysLeft: trialDaysLeft(subscription.trialEndsAt, now),
       isExpired: isTrialExpired(subscription.trialEndsAt, now),
       isInGrace: isInTrialGrace(subscription.trialEndsAt, now),
-      accessEndsAt: accessEndsAfter(subscription.trialEndsAt).toISOString(),
+      accessEndsAt: accessEndsAfter(
+        periodEnd ?? subscription.trialEndsAt,
+      ).toISOString(),
+      currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
+      isInPaidGrace: periodEnd ? isInGrace(periodEnd, now) : false,
+      billingPeriod: subscription.billingPeriod,
+      stripeStatus: subscription.stripeStatus,
     };
   }
 
@@ -165,7 +210,13 @@ export class TrialService {
       relations: { owner: true },
     });
 
-    if (!organisation?.owner) {
+    // The billing address can carry it alone where the owner's User row has
+    // been erased; with neither there is nobody to tell.
+    const recipients = billingRecipients(
+      organisation?.billingEmail ?? null,
+      organisation?.owner?.email ?? null,
+    );
+    if (!organisation || recipients.length === 0) {
       return false;
     }
 
@@ -177,7 +228,7 @@ export class TrialService {
     }
 
     await this.emailService.sendTrialReminderEmail(
-      organisation.owner.email,
+      recipients,
       organisation.name,
       daysLeft,
       accessEndsAfter(subscription.trialEndsAt).toDateString(),

@@ -46,6 +46,19 @@ export class Subscription {
   trialEndsAt: Date;
 
   /**
+   * When the trial actually stopped, which is the day the first payment
+   * succeeded — not `trialEndsAt`, which is only where it *would* have run
+   * to. Null while still trialing, and for a trial that simply ran out.
+   *
+   * Kept for history rather than read for behaviour: whether an Organisation
+   * is in a trial is `status`, and this is the audit trail for how it left
+   * one. Paying on day 6 of 14 forfeits the other 8 — deliberately, see
+   * `docs/adr/0031-...` — and this is the record of that having happened.
+   */
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  trialEndedAt: Date | null;
+
+  /**
    * The lowest reminder milestone already emailed, in days left; null until
    * the first one. Keeping the milestone rather than a flag per email lets
    * the list grow without a migration and makes the hourly job idempotent.
@@ -81,6 +94,19 @@ export class Subscription {
   /** When the paid period ends — what a cancellation runs until. */
   @Column({ type: 'timestamp', precision: 3, nullable: true })
   currentPeriodEnd: Date | null;
+
+  /**
+   * The last invoice a receipt was emailed for.
+   *
+   * Stripe sends `invoice.paid` more than once for the same money — retries,
+   * and the `invoice.payment_succeeded` pair — so without this a renewal
+   * would land in somebody's inbox two or three times. Storing the id rather
+   * than a flag is what makes it work across years of renewals: each new
+   * invoice has a new id, and only a *repeat* of the one already sent is
+   * suppressed.
+   */
+  @Column({ type: 'text', nullable: true })
+  lastInvoiceEmailedId: string | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
