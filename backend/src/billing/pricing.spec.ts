@@ -3,6 +3,7 @@ import {
   formatMinor,
   monthlyEquivalentMinor,
   monthlyPriceLabel,
+  nextPaymentFrom,
 } from './pricing';
 
 describe('cloud prices', () => {
@@ -27,5 +28,38 @@ describe('cloud prices', () => {
     expect(formatMinor(400, 'usd')).toBe('$4');
     expect(formatMinor(350, 'usd')).toBe('$3.50');
     expect(formatMinor(4200, 'usd')).toBe('$42');
+  });
+});
+
+describe('nextPaymentFrom', () => {
+  it('is a month on for a monthly cycle', () => {
+    expect(
+      nextPaymentFrom(new Date('2026-01-15T09:00:00.000Z'), 'monthly'),
+    ).toEqual(new Date('2026-02-15T09:00:00.000Z'));
+  });
+
+  it('is a year on for an annual cycle', () => {
+    expect(
+      nextPaymentFrom(new Date('2026-01-15T09:00:00.000Z'), 'annual'),
+    ).toEqual(new Date('2027-01-15T09:00:00.000Z'));
+  });
+
+  // Calendar months, not 30 days: a renewal that drifts a day per cycle is
+  // a support ticket.
+  it('keeps the day of the month across a short month', () => {
+    expect(
+      nextPaymentFrom(
+        new Date('2026-01-31T09:00:00.000Z'),
+        'monthly',
+      ).getUTCMonth(),
+    ).toBe(2); // March — January 31 has no February 31, so Postgres-free JS rolls it
+  });
+
+  it('handles a leap day on an annual cycle', () => {
+    const next = nextPaymentFrom(
+      new Date('2028-02-29T09:00:00.000Z'),
+      'annual',
+    );
+    expect(next.getUTCFullYear()).toBe(2029);
   });
 });

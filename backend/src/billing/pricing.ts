@@ -45,6 +45,36 @@ export function monthlyPriceLabel(period: BillingPeriod): string {
   return formatMinor(monthlyEquivalentMinor(price), price.currency);
 }
 
+/**
+ * How much cheaper annual is than paying monthly for a year, as a whole
+ * percent. Derived rather than written down: $4.00 x 12 against $42.00 is
+ * 12.5%, and a hand-typed "12%" beside prices that later move is how a
+ * pricing page starts lying. Floored, so the figure is never a claim the
+ * prices do not support.
+ */
+export function annualSavingPercent(): number {
+  const monthlyForAYear = CLOUD_PRICES.monthly.amountMinor * 12;
+  const annual = CLOUD_PRICES.annual.amountMinor;
+  return Math.floor(((monthlyForAYear - annual) / monthlyForAYear) * 100);
+}
+
+/**
+ * When the charge after this one falls: a month or a year on, by the
+ * cycle. Used to promise a renewal date in the payment modal before Stripe
+ * has a subscription to read `currentPeriodEnd` off — after that, Stripe's
+ * own date is authoritative and this is not consulted again.
+ *
+ * `setMonth`/`setFullYear` rather than adding days: months are not 30 days
+ * and years are not 365, and a renewal date that drifts by a day each cycle
+ * is a support ticket.
+ */
+export function nextPaymentFrom(from: Date, period: BillingPeriod): Date {
+  const next = new Date(from.getTime());
+  if (period === 'annual') next.setFullYear(next.getFullYear() + 1);
+  else next.setMonth(next.getMonth() + 1);
+  return next;
+}
+
 export const CLOUD_BILLING_NOTE: Record<BillingPeriod, string> = {
   monthly: 'billed monthly',
   annual: 'billed annually',

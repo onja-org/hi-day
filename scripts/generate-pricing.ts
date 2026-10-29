@@ -1,8 +1,10 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  annualSavingPercent,
   BILLING_PERIODS,
   CLOUD_BILLING_NOTE,
+  CLOUD_PRICES,
   monthlyPriceLabel,
   TRIAL_DAYS,
   TRIAL_PROMISE,
@@ -53,6 +55,21 @@ ${prices}
 export const CLOUD_BILLING_NOTE: Record<BillingPeriod, string> = {
 ${notes}
 };
+
+/**
+ * Per seat, per period, in minor units — what Stripe actually charges.
+ * Elements needs a figure to decide which payment methods can pay it; the
+ * invoice is still priced server-side from the Stripe Price, so this is for
+ * the form's benefit and never the charge's.
+ */
+export const CLOUD_AMOUNT_MINOR: Record<BillingPeriod, number> = {
+${BILLING_PERIODS.map((p) => `  ${p}: ${CLOUD_PRICES[p].amountMinor},`).join('\n')}
+};
+
+export const CLOUD_CURRENCY = ${JSON.stringify(CLOUD_PRICES.monthly.currency)};
+
+/** Whole percent, floored from the real prices — see annualSavingPercent. */
+export const ANNUAL_SAVING_PERCENT = ${annualSavingPercent()};
 
 export const TRIAL_DAYS = ${TRIAL_DAYS};
 export const TRIAL_PROMISE = ${JSON.stringify(TRIAL_PROMISE)};
