@@ -11,6 +11,8 @@ import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
 import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import type { SavedReport } from "@/types/savedReport";
 import type { SendReportInput } from "@/types/sendReport";
@@ -118,6 +120,7 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
             <>
               <ExportButtons
                 csv={table ? reportTableToCsv(table.columns, table.rows) : ""}
+                buildPdf={() => reportTableToPdf(table.columns, table.rows, "Daily totals (Weekly)", formatReportRange(range, zone), true)}
                 filenameBase={filenameBase}
                 disabled={!report || report.rows.length === 0}
               />

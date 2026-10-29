@@ -20,6 +20,8 @@ import { filterAppsUrlsItems } from "@/lib/filterAppsUrlsItems";
 import { listDayKeys } from "@/lib/listDayKeys";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import { dateKeyInZone } from "@/lib/timezone";
 import type { AppsUrlsGrouping, AppsUrlsMember } from "@/types/appsUrlsReport";
@@ -139,6 +141,7 @@ export function AppsUrlsReportPage({ organisationId, savedReport }: AppsUrlsRepo
         <div className="flex flex-wrap items-center gap-3">
           <ExportButtons
             csv={rows ? reportTableToCsv(columns, rows) : ""}
+            buildPdf={() => reportTableToPdf(columns, rows ?? [], "Apps & URLs report", formatReportRange(range, zone))}
             filenameBase={filenameBase}
             disabled={!rows || rows.length === 0}
           />
