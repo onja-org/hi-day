@@ -218,6 +218,8 @@ describe('OrganisationsService', () => {
         address: '1 Main St',
         industry: null,
         taxId: null,
+        billingEmail: null,
+        ownerEmail: null,
         website: 'https://acme.test',
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
