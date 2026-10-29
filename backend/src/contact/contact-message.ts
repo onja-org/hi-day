@@ -1,0 +1,121 @@
+/**
+ * The contact form's rules, in one place for both sides of the wire.
+ *
+ * Deliberately dependency-free TypeScript: `scripts/generate-contact-rules.ts`
+ * copies this file verbatim into the frontend, the same way prices are shared
+ * (`scripts/generate-pricing.ts`). Client and server therefore validate with
+ * the *same* code rather than two implementations that drift — a form that
+ * accepts what the server rejects is a dead end the person cannot see.
+ *
+ * Keep it importing nothing. An import here breaks the copy.
+ */
+
+export const MESSAGE_MIN_LENGTH = 10;
+export const MESSAGE_MAX_LENGTH = 2000;
+export const PHONE_MIN_LENGTH = 7;
+export const PHONE_MAX_LENGTH = 20;
+/** Digits, spaces, +, -, and brackets. Nothing that could be an address. */
+export const PHONE_PATTERN = /^[\d\s+()-]+$/;
+/** Deliberately loose: the only authority on an address is sending to it. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+export interface ContactMessageInput {
+  email: string;
+  website: string;
+  /** Optional: '' and undefined both mean "not provided". */
+  phone?: string;
+  message: string;
+  /**
+   * The honeypot. A real person never sees this field, so anything in it is
+   * a bot filling in every input it found.
+   */
+  company?: string;
+}
+
+export type ContactFieldErrors = Partial<
+  Record<'email' | 'website' | 'phone' | 'message', string>
+>;
+
+/**
+ * Adds `https://` where a protocol is missing, so "acme.com" validates and
+ * arrives as a link somebody can click. Left alone if one is already there,
+ * including `http://` — rewriting that would be a claim about their server.
+ */
+export function normaliseWebsite(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return trimmed;
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+}
+
+/** Whether `normaliseWebsite`'s output is a URL with a real host. */
+export function isValidWebsite(normalised: string): boolean {
+  try {
+    const url = new URL(normalised);
+    // A host with no dot is a hostname like "localhost" — fine in a browser,
+    // not somewhere a company's website lives.
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.hostname.includes('.') &&
+      !url.hostname.startsWith('.') &&
+      !url.hostname.endsWith('.')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every rule, once. Returns the errors by field so the form can put each
+ * message under the input it belongs to, and `{}` when there is nothing
+ * wrong.
+ *
+ * The honeypot is deliberately not reported: telling a bot which field gave
+ * it away is the one thing that would make the trap useless.
+ */
+export function validateContactMessage(
+  input: ContactMessageInput,
+): ContactFieldErrors {
+  const errors: ContactFieldErrors = {};
+
+  const email = input.email?.trim() ?? '';
+  if (email === '') {
+    errors.email = 'Enter your email address.';
+  } else if (!EMAIL_PATTERN.test(email)) {
+    errors.email = 'Enter a valid email address.';
+  }
+
+  const website = normaliseWebsite(input.website ?? '');
+  if (website === '') {
+    errors.website = 'Enter your website.';
+  } else if (!isValidWebsite(website)) {
+    errors.website = 'Enter a valid website, like acme.com.';
+  }
+
+  const phone = input.phone?.trim() ?? '';
+  if (phone !== '') {
+    if (!PHONE_PATTERN.test(phone)) {
+      errors.phone = 'Use digits, spaces, and + - ( ) only.';
+    } else if (
+      phone.length < PHONE_MIN_LENGTH ||
+      phone.length > PHONE_MAX_LENGTH
+    ) {
+      errors.phone = `Enter between ${PHONE_MIN_LENGTH} and ${PHONE_MAX_LENGTH} characters.`;
+    }
+  }
+
+  const message = input.message?.trim() ?? '';
+  if (message.length < MESSAGE_MIN_LENGTH) {
+    errors.message = `Write at least ${MESSAGE_MIN_LENGTH} characters.`;
+  } else if (message.length > MESSAGE_MAX_LENGTH) {
+    errors.message = `Keep it under ${MESSAGE_MAX_LENGTH} characters.`;
+  }
+
+  return errors;
+}
+
+/** Whether anything in it is a bot's doing. */
+export function looksAutomated(input: ContactMessageInput): boolean {
+  return (input.company?.trim() ?? '') !== '';
+}
