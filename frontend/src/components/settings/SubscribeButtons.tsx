@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import clsx from "clsx";
 import { startCheckout } from "@/lib/startCheckout";
+import { hasStripeKey } from "@/lib/stripeClient";
+import { PaymentModal } from "../billing/PaymentModal";
 import {
-  BILLING_PERIODS,
   CLOUD_BILLING_NOTE,
   CLOUD_PRICE_PER_PERSON,
   type BillingPeriod,
@@ -16,14 +16,20 @@ type SubscribeButtonsProps = {
 };
 
 /**
- * Sends the admin to Stripe's own payment page. The card never touches this
- * app, so there is no form here — only the choice of how often to pay.
+ * One button into the in-app payment modal, which carries the Monthly/Annual
+ * choice itself — two buttons here would ask the same question twice.
+ *
+ * Falls back to Stripe's hosted page where no publishable key is configured
+ * (a self-hosted install), since Elements cannot draw a card field without
+ * one. That path keeps the per-period buttons, because the hosted page needs
+ * the choice made before it opens.
  */
 export function SubscribeButtons({ organisationId }: SubscribeButtonsProps) {
+  const [payingOpen, setPayingOpen] = useState(false);
   const [busy, setBusy] = useState<BillingPeriod | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function subscribe(period: BillingPeriod): Promise<void> {
+  async function subscribeViaHostedPage(period: BillingPeriod): Promise<void> {
     setBusy(period);
     setError(null);
     const result = await startCheckout(organisationId, period);
@@ -36,29 +42,49 @@ export function SubscribeButtons({ organisationId }: SubscribeButtonsProps) {
     setBusy(null);
   }
 
+  if (!hasStripeKey()) {
+    return (
+      <div className="mt-6 flex flex-col gap-3">
+        <div className="flex flex-wrap gap-3">
+          {(["monthly", "annual"] as const).map((period) => (
+            <button
+              key={period}
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void subscribeViaHostedPage(period)}
+              className={
+                period === "annual"
+                  ? "flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  : "flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink px-4 text-sm font-bold text-slate-900 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
+              }
+            >
+              {busy === period
+                ? "Opening Stripe…"
+                : `Pay ${CLOUD_PRICE_PER_PERSON[period]} per person, ${CLOUD_BILLING_NOTE[period]}`}
+            </button>
+          ))}
+        </div>
+        {error && <ErrorMessage message={error} />}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-6 flex flex-col gap-3">
-      <div className="flex flex-wrap gap-3">
-        {BILLING_PERIODS.map((period) => (
-          <button
-            key={period}
-            type="button"
-            disabled={busy !== null}
-            onClick={() => void subscribe(period)}
-            className={clsx(
-              "flex h-11 items-center rounded-brand-sm border-2 border-ink px-4 text-sm font-bold disabled:opacity-60",
-              period === "annual" && "bg-primary text-white hover:bg-primary/90",
-              period !== "annual" && "text-slate-900 hover:bg-cream",
-            )}
-          >
-            {busy === period
-              ? "Opening Stripe…"
-              : `Pay ${CLOUD_PRICE_PER_PERSON[period]} per person, ${CLOUD_BILLING_NOTE[period]}`}
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => setPayingOpen(true)}
+        className="flex h-11 w-fit cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary/90"
+      >
+        Add payment
+      </button>
 
-      {error && <ErrorMessage message={error} />}
+      {payingOpen && (
+        <PaymentModal
+          organisationId={organisationId}
+          onClose={() => setPayingOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,131 +1,124 @@
 "use client";
 
-import Link from "next/link";
-
 import { useTrialStatus } from "@/hooks/useTrialStatus";
-import {
-  CLOUD_BILLING_NOTE,
-  CLOUD_PRICE_PER_PERSON,
-  TRIAL_DAYS,
-} from "@/lib/pricing.generated";
-import { BilledPeople } from "./BilledPeople";
-import { SubscribeButtons } from "./SubscribeButtons";
+import { useSubscription } from "@/hooks/useSubscription";
+import { TRIAL_DAYS } from "@/lib/pricing.generated";
+import { BillingPlanCard } from "./BillingPlanCard";
+import { TrialCard } from "./TrialCard";
+import { SubscriptionCard } from "./SubscriptionCard";
+import { PricingLargeTeam } from "../pricing/PricingLargeTeam";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
-import { TrialSummary } from "./TrialSummary";
 
 type SubscriptionSettingsProps = {
   organisationId: number;
 };
 
 /**
- * Where the trial banner's "Add payment" leads. Payment itself is the next
- * ticket, so this says plainly what the trial is and what it will cost rather
- * than offering a button that does nothing.
+ * Billing, top to bottom: what you're on, how many seats you've bought, and
+ * what each way of paying costs.
+ *
+ * Ordered as the questions arrive — "how long have I got", then "how many am
+ * I buying", then "what does that cost" — because the third answer depends on
+ * the second, and showing a price before the seat count makes it a number out
+ * of nowhere.
  */
 export function SubscriptionSettings({
   organisationId,
 }: SubscriptionSettingsProps) {
   const trialQuery = useTrialStatus(organisationId);
+  const subscriptionQuery = useSubscription(organisationId);
+
+  const isFree = trialQuery.data?.isFree ?? false;
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="rounded-brand-sm border-2 border-ink bg-white p-6">
-        <h2 className="text-base font-semibold text-primary-dark">Your plan</h2>
+    <div className="flex flex-col gap-6">
+      {/* No heading of its own: the settings layout's SettingsHeader already
+          renders "Billing" as the page h1, and a second one would be both a
+          duplicate and an accessibility fault. This is only its subtitle. */}
+      <p className="-mt-2 text-sm text-slate-900/60">
+        Every feature, every team, one price per person.
+      </p>
 
-        {trialQuery.isLoading && (
-          <p className="mt-3 flex items-center gap-2 text-sm text-slate-900">
-            <Spinner className="text-primary-dark" />
-            Loading your subscription…
-          </p>
-        )}
+      {/* A paid organisation needs both answers before anything can be drawn,
+          so the spinner waits for the subscription too. Rendering nothing
+          while it arrives reads as "you have no subscription", which for
+          somebody who has just paid is alarming and wrong. */}
+      {(trialQuery.isLoading || subscriptionQuery.isLoading) && (
+        <p className="flex items-center gap-2 text-sm text-slate-900">
+          <Spinner className="text-primary-dark" />
+          Loading your subscription…
+        </p>
+      )}
 
-        {trialQuery.isError && (
-          <div className="mt-3">
-            <ErrorMessage
-              message={
-                trialQuery.error instanceof Error
-                  ? trialQuery.error.message
-                  : "Could not load your subscription."
-              }
+      {trialQuery.isError && (
+        <ErrorMessage
+          message={
+            trialQuery.error instanceof Error
+              ? trialQuery.error.message
+              : "Could not load your subscription."
+          }
+        />
+      )}
+
+      {/* One switch, on the status rather than on dates: a paying
+          organisation sees its subscription, a trialing one sees its trial,
+          and neither surface has to re-decide which it is. */}
+      {/* One switch, on the status rather than on dates. A paid organisation
+          gets the live Stripe view; a trialing one gets its countdown. */}
+      {trialQuery.data?.trial &&
+        !isFree &&
+        (trialQuery.data.trial.isPaid ? (
+          subscriptionQuery.data ? (
+            <SubscriptionCard
+              organisationId={organisationId}
+              subscription={subscriptionQuery.data}
             />
-          </div>
-        )}
+          ) : subscriptionQuery.isLoading ? null : (
+            /* Paid here, but Stripe has nothing to show — a webhook that
+               never landed, or a subscription since deleted. Says so rather
+               than leaving the page blank. */
+            <ErrorMessage message="We can't reach your subscription in Stripe right now. Your access is unaffected; try again shortly." />
+          )
+        ) : (
+          <TrialCard trial={trialQuery.data.trial} />
+        ))}
 
-        {trialQuery.data?.trial && !trialQuery.data.isFree && (
-          <TrialSummary trial={trialQuery.data.trial} />
-        )}
-
-        {trialQuery.data?.isFree && (
+      {isFree && (
+        <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
+          <h2 className="text-base font-bold text-primary-dark">Your plan</h2>
           <p className="mt-1 text-sm text-slate-900/60">
             Your organisation doesn&apos;t pay for Hi Day. There&apos;s nothing
             running out and nothing to set up.
           </p>
-        )}
-
-        {trialQuery.isSuccess &&
-          !trialQuery.data?.trial &&
-          !trialQuery.data?.isFree && (
-            <p className="mt-1 text-sm text-slate-900/60">
-              Your organisation isn&apos;t on a plan. It was created before the
-              {" "}
-              {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
-              running out and nothing to pay.
-            </p>
-          )}
-      </section>
-
-      {/* An organisation that never pays is billed for nobody, so a count of
-          the people it would be billed for is just a wrong number. */}
-      {!trialQuery.data?.isFree && (
-        <BilledPeople organisationId={organisationId} />
+        </section>
       )}
 
-      {!trialQuery.data?.isFree && (
-        <section className="rounded-brand-sm border-2 border-ink bg-white p-6">
-        <h2 className="text-base font-semibold text-primary-dark">
-          Hi Day Cloud pricing
-        </h2>
-        <p className="mt-1 text-sm text-slate-900/60">
-          Every feature, every team, one price per person.
-        </p>
-
-        <dl className="mt-4 flex flex-wrap gap-8">
-          <div>
-            <dt className="text-sm text-slate-900/60">
-              {CLOUD_BILLING_NOTE.annual}
-            </dt>
-            <dd className="font-data text-2xl font-bold text-primary-dark">
-              {CLOUD_PRICE_PER_PERSON.annual}
-              <span className="text-sm font-normal text-slate-900/60">
-                {" "}
-                per person / month
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-slate-900/60">
-              {CLOUD_BILLING_NOTE.monthly}
-            </dt>
-            <dd className="font-data text-2xl font-bold text-primary-dark">
-              {CLOUD_PRICE_PER_PERSON.monthly}
-              <span className="text-sm font-normal text-slate-900/60">
-                {" "}
-                per person / month
-              </span>
-            </dd>
-          </div>
-        </dl>
-
-        <SubscribeButtons organisationId={organisationId} />
-
-        <Link
-          href="/pricing"
-          className="mt-4 inline-flex h-11 items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
-        >
-          See pricing
-        </Link>
+      {trialQuery.isSuccess && !trialQuery.data?.trial && !isFree && (
+        <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
+          <h2 className="text-base font-bold text-primary-dark">Your plan</h2>
+          <p className="mt-1 text-sm text-slate-900/60">
+            Your organisation isn&apos;t on a plan. It was created before the{" "}
+            {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
+            running out and nothing to pay.
+          </p>
         </section>
+      )}
+
+      {/* An organisation that never pays is billed for nobody, so a seat
+          count and a price are both just wrong numbers. */}
+      {!isFree && (
+        <>
+          {/* Seats stay editable once paying; the price and "Add payment"
+              do not — the summary card above is their plan, and offering to
+              pay again is asking them to pay twice. */}
+          <BillingPlanCard
+            organisationId={organisationId}
+            showPurchase={!trialQuery.data?.trial?.isPaid}
+            paidPlan={subscriptionQuery.data?.plan ?? null}
+          />
+          <PricingLargeTeam />
+        </>
       )}
     </div>
   );

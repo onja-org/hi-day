@@ -17,5 +17,21 @@ export const CLOUD_BILLING_NOTE: Record<BillingPeriod, string> = {
   annual: "billed annually",
 };
 
+/**
+ * Per seat, per period, in minor units — what Stripe actually charges.
+ * Elements needs a figure to decide which payment methods can pay it; the
+ * invoice is still priced server-side from the Stripe Price, so this is for
+ * the form's benefit and never the charge's.
+ */
+export const CLOUD_AMOUNT_MINOR: Record<BillingPeriod, number> = {
+  monthly: 400,
+  annual: 4200,
+};
+
+export const CLOUD_CURRENCY = "usd";
+
+/** Whole percent, floored from the real prices — see annualSavingPercent. */
+export const ANNUAL_SAVING_PERCENT = 12;
+
 export const TRIAL_DAYS = 14;
 export const TRIAL_PROMISE = "14-day free trial, no credit card required.";
