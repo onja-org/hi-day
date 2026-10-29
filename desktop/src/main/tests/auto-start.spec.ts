@@ -3,6 +3,7 @@ import {
   bootIdentity,
   decideAutoStart,
   isSameBoot,
+  localDay,
   parseWindowsBootId,
   type AutoStartInput,
 } from '../auto-start';
@@ -12,6 +13,8 @@ function input(overrides: Partial<AutoStartInput> = {}): AutoStartInput {
     enabled: true,
     boot: 'id:9f2c',
     lastAutoStartedBoot: null,
+    today: '2026-10-29',
+    lastAutoStartedDay: null,
     signedIn: true,
     timerRunning: false,
     awaitingIdleAnswer: false,
@@ -30,9 +33,40 @@ describe('decideAutoStart', () => {
   });
 
   it('answers once for a power-on, however often the app launches', () => {
-    expect(decideAutoStart(input({ lastAutoStartedBoot: 'id:9f2c' }))).toBe('wait');
+    const answered = { lastAutoStartedBoot: 'id:9f2c', lastAutoStartedDay: '2026-10-29' };
+    expect(decideAutoStart(input(answered))).toBe('wait');
     // A crash relaunch or an update restart is the same machine, still on.
-    expect(decideAutoStart(input({ lastAutoStartedBoot: 'id:earlier' }))).toBe('start');
+    expect(decideAutoStart(input({ ...answered, lastAutoStartedBoot: 'id:earlier' }))).toBe(
+      'start',
+    );
+  });
+
+  // Most people suspend rather than shut down, so the power-on is
+  // yesterday's and the day is the only thing that has moved.
+  it('starts on a new day even though the machine never went off', () => {
+    expect(
+      decideAutoStart(
+        input({ lastAutoStartedBoot: 'id:9f2c', lastAutoStartedDay: '2026-10-28' }),
+      ),
+    ).toBe('start');
+  });
+
+  it('starts once a day, however often the app launches within it', () => {
+    const answered = input({
+      lastAutoStartedBoot: 'id:9f2c',
+      lastAutoStartedDay: '2026-10-29',
+    });
+    expect(decideAutoStart(answered)).toBe('wait');
+    expect(decideAutoStart({ ...answered, awaitingIdleAnswer: true })).toBe('wait');
+  });
+
+  // The day carries the answer alone, so a machine whose power-ons cannot
+  // be told apart still gets one start a day rather than one per launch.
+  it('leans on the day where the power-on cannot be told', () => {
+    expect(decideAutoStart(input({ boot: null }))).toBe('start');
+    expect(
+      decideAutoStart(input({ boot: null, lastAutoStartedDay: '2026-10-29' })),
+    ).toBe('wait');
   });
 
   it('stays out of the way of a timer that is already running', () => {
@@ -57,13 +91,15 @@ describe('decideAutoStart', () => {
     expect(decideAutoStart(displaced)).toBe('spend');
     // Main stamps on anything but `wait`, so the next ask sees this:
     expect(
-      decideAutoStart({ ...displaced, awaitingIdleAnswer: false, lastAutoStartedBoot: displaced.boot }),
+      decideAutoStart({
+        ...displaced,
+        awaitingIdleAnswer: false,
+        lastAutoStartedBoot: displaced.boot,
+        lastAutoStartedDay: displaced.today,
+      }),
     ).toBe('wait');
   });
 
-  it('refuses rather than guesses when power-ons cannot be told apart', () => {
-    expect(decideAutoStart(input({ boot: null }))).toBe('wait');
-  });
 });
 
 describe('parseWindowsBootId', () => {
@@ -149,5 +185,19 @@ describe('isSameBoot', () => {
 
   it('never calls a computed time the same boot as a kernel id', () => {
     expect(isSameBoot('at:1000000', 'id:a')).toBe(false);
+  });
+});
+
+describe('localDay', () => {
+  // The same boundary the timer display counts from: local midnight in the
+  // machine's own timezone, never UTC.
+  it('is the calendar day where the machine is', () => {
+    expect(localDay(new Date(2026, 9, 29, 0, 0, 0))).toBe('2026-10-29');
+    expect(localDay(new Date(2026, 9, 29, 23, 59, 59))).toBe('2026-10-29');
+    expect(localDay(new Date(2026, 9, 30, 0, 0, 1))).toBe('2026-10-30');
+  });
+
+  it('pads so days sort and compare as text', () => {
+    expect(localDay(new Date(2026, 0, 5))).toBe('2026-01-05');
   });
 });

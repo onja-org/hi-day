@@ -2554,6 +2554,7 @@ window.api.idle.onWake(() => {
       console.error("[idle] status refresh on wake failed:", error);
     }
     await settleIdleHold();
+    await autoStartTimerIfDue();
   })();
 });
 

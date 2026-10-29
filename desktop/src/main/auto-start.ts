@@ -23,6 +23,10 @@ export interface AutoStartInput {
   boot: string | null;
   /** The power-on this already answered for, remembered on disk. */
   lastAutoStartedBoot: string | null;
+  /** Today, by `localDay` — the day the timer display counts from. */
+  today: string;
+  /** The day this already answered for, remembered on disk. */
+  lastAutoStartedDay: string | null;
   signedIn: boolean;
   /** A timer already running anywhere — this device, the web, another machine. */
   timerRunning: boolean;
@@ -44,10 +48,18 @@ export function decideAutoStart(input: AutoStartInput): AutoStartDecision {
   if (!input.enabled) return 'wait';
   // A machine at its login screen has not had its chance yet.
   if (!input.signedIn) return 'wait';
-  // Unknown is not "new": with no way to tell power-ons apart, starting on
-  // every launch is the one outcome to avoid.
-  if (input.boot === null) return 'wait';
-  if (isSameBoot(input.boot, input.lastAutoStartedBoot)) return 'wait';
+
+  // A working day begins when the machine is turned on, and it also just
+  // begins — most people suspend rather than shut down, and a laptop that
+  // slept overnight is on the same power-on as yesterday. So either a new
+  // day or a new power-on is an occasion, which also means a machine
+  // rebooted at lunchtime still gets one.
+  const newDay = input.today !== input.lastAutoStartedDay;
+  // A boot that cannot be told apart is no evidence either way, so the day
+  // alone decides — at most one start, which is the outcome to protect.
+  const newBoot =
+    input.boot !== null && !isSameBoot(input.boot, input.lastAutoStartedBoot);
+  if (!newDay && !newBoot) return 'wait';
 
   // Spent from here down: a timer announcing that the machine has just
   // come on would be lying by the time any of these clears.
@@ -55,6 +67,17 @@ export function decideAutoStart(input: AutoStartInput): AutoStartDecision {
   if (input.awaitingIdleAnswer) return 'spend';
   if (input.awaitingRecoveredAnswer) return 'spend';
   return 'start';
+}
+
+/**
+ * The calendar day in the machine's own timezone, which is the day the
+ * timer display counts from — the renderer's `startOfToday()` draws the
+ * same boundary, and the two must agree: "the timer reset to 00:00" and
+ * "the timer started itself" are one event to the person watching.
+ */
+export function localDay(now: Date = new Date()): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 export const LINUX_BOOT_ID_PATH = '/proc/sys/kernel/random/boot_id';

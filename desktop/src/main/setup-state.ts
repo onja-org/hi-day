@@ -15,6 +15,7 @@ interface SetupState {
   compactAlwaysOnTop?: boolean;
   autoStartTimer?: boolean;
   lastAutoStartedBoot?: string;
+  lastAutoStartedDay?: string;
   webAppUrl?: string;
 }
 
@@ -108,17 +109,33 @@ export function setAutoStartTimer(userDataDir: string, on: boolean): void {
 }
 
 /**
- * The power-on this last answered for — started a timer, or deliberately
- * declined to. Remembered so that a crash relaunch or an update restart on
- * the same machine does not start a second timer, and so that a start
- * something else displaced does not turn up hours later.
+ * The power-on and the day this last answered for — started a timer, or
+ * deliberately declined to. Remembered so that a crash relaunch or an
+ * update restart on the same machine does not start a second timer, and so
+ * that a start something else displaced does not turn up hours later.
  */
 export function lastAutoStartedBoot(userDataDir: string): string | null {
   return read(userDataDir).lastAutoStartedBoot ?? null;
 }
 
-export function rememberAutoStartedBoot(userDataDir: string, boot: string): void {
-  write(userDataDir, { ...read(userDataDir), lastAutoStartedBoot: boot });
+export function lastAutoStartedDay(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedDay ?? null;
+}
+
+/**
+ * Both at once, in one write: a day remembered without its power-on, or
+ * the reverse, reads as half an answer and starts a second timer. `boot`
+ * is null where the machine cannot tell its power-ons apart, and the day
+ * then carries the answer alone.
+ */
+export function rememberAutoStarted(
+  userDataDir: string,
+  boot: string | null,
+  day: string,
+): void {
+  const state: SetupState = { ...read(userDataDir), lastAutoStartedDay: day };
+  if (boot !== null) state.lastAutoStartedBoot = boot;
+  write(userDataDir, state);
 }
 
 function write(userDataDir: string, state: SetupState): void {

@@ -111,6 +111,13 @@ function launch(scenario: Scenario) {
     Date: DateConstructor;
   };
 
+  /**
+   * Main's side of the auto-start decision: it says yes at most once,
+   * spending the occasion (this day, this power-on) as it answers. A new
+   * day or a new power-on re-arms it — `rearmAutoStart()` here.
+   */
+  let autoStartArmed = scenario.autoStartDue ?? false;
+
   // The renderer's clock, moved forward by `advanceClock` so a test can let
   // minutes pass without waiting for them.
   const clock = { offsetMs: 0 };
@@ -344,11 +351,9 @@ function launch(scenario: Scenario) {
       },
       autoStartDue: () => {
         calls.autoStartDue += 1;
-        // Main spends the power-on as it answers, so it only says yes once
-        // — however many times setup runs in this renderer.
-        return Promise.resolve(
-          (scenario.autoStartDue ?? false) && calls.autoStartDue === 1,
-        );
+        const due = autoStartArmed;
+        autoStartArmed = false;
+        return Promise.resolve(due);
       },
       idlePolicy: () => {
         calls.idlePolicy += 1;
@@ -475,6 +480,10 @@ function launch(scenario: Scenario) {
         heldIdle = { ...heldIdle, returnedAt: new Date(now()).toISOString() };
       }
       wakeListeners.forEach((listener) => listener());
+    },
+    /** A new day, or a new power-on: main would answer yes once more. */
+    rearmAutoStart: () => {
+      autoStartArmed = true;
     },
     idlePromptVisible: () => !document.getElementById('idle-prompt')!.hidden,
     autoStartNoticeVisible: () =>
@@ -747,6 +756,21 @@ describe('renderer starts the timer when the machine comes on', () => {
   // asked until the projects are in, so the start lands on the retry.
   it('still starts once a setup that failed at launch comes good', async () => {
     const app = launch({ failingProjectLoads: 1, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  // Opening the lid in the morning is the only moment the app gets: the
+  // machine never went off, so nothing relaunches and setup never reruns.
+  it('starts on waking, where a new day begins without a launch', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    expect(app.calls.start).toBe(0);
+
+    app.rearmAutoStart();
+    app.wake();
     await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
 
     expect(app.calls.startedWith).toEqual([PROJECT.id]);

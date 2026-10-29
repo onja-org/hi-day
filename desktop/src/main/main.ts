@@ -100,9 +100,10 @@ import {
   autoStartTimer as autoStartTimerEnabled,
   setAutoStartTimer,
   lastAutoStartedBoot,
-  rememberAutoStartedBoot,
+  lastAutoStartedDay,
+  rememberAutoStarted,
 } from "./setup-state";
-import { bootIdentity, decideAutoStart } from "./auto-start";
+import { bootIdentity, decideAutoStart, localDay } from "./auto-start";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -2270,18 +2271,22 @@ async function registerIpcHandlers(): Promise<void> {
 
   /**
    * Whether this launch should start the timer by itself. Asked by the
-   * renderer once setup has settled, because starting a timer is its job
-   * and there must not be a second way to do it. The power-on is spent as
-   * the decision is taken rather than once a timer is running — see
+   * renderer once setup has settled and again when the machine wakes,
+   * because starting a timer is its job and there must not be a second way
+   * to do it. The occasion — this day, this power-on — is spent as the
+   * decision is taken rather than once a timer is running; see
    * `decideAutoStart`.
    */
   ipcMain.handle("tracking:autoStartDue", (): boolean => {
     const userDataDir = app.getPath("userData");
     const boot = bootIdentity();
+    const today = localDay();
     const decision = decideAutoStart({
       enabled: autoStartTimerEnabled(userDataDir),
       boot,
       lastAutoStartedBoot: lastAutoStartedBoot(userDataDir),
+      today,
+      lastAutoStartedDay: lastAutoStartedDay(userDataDir),
       signedIn: authStore.load() !== null,
       // The remembered entry as well as the gate's answer: with no
       // connection the gate has nothing to report, and a machine still
@@ -2290,7 +2295,7 @@ async function registerIpcHandlers(): Promise<void> {
       awaitingIdleAnswer: idleHoldStore.load() !== null,
       awaitingRecoveredAnswer: recoveredTimer !== null,
     });
-    if (decision !== "wait" && boot) rememberAutoStartedBoot(userDataDir, boot);
+    if (decision !== "wait") rememberAutoStarted(userDataDir, boot, today);
     return decision === "start";
   });
 

@@ -1,4 +1,4 @@
-# Turning the machine on starts the timer
+# A new working day starts the timer
 
 ## The ask
 
@@ -39,37 +39,52 @@ schedule the admin owns — is recorded below as the road not taken.
   laptop, not of a person, and it needs no backend. On rather than opt-in:
   a preference somebody has to go and find before the feature does anything
   is a feature nobody has, and the dialog it raises offers to stop the
-  timer it just started, so the first power-on is its own invitation to
+  timer it just started, so the first morning is its own invitation to
   turn it off. An install that predates the preference reads the same
   default, so upgrading turns it on. The item is hidden while signed out,
   where it would promise something it cannot do.
-- **Once per power-on, never per launch.** The agent relaunches itself after
-  a crash and after an update, and neither is a working day beginning. The
-  power-on is identified by Linux's `boot_id`, which a suspend does not
-  change — so a laptop that sleeps overnight is not mistaken for one that
-  rebooted, and equally does not get a timer on waking — and elsewhere by
-  the boot time worked out from the clock and the uptime, compared with a
-  two-minute tolerance to absorb its wobble.
-- **The power-on is spent on the decision, not on the start.** Whatever is
-  decided is stamped on disk as it is decided, so a crash mid-start cannot
-  produce a second one — and, just as much, so that a start something else
-  displaced cannot be collected later. The decision therefore has three
+- **Once per day, and once per power-on — never per launch.** The agent
+  relaunches itself after a crash and after an update, and neither is a
+  working day beginning; a new day and a new power-on both are. Either one
+  is an occasion, so the trigger covers the machine that was shut down
+  overnight *and* the far commoner one that was only suspended, whose
+  power-on is still yesterday's. It also means a machine rebooted at
+  lunchtime gets one, which turning the day alone into the trigger would
+  have lost.
+
+  An earlier draft keyed on the power-on alone. That was wrong for most
+  people: a laptop whose lid closes at six and opens at nine is on the same
+  power-on, deliberately — `boot_id` is suspend-proof by design — so the
+  feature fired on the day it was installed and rarely again.
+
+  The day is the one the timer display counts from: local midnight in the
+  machine's own timezone, the same boundary `startOfToday()` draws in the
+  renderer. "The timer reset to 00:00" and "the timer started itself" are
+  one event to the person watching, and two definitions of *day* would make
+  them disagree.
+- **The occasion is spent on the decision, not on the start.** Whatever is
+  decided is stamped on disk as it is decided — the day always, the
+  power-on where the machine can tell them apart — so a crash mid-start
+  cannot produce a second one, and a start something else displaced cannot
+  be collected later. The decision therefore has three
   answers, not two (`decideAutoStart`): *start*, *spend* (something came
-  first; the power-on is used up anyway), and *wait* (spend nothing).
-  Without the middle one, a boot whose start was displaced by an idle
-  question stayed unspent, and the next thing to rerun setup — a sign-in,
-  a Projects setting changing, the offline retry — started a timer hours
-  later announcing that the machine had just come on.
+  first; the occasion is used up anyway), and *wait* (spend nothing).
+  Without the middle one, a day whose start was displaced by an idle
+  question stayed unspent, and the next thing to ask — a sign-in, a
+  Projects setting changing, the offline retry, a wake — started a timer
+  hours later announcing that the day had just begun.
 - **Signed out is the one thing that waits.** A machine that comes on at
   its login screen has not had its chance yet, so nothing is spent and the
   start happens at the sign-in instead. That is the whole of "it should
   work whether logged in or not": the app launches either way, and the
   timer follows as soon as there is an account to track against. It
   follows only once — a sign-out and sign-in later the same day finds the
-  power-on already spent.
+  occasion already spent.
 - **The renderer starts it, through the play button's own path.** Main
-  decides and spends; the renderer asks once setup has settled and then
-  calls the same `startTracking` play calls. There must never be a second
+  decides and spends; the renderer asks once setup has settled, and again
+  when the machine wakes — on a suspended machine nothing relaunches, so
+  waking is the only moment a new day is noticed at all — then calls the
+  same `startTracking` play calls. There must never be a second
   way to start a timer — the tray item follows the same rule for the same
   reason. It asks main *before* its own checks, never after, so declining
   to act on a decision still spends it.
@@ -93,9 +108,11 @@ schedule the admin owns — is recorded below as the road not taken.
 - **The admin's rules stay the admin's.** No local schedule: the backend
   already refuses on `trackingDisabledDays` and past a work time limit, and
   the notification repeats what it said. A second set of rules in a second
-  place could only disagree with the first. This is also why the trigger is
-  the power-on rather than a time of day — a clock on the device would be
-  exactly that second set of rules.
+  place could only disagree with the first. The day boundary is not a
+  schedule in this sense — it says *that* a day has changed, never when
+  work is supposed to begin or whether today is a working day. Nothing on
+  the device decides that, which is why a Saturday start is refused by the
+  server and reported rather than pre-empted.
 - **It works with no connection.** The decision reads nothing but local
   state, and the start is queued and replayed with its real time like any
   other (`docs/adr/0025-...`), so the dialog telling you the timer is
@@ -154,6 +171,12 @@ is only a fallback:
   hibernation, and Fast Startup makes a shutdown a kernel-session
   hibernate, so turning the machine off and on again may not move it at
   all.
+
+Where no identifier answers at all, the day carries the decision by itself:
+one start a day rather than one per launch, which is the outcome worth
+protecting. That is also why Windows being unproven is no longer fatal —
+if `BootId` turns out not to move across a Fast Startup resume, the day
+still fires the timer that morning.
 
 ## Not verified
 

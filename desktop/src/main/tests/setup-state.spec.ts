@@ -17,7 +17,8 @@ import {
   autoStartTimer,
   setAutoStartTimer,
   lastAutoStartedBoot,
-  rememberAutoStartedBoot,
+  lastAutoStartedDay,
+  rememberAutoStarted,
 } from '../setup-state';
 import type { ReminderSettings } from '../tracking-reminder';
 
@@ -92,16 +93,28 @@ describe('starting the timer when the machine comes on', () => {
     expect(autoStartTimer(userDataDir)).toBe(true);
   });
 
-  it('has started for no power-on yet', () => {
+  it('has started for no power-on or day yet', () => {
     expect(lastAutoStartedBoot(userDataDir)).toBeNull();
+    expect(lastAutoStartedDay(userDataDir)).toBeNull();
   });
 
-  it('remembers the power-on it started for, and replaces it with the next', () => {
-    rememberAutoStartedBoot(userDataDir, 'id:first');
+  it('remembers the power-on and day it started for, and replaces both', () => {
+    rememberAutoStarted(userDataDir, 'id:first', '2026-10-28');
     expect(lastAutoStartedBoot(userDataDir)).toBe('id:first');
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-28');
 
-    rememberAutoStartedBoot(userDataDir, 'id:second');
+    rememberAutoStarted(userDataDir, 'id:second', '2026-10-29');
     expect(lastAutoStartedBoot(userDataDir)).toBe('id:second');
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-29');
+  });
+
+  // The day still has to land, or every launch would read as a new day.
+  it('keeps the remembered power-on when this machine has none to give', () => {
+    rememberAutoStarted(userDataDir, 'id:first', '2026-10-28');
+    rememberAutoStarted(userDataDir, null, '2026-10-29');
+
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-29');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:first');
   });
 
   // Both live in the one file every other preference does, so writing
@@ -111,7 +124,7 @@ describe('starting the timer when the machine comes on', () => {
     rememberCloseAction(userDataDir, 'quit');
 
     setAutoStartTimer(userDataDir, false);
-    rememberAutoStartedBoot(userDataDir, 'id:abc');
+    rememberAutoStarted(userDataDir, 'id:abc', '2026-10-29');
 
     expect(compactAlwaysOnTop(userDataDir)).toBe(false);
     expect(rememberedCloseAction(userDataDir)).toBe('quit');
