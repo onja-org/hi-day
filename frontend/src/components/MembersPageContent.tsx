@@ -9,6 +9,7 @@ import { InvitesTab } from "./InvitesTab";
 import { MembersTab } from "./MembersTab";
 import { PageTabs } from "./PageTabs";
 import { RequireRole } from "./RequireRole";
+import { SeatsExceededBanner } from "./SeatsExceededBanner";
 
 type MembersPageContentProps = {
   organisationId: string;
@@ -35,6 +36,10 @@ export function MembersPageContent({ organisationId }: MembersPageContentProps) 
         <h1 className="text-2xl font-semibold text-primary-dark">
           {TITLES[tab]}
         </h1>
+
+        {/* Above the tabs rather than inside one: it is true of the whole
+            page, and adding people is what both Members and Invites do. */}
+        <SeatsExceededBanner organisationId={organisationId} />
 
         <PageTabs
           tabs={[
