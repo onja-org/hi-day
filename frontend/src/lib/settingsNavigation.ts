@@ -32,7 +32,10 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     key: "billing",
     label: "Billing",
-    sections: [{ key: "subscription", label: "Subscription" }],
+    sections: [
+      { key: "subscription", label: "Subscription" },
+      { key: "info", label: "Billing info" },
+    ],
   },
   {
     key: "tracking",

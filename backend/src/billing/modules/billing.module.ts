@@ -12,6 +12,8 @@ import { BilledSeatsService } from '../services/billed-seats.service';
 import { CheckoutService } from '../services/checkout.service';
 import { StripeWebhookService } from '../services/stripe-webhook.service';
 import { StripeService } from '../services/stripe.service';
+import { SubscriptionReconcilerService } from '../services/subscription-reconciler.service';
+import { SubscriptionService } from '../services/subscription.service';
 import { TrialService } from '../services/trial.service';
 
 @Module({
@@ -28,6 +30,8 @@ import { TrialService } from '../services/trial.service';
     StripeWebhookService,
     TrialService,
     RoleGuard,
+    SubscriptionReconcilerService,
+    SubscriptionService,
   ],
   exports: [BilledSeatsService, StripeService, TrialService],
 })
