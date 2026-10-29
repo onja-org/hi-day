@@ -22,6 +22,17 @@ const URGENT_FROM_DAYS_LEFT = 3;
  * to understand or act on their state.
  */
 export function trialBannerCopy(trial: TrialStatus): TrialBannerCopy {
+  // A paid plan that has run out comes first: the trial's own dates are
+  // still on the row as history, and reading them here would tell somebody
+  // who has been paying for months that their trial had ended.
+  if (trial.isInPaidGrace) {
+    return {
+      headline: "Your plan has ended",
+      detail: `Your team can keep working until ${formatShortDate(trial.accessEndsAt)}. Renew before then to carry on.`,
+      tone: "urgent",
+    };
+  }
+
   // Named date rather than "soon": the whole point of the grace period is
   // that someone can plan around it, which needs a day they can diary.
   if (trial.isInGrace) {

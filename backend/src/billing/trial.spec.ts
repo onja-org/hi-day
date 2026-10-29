@@ -3,6 +3,7 @@ import {
   isTrialExpired,
   trialDaysLeft,
   trialEndFrom,
+  GRACE_DAYS,
   TRIAL_DAYS,
 } from './trial';
 
@@ -82,8 +83,15 @@ describe('dueTrialReminderDaysLeft', () => {
     expect(dueTrialReminderDaysLeft(END, justAfter, 0)).toBeNull();
   });
 
+  // Deliberately tied to the access grace rather than a number of its own:
+  // a reminder is worth sending for exactly as long as access survives.
+  it('still reminds within the grace period, days after the trial ended', () => {
+    const inGrace = new Date(END.getTime() + 4 * MS_PER_DAY);
+    expect(dueTrialReminderDaysLeft(END, inGrace, null)).toBe(0);
+  });
+
   it('says nothing once the grace period itself has passed', () => {
-    const afterGrace = new Date(END.getTime() + 4 * MS_PER_DAY);
+    const afterGrace = new Date(END.getTime() + (GRACE_DAYS + 1) * MS_PER_DAY);
     expect(dueTrialReminderDaysLeft(END, afterGrace, null)).toBeNull();
   });
 });

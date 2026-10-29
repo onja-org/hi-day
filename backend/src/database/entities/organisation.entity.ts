@@ -57,6 +57,52 @@ export class Organisation {
   settings: Record<string, unknown>;
 
   /**
+   * How many seats the Organisation has bought, or null where it has never
+   * bought any — which is every Organisation on a trial, and how "we only
+   * bill for who is actually here" is spelled.
+   *
+   * Deliberately **not** a cap. Members may be added past it and work
+   * normally; the next invoice simply covers all of them
+   * (`max(purchasedSeats, active members)` — see `BilledSeatsService`). An
+   * admin buying seats ahead of a hiring round is the case this exists for,
+   * and blocking the hire would be the opposite of useful.
+   */
+  @Column({ type: 'integer', nullable: true })
+  purchasedSeats: number | null;
+
+  /**
+   * The member count an admin last acknowledged being over their seats at.
+   *
+   * Stored as a *count* rather than a flag or a date so the notice comes
+   * back when the team grows again: acknowledging "we are 54 against 50
+   * seats" is not an acknowledgement of being 80 against 50, and the figure
+   * on the next invoice is different. Null until somebody acknowledges one.
+   *
+   * Deliberately not a **Consent record** (see CONTEXT.md): that term is a
+   * per-Device acknowledgement of a specific DisclosureVersion, kept as a
+   * legal audit trail. This is an admin dismissing a billing notice, and
+   * putting it in the same table would make both terms mean less.
+   */
+  @Column({ type: 'integer', nullable: true })
+  seatsOverageAcknowledgedAtMembers: number | null;
+
+  /**
+   * Where billing mail goes, and the address on the Stripe Customer. Null
+   * means nobody has set one, and the owner's own email answers instead —
+   * which is what every Organisation did before this column existed.
+   *
+   * Lives on the Organisation rather than the Subscription because the
+   * Organisation is the thing being billed and always exists: those
+   * predating trials have no `subscriptions` row at all. Any admin may
+   * change it, like the rest of Billing. Billing mail goes here *and* to
+   * the owner, never here alone — this address is typed by hand and never
+   * verified, and a typo must not be able to swallow the one warning that
+   * says access is ending.
+   */
+  @Column({ type: 'text', nullable: true })
+  billingEmail: string | null;
+
+  /**
    * The one admin allowed to start or cancel account deletion (see
    * CONTEXT.md's Owner entry). Set to the founding admin at creation;
    * `null` only for an org whose owner's User row has since been erased.

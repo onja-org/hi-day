@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsNumber,
@@ -64,6 +65,18 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsString()
   website?: string | null;
+
+  /**
+   * Where billing mail goes instead of the owner's login email. '' clears
+   * it, like the other optional fields, and anything else has to look like
+   * an address — this one is used to reach somebody, unlike `taxId` and
+   * `website`, which nothing sends to.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: string | null) => value !== null && value !== '')
+  @IsEmail()
+  @MaxLength(320)
+  billingEmail?: string | null;
 
   @IsOptional()
   @IsIn(IDLE_HANDLING_VALUES)
