@@ -53,7 +53,8 @@ export function TimeEntrySplitModal({
     <Modal title="Split time entry" onClose={onClose}>
       <div className="flex w-full max-w-lg flex-col gap-5">
         <p className="text-sm text-slate-900">
-          {entryTitle(entry)} · {formatClockTime(entry.startedAt)} –{" "}
+          {entryTitle(entry) && `${entryTitle(entry)} · `}
+          {formatClockTime(entry.startedAt)} –{" "}
           {formatClockTime(endedAt)}
         </p>
 

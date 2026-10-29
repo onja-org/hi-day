@@ -6,7 +6,10 @@ import { useOrganisationWeekStart } from "@/hooks/useOrganisationWeekStart";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildTimeActivityAttachment } from "@/lib/buildTimeActivityAttachment";
 import { entriesToCsv } from "@/lib/entriesToCsv";
+import { timeActivityTable } from "@/lib/timeActivityTable";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import { countReportFilters } from "@/lib/reportFilters";
 import type { ReportFilters } from "@/lib/reportFilters";
@@ -86,6 +89,10 @@ export function TimeActivityReportActions({
     <div className="flex flex-wrap items-center gap-3">
       <ExportButtons
         csv={entriesToCsv(entries ?? [], zone, projectsEnabled)}
+        buildPdf={() => {
+          const { columns, rows } = timeActivityTable(entries ?? [], grouping, teamNames, idleMembers, weekStart, projectsEnabled, zone);
+          return reportTableToPdf(columns, rows, "Time and activity report", formatReportRange(range, zone));
+        }}
         filenameBase={filenameBase}
         disabled={(entries ?? []).length === 0}
       />

@@ -6,13 +6,11 @@ type EntryProject = Pick<TimeEntryListItem, "projectName" | "projectColour">;
 /** What a report, export or grouping calls an entry that has no Project. */
 export const NO_PROJECT_LABEL = "No project";
 
-/** What a row, calendar block or modal titles an entry that has no Project.
- * Deliberately not "No project": an organisation with Projects off has
- * nothing else, and every row saying so would read as something missing. */
-export const UNTITLED_ENTRY_LABEL = "Tracked time";
-
+/** What a row, calendar block or modal titles an entry that has no Project:
+ * nothing. An organisation with Projects off has nothing else, and a label on
+ * every row would read as something missing. */
 export function entryTitle(entry: EntryProject): string {
-  return entry.projectName ?? UNTITLED_ENTRY_LABEL;
+  return entry.projectName ?? "";
 }
 
 export function entryProjectName(entry: EntryProject): string {
