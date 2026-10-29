@@ -10,7 +10,13 @@ function trial(overrides: Partial<TrialStatus> = {}): TrialStatus {
     daysLeft: 14,
     isExpired: false,
     isInGrace: false,
-    accessEndsAt: "2026-01-18T09:00:00.000Z",
+    accessEndsAt: "2026-01-22T09:00:00.000Z",
+    currentPeriodEnd: null,
+    isInPaidGrace: false,
+    isPaid: false,
+    trialEndedAt: null,
+    billingPeriod: null,
+    stripeStatus: null,
     ...overrides,
   };
 }
@@ -40,7 +46,7 @@ describe("trialBannerCopy", () => {
     );
 
     expect(copy.headline).toBe("Your free trial has ended");
-    expect(copy.detail).toContain("Jan 18, 2026");
+    expect(copy.detail).toContain("Jan 22, 2026");
     expect(copy.tone).toBe("urgent");
   });
 
@@ -48,5 +54,22 @@ describe("trialBannerCopy", () => {
     expect(trialBannerCopy(trial({ daysLeft: 0, isExpired: true }))).toMatchObject(
       { headline: "Your free trial has ended", tone: "urgent" },
     );
+  });
+});
+
+describe("trialBannerCopy for a paid plan that has ended", () => {
+  // The trial dates stay on the row as history, so this has to win: a
+  // paying customer told "your trial has ended" would rightly be baffled.
+  it("names the plan, not the trial, and the date access stops", () => {
+    expect(
+      trialBannerCopy(
+        trial({
+          isInPaidGrace: true,
+          isExpired: true,
+          currentPeriodEnd: "2026-06-01T09:00:00.000Z",
+          accessEndsAt: "2026-06-08T09:00:00.000Z",
+        }),
+      ),
+    ).toMatchObject({ headline: "Your plan has ended", tone: "urgent" });
   });
 });

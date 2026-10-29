@@ -173,8 +173,100 @@ export class EmailService {
    * out. `daysLeft` is rounded the way the in-app banner rounds it, so the
    * two never disagree: `1` is the final day, `0` means it has ended.
    */
-  async sendTrialReminderEmail(
+  /**
+   * The receipt for a payment Stripe has taken — the first one and every
+   * renewal after it.
+   *
+   * Links Stripe's own hosted invoice rather than attaching a PDF: the
+   * hosted page always reflects the invoice as it stands (a later refund or
+   * credit note shows there), where an attachment is a snapshot that starts
+   * disagreeing with the account the moment anything changes.
+   */
+  async sendInvoiceEmail(
     to: string,
+    organisationName: string,
+    amount: string,
+    invoiceUrl: string | null,
+    /** Stripe's own invoice number, where it has finalised one. */
+    reference: string | null,
+  ): Promise<void> {
+    const name = escapeHtml(organisationName);
+    const line = reference ? ` (invoice ${escapeHtml(reference)})` : '';
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `Your ${APP_NAME} receipt — ${amount}`,
+      html: `<p>Thanks — we've received <strong>${escapeHtml(amount)}</strong> for <strong>${name}</strong>${line}.</p>${
+        invoiceUrl
+          ? this.button(invoiceUrl, 'View or download invoice')
+          : '<p>Your invoice will be available in Settings → Billing.</p>'
+      }<p>This is a receipt for your records. Nothing further is needed.</p>`,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send invoice email to ${to}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * A message from the public contact form, to whoever
+   * `CONTACT_RECIPIENT_EMAIL` names.
+   *
+   * Every value is escaped before it reaches the HTML. All of it is typed by
+   * a stranger with no account, so a message containing
+   * `<img src=x onerror=…>` must arrive as that text and not as markup in
+   * the inbox of whoever reads these.
+   *
+   * `replyTo` is the sender's address, which is the whole point: replying
+   * goes to them rather than to the mailbox this arrived in. It is
+   * deliberately *not* the `from` — sending as an address we do not own is
+   * what fails SPF and lands the lot in spam.
+   */
+  async sendContactMessage(
+    to: string,
+    message: {
+      email: string;
+      website: string;
+      phone: string | null;
+      message: string;
+      sentAt: Date;
+    },
+  ): Promise<void> {
+    const email = escapeHtml(message.email);
+    const website = escapeHtml(message.website);
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      replyTo: message.email,
+      subject: `New contact message from ${message.email}`,
+      html: [
+        `<p><strong>From:</strong> ${email}</p>`,
+        `<p><strong>Website:</strong> <a href="${website}">${website}</a></p>`,
+        `<p><strong>Phone:</strong> ${message.phone ? escapeHtml(message.phone) : 'Not provided'}</p>`,
+        `<p><strong>Sent:</strong> ${escapeHtml(message.sentAt.toISOString())}</p>`,
+        '<hr />',
+        // Newlines become breaks after escaping, never before: escaping
+        // afterwards would turn the <br> back into text.
+        `<p>${escapeHtml(message.message).replace(/\r?\n/g, '<br />')}</p>`,
+      ].join(''),
+    });
+
+    if (error) {
+      // Thrown, not swallowed: the form promises the person it was sent, and
+      // the controller answers 500 so they can try again rather than being
+      // told it worked.
+      throw new Error(`Resend refused the contact message: ${error.message}`);
+    }
+  }
+
+  async sendTrialReminderEmail(
+    /** The owner, plus the billing address when one is set — see
+     * `billingRecipients`. Resend takes an array for several. */
+    to: string | string[],
     organisationName: string,
     daysLeft: number,
     accessEndsOn: string,
@@ -202,7 +294,7 @@ export class EmailService {
 
     if (error) {
       this.logger.error(
-        `Failed to send trial reminder to ${to}: ${error.message}`,
+        `Failed to send trial reminder to ${Array.isArray(to) ? to.join(', ') : to}: ${error.message}`,
       );
     }
   }
