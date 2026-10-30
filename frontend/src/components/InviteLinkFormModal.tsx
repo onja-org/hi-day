@@ -8,9 +8,11 @@ import { INVITE_LINKS_QUERY_KEY } from "@/hooks/useInviteLinks";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjects } from "@/hooks/useProjects";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
+import { useSeatsFullConsent } from "@/hooks/useSeatsFullConsent";
 import { saveInviteLink } from "@/lib/saveInviteLink";
 import { fromInviteLinkExpiry, toInviteLinkExpiry } from "@/lib/toInviteLinkExpiry";
 import type { InviteLink, InviteLinkRole } from "@/types/inviteLink";
+import { SeatsFullConsent } from "./billing/SeatsFullConsent";
 import { AssignmentChecklist } from "./AssignmentChecklist";
 import { ErrorMessage } from "./ErrorMessage";
 import { InviteLinkLimitFields } from "./InviteLinkLimitFields";
@@ -33,6 +35,12 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
   const projectsQuery = useProjects(organisationId, { status: "active" });
+  // Only when creating. Editing an existing link lets somebody rename it, cap
+  // it, or switch it off — none of which adds a seat, and needing to consent
+  // to a charge before you can *close* a link would be backwards.
+  const seatsConsent = useSeatsFullConsent(organisationId);
+  const consentNeeded = !link && seatsConsent.required;
+  const consentBlocked = !link && seatsConsent.blocked;
 
   const [name, setName] = useState(link?.name ?? "");
   const [role, setRole] = useState<InviteLinkRole>(link?.role ?? "member");
@@ -81,7 +89,7 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (name.trim() && capIsValid) mutation.mutate();
+    if (name.trim() && capIsValid && !consentBlocked) mutation.mutate();
   }
 
   return (
@@ -134,6 +142,14 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
           onEnabledChange={setEnabled}
         />
 
+        {consentNeeded && (
+          <SeatsFullConsent
+            purchasedSeats={seatsConsent.purchasedSeats}
+            agreed={seatsConsent.agreed}
+            onAgreedChange={seatsConsent.setAgreed}
+          />
+        )}
+
         {!capIsValid && <ErrorMessage message="Usage cap must be a whole number of at least 1." />}
         {failure && <ErrorMessage message={failure} />}
 
@@ -143,7 +159,7 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
           </button>
           <button
             type="submit"
-            disabled={!name.trim() || !capIsValid || mutation.isPending}
+            disabled={!name.trim() || !capIsValid || mutation.isPending || consentBlocked}
             className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
           >
             {mutation.isPending && <Spinner />}

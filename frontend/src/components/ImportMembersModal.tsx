@@ -8,12 +8,14 @@ import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useProjects } from "@/hooks/useProjects";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
+import { useSeatsFullConsent } from "@/hooks/useSeatsFullConsent";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { memberImportTemplateCsv } from "@/lib/memberImportTemplateCsv";
 import { parseMemberImportRows } from "@/lib/parseMemberImportRows";
 import type { MemberImportRow } from "@/lib/parseMemberImportRows";
 import { readImportFile } from "@/lib/readImportFile";
 import type { InviteEntryResult } from "@/types/invitation";
+import { SeatsFullConsent } from "./billing/SeatsFullConsent";
 import { ErrorMessage } from "./ErrorMessage";
 import { ImportPreviewTable } from "./ImportPreviewTable";
 import { ImportTemplateButton } from "./ImportTemplateButton";
@@ -42,6 +44,10 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
   // through can resume with the rest instead of re-inviting everyone.
   const [sentCount, setSentCount] = useState(0);
   const [sendError, setSendError] = useState<string | null>(null);
+  // An import reaches the same endpoint as the invite form, so the same
+  // agreement applies — and matters more here, where one file can bring in
+  // dozens of chargeable seats at once.
+  const consent = useSeatsFullConsent(organisationId);
 
   const teams = teamsQuery.data ?? [];
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
@@ -54,6 +60,7 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
     setSentCount(0);
     setSendError(null);
     setFileError(null);
+    consent.setAgreed(false);
     if (!file) return;
     try {
       const parsed = parseMemberImportRows(await readImportFile(file), {
@@ -147,6 +154,18 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         {sendError && <ErrorMessage message={sendError} />}
         {rows && !results && <ImportPreviewTable rows={rows} teamNames={teamNames} />}
 
+        {/* Only once a file is parsed: before that there is no count to show
+            and nothing to agree to. Survives a partial failure so resuming
+            does not ask twice — see `handleFile` for why a new file clears it. */}
+        {rows && consent.required && remaining > 0 && (
+          <SeatsFullConsent
+            purchasedSeats={consent.purchasedSeats}
+            agreed={consent.agreed}
+            onAgreedChange={consent.setAgreed}
+            invitingCount={remaining}
+          />
+        )}
+
         <div className="flex justify-end gap-3">
           <button
             type="button"
@@ -159,7 +178,7 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
             <button
               type="button"
               onClick={() => mutation.mutate()}
-              disabled={remaining === 0 || mutation.isPending}
+              disabled={remaining === 0 || mutation.isPending || consent.blocked}
               className="flex cursor-pointer items-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 border-2 border-ink font-bold"
             >
               {mutation.isPending && <Spinner />}

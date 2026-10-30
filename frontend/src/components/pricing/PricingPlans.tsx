@@ -3,18 +3,17 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { GITHUB_ORG_URL } from "@/lib/marketingLinks";
+import {
+  BILLING_PERIODS,
+  CLOUD_BILLING_NOTE,
+  CLOUD_PRICE_PER_PERSON,
+} from "@/lib/pricing.generated";
+import type { BillingPeriod } from "@/lib/pricing.generated";
 import { PricingPlanCard } from "./PricingPlanCard";
 
-const PERIODS = ["monthly", "annual"] as const;
-type Period = (typeof PERIODS)[number];
-
-/** Cloud's per-person price. Annual is the default, and the 12% the
- * "Save 12% annually" pill advertises is this pair's difference. */
-const CLOUD_PRICE: Record<Period, string> = { monthly: "$4", annual: "$3.50" };
-const CLOUD_BILLING: Record<Period, string> = { monthly: "billed monthly", annual: "billed annually" };
 
 export function PricingPlans() {
-  const [period, setPeriod] = useState<Period>("annual");
+  const [period, setPeriod] = useState<BillingPeriod>("annual");
 
   return (
     <div className="flex flex-col gap-8">
@@ -24,7 +23,7 @@ export function PricingPlans() {
           aria-label="Billing period"
           className="inline-flex gap-1 rounded-brand-sm border-3 border-ink bg-white p-1"
         >
-          {PERIODS.map((option) => (
+          {BILLING_PERIODS.map((option) => (
             <button
               key={option}
               type="button"
@@ -69,8 +68,8 @@ export function PricingPlans() {
           badge="Everything included"
           name="Hi Day Cloud"
           tagline="We run it for you"
-          price={CLOUD_PRICE[period]}
-          priceNote={`per person / month, ${CLOUD_BILLING[period]}`}
+          price={CLOUD_PRICE_PER_PERSON[period]}
+          priceNote={`per person / month, ${CLOUD_BILLING_NOTE[period]}`}
           ctaLabel="Start free trial"
           ctaHref="/signup"
           features={[

@@ -23,20 +23,79 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  /**
+   * Everything inside that can take focus, in the order Tab would visit it.
+   * Recomputed per keypress rather than cached: a dialog's contents change —
+   * a form becomes a success message, a button appears — and a stale list
+   * would trap focus on an element no longer there.
+   */
+  function focusable(): HTMLElement[] {
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    return [...(nodes ?? [])].filter(
+      (node) => node.offsetParent !== null || node === document.activeElement,
+    );
+  }
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      // Only the topmost dialog closes, so Escape in a modal opened from
+      // Only the topmost dialog responds, so Escape in a modal opened from
       // another modal doesn't dismiss both.
       const dialogs = document.querySelectorAll('[role="dialog"]');
       const isTopmost = dialogs[dialogs.length - 1] === dialogRef.current;
-      if (event.key === "Escape" && isTopmost) {
+      if (!isTopmost) return;
+
+      if (event.key === "Escape") {
         onClose();
+        return;
+      }
+
+      // Tab wraps inside the dialog. Without this, tabbing past the last
+      // control lands on the page behind — which a screen reader then reads
+      // as though the dialog were not there.
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  /**
+   * Focus moves in on open and back to whatever opened it on close.
+   *
+   * Returning it matters as much as taking it: without this, closing a
+   * dialog leaves focus on `<body>`, and the next Tab starts from the top of
+   * the page rather than from the button the person just pressed.
+   */
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    // After the mount paint, so the first field exists to receive it.
+    const frame = requestAnimationFrame(() => {
+      const [firstField] = focusable();
+      firstField?.focus();
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      opener?.focus?.();
+    };
+    // Once per dialog: re-running would steal focus mid-typing.
+  }, []);
 
   // Rendered via a portal straight into document.body: a transformed
   // ancestor (e.g. FadeIn's translate-y classes, applied as the first div
@@ -80,7 +139,11 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            /* "Close dialog", not "Close": a dialog's own body may carry a
+               Close button of its own, and two controls with the same
+               accessible name in one dialog is a guess for anybody
+               navigating by name. */
+            aria-label="Close dialog"
             className="cursor-pointer rounded-full p-1 text-primary-dark transition-colors duration-150 hover:bg-cream"
           >
             <X size={20} aria-hidden="true" />

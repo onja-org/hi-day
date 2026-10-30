@@ -227,6 +227,7 @@ describe('InvitationsService', () => {
         ({
           findOne: jest.fn().mockResolvedValue(null),
         } as unknown as Repository<InviteLink>),
+      { syncToProvider: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
 

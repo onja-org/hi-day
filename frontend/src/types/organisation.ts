@@ -63,6 +63,10 @@ export type OrganisationProfile = {
   industry: Industry | null;
   taxId: string | null;
   website: string | null;
+  /** Null until an admin sets one — the owner's email answers instead. */
+  billingEmail: string | null;
+  /** The owner's own address, shown as the fallback. Read-only. */
+  ownerEmail: string | null;
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
@@ -145,6 +149,7 @@ export type UpdateOrganisationInput = {
   industry?: Industry | "";
   taxId?: string;
   website?: string;
+  billingEmail?: string;
   weekStartsOn?: WeekStart;
   projectsEnabled?: boolean;
   timezone?: string;
