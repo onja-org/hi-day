@@ -1,5 +1,6 @@
 "use client";
 
+import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatTimeInZone } from "@/lib/timezone";
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { TimeEntryListItem } from "@/types/timeEntry";
@@ -27,6 +28,9 @@ export function TimesheetEntryRow({
   isSelected,
   onToggleSelected,
 }: TimesheetEntryRowProps) {
+  const projectsEnabled = useProjectsEnabled();
+  const title = entryTitle(entry);
+
   return (
     <tr className="border-b border-input-border last:border-b-0">
       <td className="px-3 py-3">
@@ -34,27 +38,29 @@ export function TimesheetEntryRow({
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelected(entry.id)}
-          aria-label={`Select ${entryTitle(entry)} entry starting ${formatTimeInZone(entry.startedAt, zone)}`}
+          aria-label={`Select ${title && `${title} `}entry starting ${formatTimeInZone(entry.startedAt, zone)}`}
           className="h-4 w-4 cursor-pointer accent-primary"
         />
       </td>
-      <td className="px-3 py-3">
-        <span className="flex items-center gap-3">
-          {entry.projectId !== null && (
-            <ProjectAvatar name={entryTitle(entry)} colour={entryProjectColour(entry)} />
-          )}
-          <span className="flex flex-col">
-            <span className="font-medium text-primary-dark">{entryTitle(entry)}</span>
-            {/* An entry with no project has no task either, so a "No task"
-                line under it would only be noise. */}
-            {(entry.projectId !== null || entry.taskName !== null) && (
-              <span className="text-xs text-slate-900/60">
-                {entry.taskName ?? "No task"}
-              </span>
+      {projectsEnabled && (
+        <td className="px-3 py-3">
+          <span className="flex items-center gap-3">
+            {entry.projectId !== null && (
+              <ProjectAvatar name={title} colour={entryProjectColour(entry)} />
             )}
+            <span className="flex flex-col">
+              <span className="font-medium text-primary-dark">{title}</span>
+              {/* An entry with no project has no task either, so a "No task"
+                  line under it would only be noise. */}
+              {(entry.projectId !== null || entry.taskName !== null) && (
+                <span className="text-xs text-slate-900/60">
+                  {entry.taskName ?? "No task"}
+                </span>
+              )}
+            </span>
           </span>
-        </span>
-      </td>
+        </td>
+      )}
       {/* Null is "nothing measured", which a bare 0% would misreport. */}
       <td className="px-3 py-3 tabular-nums text-slate-900">
         {entry.activePercentage === null ? (

@@ -31,6 +31,7 @@ export function TimesheetDayGroupSection({
   onToggleDay,
 }: TimesheetDayGroupSectionProps) {
   const projectsEnabled = useProjectsEnabled();
+  const columnCount = projectsEnabled ? 8 : 7;
   const dayEntryIds = group.entries.map((entry) => entry.id);
   // Ticked as soon as *any* row is, reading as "this day is part of the
   // selection" — so clicking it then clears the day rather than adding more.
@@ -39,7 +40,7 @@ export function TimesheetDayGroupSection({
   return (
     <tbody>
       <tr className="border-b border-input-border bg-cream/40">
-        <th colSpan={8} scope="colgroup" className="px-3 py-2 text-left">
+        <th colSpan={columnCount} scope="colgroup" className="px-3 py-2 text-left">
           <span className="flex items-center gap-2 text-sm font-semibold text-primary-dark">
             {group.label}:
             <span className="tabular-nums">
@@ -50,7 +51,7 @@ export function TimesheetDayGroupSection({
       </tr>
 
       <tr className="border-b border-input-border">
-        <td colSpan={8} className="px-3 py-2">
+        <td colSpan={columnCount} className="px-3 py-2">
           <TimesheetDayTimeline
             dayStart={startOfDayInZone(group.dateKey, zone)}
             entries={group.entries}
@@ -71,9 +72,11 @@ export function TimesheetDayGroupSection({
             className="h-4 w-4 cursor-pointer accent-primary"
           />
         </th>
-        <th scope="col" className="px-3 py-2 text-left font-medium">
-          {projectsEnabled ? "Project" : "Entry"}
-        </th>
+        {projectsEnabled && (
+          <th scope="col" className="px-3 py-2 text-left font-medium">
+            Project
+          </th>
+        )}
         <th scope="col" className="px-3 py-2 text-left font-medium">
           Activity
         </th>

@@ -6,6 +6,7 @@ import { DashboardHeader } from "./DashboardHeader";
 import { DesktopAppPrompt } from "./DesktopAppPrompt";
 import { FadeIn } from "./FadeIn";
 import { Sidebar } from "./Sidebar";
+import { TrialBanner } from "./TrialBanner";
 
 type DashboardLayoutShellProps = {
   organisationId: number;
@@ -27,6 +28,7 @@ export function DashboardLayoutShell({
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <DashboardHeader onOpenMenu={() => setMobileMenuOpen(true)} />
+        <TrialBanner organisationId={organisationId} />
         <main className="container flex-1 py-8">
           <FadeIn>{children}</FadeIn>
         </main>

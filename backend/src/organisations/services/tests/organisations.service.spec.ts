@@ -1,6 +1,7 @@
 import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
+import { TrialService } from '../../../billing/services/trial.service';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
@@ -63,6 +64,14 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Team>;
   }
 
+  function makeTrialService() {
+    const startTrial = jest.fn().mockResolvedValue(undefined);
+    return {
+      trialService: { startTrial } as unknown as TrialService,
+      startTrial,
+    };
+  }
+
   function makeAuditLogService() {
     const record = jest.fn().mockResolvedValue(undefined);
     return {
@@ -72,6 +81,27 @@ describe('OrganisationsService', () => {
   }
 
   describe('createForUser', () => {
+    it('starts the 14-day trial on the same transaction, with no card asked for', async () => {
+      const { manager } = makeManager();
+      const { trialService, startTrial } = makeTrialService();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        trialService,
+      );
+
+      await service.createForUser(manager, 'user-1', {
+        name: 'Acme Inc',
+        address: null,
+        website: null,
+      });
+
+      expect(startTrial).toHaveBeenCalledWith(manager, 'org-1');
+    });
+
     it('creates the organisation, a default "General" team, and an admin membership with no team_memberships row', async () => {
       const { manager, create } = makeManager();
       const { auditLogService, record } = makeAuditLogService();
@@ -81,6 +111,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const organisation = await service.createForUser(manager, 'user-1', {
@@ -140,6 +171,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await service.createForUser(manager, 'user-1', { name: 'Acme Inc' });
@@ -175,6 +207,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.findCurrentForUser('user-1');
@@ -185,6 +218,8 @@ describe('OrganisationsService', () => {
         address: '1 Main St',
         industry: null,
         taxId: null,
+        billingEmail: null,
+        ownerEmail: null,
         website: 'https://acme.test',
         role: MembershipRole.MANAGER,
         idleHandling: 'flag',
@@ -243,6 +278,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.findCurrentForUser('user-1');
@@ -258,6 +294,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.findCurrentForUser('user-1')).rejects.toBeInstanceOf(
@@ -273,6 +310,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await service.findCurrentForUser('user-1').catch(() => undefined);
@@ -297,6 +335,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
     }
 
@@ -340,6 +379,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const teams = await service.listTeams('org-1', 'admin-1');
@@ -384,6 +424,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const teams = await service.listTeams('org-1', 'admin-1');
@@ -420,6 +461,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const teams = await service.listTeams('org-1', 'manager-1');
@@ -448,6 +490,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const teams = await service.listTeams('org-1', 'member-1');
@@ -474,6 +517,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo({ find }),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const teams = await service.listTeams('org-1', 'member-1');
@@ -492,6 +536,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(
@@ -516,6 +561,8 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -544,6 +591,8 @@ describe('OrganisationsService', () => {
         makeMembershipsRepo(),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {});
@@ -566,6 +615,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -604,6 +654,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -635,6 +686,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       expect(await service.getProjectsEnabled('org-1')).toBe(false);
@@ -665,6 +717,7 @@ describe('OrganisationsService', () => {
           makeTeamsRepo(),
           makeAuditLogService().auditLogService,
           makeTimeEntriesService(),
+          makeTrialService().trialService,
         );
         return { service, save };
       }
@@ -717,6 +770,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -748,6 +802,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -776,6 +831,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -801,6 +857,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -830,6 +887,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       const profile = await service.updateProfile('org-1', 'user-1', {
@@ -853,6 +911,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
@@ -872,6 +931,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getWorkingHoursPolicy('org-1')).resolves.toEqual({
@@ -893,6 +953,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
@@ -913,6 +974,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
@@ -941,6 +1003,8 @@ describe('OrganisationsService', () => {
         }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(
@@ -966,6 +1030,8 @@ describe('OrganisationsService', () => {
         }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(
@@ -990,6 +1056,8 @@ describe('OrganisationsService', () => {
         }),
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(
@@ -1012,6 +1080,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
@@ -1041,6 +1110,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
@@ -1067,6 +1137,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(
@@ -1088,6 +1159,7 @@ describe('OrganisationsService', () => {
         makeTeamsRepo(),
         makeAuditLogService().auditLogService,
         makeTimeEntriesService(),
+        makeTrialService().trialService,
       );
 
       await expect(

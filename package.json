@@ -5,7 +5,9 @@
   "scripts": {
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "gen:pricing": "tsx scripts/generate-pricing.ts",
+    "gen:shared-rules": "tsx scripts/generate-shared-rules.ts"
   },
   "devDependencies": {
     "turbo": "^2.10.11"

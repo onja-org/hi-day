@@ -7,6 +7,8 @@ import { AppEventsModule } from './app-events/modules/app-events.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
+import { BillingModule } from './billing/modules/billing.module';
+import { ContactModule } from './contact/modules/contact.module';
 import { DashboardModule } from './dashboard/modules/dashboard.module';
 import { ReportsModule } from './reports/modules/reports.module';
 import { SavedReportsModule } from './saved-reports/modules/saved-reports.module';
@@ -32,6 +34,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
+    BillingModule,
     MembersModule,
     DevicesModule,
     ProjectsModule,
@@ -47,6 +50,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     DashboardModule,
     ReportsModule,
     SavedReportsModule,
+    ContactModule,
   ],
   controllers: [AppController],
   providers: [

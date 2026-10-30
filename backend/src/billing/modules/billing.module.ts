@@ -1,0 +1,38 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
+import { RoleGuard } from '../../common/guards/role.guard';
+import { Membership } from '../../database/entities/membership.entity';
+import { Organisation } from '../../database/entities/organisation.entity';
+import { Subscription } from '../../database/entities/subscription.entity';
+import { EmailModule } from '../../email/modules/email.module';
+import { BillingController } from '../controllers/billing.controller';
+import { StripeWebhookController } from '../controllers/stripe-webhook.controller';
+import { BilledSeatsService } from '../services/billed-seats.service';
+import { CheckoutService } from '../services/checkout.service';
+import { StripeWebhookService } from '../services/stripe-webhook.service';
+import { StripeService } from '../services/stripe.service';
+import { SubscriptionReconcilerService } from '../services/subscription-reconciler.service';
+import { SubscriptionService } from '../services/subscription.service';
+import { TrialService } from '../services/trial.service';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([Subscription, Organisation, Membership]),
+    JwtAuthModule,
+    EmailModule,
+  ],
+  controllers: [BillingController, StripeWebhookController],
+  providers: [
+    BilledSeatsService,
+    CheckoutService,
+    StripeService,
+    StripeWebhookService,
+    TrialService,
+    RoleGuard,
+    SubscriptionReconcilerService,
+    SubscriptionService,
+  ],
+  exports: [BilledSeatsService, StripeService, TrialService],
+})
+export class BillingModule {}

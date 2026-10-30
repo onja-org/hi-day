@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { TrialService } from '../../billing/services/trial.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -63,6 +64,14 @@ export interface OrganisationProfile {
   industry: Industry | null;
   taxId: string | null;
   website: string | null;
+  /** Null when nobody has set one — the owner's address answers instead. */
+  billingEmail: string | null;
+  /**
+   * The owner's own address, shown as the fallback wherever `billingEmail`
+   * is empty. Read-only: it follows whoever holds the Organisation, and
+   * changing where billing mail goes is what `billingEmail` is for.
+   */
+  ownerEmail: string | null;
   role: MembershipRole;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
@@ -169,6 +178,7 @@ export class OrganisationsService {
     private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly trialService: TrialService,
   ) {}
 
   async createForUser(
@@ -219,6 +229,11 @@ export class OrganisationsService {
       }),
     );
 
+    // Signup asks for no card, so every new Organisation starts its 14-day
+    // trial here rather than anyone choosing to — same transaction, so an
+    // Organisation never exists without one (see CONTEXT.md's Trial entry).
+    await this.trialService.startTrial(manager, organisation.id);
+
     await this.auditLogService.record(manager, {
       action: 'organisation.created',
       organisationId: organisation.id,
@@ -233,7 +248,9 @@ export class OrganisationsService {
     // than one being deleted under them (ADR-0023).
     const membership = await this.memberships.findOne({
       where: { userId, status: MembershipStatus.ACTIVE },
-      relations: { organisation: true },
+      // `owner` for the billing email's fallback — the Billing page says
+      // which of the two addresses receipts actually reach.
+      relations: { organisation: { owner: true } },
       order: {
         organisation: { suspendedAt: { direction: 'ASC', nulls: 'FIRST' } },
       },
@@ -352,10 +369,18 @@ export class OrganisationsService {
   ): Promise<OrganisationProfile> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
+      // `owner` for the billing email's fallback, same as the read above.
+      relations: { owner: true },
     });
 
     if (dto.name !== undefined) {
       organisation.name = dto.name;
+    }
+    // A real column rather than a `settings` key: this one is read to decide
+    // where mail goes, and `settings` is a jsonb blob nothing can query.
+    if (dto.billingEmail !== undefined) {
+      organisation.billingEmail =
+        (dto.billingEmail ?? '').trim().toLowerCase() || null;
     }
     organisation.settings = {
       ...organisation.settings,
@@ -705,6 +730,8 @@ export class OrganisationsService {
       industry: settings.industry ?? null,
       taxId: settings.taxId ?? null,
       website: settings.website ?? null,
+      billingEmail: organisation.billingEmail ?? null,
+      ownerEmail: organisation.owner?.email ?? null,
       role,
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
