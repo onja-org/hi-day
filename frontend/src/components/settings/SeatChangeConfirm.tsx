@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { formatMoney } from "@/lib/seatPricing";
-import { formatShortDate } from "@/lib/formatShortDate";
 import { previewSeatChange } from "@/lib/subscriptionApi";
 import { BillingConsentPanel } from "../billing/BillingConsentPanel";
 import { ErrorMessage } from "../ErrorMessage";
@@ -74,12 +73,12 @@ export function SeatChangeConfirm({
     ? [
         // Only where there is something to take now: a monthly change
         // prorates nothing, and a $0.00 line invites the question of why.
+        // Now, not on a future date: a rise in seats is invoiced and charged
+        // the moment it is confirmed.
         ...(preview.proratedNowMinor > 0
           ? [
               {
-                label: preview.chargedAt
-                  ? `Charged on ${formatShortDate(preview.chargedAt)}`
-                  : "Charged now",
+                label: "Charged today",
                 value: formatMoney(preview.proratedNowMinor),
               },
             ]
@@ -98,8 +97,8 @@ export function SeatChangeConfirm({
         title={`Change to ${seats} ${seats === 1 ? "seat" : "seats"}?`}
         description={
           annual
-            ? "Extra seats are billed once, for the months left in your year. No one is blocked while you decide."
-            : "Extra seats are added to your next monthly payment. No one is blocked while you decide."
+            ? "Extra seats are charged now for the rest of your year, then included in every renewal. No one is blocked while you decide."
+            : "Extra seats are charged now for the rest of this month, then included in every payment. No one is blocked while you decide."
         }
         rows={rows}
         confirmLabel={`Confirm ${seats} seats`}

@@ -32,11 +32,13 @@ export type PaidSubscription = {
 /** What a seat change costs, previewed by Stripe before anything commits. */
 export type SeatChangePreview = {
   seats: number;
+  /** Charged to the card straight away — a one-off, not part of the renewal. */
   proratedNowMinor: number;
+  /** What every renewal from now on becomes, with the one-off taken out. */
   nextPaymentMinor: number;
+  /** What it is today, for an "old → new" line. */
   currentNextPaymentMinor: number;
   currency: string;
-  chargedAt: string | null;
 };
 
 /** One invoice, as the Billing info page lists it. */

@@ -1,14 +1,10 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type Stripe from 'stripe';
 import { Subscription } from '../../database/entities/subscription.entity';
-import { BILLING_PERIODS, type BillingPeriod } from '../pricing';
+import { invoiceSeatCount } from '../invoice-seats';
+import { prorationTotal, recurringTotal } from '../invoice-split';
 import {
   subscriptionView,
   type PaidSubscriptionView,
@@ -32,9 +28,12 @@ function invoiceDate(invoice: Stripe.Invoice): string | null {
  */
 function describeInvoice(invoice: Stripe.Invoice): string | null {
   const lines = invoice.lines?.data ?? [];
-  const quantity = lines.find((line) => line.quantity)?.quantity;
-  if (quantity) {
-    return `${quantity} ${quantity === 1 ? 'seat' : 'seats'}`;
+  // Read off what was charged rather than the first line that has a
+  // quantity, which on a seat change is the credit for the old count —
+  // see `invoiceSeatCount`.
+  const seats = invoiceSeatCount(lines);
+  if (seats) {
+    return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
   }
   return lines.find((line) => line.description)?.description ?? null;
 }
@@ -65,15 +64,17 @@ export interface InvoiceSummary {
 /** What a seat change costs, previewed before anything is committed. */
 export interface SeatChangePreview {
   seats: number;
-  /** Taken now (annual) or added to the next invoice (monthly). */
+  /**
+   * Charged to the card straight away: the rest of this period at the new
+   * seat count, less the part of it already paid for at the old one. A
+   * one-off, and nothing to do with the figures below.
+   */
   proratedNowMinor: number;
-  /** What the next invoice becomes. */
+  /** What every renewal from now on becomes, with the one-off taken out. */
   nextPaymentMinor: number;
   /** What it is today, for an "old → new" line. */
   currentNextPaymentMinor: number;
   currency: string;
-  /** ISO, the date the prorated amount is charged on. */
-  chargedAt: string | null;
 }
 
 /**
@@ -114,28 +115,18 @@ export class SubscriptionService {
   }
 
   /**
-   * `cancel_at_period_end`, not `subscriptions.cancel`: the latter ends it
-   * on the spot and is terminal, taking away a period already paid for.
-   */
-  async setAutoRenew(organisationId: string, on: boolean): Promise<void> {
-    const remote = await this.remote(organisationId);
-    if (!remote) {
-      throw new NotFoundException('This organisation has no subscription.');
-    }
-
-    await this.stripeService.stripe.subscriptions.update(remote.id, {
-      cancel_at_period_end: !on,
-    });
-    this.logger.log(
-      `Organisation ${organisationId} auto-renew ${on ? 'on' : 'off'}.`,
-    );
-  }
-
-  /**
    * What changing the seat count would cost, from Stripe's own invoice
    * preview rather than our arithmetic — proration is Stripe's to calculate
    * and a figure of ours that disagreed with the invoice would be worse
    * than no figure.
+   *
+   * The two costs are pulled apart by **line**, not by subtracting one
+   * preview's total from the other's. A preview's `amount_due` is the
+   * one-off proration and the next renewal added together, so the
+   * difference between two of them is the proration *plus* the recurring
+   * rise — about double what is actually taken today. Raising five annual
+   * seats to six showed "$83.91 charged" against a true $41.90, and a
+   * renewal of "$293.91" against a true $252.00.
    */
   async previewSeatChange(
     organisationId: string,
@@ -152,47 +143,18 @@ export class SubscriptionService {
       this.preview(remote, undefined),
     ]);
 
-    // The difference between the two previews is what the extra seats cost
-    // before the next renewal — Stripe's arithmetic, not ours. Floored at
-    // zero: lowering the seat count produces a credit, which is not a charge
-    // to warn anybody about.
     return {
       seats,
-      proratedNowMinor: Math.max(proposed.amount_due - current.amount_due, 0),
-      nextPaymentMinor: proposed.amount_due,
-      currentNextPaymentMinor: current.amount_due,
+      // Floored at zero: giving up seats earns a credit against the next
+      // invoice, which is not a charge to warn anybody about.
+      proratedNowMinor: Math.max(prorationTotal(proposed.lines.data), 0),
+      nextPaymentMinor: recurringTotal(proposed.lines.data),
+      // Taken the same way rather than off `amount_due`, so an organisation
+      // that already has a proration pending is not shown a "before" figure
+      // with somebody else's one-off baked into it.
+      currentNextPaymentMinor: recurringTotal(current.lines.data),
       currency: remote.currency,
-      chargedAt: proposed.next_payment_attempt
-        ? new Date(proposed.next_payment_attempt * 1000).toISOString()
-        : null,
     };
-  }
-
-  /** Switches between the monthly and annual price, Stripe prorating it. */
-  async switchCycle(
-    organisationId: string,
-    period: BillingPeriod,
-  ): Promise<void> {
-    if (!BILLING_PERIODS.includes(period)) {
-      throw new BadRequestException(`Unknown billing period: ${period}`);
-    }
-    const remote = await this.remote(organisationId);
-    const item = remote?.items.data[0];
-    if (!remote || !item) {
-      throw new NotFoundException('This organisation has no subscription.');
-    }
-
-    await this.stripeService.stripe.subscriptions.update(remote.id, {
-      items: [
-        {
-          id: item.id,
-          price_data: await this.stripeService.priceDataFor(period),
-          quantity: item.quantity ?? 1,
-        },
-      ],
-      proration_behavior: 'create_prorations',
-    });
-    this.logger.log(`Organisation ${organisationId} switched to ${period}.`);
   }
 
   /**
