@@ -23,6 +23,8 @@ import {
 } from "@/lib/manualTimeEditsReportConfig";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import { sumManualTimeEdits } from "@/lib/sumManualTimeEdits";
 import type { ManualTimeEditAction } from "@/types/manualTimeEdit";
@@ -169,6 +171,7 @@ export function ManualTimeEditsReportPage({ organisationId, savedReport }: Manua
           <div className="flex flex-wrap items-center justify-end gap-3">
             <ExportButtons
               csv={reportTableToCsv(columns, rows)}
+              buildPdf={() => reportTableToPdf(columns, rows, title, formatReportRange(range, zone))}
               filenameBase={filenameBase}
               disabled={rows.length === 0}
             />

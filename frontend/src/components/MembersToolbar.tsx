@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { membersToCsv } from "@/lib/membersToCsv";
+import { membersToPdf } from "@/lib/membersToPdf";
 import type { ActiveMemberListItem } from "@/types/membership";
 import { ActionsMenu } from "./ActionsMenu";
+import { ExportButtons } from "./ExportButtons";
 import { ImportMembersModal } from "./ImportMembersModal";
 import { InviteMemberModal } from "./InviteMemberModal";
 import { SearchInput } from "./SearchInput";
@@ -33,30 +34,17 @@ export function MembersToolbar({
   // Your own reset goes through "Forgot password", not this batch.
   const resettable = members.filter((member) => member.userId !== callerUserId);
 
-  function handleExport() {
-    const blob = new Blob([membersToCsv(members, teamNames)], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `members-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <SearchInput value={search} onChange={onSearchChange} placeholder="Search members" />
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={handleExport}
+          <ExportButtons
+            csv={membersToCsv(members, teamNames)}
+            buildPdf={() => membersToPdf(members, teamNames)}
+            filenameBase={`members-${new Date().toISOString().slice(0, 10)}`}
             disabled={members.length === 0}
-            className="flex cursor-pointer items-center gap-1.5 px-2 py-2 text-sm font-medium text-primary hover:text-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <DownloadSimpleIcon size={16} aria-hidden="true" />
-            Export
-          </button>
+          />
           <button
             type="button"
             onClick={() => setOpenModal("import")}

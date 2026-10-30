@@ -11,6 +11,8 @@ import { buildReportTableAttachment } from "@/lib/buildReportTableAttachment";
 import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import type { SavedReport } from "@/types/savedReport";
 import type { SendReportInput } from "@/types/sendReport";
@@ -31,7 +33,7 @@ type DailyTotalsReportPageProps = {
   savedReport?: SavedReport;
 };
 
-/** Reuses the Time and activity report's controls and data, shown as a project-by-day grid. */
+/** Reuses the Time and activity report's controls and data, shown as a member-by-day grid. */
 export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTotalsReportPageProps) {
   const organisationQuery = useCurrentOrganisation();
   const [scheduling, setScheduling] = useState(false);
@@ -118,6 +120,7 @@ export function DailyTotalsReportPage({ organisationId, savedReport }: DailyTota
             <>
               <ExportButtons
                 csv={table ? reportTableToCsv(table.columns, table.rows) : ""}
+                buildPdf={() => reportTableToPdf(table.columns, table.rows, "Daily totals (Weekly)", formatReportRange(range, zone), true)}
                 filenameBase={filenameBase}
                 disabled={!report || report.rows.length === 0}
               />

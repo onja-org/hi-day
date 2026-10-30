@@ -4,7 +4,6 @@ import {
   entryProjectName,
   entryTitle,
   NO_PROJECT_LABEL,
-  UNTITLED_ENTRY_LABEL,
 } from "@/lib/entryProjectDisplay";
 
 const withProject = { projectName: "Website", projectColour: "blue" as const };
@@ -17,8 +16,8 @@ describe("entryProjectDisplay", () => {
     expect(entryProjectColour(withProject)).toBe("blue");
   });
 
-  it("titles a project-less entry neutrally, but labels it plainly in reports", () => {
-    expect(entryTitle(withoutProject)).toBe(UNTITLED_ENTRY_LABEL);
+  it("leaves a project-less entry untitled, but labels it plainly in reports", () => {
+    expect(entryTitle(withoutProject)).toBe("");
     expect(entryProjectName(withoutProject)).toBe(NO_PROJECT_LABEL);
   });
 

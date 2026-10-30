@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldPin } from '../window-pinning';
+import { pinLevel, shouldPin } from '../window-pinning';
 
 describe('which windows float above everything else', () => {
   it('never floats the full window', () => {
@@ -19,5 +19,15 @@ describe('which windows float above everything else', () => {
 
   it('keeps the two small views in step', () => {
     expect(shouldPin('compact', false)).toBe(shouldPin('mini', false));
+  });
+
+  it('clears the taskbar band on Windows', () => {
+    expect(pinLevel('win32')).toBe('pop-up-menu');
+  });
+
+  // The level they already used, so the fix cannot change them.
+  it('leaves macOS and Linux where they were', () => {
+    expect(pinLevel('darwin')).toBe('floating');
+    expect(pinLevel('linux')).toBe('floating');
   });
 });

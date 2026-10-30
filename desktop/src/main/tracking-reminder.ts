@@ -28,6 +28,20 @@ export interface ReminderInput {
    * covers the first nudge and every repeat.
    */
   since: Date;
+  /**
+   * Whether the agent ended this timer itself — an idle timeout, a sleep,
+   * a day boundary, a limit the organisation set — rather than the person
+   * pressing stop. Cleared as soon as a timer runs again.
+   */
+  stoppedByAgent: boolean;
+  /**
+   * Whether an idle stretch is waiting to be kept or discarded (main holds
+   * one on disk for as long as the question is open). Read as late as the
+   * caller can: a timeout reached mid-tick must not get a reminder laid
+   * over its question. Kept alongside `stoppedByAgent` because it survives
+   * a relaunch, where that flag starts again at false.
+   */
+  awaitingIdleAnswer: boolean;
 }
 
 /**
@@ -59,11 +73,25 @@ export function hasTrackedFullWorkDay(
  * first nudge and keeps working untracked is exactly who it is for.
  */
 export function shouldRemind(input: ReminderInput): boolean {
-  const { settings, now, isTracking, idleSeconds, since } = input;
+  const {
+    settings,
+    now,
+    isTracking,
+    idleSeconds,
+    since,
+    stoppedByAgent,
+    awaitingIdleAnswer,
+  } = input;
 
   if (!settings) return false;
   if (settings.intervalMinutes <= 0) return false;
   if (isTracking) return false;
+  // Only ever about a stop the person chose. A timer the agent stopped has
+  // already explained itself where it happened — the idle question, the
+  // limit dialog, the idle notice — and saying "you are not tracking"
+  // because of something the app did reads as an accusation.
+  if (stoppedByAgent) return false;
+  if (awaitingIdleAnswer) return false;
   if (idleSeconds > PRESENCE_IDLE_LIMIT_SECONDS) return false;
 
   const elapsedMinutes = (now.getTime() - since.getTime()) / 60_000;

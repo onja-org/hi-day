@@ -4,12 +4,12 @@ import { dailyTotalsTable } from "@/lib/dailyTotalsTable";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
-function entry(projectId: string, projectName: string, startedAt: string, endedAt: string): TimeEntryListItem {
+function entry(membershipId: string, memberName: string, startedAt: string, endedAt: string): TimeEntryListItem {
   return {
-    id: `${projectId}-${startedAt}`,
-    membershipId: "m-1",
-    projectId,
-    projectName,
+    id: `${membershipId}-${startedAt}`,
+    membershipId,
+    projectId: "p-1",
+    projectName: "Website",
     projectColour: "blue",
     taskId: null,
     taskName: null,
@@ -22,8 +22,8 @@ function entry(projectId: string, projectName: string, startedAt: string, endedA
     durationSeconds: (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000,
     type: "normal",
     activePercentage: null,
-    memberName: "Sam",
-    memberEmail: "sam@example.test",
+    memberName,
+    memberEmail: null,
     canEdit: true,
     canDelete: true,
     pauses: [],
@@ -36,14 +36,14 @@ const range = { from: new Date(2026, 9, 5), to: new Date(2026, 9, 6, 23, 59, 59)
 
 describe("dailyTotalsTable", () => {
   const report = buildDailyTotalsReport(
-    [entry("p1", "Website", day(5, 9), day(5, 11)), entry("p2", "Mobile, iOS", day(6, 9), day(6, 10))],
+    [entry("m-1", "Sam", day(5, 9), day(5, 11)), entry("m-2", "Lee, Jo", day(6, 9), day(6, 10))],
     range,
   );
   const table = dailyTotalsTable(report);
 
-  it("puts the project column first and the totals last, with a daily total row at the end", () => {
+  it("puts the member column first and the totals last, with a daily total row at the end", () => {
     expect(table.columns.map((c) => c.header)).toEqual([
-      "Project / Work order",
+      "Member",
       ...report.columns.map((c) => c.header),
       "Time Off",
       "Total worked",
@@ -54,8 +54,8 @@ describe("dailyTotalsTable", () => {
   it('exports CSV with "-" for empty cells, matching the old Daily totals export', () => {
     const lines = [
       // "-" is escaped as a spreadsheet formula trigger by toCsvString.
-      `Website,02:00:00,'-,'-,02:00:00`,
-      `"Mobile, iOS",'-,01:00:00,'-,01:00:00`,
+      `Sam,02:00:00,'-,'-,02:00:00`,
+      `"Lee, Jo",'-,01:00:00,'-,01:00:00`,
       `Daily total,02:00:00,01:00:00,'-,03:00:00`,
     ];
     // The day headings are locale-formatted, so only the body lines are compared verbatim.

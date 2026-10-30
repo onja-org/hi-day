@@ -329,6 +329,9 @@ const api = {
   windowControls: {
     minimise: (): Promise<void> =>
       ipcRenderer.invoke("window:minimise") as Promise<void>,
+    /** A quiet desktop notification for a start or stop made from the tray. */
+    timerNotice: (body: string): Promise<void> =>
+      ipcRenderer.invoke("window:timerNotice", body) as Promise<void>,
     show: (): Promise<void> =>
       ipcRenderer.invoke("window:show") as Promise<void>,
     // Hides to the tray; tracking keeps running.

@@ -212,6 +212,7 @@ declare global {
     windowControls: {
         minimise: () => Promise<void>;
         show: () => Promise<void>;
+        timerNotice: (body: string) => Promise<void>;
         close: () => Promise<void>;
         setMode: (
           mode: "full" | "compact" | "mini",

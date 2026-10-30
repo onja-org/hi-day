@@ -12,6 +12,8 @@ import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { buildWorkSessionsRows } from "@/lib/buildWorkSessionsRows";
 import { reportFilenameBase } from "@/lib/reportFilenameBase";
 import { reportTableToCsv } from "@/lib/reportTableToCsv";
+import { formatReportRange } from "@/lib/formatReportRange";
+import { reportTableToPdf } from "@/lib/reportTableToPdf";
 import { sendReportFile } from "@/lib/sendReportFile";
 import { isWorkSessionsGrouping, workSessionsColumns } from "@/lib/workSessionsReportConfig";
 import type { SavedReport } from "@/types/savedReport";
@@ -130,6 +132,7 @@ export function WorkSessionsReportPage({ organisationId, savedReport }: WorkSess
             <>
               <ExportButtons
                 csv={rows ? reportTableToCsv(columns, rows) : ""}
+                buildPdf={() => reportTableToPdf(columns, rows ?? [], "Work sessions report", formatReportRange(range, zone))}
                 filenameBase={filenameBase}
                 disabled={!rows || rows.length === 0}
               />
