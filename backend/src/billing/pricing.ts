@@ -18,6 +18,13 @@ export interface CloudPrice {
 export const BILLING_PERIODS: BillingPeriod[] = ['monthly', 'annual'];
 
 /**
+ * What the Stripe Product is called. Prices are passed inline from the
+ * constants below, but a Product is still needed to hang them off, and this
+ * is how it is found again rather than duplicated on every restart.
+ */
+export const CLOUD_PRODUCT_NAME = 'Hi Day Cloud';
+
+/**
  * Annual is one yearly charge of $42.00 a seat, not $3.50 billed twelve
  * times — the $3.50 the page leads with is this divided by twelve. Writing it
  * the other way round advertises one number and charges twelve times another.

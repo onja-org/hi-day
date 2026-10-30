@@ -115,7 +115,10 @@ export class CheckoutService {
     const subscription = await this.stripeService.stripe.subscriptions.create({
       customer: customer.id,
       items: [
-        { price: this.stripeService.priceIdFor(period), quantity: seats },
+        {
+          price_data: await this.stripeService.priceDataFor(period),
+          quantity: seats,
+        },
       ],
       // No `trial_end`: paying ends the trial immediately and the paid
       // period starts today, so Stripe raises a full invoice now rather than
@@ -262,7 +265,10 @@ export class CheckoutService {
     const session = await this.stripeService.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [
-        { price: this.stripeService.priceIdFor(period), quantity: count },
+        {
+          price_data: await this.stripeService.priceDataFor(period),
+          quantity: count,
+        },
       ],
       // Read back on the webhook: it is the only link from a Stripe object to
       // the Organisation that paid for it.

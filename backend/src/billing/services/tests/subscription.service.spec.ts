@@ -32,7 +32,8 @@ function serviceFor({
     } as never,
     {
       isConfigured: true,
-      priceIdFor: (period: string) => `price_${period}`,
+      priceDataFor: (period: string) =>
+        Promise.resolve({ product: 'prod_1', recurring: { interval: period } }),
       stripe: {
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({
@@ -125,7 +126,7 @@ describe('previewing a seat change', () => {
       } as never,
       {
         isConfigured: true,
-        priceIdFor: () => 'price_annual',
+        priceDataFor: () => Promise.resolve({ product: 'prod_1' }),
         stripe: {
           subscriptions: {
             retrieve: jest.fn().mockResolvedValue({
@@ -171,8 +172,16 @@ describe('switching cycle', () => {
 
     await service.switchCycle('org-1', 'monthly');
 
+    // The amount is passed inline from `CLOUD_PRICES` rather than naming a
+    // Price object, so nothing has to exist in Stripe before this works.
     expect(update).toHaveBeenCalledWith('sub_1', {
-      items: [{ id: 'si_1', price: 'price_monthly', quantity: 50 }],
+      items: [
+        {
+          id: 'si_1',
+          price_data: { product: 'prod_1', recurring: { interval: 'monthly' } },
+          quantity: 50,
+        },
+      ],
       proration_behavior: 'create_prorations',
     });
   });

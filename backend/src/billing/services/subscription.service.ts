@@ -186,7 +186,7 @@ export class SubscriptionService {
       items: [
         {
           id: item.id,
-          price: this.stripeService.priceIdFor(period),
+          price_data: await this.stripeService.priceDataFor(period),
           quantity: item.quantity ?? 1,
         },
       ],

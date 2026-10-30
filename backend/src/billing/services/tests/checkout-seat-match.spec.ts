@@ -15,7 +15,7 @@ function serviceFor(authoritativeSeats: number) {
     {
       isConfigured: true,
       isFree: () => false,
-      priceIdFor: () => 'price_1',
+      priceDataFor: () => Promise.resolve({ product: 'prod_1' }),
       stripe: {},
     } as never,
     {
