@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateOrganisation } from "@/lib/updateOrganisation";
 import { CURRENT_ORGANISATION_QUERY_KEY } from "@/hooks/useCurrentOrganisation";
+import { BillingDetailRow } from "./BillingDetailRow";
 
-type BillingEmailCardProps = {
+type BillingEmailRowProps = {
   organisationId: number;
   /** Null when none is set — receipts then go to the founder's own address. */
   billingEmail: string | null;
@@ -21,12 +22,15 @@ type BillingEmailCardProps = {
  * the two are different addresses, and this is the one our own mail uses.
  * Clearing it falls back to the address the account was created with, which
  * is why the field is never required.
+ *
+ * Edits in place, in the row's own value slot, so the line being changed is
+ * the line being read.
  */
-export function BillingEmailCard({
+export function BillingEmailRow({
   organisationId,
   billingEmail,
   fallbackEmail,
-}: BillingEmailCardProps) {
+}: BillingEmailRowProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(billingEmail ?? "");
@@ -53,32 +57,13 @@ export function BillingEmailCard({
     },
   });
 
-  const shown = billingEmail ?? fallbackEmail ?? "—";
-
-  return (
-    <div className="rounded-brand-sm border-2 border-ink bg-white p-5">
-      <h3 className="text-sm font-bold text-primary-dark">Billing email</h3>
-      <p className="mt-0.5 text-xs text-slate-900/60">
-        Where receipts and billing notices are sent
-      </p>
-
-      {editing ? (
-        <div className="mt-3 flex flex-col gap-2">
-          <label className="sr-only" htmlFor="billing-email">
-            Billing email
-          </label>
-          <input
-            id="billing-email"
-            type="email"
-            value={draft}
-            placeholder={fallbackEmail ?? "billing@yourcompany.com"}
-            onChange={(event) => setDraft(event.target.value)}
-            className="h-11 rounded-brand-sm border-2 border-ink bg-white px-3 text-sm text-ink placeholder:text-slate-900/40 focus:border-primary focus:outline-none"
-          />
-          <p className="text-xs text-slate-900/60">
-            Leave it empty to use the account email.
-          </p>
-          <div className="flex justify-end gap-2">
+  if (editing) {
+    return (
+      <BillingDetailRow
+        title="Billing email"
+        hint="Leave it empty to use the account email"
+        action={
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => {
@@ -98,30 +83,44 @@ export function BillingEmailCard({
               {save.isPending ? "Saving…" : "Save"}
             </button>
           </div>
-        </div>
-      ) : (
-        <>
-          <p className="mt-3 rounded-brand-sm bg-cream/60 px-3 py-2 font-data text-sm font-bold break-all text-primary-dark">
-            {shown}
-          </p>
-          {/* Says which of the two is in play, so nobody has to guess whether
-              their own address is the one receipts reach. */}
-          <p className="mt-1 text-xs text-slate-900/60">
-            {billingEmail
-              ? "Set for this organisation."
-              : "Using the account email. Set one to send receipts elsewhere."}
-          </p>
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-3 text-sm font-bold text-ink transition-colors hover:bg-cream"
-            >
-              {billingEmail ? "Change" : "Add"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+        }
+      >
+        <label className="sr-only" htmlFor="billing-email">
+          Billing email
+        </label>
+        <input
+          id="billing-email"
+          type="email"
+          value={draft}
+          placeholder={fallbackEmail ?? "billing@yourcompany.com"}
+          onChange={(event) => setDraft(event.target.value)}
+          className="h-11 w-full rounded-brand-sm border-2 border-ink bg-white px-3 font-sans text-sm font-normal text-ink placeholder:text-slate-900/40 focus:border-primary focus:outline-none"
+        />
+      </BillingDetailRow>
+    );
+  }
+
+  return (
+    <BillingDetailRow
+      title="Billing email"
+      // Says which of the two is in play, so nobody has to guess whether
+      // their own address is the one receipts reach.
+      hint={
+        billingEmail
+          ? "Receipts and billing notices"
+          : "Using the account email"
+      }
+      action={
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-3 text-sm font-bold text-ink transition-colors hover:bg-cream"
+        >
+          {billingEmail ? "Change" : "Add"}
+        </button>
+      }
+    >
+      {billingEmail ?? fallbackEmail ?? "—"}
+    </BillingDetailRow>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { useSeatsFullConsent } from "@/hooks/useSeatsFullConsent";
 import { PENDING_INVITATIONS_QUERY_KEY } from "@/hooks/usePendingInvitations";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjects } from "@/hooks/useProjects";
@@ -12,6 +13,7 @@ import { formatMembershipRole } from "@/lib/formatMembershipRole";
 import { inviteMembers } from "@/lib/inviteMembers";
 import { parseInviteEmails } from "@/lib/parseInviteEmails";
 import type { MembershipRole } from "@/types/membership";
+import { SeatsFullConsent } from "@/components/billing/SeatsFullConsent";
 import { CheckboxDropdownField } from "@/components/CheckboxDropdownField";
 import { InviteEmailsField } from "@/components/InviteEmailsField";
 import { InviteResultsList } from "@/components/InviteResultsList";
@@ -32,6 +34,9 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
   const teamsQuery = useOrganisationTeams(organisationId);
   const projectsQuery = useProjects(organisationId, { status: "active" });
   const organisationQuery = useCurrentOrganisation();
+  // Every paid seat taken means each acceptance is charged on arrival, so
+  // sending is held until an admin agrees to that.
+  const consent = useSeatsFullConsent(organisationId);
   const roles =
     organisationQuery.data?.role === "admin" ? ADMIN_INVITABLE_ROLES : MANAGER_INVITABLE_ROLES;
   const [projectIds, setProjectIds] = useState<Set<string>>(new Set());
@@ -69,7 +74,7 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
     const emails = parseInviteEmails(emailsText);
     const role = String(formData.get("role") ?? "member") as MembershipRole;
 
-    if (emails.length === 0) {
+    if (emails.length === 0 || consent.blocked) {
       return;
     }
 
@@ -122,9 +127,17 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
         />
       )}
 
+      {consent.required && (
+        <SeatsFullConsent
+          purchasedSeats={consent.purchasedSeats}
+          agreed={consent.agreed}
+          onAgreedChange={consent.setAgreed}
+        />
+      )}
+
       <button
         type="submit"
-        disabled={mutation.isPending}
+        disabled={mutation.isPending || consent.blocked}
         className="flex cursor-pointer items-center justify-center gap-2 rounded-brand-sm bg-primary px-4 h-11 text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50 border-2 border-ink font-bold"
       >
         {mutation.isPending && <Spinner />}

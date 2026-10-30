@@ -5,7 +5,7 @@ function serviceFor(
   memberCount: number,
   purchasedSeats: number | null,
   /** Present once the Organisation has paid, which is what `pushQuantity` needs. */
-  stripe?: { interval: 'month' | 'year' },
+  stripe?: { interval: 'month' | 'year'; currentQuantity?: number },
 ) {
   const update = jest.fn();
   const subscriptionsUpdate = jest.fn().mockResolvedValue({});
@@ -33,7 +33,7 @@ function serviceFor(
               data: [
                 {
                   id: 'si_1',
-                  quantity: purchasedSeats ?? 1,
+                  quantity: stripe?.currentQuantity ?? purchasedSeats ?? 1,
                   price: { recurring: { interval: stripe?.interval } },
                 },
               ],
@@ -56,7 +56,7 @@ describe('BilledSeatsService.forOrganisation', () => {
       memberCount: 4,
       purchasedSeats: 10,
       isOverPurchasedSeats: false,
-      needsOverageAcknowledgement: false,
+      seatsAreFull: false,
     });
   });
 
@@ -69,8 +69,21 @@ describe('BilledSeatsService.forOrganisation', () => {
       memberCount: 14,
       purchasedSeats: 10,
       isOverPurchasedSeats: true,
-      // Nobody has acknowledged it yet, so the banner asks.
-      needsOverageAcknowledgement: true,
+      seatsAreFull: true,
+    });
+  });
+
+  // The case the invite-form consent turns on, and the one neither figure
+  // above catches: exactly full, not yet over.
+  it('reports the seats full at exactly the purchased count', async () => {
+    const { service } = serviceFor(10, 10);
+
+    await expect(service.forOrganisation('org-1')).resolves.toEqual({
+      count: 10,
+      memberCount: 10,
+      purchasedSeats: 10,
+      isOverPurchasedSeats: false,
+      seatsAreFull: true,
     });
   });
 
@@ -83,7 +96,7 @@ describe('BilledSeatsService.forOrganisation', () => {
       memberCount: 7,
       purchasedSeats: null,
       isOverPurchasedSeats: false,
-      needsOverageAcknowledgement: false,
+      seatsAreFull: false,
     });
   });
 });
@@ -111,54 +124,68 @@ describe('BilledSeatsService.setPurchasedSeats', () => {
   });
 });
 
-describe('acknowledging the overage', () => {
-  // Stamped with the count at the time, so growing further asks again and an
-  // acknowledgement can never read as consent to any future bill.
-  it('records the member count it was acknowledged at', async () => {
-    const { service, update } = serviceFor(14, 10);
-
-    await service.acknowledgeOverage('org-1');
-
-    expect(update).toHaveBeenCalledWith(
-      { id: 'org-1' },
-      { seatsOverageAcknowledgedAtMembers: 14 },
-    );
-  });
-});
-
-/**
- * The only path that pushes a quantity, so the proration each cycle needs
- * has to live here. It was in a second method nothing called, while this one
- * sent `none` for both — so an annual customer's extra seats were never
- * prorated at all.
- */
 describe('pushing the quantity to Stripe', () => {
-  it('prorates an annual change and invoices it monthly', async () => {
+  // The point of the whole change: a seat added is a seat paid for now, not
+  // at a renewal weeks away. An admin ticked a box in the invite form saying
+  // exactly this would happen.
+  it('invoices extra seats immediately when the count goes up', async () => {
     const { service, subscriptionsUpdate } = serviceFor(54, 50, {
-      interval: 'year',
+      interval: 'month',
+      currentQuantity: 50,
     });
 
     await service.setPurchasedSeats('org-1', 54);
 
     expect(subscriptionsUpdate).toHaveBeenCalledWith('sub_1', {
       items: [{ id: 'si_1', quantity: 54 }],
-      proration_behavior: 'create_prorations',
+      proration_behavior: 'always_invoice',
+    });
+  });
+
+  it('invoices immediately on an annual plan too, keeping the monthly interval', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(54, 50, {
+      interval: 'year',
+      currentQuantity: 50,
+    });
+
+    await service.setPurchasedSeats('org-1', 54);
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith('sub_1', {
+      items: [{ id: 'si_1', quantity: 54 }],
+      proration_behavior: 'always_invoice',
       pending_invoice_item_interval: { interval: 'month', interval_count: 1 },
     });
   });
 
-  // Monthly carries the new count into the next invoice whole, rather than a
-  // scatter of mid-period credits to reconcile.
-  it('carries a monthly change into the next invoice', async () => {
-    const { service, subscriptionsUpdate } = serviceFor(54, 50, {
+  // Deliberately not symmetric with a rise. A monthly drop lands whole on the
+  // next invoice rather than as mid-period credits to reconcile.
+  it('carries a monthly drop into the next invoice', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(40, 40, {
       interval: 'month',
+      currentQuantity: 50,
     });
 
-    await service.setPurchasedSeats('org-1', 54);
+    await service.setPurchasedSeats('org-1', 40);
 
     expect(subscriptionsUpdate).toHaveBeenCalledWith('sub_1', {
-      items: [{ id: 'si_1', quantity: 54 }],
+      items: [{ id: 'si_1', quantity: 40 }],
       proration_behavior: 'none',
+    });
+  });
+
+  // A year is too long to leave a credit unrecorded, so annual still prorates.
+  it('credits an annual drop against the next invoice', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(40, 40, {
+      interval: 'year',
+      currentQuantity: 50,
+    });
+
+    await service.setPurchasedSeats('org-1', 40);
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith('sub_1', {
+      items: [{ id: 'si_1', quantity: 40 }],
+      proration_behavior: 'create_prorations',
+      pending_invoice_item_interval: { interval: 'month', interval_count: 1 },
     });
   });
 
@@ -166,6 +193,7 @@ describe('pushing the quantity to Stripe', () => {
   it('pushes the larger of the purchase and the team', async () => {
     const { service, subscriptionsUpdate } = serviceFor(80, 50, {
       interval: 'month',
+      currentQuantity: 50,
     });
 
     await service.setPurchasedSeats('org-1', 50);
@@ -174,5 +202,76 @@ describe('pushing the quantity to Stripe', () => {
       'sub_1',
       expect.objectContaining({ items: [{ id: 'si_1', quantity: 80 }] }),
     );
+  });
+
+  // Nothing moved, so nothing to invoice — and no charge raised for a join
+  // that filled a seat already bought and paid for.
+  it('says nothing to Stripe when the count has not moved', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(50, 50, {
+      interval: 'month',
+      currentQuantity: 50,
+    });
+
+    await service.setPurchasedSeats('org-1', 50);
+
+    expect(subscriptionsUpdate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The seats an Organisation *owns*, once a join has been charged for. Without
+ * this the Subscription tab sat on "9 of 8 seats in use — 1 over" and went on
+ * offering to cover the ninth "on your next payment", after the $41.90 for it
+ * had already been taken.
+ */
+describe('owning the seats a charge paid for', () => {
+  it('writes the purchase up to the charged count when somebody joins', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(9, 8, {
+      interval: 'year',
+      currentQuantity: 8,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({ proration_behavior: 'always_invoice' }),
+    );
+    expect(update).toHaveBeenCalledWith({ id: 'org-1' }, { purchasedSeats: 9 });
+  });
+
+  // Seats bought ahead are a floor. Somebody leaving must not quietly hand
+  // back a seat that was paid to be held open.
+  it('leaves the purchase alone when the count falls', async () => {
+    const { service, update } = serviceFor(6, 9, {
+      interval: 'year',
+      currentQuantity: 9,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  // A join filling a seat already bought changes no money, so it owns nothing new.
+  it('leaves the purchase alone when a bought seat is simply filled', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(5, 8, {
+      interval: 'year',
+      currentQuantity: 8,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  // Nothing was charged, so nothing is owned — the figure would be a lie.
+  it('leaves the purchase alone where there is no provider subscription', async () => {
+    const { service, update } = serviceFor(9, 8);
+
+    await service.syncToProvider('org-1');
+
+    expect(update).not.toHaveBeenCalled();
   });
 });

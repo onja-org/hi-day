@@ -384,8 +384,12 @@ function SeatsInUse({
         />
       </div>
 
+      {/* Not "covered on your next payment": an extra seat is invoiced and
+          charged as the person joins, so the next payment is where it
+          recurs, not where it first appears. */}
       <p className="mt-3 text-sm text-slate-900/60">
-        Members beyond your seats are covered on your next payment.
+        Anyone who joins beyond your seats is charged straight away, for the
+        rest of this period.
       </p>
     </div>
   );

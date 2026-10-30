@@ -39,14 +39,6 @@ export function getSubscription(organisationId: number | string) {
   );
 }
 
-/** Off sets Stripe's `cancel_at_period_end`; on clears it. */
-export function setAutoRenew(organisationId: number | string, on: boolean) {
-  return call<PaidSubscription | null>(
-    `/organisations/${organisationId}/billing/auto-renew`,
-    { method: "PUT", body: JSON.stringify({ on }) },
-  );
-}
-
 export function previewSeatChange(
   organisationId: number | string,
   seats: number,
@@ -54,16 +46,6 @@ export function previewSeatChange(
   return call<SeatChangePreview>(
     `/organisations/${organisationId}/billing/seats/preview`,
     { method: "POST", body: JSON.stringify({ seats }) },
-  );
-}
-
-export function switchCycle(
-  organisationId: number | string,
-  period: "monthly" | "annual",
-) {
-  return call<PaidSubscription | null>(
-    `/organisations/${organisationId}/billing/cycle`,
-    { method: "PUT", body: JSON.stringify({ period }) },
   );
 }
 

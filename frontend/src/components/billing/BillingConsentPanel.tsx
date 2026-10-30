@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import { BillingConsentNotice } from "./BillingConsentNotice";
 
 type BillingConsentPanelProps = {
   title: string;
@@ -56,79 +56,63 @@ export function BillingConsentPanel({
         onCancel ? "bg-cream/60" : "bg-sun",
       )}
     >
-      <p className="flex items-start gap-2 text-sm text-slate-900">
-        {!onCancel && (
-          <WarningCircleIcon
-            size={20}
-            weight="bold"
-            aria-hidden="true"
-            className="mt-0.5 shrink-0 text-primary-dark"
-          />
-        )}
-        <span>
-          <strong className="font-bold text-primary-dark">{title}</strong>{" "}
-          {description}
-        </span>
-      </p>
-
-      {rows && rows.length > 0 && (
-        <dl className="mt-3 flex flex-col gap-2 border-t-2 border-ink/10 pt-3 text-sm">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="flex items-baseline justify-between gap-4"
-            >
-              <dt
-                className={
-                  row.strong
-                    ? "font-bold text-primary-dark"
-                    : "text-slate-900/60"
-                }
+      <BillingConsentNotice
+        title={title}
+        description={description}
+        agreed={agreed}
+        onAgreedChange={setAgreed}
+        // The panel itself is the warning when there is nothing to cancel;
+        // a second icon inside it would say the same thing twice.
+        showIcon={!onCancel}
+        actions={
+          <>
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={busy}
+                className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {row.label}
-              </dt>
-              <dd className="font-data font-bold text-primary-dark">
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-
-      {children}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t-2 border-ink/10 pt-3">
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-900">
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(event) => setAgreed(event.target.checked)}
-            className="h-4 w-4 cursor-pointer accent-primary"
-          />
-          I understand my bill will change.
-        </label>
-
-        <div className="flex flex-wrap gap-3">
-          {onCancel && (
+                Cancel
+              </button>
+            )}
             <button
               type="button"
-              onClick={onCancel}
-              disabled={busy}
-              className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onConfirm}
+              disabled={!agreed || !confirmable || busy}
+              className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Cancel
+              {busy ? "Saving…" : confirmLabel}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!agreed || !confirmable || busy}
-            className="flex h-10 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy ? "Saving…" : confirmLabel}
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      >
+        {rows && rows.length > 0 && (
+          <dl className="mt-3 flex flex-col gap-2 border-t-2 border-ink/10 pt-3 text-sm">
+            {rows.map((row) => (
+              <div
+                key={row.label}
+                className="flex items-baseline justify-between gap-4"
+              >
+                <dt
+                  className={
+                    row.strong
+                      ? "font-bold text-primary-dark"
+                      : "text-slate-900/60"
+                  }
+                >
+                  {row.label}
+                </dt>
+                <dd className="font-data font-bold text-primary-dark">
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        {children}
+      </BillingConsentNotice>
     </div>
   );
 }

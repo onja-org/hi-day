@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { CreditCardIcon, DownloadSimpleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useInvoices } from "@/hooks/useInvoices";
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { BillingEmailCard } from "./BillingEmailCard";
+import { BillingDetailRow } from "./BillingDetailRow";
+import { BillingEmailRow } from "./BillingEmailRow";
 import { openBillingPortal } from "@/lib/subscriptionApi";
 import { formatShortDate } from "@/lib/formatShortDate";
 import { formatMoney } from "@/lib/seatPricing";
+import { seatOccupancy } from "@/lib/seats";
 import { ErrorMessage } from "../ErrorMessage";
 import { InfoMessage } from "../InfoMessage";
 import { Spinner } from "../Spinner";
@@ -88,22 +90,29 @@ export function BillingInfoSettings({
     );
   }
 
+  // Cancelled or ended means there is no next date and no promise to make
+  // about one, which both the date and the pill have to agree on.
+  const willRenew = !subscription.cancelAtPeriodEnd && !subscription.isEnded;
+  const seats = seatOccupancy(subscription.memberCount, subscription.seatsPaid);
+
   return (
     <div className="flex flex-col gap-6">
       <section>
         <h2 className="font-display text-xl font-extrabold tracking-heading text-primary-dark">
-          Billing info
+          Billing details
         </h2>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <InfoCard
+        <div className="mt-4 divide-y-2 divide-ink/10 rounded-brand border-2 border-ink bg-white">
+          {/* First: the one line here anybody came to change. */}
+          <BillingEmailRow
+            organisationId={organisationId}
+            billingEmail={organisationQuery.data?.billingEmail ?? null}
+            fallbackEmail={organisationQuery.data?.ownerEmail ?? null}
+          />
+
+          <BillingDetailRow
             title="Payment method"
-            hint="The card Stripe charges each period"
-            value={
-              subscription.card
-                ? `${subscription.card.brand} •••• ${subscription.card.last4}`
-                : "No payment method on file"
-            }
+            hint="Charged each period"
             action={
               <button
                 type="button"
@@ -114,37 +123,58 @@ export function BillingInfoSettings({
                 {opening ? "Opening…" : subscription.card ? "Update" : "Add"}
               </button>
             }
-          />
+          >
+            {subscription.card ? (
+              <span className="flex items-center gap-2">
+                <CreditCardIcon size={18} aria-hidden="true" className="shrink-0" />
+                {subscription.card.brand} •••• {subscription.card.last4}
+              </span>
+            ) : (
+              "No payment method on file"
+            )}
+          </BillingDetailRow>
 
-          <InfoCard
+          {/* The renewal promise sits with the date it is about. Auto-renew
+              is not a choice offered here, so the pill reports it rather
+              than offering to change it — that is the Customer Portal. */}
+          <BillingDetailRow
             title="Next billing date"
-            hint="When your next charge will occur"
-            value={
-              subscription.cancelAtPeriodEnd || subscription.isEnded
-                ? "—"
-                : subscription.currentPeriodEnd
-                  ? formatShortDate(subscription.currentPeriodEnd)
-                  : "—"
+            hint={willRenew ? "Renews automatically" : "This subscription will not renew"}
+            action={
+              <span
+                className={clsx(
+                  "inline-flex items-center rounded-full border-2 px-3 py-1 text-xs font-extrabold",
+                  willRenew
+                    ? "border-success bg-success/10 text-success"
+                    : "border-ink bg-sun text-ink",
+                )}
+              >
+                {willRenew ? "Auto-renew on" : "Auto-renew off"}
+              </span>
             }
-          />
+          >
+            {willRenew && subscription.currentPeriodEnd
+              ? formatShortDate(subscription.currentPeriodEnd)
+              : "—"}
+          </BillingDetailRow>
 
-          <InfoCard
-            title="Billing cycle"
-            hint="Change it from the Subscription tab"
-            value={subscription.plan === "annual" ? "Annual" : "Monthly"}
-          />
-
-          <InfoCard
+          <BillingDetailRow
             title="Seats"
-            hint="Members against the seats you pay for"
-            value={`${subscription.memberCount} of ${subscription.seatsPaid}`}
-          />
-
-          <BillingEmailCard
-            organisationId={organisationId}
-            billingEmail={organisationQuery.data?.billingEmail ?? null}
-            fallbackEmail={organisationQuery.data?.ownerEmail ?? null}
-          />
+            hint="Members against seats you pay for"
+          >
+            <span className="flex flex-wrap items-center gap-3">
+              {subscription.memberCount} of {subscription.seatsPaid}
+              <span className="h-3 w-32 overflow-hidden rounded-full bg-ink/10">
+                <span
+                  className={clsx(
+                    "block h-full rounded-full",
+                    seats.overBy > 0 ? "bg-sun" : "bg-primary",
+                  )}
+                  style={{ width: `${seats.fraction * 100}%` }}
+                />
+              </span>
+            </span>
+          </BillingDetailRow>
         </div>
       </section>
 
@@ -191,29 +221,6 @@ function Loading({ label }: { label: string }) {
       <Spinner className="text-primary-dark" />
       {label}
     </p>
-  );
-}
-
-function InfoCard({
-  title,
-  hint,
-  value,
-  action,
-}: {
-  title: string;
-  hint: string;
-  value: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-brand-sm border-2 border-ink bg-white p-5">
-      <h3 className="text-sm font-bold text-primary-dark">{title}</h3>
-      <p className="mt-0.5 text-xs text-slate-900/60">{hint}</p>
-      <p className="mt-3 rounded-brand-sm bg-cream/60 px-3 py-2 font-data text-sm font-bold text-primary-dark">
-        {value}
-      </p>
-      {action && <div className="mt-3 flex justify-end">{action}</div>}
-    </div>
   );
 }
 

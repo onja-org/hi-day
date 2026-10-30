@@ -2,8 +2,8 @@ import {
   billedSeatCount,
   isOverPurchasedSeats,
   MAX_PURCHASABLE_SEATS,
-  needsOverageAcknowledgement,
   parseSeatCount,
+  seatsAreFull,
 } from '../seats';
 
 describe('billedSeatCount', () => {
@@ -61,32 +61,24 @@ describe('parseSeatCount', () => {
   });
 });
 
-describe('needsOverageAcknowledgement', () => {
-  it('asks the first time the team goes over', () => {
-    expect(needsOverageAcknowledgement(50, 54, null)).toBe(true);
+describe('seatsAreFull', () => {
+  // The distinction from isOverPurchasedSeats, and the reason this exists:
+  // consent has to be asked before the seat is exceeded, not after.
+  it('is true at exactly the purchased count, where the next arrival costs', () => {
+    expect(seatsAreFull(5, 5)).toBe(true);
+    expect(isOverPurchasedSeats(5, 5)).toBe(false);
   });
 
-  it('stops asking once that count is acknowledged', () => {
-    expect(needsOverageAcknowledgement(50, 54, 54)).toBe(false);
+  it('is true past the purchased count too', () => {
+    expect(seatsAreFull(5, 9)).toBe(true);
   });
 
-  // Saying "understood" about 54 is not saying it about 80: the figure on
-  // the next invoice is not the same figure.
-  it('asks again when the team grows further', () => {
-    expect(needsOverageAcknowledgement(50, 80, 54)).toBe(true);
+  it('is false while there are seats going spare', () => {
+    expect(seatsAreFull(5, 4)).toBe(false);
   });
 
-  it('does not ask again when the team shrinks but stays over', () => {
-    expect(needsOverageAcknowledgement(50, 60, 80)).toBe(false);
-  });
-
-  it('never asks while the team fits the seats', () => {
-    expect(needsOverageAcknowledgement(50, 50, null)).toBe(false);
-    expect(needsOverageAcknowledgement(50, 10, null)).toBe(false);
-  });
-
-  // Nothing was promised, so nothing is exceeded — every trial is here.
-  it('never asks where no seats were bought', () => {
-    expect(needsOverageAcknowledgement(null, 500, null)).toBe(false);
+  // Nothing bought, so nothing used up — and nothing charged until a plan is.
+  it('is false for an organisation that never bought seats', () => {
+    expect(seatsAreFull(null, 40)).toBe(false);
   });
 });

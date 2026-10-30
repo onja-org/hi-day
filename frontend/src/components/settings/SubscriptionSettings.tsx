@@ -70,10 +70,7 @@ export function SubscriptionSettings({
         !isFree &&
         (trialQuery.data.trial.isPaid ? (
           subscriptionQuery.data ? (
-            <SubscriptionCard
-              organisationId={organisationId}
-              subscription={subscriptionQuery.data}
-            />
+            <SubscriptionCard subscription={subscriptionQuery.data} />
           ) : subscriptionQuery.isLoading ? null : (
             /* Paid here, but Stripe has nothing to show — a webhook that
                never landed, or a subscription since deleted. Says so rather

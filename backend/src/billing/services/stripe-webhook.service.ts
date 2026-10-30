@@ -13,7 +13,8 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
-import { invoiceRecipient } from '../billing-recipients';
+import { billingRecipients, invoiceRecipient } from '../billing-recipients';
+import { declineReason } from '../payment-failure';
 import { formatMinor } from '../pricing';
 import { ORGANISATION_METADATA_KEY } from './checkout.service';
 import { StripeService } from './stripe.service';
@@ -117,14 +118,8 @@ export class StripeWebhookService {
       case 'invoice.paid':
       case 'invoice.payment_succeeded':
         return this.onInvoicePaid(event.data.object);
-      // Nothing to store for either: the Billing page reads the failure
-      // straight off the subscription's status, and Stripe's Smart Retries
-      // own the recovery. Logged so a failing renewal is visible in ours.
       case 'invoice.payment_failed':
-        this.logger.warn(
-          `Invoice ${event.data.object.id} failed; Stripe will retry.`,
-        );
-        return;
+        return this.onInvoicePaymentFailed(event.data.object);
       case 'invoice.upcoming':
         this.logger.log(
           `Renewal upcoming for invoice preview ${event.data.object.id ?? '(none)'}.`,
@@ -296,6 +291,104 @@ export class StripeWebhookService {
       this.logger.error(
         `Could not email the receipt for invoice ${invoice.id}: ${String(error)}`,
       );
+    }
+  }
+
+  /**
+   * A declined charge — including the seat charge raised the moment somebody
+   * joined past the purchased seats (see `pushQuantity`).
+   *
+   * Nothing is stored and nothing is undone: a card failing is a billing
+   * problem, not grounds to throw somebody out of an Organisation they were
+   * invited to. Stripe's Smart Retries own the recovery; this handler's one
+   * job is making sure a human who can fix the card hears about it.
+   *
+   * An unplaceable failed invoice is accepted rather than retried, unlike an
+   * unplaceable *paid* one — there is no money to lose track of, and
+   * `stripe trigger` fabricates exactly this shape.
+   */
+  private async onInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
+    const details = invoice.parent?.subscription_details;
+    const organisationId = details?.metadata?.[ORGANISATION_METADATA_KEY];
+
+    const existing = organisationId
+      ? await this.subscriptions.findOne({ where: { organisationId } })
+      : await this.subscriptionForStripeId(details?.subscription);
+
+    if (!existing) {
+      this.logger.warn(
+        `Failed invoice ${invoice.id} matches no organisation; nobody to tell.`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      `Invoice ${invoice.id} failed for organisation ${existing.organisationId}; Stripe will retry.`,
+    );
+
+    // One email per failed attempt, deliberately not deduplicated. This
+    // handler answers 200, so Stripe never redelivers the same attempt —
+    // every one of these is a genuinely new decline worth repeating.
+    try {
+      const organisation = await this.organisations.findOne({
+        where: { id: existing.organisationId },
+        relations: { owner: true },
+      });
+      if (!organisation) return;
+
+      // The owner *and* the billing address, unlike a receipt: the seats are
+      // already being used, so this must not be lost to a typo in an
+      // unverified address — see `billingRecipients`.
+      const to = billingRecipients(
+        organisation.billingEmail,
+        organisation.owner?.email ?? null,
+      );
+      if (to.length === 0) return;
+
+      await this.emailService.sendSeatChargeFailedEmail(
+        to,
+        organisation.name,
+        formatMinor(invoice.amount_due, invoice.currency),
+        await this.declineReasonFor(invoice),
+        invoice.hosted_invoice_url ?? null,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not warn about failed invoice ${invoice.id}: ${String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Why the card was refused, in the issuer's own words.
+   *
+   * Costs an extra call: Stripe moved the PaymentIntent off the Invoice onto
+   * its `payments`, and a webhook body expands neither, so the reason is not
+   * in the event. Falls back to a generic line rather than failing — an
+   * email naming no reason still beats no email.
+   */
+  private async declineReasonFor(invoice: Stripe.Invoice): Promise<string> {
+    if (!invoice.id) return declineReason(null);
+
+    try {
+      const payments = await this.stripeService.stripe.invoicePayments.list({
+        invoice: invoice.id,
+        expand: ['data.payment.payment_intent'],
+      });
+
+      const failed = payments.data
+        .map((payment) => payment.payment.payment_intent)
+        .find(
+          (intent): intent is Stripe.PaymentIntent =>
+            typeof intent === 'object' && intent !== null,
+        );
+
+      return declineReason(failed?.last_payment_error);
+    } catch (error) {
+      this.logger.warn(
+        `Could not read why invoice ${invoice.id} failed: ${String(error)}`,
+      );
+      return declineReason(null);
     }
   }
 

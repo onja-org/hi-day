@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
   Post,
   Put,
   Req,
@@ -129,23 +128,6 @@ export class BillingController {
     return this.subscriptionService.detailsFor(request.organisationId!);
   }
 
-  /**
-   * Auto-renew off sets `cancel_at_period_end`; on clears it. Stripe owns
-   * what follows — it simply stops renewing, and access runs to the period
-   * end exactly as it would have.
-   */
-  @Put('auto-renew')
-  async setAutoRenew(
-    @Req() request: AuthenticatedRequest,
-    @Body('on') on: unknown,
-  ): Promise<PaidSubscriptionDetails | null> {
-    if (typeof on !== 'boolean') {
-      throw new BadRequestException('`on` must be true or false.');
-    }
-    await this.subscriptionService.setAutoRenew(request.organisationId!, on);
-    return this.subscriptionService.detailsFor(request.organisationId!);
-  }
-
   /** What a seat change would cost, from Stripe's own invoice preview. */
   @Post('seats/preview')
   async previewSeats(
@@ -162,16 +144,6 @@ export class BillingController {
       request.organisationId!,
       parsed,
     );
-  }
-
-  /** Monthly or annual, with Stripe prorating the change. */
-  @Put('cycle')
-  async switchCycle(
-    @Req() request: AuthenticatedRequest,
-    @Body('period') period: BillingPeriod,
-  ): Promise<PaidSubscriptionDetails | null> {
-    await this.subscriptionService.switchCycle(request.organisationId!, period);
-    return this.subscriptionService.detailsFor(request.organisationId!);
   }
 
   /** Everything Stripe has billed for, newest first. */
@@ -199,19 +171,6 @@ export class BillingController {
         returnUrl,
       ),
     };
-  }
-
-  /**
-   * Records that an admin understands going over their seats changes the
-   * next invoice. Not a gate on anything: members can be added over the
-   * limit either way, and this only stops the notice repeating itself.
-   */
-  @Post('seats/acknowledge-overage')
-  @HttpCode(200)
-  acknowledgeOverage(
-    @Req() request: AuthenticatedRequest,
-  ): Promise<BilledSeats> {
-    return this.billedSeatsService.acknowledgeOverage(request.organisationId!);
   }
 
   @Get('seats')

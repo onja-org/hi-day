@@ -68,10 +68,11 @@ export type BilledSeats = {
   /** More people than were paid for; what the members banner reads. */
   isOverPurchasedSeats: boolean;
   /**
-   * Over the seats, and no admin has yet said they understand what that
-   * means for the next invoice.
+   * Every purchased seat is taken, so the next person to join is charged
+   * for on arrival. What the consent in the invite forms asks about — true
+   * at exactly the purchased count, not only past it.
    */
-  needsOverageAcknowledgement: boolean;
+  seatsAreFull: boolean;
 };
 
 export type GetBilledSeatsResult =

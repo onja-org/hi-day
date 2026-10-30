@@ -5,11 +5,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
-import {
-  billedSeatCount,
-  isOverPurchasedSeats,
-  needsOverageAcknowledgement,
-} from '../seats';
+import { billedSeatCount, isOverPurchasedSeats, seatsAreFull } from '../seats';
 import { StripeService } from './stripe.service';
 
 export interface BilledSeats {
@@ -25,11 +21,11 @@ export interface BilledSeats {
   /** More people than were paid for; what the members banner reads. */
   isOverPurchasedSeats: boolean;
   /**
-   * Over the seats, and an admin has not said they understand what that
-   * means for the next invoice. Drives the consent banner on the Members
-   * page — see `needsOverageAcknowledgement`.
+   * Every purchased seat is taken, so the next person to join costs money
+   * — what the consent in the invite forms asks about. True at exactly the
+   * purchased count, not only past it (`seatsAreFull`).
    */
-  needsOverageAcknowledgement: boolean;
+  seatsAreFull: boolean;
 }
 
 @Injectable()
@@ -73,11 +69,7 @@ export class BilledSeatsService {
       memberCount,
       purchasedSeats,
       isOverPurchasedSeats: isOverPurchasedSeats(purchasedSeats, memberCount),
-      needsOverageAcknowledgement: needsOverageAcknowledgement(
-        purchasedSeats,
-        memberCount,
-        organisation?.seatsOverageAcknowledgedAtMembers ?? null,
-      ),
+      seatsAreFull: seatsAreFull(purchasedSeats, memberCount),
     };
   }
 
@@ -103,22 +95,6 @@ export class BilledSeatsService {
   }
 
   /**
-   * Records that an admin has read what going over their seats means.
-   *
-   * Stamped with the member count at the time, so growing further asks
-   * again — and so an acknowledgement can never be read as blanket consent
-   * to any future bill.
-   */
-  async acknowledgeOverage(organisationId: string): Promise<BilledSeats> {
-    const { memberCount } = await this.forOrganisation(organisationId);
-    await this.organisations.update(
-      { id: organisationId },
-      { seatsOverageAcknowledgedAtMembers: memberCount },
-    );
-    return this.forOrganisation(organisationId);
-  }
-
-  /**
    * Tells the payment provider how many seats to bill for, after anything
    * that can change the number: an invitation accepted, a member removed or
    * deactivated, a role changed.
@@ -127,6 +103,10 @@ export class BilledSeatsService {
    * configured (a self-hosted install, where `BILLING_ENABLED` is off and no
    * seat sync may happen at all), or the Organisation has no subscription
    * with the provider — which is every Organisation until checkout exists.
+   *
+   * Where the count **rose** the seats were charged for on the spot, so the
+   * purchase is written up to match — otherwise the Organisation stays
+   * permanently "1 over" on a bill it has already paid.
    *
    * Never throws. A seat count that failed to reach Stripe is a billing
    * discrepancy worth logging and retrying; it is not a reason to fail the
@@ -141,8 +121,21 @@ export class BilledSeatsService {
     if (!subscription) return;
 
     try {
-      const { count } = await this.forOrganisation(organisationId);
-      await this.pushQuantity(subscription, count);
+      const { count, purchasedSeats } =
+        await this.forOrganisation(organisationId);
+      const charged = await this.pushQuantity(subscription, count);
+
+      // Only on a rise, and only once the charge is away. Lowering the count
+      // must not quietly give back seats somebody paid to hold.
+      if (charged && count > (purchasedSeats ?? 0)) {
+        await this.organisations.update(
+          { id: organisationId },
+          { purchasedSeats: count },
+        );
+        this.logger.log(
+          `Organisation ${organisationId} now owns ${count} seat(s), charged on arrival.`,
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Failed to sync seat count for organisation ${organisationId}: ${String(error)}`,
@@ -154,29 +147,31 @@ export class BilledSeatsService {
    * Sets the quantity on the Stripe subscription's **item**, which is where
    * Stripe keeps it — the subscription itself has no quantity.
    *
-   * Proration differs by cycle, and this is the only path that pushes a
-   * quantity, so it has to carry both:
+   * The two directions are deliberately not symmetric (ADR 0033):
    *
-   * - **Monthly** — `none`. The new count lands on the next invoice whole,
-   *   rather than as a scatter of mid-period credits to reconcile.
-   * - **Annual** — `create_prorations`, plus `pending_invoice_item_interval`
-   *   of a month, so the part-year charge for extra seats is invoiced at the
-   *   next monthly anniversary instead of sitting unbilled until the year
-   *   turns over.
+   * - **Up** — `always_invoice`, so the seat is paid for as the person
+   *   arrives rather than at a renewal weeks away. An admin ticked a box in
+   *   the invite form saying this would happen.
+   * - **Down** — per cycle, as before. Monthly `none`, so the smaller count
+   *   lands whole on the next invoice instead of as mid-period credits to
+   *   reconcile; annual `create_prorations`, leaving the credit against it.
    *
-   * Nothing to push until checkout has happened, which is every Organisation
-   * on a trial — then the only honest thing is to record what would have
-   * been sent.
+   * `pending_invoice_item_interval` stays set on annual either way: a year
+   * is too long to leave any proration this path did not invoice unbilled.
+   *
+   * A decline does **not** throw — `invoice.payment_failed` arrives moments
+   * later and emails whoever pays the bill. Answers whether a charge was
+   * raised, which tells the caller the seats are now owned.
    */
   private async pushQuantity(
     subscription: Subscription,
     count: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!subscription.stripeSubscriptionId) {
       this.logger.log(
         `Organisation ${subscription.organisationId} bills ${count} seat(s); no provider subscription to update yet.`,
       );
-      return;
+      return false;
     }
 
     const remote = await this.stripeService.stripe.subscriptions.retrieve(
@@ -187,16 +182,23 @@ export class BilledSeatsService {
       this.logger.error(
         `Stripe subscription ${subscription.stripeSubscriptionId} has no items to set a quantity on.`,
       );
-      return;
+      return false;
     }
-    if (item.quantity === count) return;
+    if (item.quantity === count) return false;
 
+    // Null quantity means Stripe never recorded one, which can only be
+    // fewer seats than any count that reaches here — so treat it as a rise.
+    const growing = count > (item.quantity ?? 0);
     const annual = item.price?.recurring?.interval === 'year';
     await this.stripeService.stripe.subscriptions.update(
       subscription.stripeSubscriptionId,
       {
         items: [{ id: item.id, quantity: count }],
-        proration_behavior: annual ? 'create_prorations' : 'none',
+        proration_behavior: growing
+          ? 'always_invoice'
+          : annual
+            ? 'create_prorations'
+            : 'none',
         ...(annual
           ? {
               pending_invoice_item_interval: {
@@ -208,7 +210,9 @@ export class BilledSeatsService {
       },
     );
     this.logger.log(
-      `Organisation ${subscription.organisationId} now bills ${count} seat(s).`,
+      `Organisation ${subscription.organisationId} now bills ${count} seat(s)` +
+        `${growing ? ', charged now' : ''}.`,
     );
+    return growing;
   }
 }

@@ -71,22 +71,6 @@ export class Organisation {
   purchasedSeats: number | null;
 
   /**
-   * The member count an admin last acknowledged being over their seats at.
-   *
-   * Stored as a *count* rather than a flag or a date so the notice comes
-   * back when the team grows again: acknowledging "we are 54 against 50
-   * seats" is not an acknowledgement of being 80 against 50, and the figure
-   * on the next invoice is different. Null until somebody acknowledges one.
-   *
-   * Deliberately not a **Consent record** (see CONTEXT.md): that term is a
-   * per-Device acknowledgement of a specific DisclosureVersion, kept as a
-   * legal audit trail. This is an admin dismissing a billing notice, and
-   * putting it in the same table would make both terms mean less.
-   */
-  @Column({ type: 'integer', nullable: true })
-  seatsOverageAcknowledgedAtMembers: number | null;
-
-  /**
    * Where billing mail goes, and the address on the Stripe Customer. Null
    * means nobody has set one, and the owner's own email answers instead —
    * which is what every Organisation did before this column existed.

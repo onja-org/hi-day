@@ -14,7 +14,6 @@ describe("autoRenewCopy", () => {
       }),
     ).toEqual({
       line: "Renews automatically every year on Aug 29, charged to Visa •••• 4242.",
-      action: "turn-off",
     });
   });
 
@@ -66,7 +65,6 @@ describe("autoRenewCopy", () => {
       }),
     ).toEqual({
       line: "Ends on Sun, Aug 29, 2027. You keep access until then.",
-      action: "turn-on",
     });
   });
 

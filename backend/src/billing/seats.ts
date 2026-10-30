@@ -45,6 +45,27 @@ export function isOverPurchasedSeats(
 }
 
 /**
+ * Whether the seats bought are all taken, so the next person to join is an
+ * extra one.
+ *
+ * `>=`, not `>`: the question is not "are we already over" but "will the
+ * next arrival cost money", and at exactly the purchased count it will.
+ * This is what the consent in the invite forms is asking about, and the
+ * answer has to be true *before* the seat is exceeded — consent obtained
+ * afterwards is a notification.
+ *
+ * False for an Organisation that never bought seats, which is every one on
+ * a trial: there is no purchase to have used up, and nothing is charged
+ * until a plan is chosen.
+ */
+export function seatsAreFull(
+  purchasedSeats: number | null,
+  activeMemberCount: number,
+): boolean {
+  return purchasedSeats !== null && activeMemberCount >= purchasedSeats;
+}
+
+/**
  * Null when the input is not a seat count anybody meant: a fraction, a
  * negative, something that is not a number at all, or a figure past the
  * ceiling. Returning null rather than clamping keeps a typo visible — a
@@ -55,24 +76,4 @@ export function parseSeatCount(value: unknown): number | null {
   if (value < MIN_PURCHASABLE_SEATS) return null;
   if (value > MAX_PURCHASABLE_SEATS) return null;
   return value;
-}
-
-/**
- * Whether the over-seats notice still needs acknowledging.
- *
- * Anchored to the member count it was acknowledged at, not a flag: saying
- * "understood" at 54 members against 50 seats is not saying it about 80
- * against 50, and the figure on the next invoice is not the same figure.
- * Growing further asks again; staying put, or shrinking back inside the
- * purchase, does not.
- */
-export function needsOverageAcknowledgement(
-  purchasedSeats: number | null,
-  activeMemberCount: number,
-  acknowledgedAtMembers: number | null,
-): boolean {
-  if (!isOverPurchasedSeats(purchasedSeats, activeMemberCount)) return false;
-  return (
-    acknowledgedAtMembers === null || activeMemberCount > acknowledgedAtMembers
-  );
 }

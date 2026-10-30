@@ -42,33 +42,3 @@ export async function setBilledSeats(
   const message = Array.isArray(data?.message) ? data.message[0] : data?.message;
   return { ok: false, message: message ?? GENERIC_ERROR_MESSAGE };
 }
-
-/**
- * Records that an admin understands going over their seats changes the next
- * invoice. Not a gate: members can be added over the limit either way, and
- * this only stops the notice repeating itself.
- */
-export async function acknowledgeSeatOverage(
-  organisationId: number | string,
-): Promise<SetBilledSeatsResult> {
-  let response: Response;
-  try {
-    response = await fetch(
-      `${API_URL}/organisations/${organisationId}/billing/seats/acknowledge-overage`,
-      { method: "POST", credentials: "include" },
-    );
-  } catch {
-    return { ok: false, message: GENERIC_ERROR_MESSAGE };
-  }
-
-  const data = (await response.json().catch(() => null)) as
-    | (Partial<BilledSeats> & { message?: string[] | string })
-    | null;
-
-  if (response.ok && typeof data?.count === "number") {
-    return { ok: true, seats: data as BilledSeats, message: "Thanks — noted." };
-  }
-
-  const message = Array.isArray(data?.message) ? data.message[0] : data?.message;
-  return { ok: false, message: message ?? GENERIC_ERROR_MESSAGE };
-}

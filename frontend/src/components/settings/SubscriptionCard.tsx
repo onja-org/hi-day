@@ -1,19 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { ArrowsClockwiseIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
-import { toast } from "sonner";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatShortDate } from "@/lib/formatShortDate";
 import { formatMoney } from "@/lib/seatPricing";
 import { autoRenewCopy } from "@/lib/autoRenewCopy";
-import { setAutoRenew, switchCycle } from "@/lib/subscriptionApi";
-import { subscriptionQueryKey } from "@/hooks/useSubscription";
 import type { PaidSubscription } from "@/types/subscription";
 
 type SubscriptionCardProps = {
-  organisationId: number;
   subscription: PaidSubscription;
 };
 
@@ -24,45 +18,13 @@ type SubscriptionCardProps = {
  * auto-renew is on, the card, and the next payment from Stripe's own invoice
  * preview. None of it is stored or recalculated here, so the page cannot
  * disagree with the invoice.
+ *
+ * Read-only. Neither the billing cycle nor auto-renew can be changed from
+ * here: the renewal line states what will happen, and anything that alters
+ * it is Stripe's Customer Portal, reached from Billing info.
  */
-export function SubscriptionCard({
-  organisationId,
-  subscription,
-}: SubscriptionCardProps) {
-  const queryClient = useQueryClient();
-  const [switching, setSwitching] = useState(false);
-  const { line, action } = autoRenewCopy(subscription);
-  const other = subscription.plan === "annual" ? "monthly" : "annual";
-
-  const refresh = () =>
-    queryClient.invalidateQueries({
-      queryKey: subscriptionQueryKey(organisationId),
-    });
-
-  const renew = useMutation({
-    mutationFn: (on: boolean) => setAutoRenew(organisationId, on),
-    onSuccess: (result, on) => {
-      if (!result.ok) {
-        toast.error(result.message);
-        return;
-      }
-      toast.success(on ? "Auto-renew is back on." : "Auto-renew is off.");
-      void refresh();
-    },
-  });
-
-  const cycle = useMutation({
-    mutationFn: () => switchCycle(organisationId, other),
-    onSuccess: (result) => {
-      setSwitching(false);
-      if (!result.ok) {
-        toast.error(result.message);
-        return;
-      }
-      toast.success(`Switched to ${other} billing.`);
-      void refresh();
-    },
-  });
+export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
+  const { line } = autoRenewCopy(subscription);
 
   return (
     <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
@@ -113,22 +75,16 @@ export function SubscriptionCard({
             : "border-volt-tint bg-volt-tint/40",
         )}
       >
+        {/* A statement, not a control. It sits directly under the next
+            payment so the date and the promise about it are read together. */}
         <p className="flex items-center gap-2 text-slate-900">
           <ArrowsClockwiseIcon size={16} aria-hidden="true" className="shrink-0" />
           {line}
         </p>
-        <button
-          type="button"
-          onClick={() => renew.mutate(action === "turn-on")}
-          disabled={renew.isPending}
-          className="cursor-pointer text-sm font-bold text-primary-dark underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {action === "turn-on" ? "Turn on auto-renew" : "Turn off auto-renew"}
-        </button>
       </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t-2 border-ink/10 pt-4">
+      <div className="mt-5 border-t-2 border-ink/10 pt-4">
         <dl className="flex flex-wrap gap-8 text-sm">
           <div>
             <dt className="text-slate-900/60">Subscribed</dt>
@@ -147,37 +103,6 @@ export function SubscriptionCard({
             </dd>
           </div>
         </dl>
-
-        {subscription.isEnded ? null : switching ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm text-slate-900/70">
-              Switch to {other}? Stripe prorates the difference.
-            </p>
-            <button
-              type="button"
-              onClick={() => setSwitching(false)}
-              className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink hover:bg-cream"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => cycle.mutate()}
-              disabled={cycle.isPending}
-              className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {cycle.isPending ? "Switching…" : `Confirm ${other}`}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setSwitching(true)}
-            className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream"
-          >
-            Switch to {other}
-          </button>
-        )}
       </div>
 
       {subscription.paymentFailed && (

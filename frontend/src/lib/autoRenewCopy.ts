@@ -5,12 +5,14 @@ import type { PaidSubscription } from "@/types/subscription";
  * What the auto-renew line says. Pure, because it is the one sentence on the
  * page that states a commitment to charge somebody — worth being able to
  * test every branch of without rendering anything.
+ *
+ * A sentence only. Auto-renew cannot be changed from the page any more, so
+ * there is no action beside it to describe — turning it off is Stripe's
+ * Customer Portal.
  */
 export type AutoRenewCopy = {
   /** The sentence itself. */
   line: string;
-  /** What the action beside it offers. */
-  action: "turn-off" | "turn-on";
 };
 
 /** "the 29th", for a monthly renewal that lands on the same date each month. */
@@ -44,7 +46,6 @@ export function autoRenewCopy(
       line: end
         ? `Ends on ${formatShortDate(end)}. You keep access until then.`
         : "Auto-renew is off. You keep access until the period ends.",
-      action: "turn-on",
     };
   }
 
@@ -61,5 +62,5 @@ export function autoRenewCopy(
       ? ` every year on ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(end)}`
       : ` every month on the ${ordinalDay(end)}`;
 
-  return { line: `Renews automatically${when}${card}.`, action: "turn-off" };
+  return { line: `Renews automatically${when}${card}.` };
 }

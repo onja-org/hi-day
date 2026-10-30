@@ -300,6 +300,47 @@ export class EmailService {
   }
 
   /**
+   * Tells whoever pays the bill that a seat charge was declined.
+   *
+   * Sent to the owner *and* the billing address (`billingRecipients`),
+   * unlike a receipt. The seats are already in use by people who joined,
+   * so this is the message that must not be swallowed by a typo in an
+   * unverified billing address.
+   *
+   * The reason comes from Stripe and is written for cardholders, but it is
+   * escaped anyway: it reaches us over the network and nothing downstream
+   * of here would catch markup in it.
+   */
+  async sendSeatChargeFailedEmail(
+    to: string | string[],
+    organisationName: string,
+    amount: string,
+    reason: string,
+    /** Stripe's hosted invoice page, where the card can be retried. */
+    invoiceUrl: string | null,
+  ): Promise<void> {
+    const name = escapeHtml(organisationName);
+    const billingUrl = `${this.frontendUrl}/settings/billing`;
+
+    const { error } = await this.resend.emails.send({
+      from: this.emailSender,
+      to,
+      subject: `Action needed: a ${APP_NAME} seat payment failed`,
+      html:
+        `<p>We could not take <strong>${escapeHtml(amount)}</strong> for the new seats added to <strong>${name}</strong>.</p>` +
+        `<p><strong>Reason given:</strong> ${escapeHtml(reason)}</p>` +
+        `<p>The people who joined are working normally and nothing has been removed. The charge will be retried automatically, so the usual fix is to make sure the card on file can cover it — or replace it.</p>` +
+        this.button(invoiceUrl ?? billingUrl, invoiceUrl ? 'Pay or retry this invoice' : 'Update payment details'),
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send seat charge failure to ${Array.isArray(to) ? to.join(', ') : to}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Emails a report file on behalf of a member. Unlike the account emails
    * above, the caller is waiting on this one, so it reports whether it went
    * out instead of swallowing the failure. The sender's own text is escaped
