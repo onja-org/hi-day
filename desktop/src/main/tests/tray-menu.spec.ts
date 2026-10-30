@@ -18,6 +18,7 @@ const signedIn: TrayMenuState = {
   ],
   webAppUrl: 'https://app.example.com/',
   compactAlwaysOnTop: false,
+  autoStartTimer: true,
   closeChoiceRemembered: false,
 };
 
@@ -29,6 +30,7 @@ function actions(): TrayMenuActions {
     signOut: vi.fn(),
     openWeb: vi.fn(),
     toggleCompactAlwaysOnTop: vi.fn(),
+    toggleAutoStartTimer: vi.fn(),
     forgetCloseChoice: vi.fn(),
     checkForUpdates: vi.fn(),
     showAbout: vi.fn(),
@@ -180,9 +182,33 @@ describe('the tray menu', () => {
       ).toBe(false);
     });
 
+    it('ticks the automatic start to match the preference, and toggles it', () => {
+      expect(item(preferences(signedIn), 'Start timer when the computer starts').checked).toBe(
+        true,
+      );
+      const off = preferences({ ...signedIn, autoStartTimer: false });
+      expect(item(off, 'Start timer when the computer starts').checked).toBe(false);
+
+      const handlers = actions();
+      click(
+        item(preferences(signedIn, handlers), 'Start timer when the computer starts'),
+      );
+      expect(handlers.toggleAutoStartTimer).toHaveBeenCalledOnce();
+    });
+
+    // Nothing to track against, so the item would promise what it cannot do.
+    it('leaves the automatic start out while signed out', () => {
+      expect(labels(preferences({ ...signedIn, session: null }))).not.toContain(
+        'Start timer when the computer starts',
+      );
+    });
+
     // The only way back from a remembered close choice.
     it('offers to ask before closing again only once a choice is remembered', () => {
-      expect(labels(preferences(signedIn))).toEqual(['Always on top (compact views)']);
+      expect(labels(preferences(signedIn))).toEqual([
+        'Always on top (compact views)',
+        'Start timer when the computer starts',
+      ]);
 
       const handlers = actions();
       const remembered = preferences({ ...signedIn, closeChoiceRemembered: true }, handlers);

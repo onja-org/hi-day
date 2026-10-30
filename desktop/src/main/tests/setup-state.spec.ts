@@ -14,6 +14,11 @@ import {
   markWaylandScreenshotGranted,
   rememberCloseAction,
   rememberedCloseAction,
+  autoStartTimer,
+  setAutoStartTimer,
+  lastAutoStartedBoot,
+  lastAutoStartedDay,
+  rememberAutoStarted,
 } from '../setup-state';
 import type { ReminderSettings } from '../tracking-reminder';
 
@@ -62,6 +67,83 @@ describe('setup state', () => {
 
     expect(main).not.toContain('clearBrowserRestartPromptSeen');
     expect(store).not.toContain('clearBrowserRestartPromptSeen');
+  });
+});
+
+describe('starting the timer when the machine comes on', () => {
+  let userDataDir: string;
+
+  beforeEach(() => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'desktop-auto-start-'));
+  });
+
+  afterEach(() => {
+    rmSync(userDataDir, { recursive: true, force: true });
+  });
+
+  it('is on on a fresh install', () => {
+    expect(autoStartTimer(userDataDir)).toBe(true);
+  });
+
+  it('remembers being turned off, and on again', () => {
+    setAutoStartTimer(userDataDir, false);
+    expect(autoStartTimer(userDataDir)).toBe(false);
+
+    setAutoStartTimer(userDataDir, true);
+    expect(autoStartTimer(userDataDir)).toBe(true);
+  });
+
+  it('has started for no power-on or day yet', () => {
+    expect(lastAutoStartedBoot(userDataDir)).toBeNull();
+    expect(lastAutoStartedDay(userDataDir)).toBeNull();
+  });
+
+  it('remembers the power-on and day it started for, and replaces both', () => {
+    rememberAutoStarted(userDataDir, 'id:first', '2026-10-28');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:first');
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-28');
+
+    rememberAutoStarted(userDataDir, 'id:second', '2026-10-29');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:second');
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-29');
+  });
+
+  // The day still has to land, or every launch would read as a new day.
+  it('keeps the remembered power-on when this machine has none to give', () => {
+    rememberAutoStarted(userDataDir, 'id:first', '2026-10-28');
+    rememberAutoStarted(userDataDir, null, '2026-10-29');
+
+    expect(lastAutoStartedDay(userDataDir)).toBe('2026-10-29');
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:first');
+  });
+
+  // Both live in the one file every other preference does, so writing
+  // either must leave the rest of it alone.
+  it('keeps the other preferences while it writes its own', () => {
+    setCompactAlwaysOnTop(userDataDir, false);
+    rememberCloseAction(userDataDir, 'quit');
+
+    setAutoStartTimer(userDataDir, false);
+    rememberAutoStarted(userDataDir, 'id:abc', '2026-10-29');
+
+    expect(compactAlwaysOnTop(userDataDir)).toBe(false);
+    expect(rememberedCloseAction(userDataDir)).toBe('quit');
+    expect(autoStartTimer(userDataDir)).toBe(false);
+    expect(lastAutoStartedBoot(userDataDir)).toBe('id:abc');
+  });
+
+  // Signing out deletes the session, never this file: the laptop is still
+  // the laptop somebody works on. An upgrade from a build predating the
+  // preference therefore lands on the default, which is on.
+  it('survives a file written by a build that knew nothing about it', () => {
+    writeFileSync(
+      join(userDataDir, 'setup-state.json'),
+      JSON.stringify({ compactAlwaysOnTop: true }),
+      'utf-8',
+    );
+
+    expect(autoStartTimer(userDataDir)).toBe(true);
+    expect(lastAutoStartedBoot(userDataDir)).toBeNull();
   });
 });
 

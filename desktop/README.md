@@ -125,6 +125,30 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
+**Starting the timer when a working day begins** (`docs/adr/0029-...`) is
+**on** unless somebody turns it off, under **Preferences → Start timer when
+the computer starts** in the tray. It fires once per day *and* once per
+power-on — either is an occasion — but never per launch, since a crash
+relaunch or an update restart is the same machine on the same day. Both
+matter: most people suspend rather than shut down, so the morning lid-open
+is a new day on yesterday's power-on, while a machine rebooted at lunchtime
+is a new power-on on the same day. The day is local midnight, the same
+boundary the timer display counts from.
+
+Because a suspended machine never relaunches anything, the renderer asks
+again **on wake** as well as at setup — that is the only moment a new day
+gets noticed there.
+
+Start the day signed out and it waits: the app launches regardless (login
+item registration happens before any auth check), and the timer starts at
+the sign-in instead — once, so signing out and back in later the same day
+does nothing. An unanswered idle question or a crash-recovered timer comes
+first and takes that occasion's start with it, rather than leaving it to be
+collected hours later. It tracks whatever the play button would, a dialog
+says it happened with **Stop timer** and **OK**, and a refusal (a day the
+organisation does not track, a spent work limit) goes to the notification
+shelf instead, since nobody clicked anything.
+
 **Start/Stop timer in the tray leaves the window where it is** — hidden
 stays hidden, since that item is for someone who did not want to come back
 to it. What it did arrives as a desktop notification instead ("Stopped timer

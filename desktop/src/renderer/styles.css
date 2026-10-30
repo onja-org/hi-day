@@ -1174,6 +1174,18 @@ input::placeholder {
   text-align: center;
 }
 
+/* Two answers of equal standing, so they sit side by side: stacked, the
+   upper one reads as the one to press. `.button` is a full-width block
+   everywhere else, so each takes an equal share of the row instead. */
+.auto-start-card .close-prompt-actions {
+  flex-direction: row;
+  width: 100%;
+}
+
+.auto-start-card .close-prompt-actions .button {
+  flex: 1 1 0;
+}
+
 .timer-blocked-mark {
   width: 44px;
   height: 44px;

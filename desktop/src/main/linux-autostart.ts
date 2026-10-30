@@ -50,6 +50,16 @@ export function quoteExecPath(path: string): string {
   return /\s/.test(path) ? `"${path}"` : path;
 }
 
+/**
+ * `--no-sandbox` like every other entry that launches this app — the
+ * scheme handler's, and both of electron-builder's. `chrome-sandbox` ships
+ * mode 0755 rather than 4755, and a distribution that also restricts
+ * unprivileged user namespaces (Ubuntu 24.04 and up) leaves the binary no
+ * sandbox to enter, so it aborts before its first window. Omitting it here
+ * is why this entry silently did nothing on a `.deb`: the app menu goes
+ * through electron-builder's entry and works, a boot went through this one
+ * and died, logging nothing.
+ */
 export function buildAutostartDesktopEntry(executablePath: string): string {
   return [
     AUTOSTART_MARKER,
@@ -57,7 +67,7 @@ export function buildAutostartDesktopEntry(executablePath: string): string {
     'Type=Application',
     'Name=Hi Day',
     'Comment=Starts the Hi Day time-tracking agent at login.',
-    `Exec=${quoteExecPath(executablePath)}`,
+    `Exec=${quoteExecPath(executablePath)} --no-sandbox`,
     'X-GNOME-Autostart-enabled=true',
     'NoDisplay=false',
     'Terminal=false',
