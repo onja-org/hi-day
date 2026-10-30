@@ -12,7 +12,9 @@ function serviceFor(
 ) {
   const sendSeatChargeFailedEmail = jest.fn().mockResolvedValue(undefined);
   const list = jest.fn().mockResolvedValue({
-    data: [{ payment: { payment_intent: { last_payment_error: lastPaymentError } } }],
+    data: [
+      { payment: { payment_intent: { last_payment_error: lastPaymentError } } },
+    ],
   });
   const service = new StripeWebhookService(
     { findOne: jest.fn().mockResolvedValue(row), update: jest.fn() } as never,
@@ -34,7 +36,9 @@ function serviceFor(
   return { service, sendSeatChargeFailedEmail, list };
 }
 
-function failedInvoice(organisationId: string | undefined = 'org-1'): Stripe.Event {
+function failedInvoice(
+  organisationId: string | undefined = 'org-1',
+): Stripe.Event {
   return {
     type: 'invoice.payment_failed',
     data: {
@@ -98,7 +102,9 @@ describe('a declined seat charge', () => {
   it('accepts an invoice it cannot place instead of asking Stripe to retry', async () => {
     const { service, sendSeatChargeFailedEmail } = serviceFor(null);
 
-    await expect(service.handle(failedInvoice(undefined))).resolves.toBeUndefined();
+    await expect(
+      service.handle(failedInvoice(undefined)),
+    ).resolves.toBeUndefined();
     expect(sendSeatChargeFailedEmail).not.toHaveBeenCalled();
   });
 

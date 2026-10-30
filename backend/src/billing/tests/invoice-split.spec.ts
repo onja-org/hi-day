@@ -1,8 +1,4 @@
-import {
-  isProration,
-  prorationTotal,
-  recurringTotal,
-} from '../invoice-split';
+import { isProration, prorationTotal, recurringTotal } from '../invoice-split';
 import type { PreviewLine } from '../invoice-split';
 
 /** The real shape of a preview after raising 5 annual seats to 6, mid-period. */
@@ -60,8 +56,14 @@ describe('splitting a preview', () => {
   it('returns a negative total when seats are given up', () => {
     expect(
       prorationTotal([
-        { amount: -8000, parent: { subscription_item_details: { proration: true } } },
-        { amount: 4000, parent: { subscription_item_details: { proration: true } } },
+        {
+          amount: -8000,
+          parent: { subscription_item_details: { proration: true } },
+        },
+        {
+          amount: 4000,
+          parent: { subscription_item_details: { proration: true } },
+        },
       ]),
     ).toBe(-4000);
   });

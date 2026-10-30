@@ -51,6 +51,31 @@ export function currentPeriodEndOf(
 }
 
 /**
+ * The events `handle` below acts on, and the exact list the Stripe endpoint
+ * must be subscribed to.
+ *
+ * Exported so registering the endpoint reads it from here rather than
+ * repeating it (`pnpm --filter backend stripe:register-webhook`). Three
+ * copies of this list — the switch, the README and the dashboard — is three
+ * chances for one to fall behind, and an event that is handled but never
+ * subscribed to simply never arrives. `webhook-events.spec.ts` fails if the
+ * switch and this array disagree.
+ *
+ * Anything not listed is still answered 200 and ignored, so subscribing to
+ * more than this is harmless — just noisier.
+ */
+export const HANDLED_STRIPE_EVENTS = [
+  'checkout.session.completed',
+  'customer.subscription.created',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'invoice.paid',
+  'invoice.payment_succeeded',
+  'invoice.payment_failed',
+  'invoice.upcoming',
+] as const satisfies readonly Stripe.WebhookEndpointCreateParams.EnabledEvent[];
+
+/**
  * The only writer of Stripe state. Never the browser returning from
  * checkout: that redirect is lost to a closed tab or a flaky network, and a
  * payment that succeeded must still be recorded.

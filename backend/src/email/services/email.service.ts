@@ -330,7 +330,10 @@ export class EmailService {
         `<p>We could not take <strong>${escapeHtml(amount)}</strong> for the new seats added to <strong>${name}</strong>.</p>` +
         `<p><strong>Reason given:</strong> ${escapeHtml(reason)}</p>` +
         `<p>The people who joined are working normally and nothing has been removed. The charge will be retried automatically, so the usual fix is to make sure the card on file can cover it — or replace it.</p>` +
-        this.button(invoiceUrl ?? billingUrl, invoiceUrl ? 'Pay or retry this invoice' : 'Update payment details'),
+        this.button(
+          invoiceUrl ?? billingUrl,
+          invoiceUrl ? 'Pay or retry this invoice' : 'Update payment details',
+        ),
     });
 
     if (error) {

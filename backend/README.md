@@ -89,6 +89,38 @@ A few things that are easy to misread:
   row that says trialing while carrying a Stripe subscription id is checked
   against Stripe directly.
 
+### Going to production
+
+Stripe needs a public HTTPS endpoint, so the backend has to be deployed
+first. Once it is, register the endpoint from here rather than clicking
+through the dashboard:
+
+```bash
+pnpm --filter backend stripe:register-webhook -- --url https://api.yourdomain.com/billing/webhook
+```
+
+It is idempotent, so re-running is safe — it matches on the URL, and repairs
+the event list if it has drifted from the handler. Add `--dry-run` to see
+what it would do.
+
+Two things it does that a dashboard click does not: it subscribes to exactly
+the events `HANDLED_STRIPE_EVENTS` lists, read from the handler itself so the
+subscription cannot fall behind the code; and it pins `api_version` to the
+version this app's SDK speaks, where a dashboard-created endpoint inherits
+whatever the account default is that day — and a newer default can reshape
+payloads the handler reads.
+
+**The signing secret is printed once.** Stripe returns it only at creation
+and never again, so copy it straight into the environment as
+`STRIPE_WEBHOOK_SECRET` and restart. If it is ever lost, roll it in the
+dashboard — never create a second endpoint for the same URL, or every event
+is delivered twice.
+
+Run it once per environment, by hand. It is deliberately not done at boot:
+the app would then need an API key that can rewrite its own webhook
+configuration, every deploy could mutate production Stripe state, and
+instances starting together would race to create the same endpoint.
+
 ## Scripts
 
 | Command | Description |
