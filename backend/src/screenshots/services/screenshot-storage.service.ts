@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
@@ -27,31 +27,88 @@ const MAX_DELETE_BATCH_SIZE = 1000;
  * upload directly from the desktop agent to the bucket
  * (docs/TECH_DESIGN.md §4).
  */
+/** The settings without which there is nowhere to put a screenshot. */
+const REQUIRED_STORAGE_VARS = [
+  'WASABI_BUCKET',
+  'WASABI_REGION',
+  'WASABI_ENDPOINT',
+  'WASABI_ACCESS_KEY_ID',
+  'WASABI_SECRET_ACCESS_KEY',
+] as const;
+
 @Injectable()
 export class ScreenshotStorageService {
-  private readonly client: S3Client;
+  private readonly logger = new Logger(ScreenshotStorageService.name);
+
+  /**
+   * Null where no object storage is configured.
+   *
+   * Screenshot capture needs somewhere to put the images, and a self-hosted
+   * install should not have to open an account with a storage provider
+   * before Hi Day will start — time tracking, projects, reports and the
+   * desktop agent all work without one. So the settings are optional and
+   * every other feature carries on; only screenshots are unavailable.
+   *
+   * These used to be read with `getOrThrow`, which made a bucket mandatory
+   * to boot. It appeared to work in Docker only because an empty string
+   * satisfies `getOrThrow` — the app then started and failed on the first
+   * upload with an opaque credentials error instead of saying plainly that
+   * nothing was configured.
+   */
+  private readonly client: S3Client | null;
   private readonly bucket: string;
   private readonly urlTtlSeconds: number;
 
   constructor(configService: ConfigService) {
-    this.bucket = configService.getOrThrow<string>('WASABI_BUCKET');
+    this.bucket = configService.get<string>('WASABI_BUCKET')?.trim() ?? '';
     this.urlTtlSeconds = Number(
       configService.get<string>('SCREENSHOT_URL_TTL_SECONDS', '300'),
     );
+
+    const settings = REQUIRED_STORAGE_VARS.map(
+      (name) => configService.get<string>(name)?.trim() ?? '',
+    );
+    const missing = REQUIRED_STORAGE_VARS.filter((_, i) => settings[i] === '');
+
+    if (missing.length > 0) {
+      this.client = null;
+      this.logger.warn(
+        `Screenshot storage is not configured (${missing.join(', ')}), so ` +
+          'screenshots cannot be captured or viewed. Everything else works.',
+      );
+      return;
+    }
+
+    const [, region, endpoint, accessKeyId, secretAccessKey] = settings;
     this.client = new S3Client({
-      region: configService.getOrThrow<string>('WASABI_REGION'),
-      endpoint: configService.getOrThrow<string>('WASABI_ENDPOINT'),
-      credentials: {
-        accessKeyId: configService.getOrThrow<string>('WASABI_ACCESS_KEY_ID'),
-        secretAccessKey: configService.getOrThrow<string>(
-          'WASABI_SECRET_ACCESS_KEY',
-        ),
-      },
+      region,
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
       // Wasabi (like most non-AWS S3-compatible providers) serves buckets
       // at <endpoint>/<bucket>/<key>, not AWS's default virtual-hosted
       // <bucket>.<endpoint> style.
       forcePathStyle: true,
     });
+  }
+
+  /** Whether screenshots can be stored at all on this installation. */
+  get isConfigured(): boolean {
+    return this.client !== null;
+  }
+
+  /**
+   * Throws unless storage is configured. Callers that can answer without it
+   * check `isConfigured` first; the rest fail loudly here rather than
+   * sending an unsigned request to nowhere.
+   */
+  private get s3(): S3Client {
+    if (!this.client) {
+      throw new Error(
+        'Screenshot storage is not configured on this installation. Set ' +
+          `${REQUIRED_STORAGE_VARS.join(', ')} to enable screenshots.`,
+      );
+    }
+    return this.client;
   }
 
   /**
@@ -68,9 +125,12 @@ export class ScreenshotStorageService {
     return `screenshots/${organisationId}/${deviceId}/${capturedAt.getTime()}-${randomUUID()}.jpg`;
   }
 
-  createUploadUrl(storageKey: string): Promise<string> {
+  // `async` so that an unconfigured installation rejects rather than
+  // throwing synchronously out of a function that returns a promise — a
+  // caller using `.catch()` would otherwise miss it entirely.
+  async createUploadUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.s3,
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: storageKey,
@@ -81,9 +141,10 @@ export class ScreenshotStorageService {
   }
 
   /** Time-limited read access for the web console's screenshot gallery — never a public/permanent URL. */
-  createViewUrl(storageKey: string): Promise<string> {
+  // `async` for the same reason as `createUploadUrl`.
+  async createViewUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.s3,
       new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }),
       { expiresIn: this.urlTtlSeconds },
     );
@@ -93,7 +154,7 @@ export class ScreenshotStorageService {
   async deleteObjects(storageKeys: string[]): Promise<void> {
     for (let i = 0; i < storageKeys.length; i += MAX_DELETE_BATCH_SIZE) {
       const batch = storageKeys.slice(i, i + MAX_DELETE_BATCH_SIZE);
-      await this.client.send(
+      await this.s3.send(
         new DeleteObjectsCommand({
           Bucket: this.bucket,
           Delete: { Objects: batch.map((key) => ({ Key: key })) },
@@ -122,7 +183,7 @@ export class ScreenshotStorageService {
 
   /** True if any object still exists under the prefix. */
   async hasObjectsWithPrefix(prefix: string): Promise<boolean> {
-    const result = await this.client.send(
+    const result = await this.s3.send(
       new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,
@@ -133,7 +194,7 @@ export class ScreenshotStorageService {
   }
 
   private async listKeys(prefix: string): Promise<string[]> {
-    const result = await this.client.send(
+    const result = await this.s3.send(
       new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,

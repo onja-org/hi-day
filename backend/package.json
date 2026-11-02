@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:run": "pnpm typeorm migration:run",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
     "migration:revert": "pnpm typeorm migration:revert",
     "prune:orphaned-captures": "ts-node -r tsconfig-paths/register src/scripts/prune-orphaned-captures.ts",
     "remove:organisation-projects": "ts-node -r tsconfig-paths/register src/scripts/remove-organisation-projects.ts",

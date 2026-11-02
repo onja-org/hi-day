@@ -1,0 +1,107 @@
+# Hi Day, self-hosted.
+#
+#   cp .env.docker.example .env
+#   docker compose up --build
+#
+# Then open http://localhost:3000 and create the first account. Billing is
+# off, there is no trial and there is no seat limit: self-hosted Hi Day is
+# free, forever, for any team size.
+#
+# No payment provider is needed, and no email provider either — without
+# RESEND_API_KEY the backend prints invitation and password links to its
+# own log, and the app shows them to the admin who created them.
+
+name: hiday
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hiday}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-hiday}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The backend runs migrations the moment it starts, so it must not
+      # start before Postgres can answer. `-d` and `-U` matter: without
+      # them pg_isready reports the server up before this database exists.
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hiday} -d ${POSTGRES_DB:-hiday}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # Not published by default: nothing outside this network needs it, and
+    # exposing a database to the host is how one ends up on the internet.
+    # Uncomment to connect a client from your machine.
+    # ports:
+    #   - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-hiday}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hiday}
+      PORT: 3001
+
+      # Where the browser reaches the frontend. Goes into the links in
+      # emails and in the log, so it must be the address your users type,
+      # not an address inside this network.
+      FRONTEND_URL: ${APP_URL:-http://localhost:3000}
+      CORS_ORIGIN: ${APP_URL:-http://localhost:3000}
+
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+
+      # Free, forever, any team size. Leave this alone.
+      BILLING_ENABLED: "false"
+
+      # Optional. Unset means invitation and password links are written to
+      # this container's log instead of emailed — `docker compose logs -f
+      # backend` — and shown in the app to whoever created them.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_SENDER: ${EMAIL_SENDER:-}
+
+      # Optional. Screenshot capture needs S3-compatible storage; without
+      # it everything else still works.
+      WASABI_ACCESS_KEY_ID: ${WASABI_ACCESS_KEY_ID:-}
+      WASABI_SECRET_ACCESS_KEY: ${WASABI_SECRET_ACCESS_KEY:-}
+      WASABI_BUCKET: ${WASABI_BUCKET:-}
+      WASABI_REGION: ${WASABI_REGION:-}
+      WASABI_ENDPOINT: ${WASABI_ENDPOINT:-}
+    healthcheck:
+      # /config is the one endpoint with no guard on it, so a 200 here means
+      # the app is genuinely serving rather than merely listening.
+      test:
+        ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/config',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Server-side only. The browser never talks to the backend directly —
+      # Next.js proxies /api/backend/* to it, which keeps the session cookie
+      # same-origin.
+      BACKEND_ORIGIN: http://backend:3001
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:

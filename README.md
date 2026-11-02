@@ -2,14 +2,22 @@
 
 A transparent, consent-first time-tracking and productivity-monitoring platform for distributed teams — company registration, team and project management, time tracking via a web console and desktop agent, reporting, payroll and invoicing, backed by a single multi-tenant API.
 
-pnpm workspace monorepo with two packages: **`frontend`** (Next.js web console) and **`backend`** (NestJS API).
+pnpm workspace monorepo with three packages: **`frontend`** (Next.js web
+console), **`backend`** (NestJS API) and **`desktop`** (Electron agent).
+
+**Free to self-host, forever, for any team size** — see
+[Self-hosting](#self-hosting). Licensed under [AGPL-3.0](LICENSE).
 
 ---
 
 ## Quick Start
 
+Running Hi Day rather than developing it? Use
+[Self-hosting](#self-hosting) — two commands with Docker. To work on the
+code:
+
 ```bash
-pnpm install                          # installs deps for both packages
+pnpm install                          # installs deps for every package
 
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
@@ -24,42 +32,170 @@ pnpm --filter backend start:dev       # http://localhost:3001
 
 See each package's own README for details: [frontend/README.md](frontend/README.md), [backend/README.md](backend/README.md).
 
-## Self-hosting and billing
+## Self-hosting
 
-**Self-hosted Hi Day is free, forever, for any team size.** Running it
-yourself gives you the whole product: no trial, no countdown, no paywall and
-no seat limit, and you never need a payment-provider account. Hi Day is
-licensed under [AGPL-3.0](LICENSE).
+**Self-hosted Hi Day is free, forever, for any team size.** No trial, no
+countdown, no paywall, no seat limit, and no payment account. Licensed
+under [AGPL-3.0](LICENSE).
 
-That is the default. One backend variable separates a self-hosted install
-from Hi Day Cloud, and it is **off** unless you turn it on:
+### Requirements
+
+- Docker with Compose v2 (`docker compose version`), or Node 22 + pnpm 11 +
+  PostgreSQL 14+ if you would rather run it directly.
+- About 2 GB of RAM and 1 GB of disk to start with. Screenshots, if you
+  turn them on, are stored elsewhere (see below) and not on this disk.
+
+### Quick start
+
+```bash
+git clone https://github.com/onja-org/hiday.git
+cd hiday
+cp .env.docker.example .env
+# Fill in the two required values in .env:
+#   POSTGRES_PASSWORD   any strong string
+#   JWT_SECRET          openssl rand -base64 48
+docker compose up --build
+```
+
+Then open <http://localhost:3000>.
+
+### Creating the first account
+
+There is no separate admin bootstrap step, and nothing to run in a shell.
+The first person to sign up creates the organisation and becomes its admin.
+
+1. Go to <http://localhost:3000/signup> and fill in your details and your
+   company's.
+2. Hi Day emails you a link to set your password. **If you have not
+   configured email, that link is printed to the backend log instead:**
+
+   ```bash
+   docker compose logs backend | grep -A3 "was not sent"
+   ```
+
+   Copy the `http://localhost:3000/set-password?token=…` URL and open it.
+3. Setting your password creates the organisation and your admin
+   membership in one step. You are signed in.
+
+> **Signup is open to anyone who can reach your server.** That is fine on a
+> private network, and something to think about before putting Hi Day on
+> the public internet — put it behind a VPN, an SSO proxy or a firewall
+> rule until you want strangers creating organisations on it.
+
+### Configuration
+
+Every variable is commented in `.env.docker.example` (Docker) and in
+`backend/.env.example` and `frontend/.env.example` (running directly).
+
+**Required**
+
+| Variable | What it is |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Database password. Used only inside the Compose network |
+| `JWT_SECRET` | Signs session tokens. `openssl rand -base64 48`. Changing it signs everybody out |
+| `APP_URL` | Where people reach Hi Day. **Change this from `localhost` before anybody else uses it** — invitation and password links are built from it |
+
+**Optional — everything works without them**
+
+| Variable | Without it |
+| --- | --- |
+| `RESEND_API_KEY`, `EMAIL_SENDER` | No email is sent. Invitation and password links are written to the backend log and shown in the app to the admin who created them |
+| `WASABI_*` | Screenshots cannot be captured or viewed. Time tracking, projects, activity, reports and the desktop agent all work |
+
+**Cloud-only.** `BILLING_ENABLED` and every `STRIPE_*` variable exist for
+hiday.io. `docker-compose.yml` pins `BILLING_ENABLED=false`; leave it alone
+and there is no billing code running at all — the routes are not even
+registered.
+
+### Email is optional
+
+Hi Day never requires an account with an email provider. Without one:
+
+- Invitation, set-password, password-reset and deletion-confirmation links
+  are written to the backend log, marked `was not sent`, with the link on
+  its own line.
+- When an admin invites somebody, the join link is shown **in the app**,
+  with a copy button, on the invite results — so it can be passed on
+  directly without reading the log.
+
+To send real email, sign up at [Resend](https://resend.com), verify a
+sending domain, then set `RESEND_API_KEY` and `EMAIL_SENDER` and restart.
+
+### Migrations
+
+They run automatically. The backend container runs every pending migration
+before it starts serving; TypeORM records what it has applied, so restarts
+and upgrades are safe and re-running costs one query. A failed migration
+stops the container rather than serving against a schema it does not match.
+
+Running without Docker, do it once by hand:
+
+```bash
+pnpm --filter backend migration:run        # from source
+pnpm --filter backend migration:run:prod   # from a build
+```
+
+### Upgrading
+
+```bash
+git pull
+docker compose up --build -d
+```
+
+Migrations run on start. Read the release notes before a major version,
+and take a backup first.
+
+### Backups
+
+Everything durable is in PostgreSQL, in the `postgres-data` volume.
+Screenshots, if enabled, live in your object storage and are not covered by
+a database backup.
+
+```bash
+# Back up
+docker compose exec -T postgres pg_dump -U hiday hiday | gzip > hiday-$(date +%F).sql.gz
+
+# Restore into an empty database
+gunzip -c hiday-2026-01-01.sql.gz | docker compose exec -T postgres psql -U hiday hiday
+```
+
+Keep `JWT_SECRET` with the backup. Restoring the data without it signs
+everybody out.
+
+### Running without Docker
+
+```bash
+pnpm install
+cp backend/.env.example backend/.env     # set DATABASE_URL and JWT_SECRET
+cp frontend/.env.example frontend/.env
+pnpm --filter backend migration:run
+pnpm --filter backend start:dev          # http://localhost:3001
+pnpm --filter frontend dev               # http://localhost:3000
+```
+
+### Billing, and how it stays out of your way
+
+One backend variable separates a self-hosted install from Hi Day Cloud, and
+it is **off** unless you turn it on:
 
 ```
-backend/.env    BILLING_ENABLED=false
+BILLING_ENABLED=false
 ```
 
 There is no matching frontend variable. The browser asks the backend at
-runtime (`GET /config`), so the same built frontend serves both shapes and
-there is nothing to keep in sync. Copying the `.env.example` files, as the
-Quick Start above does, already leaves billing off — a fresh install needs
-no configuration to be free.
+runtime (`GET /config`), so the same built image serves both and there is
+nothing to keep in sync.
 
-**With billing off** there is no trial and no subscription record, no trial
-banner, no Billing section in Settings (those API routes are not registered
-and those pages 404 — they are not merely hidden), no seat-consent notice in
-the invite forms, no seat synchronisation, no trial reminder emails, and no
-Stripe keys required to start.
-
-**With billing on** — Hi Day Cloud — every billing feature works, and
-`STRIPE_SECRET_KEY` becomes required: the backend refuses to start without
-it, rather than running on as a deployment that looks healthy but cannot
-charge anybody.
+With it off there is no trial and no subscription record, no trial banner,
+no Billing section in Settings (those API routes are not registered and
+those pages 404 — they are not merely hidden), no seat-consent notice in the
+invite forms, no seat synchronisation, no reminder emails, and no payment
+keys required to start.
 
 Internally the split is one interface, `Entitlements`, with two
-implementations (`CloudEntitlements` and `SelfHostedEntitlements`). Code that
-creates an organisation or accepts an invitation talks to that, never to
-Stripe, so neither shape is a special case of the other and both are covered
-by the same test suite.
+implementations. Code that creates an organisation or accepts an invitation
+talks to that, never to a payment provider, so neither shape is a special
+case of the other and both are covered by the same test suite.
 
 ## Documentation
 
@@ -74,5 +210,6 @@ by the same test suite.
 ```
 frontend/  — Next.js web console
 backend/   — NestJS API
+desktop/   — Electron desktop agent (time tracking, activity capture)
 docs/      — Product & technical design docs
 ```

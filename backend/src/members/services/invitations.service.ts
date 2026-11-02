@@ -63,6 +63,21 @@ export interface InvitationEntryResult {
   email: string;
   outcome: InvitationOutcome;
   message?: string;
+  /**
+   * The link that was logged rather than emailed, for the admin to pass on
+   * by hand.
+   *
+   * Present **only** where no email provider is configured — a self-hosted
+   * install that has not set `RESEND_API_KEY`. Email is optional there, and
+   * an invitation nobody can receive is an invitation that does not work,
+   * so the person who created it is given the link instead.
+   *
+   * Absent on any installation that does send mail, Hi Day Cloud included:
+   * this is a single-use credential, and the fewer places it is written the
+   * better. The admin seeing it is the one who just minted it and is
+   * authorised to invite, so showing it to them grants nothing new.
+   */
+  acceptUrl?: string;
 }
 
 export interface InvitationSummary {
@@ -754,7 +769,14 @@ export class InvitationsService {
       resend: isResend,
     });
 
-    return { email, outcome: isResend ? 'resent' : 'sent' };
+    return {
+      email,
+      outcome: isResend ? 'resent' : 'sent',
+      // Only where the email could not have arrived. See `acceptUrl`.
+      ...(this.emailService.isDelivering
+        ? {}
+        : { acceptUrl: this.emailService.invitationAcceptUrl(token) }),
+    };
   }
 
   private readAuthenticatedUserId(request: Request): string | null {

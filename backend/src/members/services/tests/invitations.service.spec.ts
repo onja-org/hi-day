@@ -163,11 +163,25 @@ describe('InvitationsService', () => {
     };
   }
 
-  function makeEmailService() {
+  /**
+   * Delivering by default — the normal case. `isDelivering: false` is the
+   * self-hosted install with no provider, where the service hands the join
+   * link back to the admin instead of emailing it.
+   */
+  function makeEmailService(isDelivering = true) {
     const sendInvitationEmail = jest.fn().mockResolvedValue(undefined);
+    const invitationAcceptUrl = jest.fn(
+      (token: string) =>
+        `http://localhost:3000/accept-invitation?token=${token}`,
+    );
     return {
-      emailService: { sendInvitationEmail } as unknown as EmailService,
+      emailService: {
+        sendInvitationEmail,
+        invitationAcceptUrl,
+        isDelivering,
+      } as unknown as EmailService,
       sendInvitationEmail,
+      invitationAcceptUrl,
     };
   }
 
@@ -231,6 +245,74 @@ describe('InvitationsService', () => {
       { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
+
+  /**
+   * Email is optional on a self-hosted install. An invitation nobody can
+   * receive is an invitation that does not work, so where no provider is
+   * configured the join link comes back to the admin who created it, to
+   * pass on by hand.
+   */
+  describe('createMany where no email provider is configured', () => {
+    it('hands the join link back instead', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result.outcome).toBe('sent');
+      expect(result.acceptUrl).toMatch(
+        /^http:\/\/localhost:3000\/accept-invitation\?token=.+/,
+      );
+    });
+
+    /**
+     * A single-use credential, so the fewer places it is written the
+     * better. On Hi Day Cloud the email carries it and the API response
+     * must not.
+     */
+    it('does not hand back a link where email works', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(true);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result).not.toHaveProperty('acceptUrl');
+    });
+
+    // The link is a fallback for delivery, not a replacement for trying.
+    it('still asks the email service to send', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+  });
 
   describe('createMany', () => {
     it("rejects a manager's admin invite without creating a row or sending an email", async () => {

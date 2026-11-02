@@ -24,19 +24,96 @@ export interface ReportEmail {
 const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
 
+/**
+ * Where mail appears to come from when nobody has said. Only ever used by
+ * the console transport, which sends nothing — a real delivery needs a real
+ * sender on a domain the provider has verified.
+ */
+const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly resend: Resend;
+
+  /**
+   * Null where no `RESEND_API_KEY` is set, which is the normal state for a
+   * self-hosted install: email is optional, and requiring an account with a
+   * third-party provider before the app will even start would make "free to
+   * self-host" untrue. Every message is then written to the log instead —
+   * see `logInsteadOfSending`.
+   */
+  private readonly resend: Resend | null;
   private readonly emailSender: string;
   private readonly frontendUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.resend = new Resend(
-      this.configService.getOrThrow<string>('RESEND_API_KEY'),
-    );
-    this.emailSender = this.configService.getOrThrow<string>('EMAIL_SENDER');
+    const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
+    // The SDK throws on an empty key, and an empty key is exactly what
+    // copying .env.example gives you — so this must be checked, not passed.
+    this.resend = apiKey ? new Resend(apiKey) : null;
+    this.emailSender =
+      this.configService.get<string>('EMAIL_SENDER')?.trim() || DEFAULT_SENDER;
     this.frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+  }
+
+  /** Whether mail actually leaves this installation. */
+  get isDelivering(): boolean {
+    return this.resend !== null;
+  }
+
+  /**
+   * Sends one message, or logs it where there is no provider configured.
+   *
+   * Answers in the provider's own shape so each caller's error handling is
+   * unchanged — a message that was logged rather than sent reports no
+   * error, because from the caller's point of view nothing went wrong.
+   */
+  private async deliver(
+    payload: Parameters<Resend['emails']['send']>[0],
+  ): Promise<{ error: { message: string } | null }> {
+    if (!this.resend) {
+      this.logInsteadOfSending(payload);
+      return { error: null };
+    }
+    const { error } = await this.resend.emails.send(payload);
+    return { error: error ? { message: error.message } : null };
+  }
+
+  /**
+   * Writes a message to the log, links first.
+   *
+   * The links are the point. Several flows — setting a first password,
+   * accepting an invitation, confirming a deletion — are *only* completable
+   * through a one-time URL that is otherwise emailed. Without a provider
+   * those URLs would exist and be unreachable, so an operator could create
+   * an organisation and never be able to sign in to it. Printing them means
+   * a self-hosted install works with no email account at all: the operator
+   * reads the link out of `docker compose logs` and pastes it.
+   *
+   * Logged at warn, not log, so it stands out in a deployment that *does*
+   * intend to send mail and has simply lost its key.
+   */
+  private logInsteadOfSending(
+    payload: Parameters<Resend['emails']['send']>[0],
+  ): void {
+    const to = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
+    const links = [
+      ...String(payload.html ?? '').matchAll(/https?:\/\/[^"'<>\s]+/g),
+    ]
+      .map((match) => match[0])
+      // The same URL usually appears twice, as the href and the link text.
+      .filter((url, index, all) => all.indexOf(url) === index);
+
+    this.logger.warn(
+      [
+        `No RESEND_API_KEY set, so this email was not sent:`,
+        `  to:      ${to}`,
+        `  subject: ${payload.subject}`,
+        ...(links.length > 0
+          ? ['  links:', ...links.map((url) => `    ${url}`)]
+          : []),
+      ].join('\n'),
+    );
   }
 
   private button(url: string, label: string): string {
@@ -50,7 +127,7 @@ export class EmailService {
   ): Promise<void> {
     const setPasswordUrl = `${this.frontendUrl}/set-password?token=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Set your password for ${organisationName}`,
@@ -71,7 +148,7 @@ export class EmailService {
   ): Promise<void> {
     const resetUrl = `${this.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Reset your ${APP_NAME} password`,
@@ -85,14 +162,25 @@ export class EmailService {
     }
   }
 
+  /**
+   * The link an invitation email carries.
+   *
+   * Exposed so that an installation with no email provider can hand it to
+   * the admin who created the invitation instead — built here, once, so the
+   * copyable link and the emailed link cannot drift apart.
+   */
+  invitationAcceptUrl(token: string): string {
+    return `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
+  }
+
   async sendInvitationEmail(
     to: string,
     token: string,
     organisationName: string,
   ): Promise<void> {
-    const acceptUrl = `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
+    const acceptUrl = this.invitationAcceptUrl(token);
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Join ${organisationName} on ${APP_NAME}`,
@@ -112,7 +200,7 @@ export class EmailService {
   ): Promise<void> {
     const loginUrl = `${this.frontendUrl}/login`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: 'Someone tried to register with your email',
@@ -135,7 +223,7 @@ export class EmailService {
   ): Promise<void> {
     const confirmUrl = `${this.frontendUrl}/organisations/${organisationPublicId}/settings?confirmDeletion=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Confirm deletion of ${organisationName}`,
@@ -154,7 +242,7 @@ export class EmailService {
     organisationName: string,
     details: string,
   ): Promise<void> {
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `${organisationName}: account deletion`,
@@ -193,7 +281,7 @@ export class EmailService {
     const name = escapeHtml(organisationName);
     const line = reference ? ` (invoice ${escapeHtml(reference)})` : '';
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Your ${APP_NAME} receipt — ${amount}`,
@@ -238,7 +326,7 @@ export class EmailService {
     const email = escapeHtml(message.email);
     const website = escapeHtml(message.website);
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       replyTo: message.email,
@@ -285,7 +373,7 @@ export class EmailService {
       ? `<p>The free trial of ${APP_NAME} for <strong>${name}</strong> has ended. Your team can carry on working until <strong>${escapeHtml(accessEndsOn)}</strong>; after that, tracking stops until a payment method is added.</p>`
       : `<p>Your free trial of ${APP_NAME} for <strong>${name}</strong> ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject,
@@ -322,7 +410,7 @@ export class EmailService {
     const name = escapeHtml(organisationName);
     const billingUrl = `${this.frontendUrl}/settings/billing`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Action needed: a ${APP_NAME} seat payment failed`,
@@ -355,7 +443,7 @@ export class EmailService {
       ? `<p style="white-space:pre-wrap">${escapeHtml(report.message.trim())}</p>`
       : '';
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to: report.to,
       replyTo: report.senderEmail,

@@ -13,30 +13,42 @@ jest.mock('resend', () => ({
   })),
 }));
 
+/**
+ * `RESEND_API_KEY` is read with `get`, not `getOrThrow`: it is optional, so
+ * an absent one must answer undefined rather than throw. Both are stubbed
+ * because `FRONTEND_URL` is still required.
+ */
+function configWith(values: Record<string, string | undefined>) {
+  return {
+    get: (key: string) => values[key],
+    getOrThrow: (key: string) => values[key],
+  };
+}
+
+const CONFIGURED = {
+  RESEND_API_KEY: 're_test_key',
+  EMAIL_SENDER: 'noreply@example.com',
+  FRONTEND_URL: 'http://localhost:3000',
+};
+
+async function serviceWith(
+  values: Record<string, string | undefined>,
+): Promise<EmailService> {
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      EmailService,
+      { provide: ConfigService, useValue: configWith(values) },
+    ],
+  }).compile();
+  return module.get(EmailService);
+}
+
 describe('EmailService', () => {
   let service: EmailService;
 
   beforeEach(async () => {
     sendMock.mockClear();
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EmailService,
-        {
-          provide: ConfigService,
-          useValue: {
-            getOrThrow: (key: string) =>
-              ({
-                RESEND_API_KEY: 're_test_key',
-                EMAIL_SENDER: 'noreply@example.com',
-                FRONTEND_URL: 'http://localhost:3000',
-              })[key],
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get(EmailService);
+    service = await serviceWith(CONFIGURED);
   });
 
   it('sends a set-password email with a link containing the token and mentions the app and org', async () => {
@@ -177,5 +189,126 @@ describe('EmailService', () => {
 
       expect(await service.sendReportEmail(report)).toBe(false);
     });
+  });
+});
+
+/**
+ * Email is optional, because requiring an account with a third-party
+ * provider before the app will start would make "free to self-host"
+ * untrue. The Resend SDK throws on an empty key — and an empty key is
+ * exactly what copying .env.example gives you — so this is the difference
+ * between a self-hosted install booting and not.
+ */
+/** Everything the logger was handed, as one searchable string. */
+function loggedLines(warn: jest.SpyInstance): string {
+  return (warn.mock.calls as unknown[][])
+    .map((call) => String(call[0]))
+    .join('\n');
+}
+
+describe('EmailService with no provider configured', () => {
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    sendMock.mockClear();
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => warn.mockRestore());
+
+  for (const [label, key] of [
+    ['unset', undefined],
+    ['empty', ''],
+    ['whitespace', '   '],
+  ] as const) {
+    it(`starts with a ${label} key`, async () => {
+      await expect(
+        serviceWith({ ...CONFIGURED, RESEND_API_KEY: key }),
+      ).resolves.toBeDefined();
+    });
+  }
+
+  it('knows it is not delivering', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    expect(offline.isDelivering).toBe(false);
+  });
+
+  it('is delivering once a key is set', async () => {
+    const online = await serviceWith(CONFIGURED);
+
+    expect(online.isDelivering).toBe(true);
+  });
+
+  it('sends nothing to the provider', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendSetPasswordEmail('owner@acme.test', 'tok', 'Acme');
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The links are the point. Setting a first password, accepting an
+   * invitation and confirming a deletion are each only completable through
+   * a one-time URL. Without this, an operator could create an organisation
+   * and never be able to sign in to it.
+   */
+  it('logs the link so the flow can still be completed', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendSetPasswordEmail('owner@acme.test', 'the-token', 'Acme');
+
+    const logged = loggedLines(warn);
+    expect(logged).toContain(
+      'http://localhost:3000/set-password?token=the-token',
+    );
+    expect(logged).toContain('owner@acme.test');
+  });
+
+  it('logs invitation links too', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendInvitationEmail('new@acme.test', 'invite-token', 'Acme');
+
+    const logged = loggedLines(warn);
+    expect(logged).toContain('invite-token');
+  });
+
+  /**
+   * Callers treat a failure as worth logging but never as a reason to fail
+   * the request behind it. A message that was logged rather than sent is
+   * not a failure from the caller's point of view, so it must not read as
+   * one.
+   */
+  it('reports no error for a message it only logged', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await expect(
+      offline.sendReportEmail({
+        to: ['someone@acme.test'],
+        subject: 'Weekly report',
+        message: 'Here it is',
+        senderName: 'Owner',
+        senderEmail: 'owner@acme.test',
+        organisationName: 'Acme',
+        attachment: { filename: 'r.pdf', content: Buffer.from('pdf') },
+      }),
+    ).resolves.toBe(true);
   });
 });
