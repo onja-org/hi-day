@@ -4,10 +4,9 @@ import { useState } from "react";
 import { ContactModal } from "../ContactModal";
 
 /**
- * Shown on `/pricing` and again inside Settings → Billing: the same message
- * belongs in both places, and the Billing page is where an admin is already
- * thinking about the bill. Deliberately one component rather than two —
- * "same price per person" is a claim that must not drift between pages.
+ * Shown inside Settings → Billing, which is where an admin is already
+ * thinking about the bill. Kept as one component because
+ * "same price per person" is a claim that must not drift.
  *
  * "Talk to us" opens the contact form rather than a `mailto:` link, which it
  * used to be. A mail client link assumes one is configured, loses the

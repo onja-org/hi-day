@@ -6,6 +6,7 @@ import { SealPercentIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { trialBannerCopy } from "@/lib/trialBannerCopy";
+import { CLOUD_PRICING_URL } from "@/lib/cloudSiteUrl";
 import { hasStripeKey } from "@/lib/stripeClient";
 import { PaymentModal } from "./billing/PaymentModal";
 
@@ -61,9 +62,10 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
         </span>
       </p>
 
-      {/* Takes the card here rather than sending them to the pricing page to
-          start again. Falls back to that page where no publishable key is
-          configured, since the modal could not draw a card field at all. */}
+      {/* Takes the card here rather than sending them away to start again.
+          Falls back to Hi Day Cloud's pricing page where no publishable key
+          is configured, since the modal could not draw a card field at all
+          — an absolute URL because that page lives in its own repo now. */}
       {hasStripeKey() ? (
         <button
           type="button"
@@ -74,7 +76,7 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
         </button>
       ) : (
         <Link
-          href="/pricing"
+          href={CLOUD_PRICING_URL}
           className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
         >
           Add payment

@@ -6,6 +6,7 @@ import { MinusIcon, PlusIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { CLOUD_PRICING_URL } from "@/lib/cloudSiteUrl";
 import { useBilledSeats, billedSeatsQueryKey } from "@/hooks/useBilledSeats";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { setBilledSeats } from "@/lib/setBilledSeats";
@@ -253,7 +254,7 @@ export function BillingPlanCard({
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/pricing"
+                href={CLOUD_PRICING_URL}
                 className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream"
               >
                 See pricing
@@ -268,7 +269,7 @@ export function BillingPlanCard({
                 </button>
               ) : (
                 <Link
-                  href="/pricing"
+                  href={CLOUD_PRICING_URL}
                   className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white"
                 >
                   Add payment

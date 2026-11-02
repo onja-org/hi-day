@@ -27,7 +27,6 @@
     "react-dom": "19.2.8",
     "read-excel-file": "^9.3.10",
     "recharts": "^3.10.1",
-    "remixicon": "^4.9.1",
     "sonner": "^2.0.8"
   },
   "devDependencies": {

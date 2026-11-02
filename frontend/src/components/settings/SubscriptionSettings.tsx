@@ -6,7 +6,7 @@ import { TRIAL_DAYS } from "@/lib/pricing.generated";
 import { BillingPlanCard } from "./BillingPlanCard";
 import { TrialCard } from "./TrialCard";
 import { SubscriptionCard } from "./SubscriptionCard";
-import { PricingLargeTeam } from "../pricing/PricingLargeTeam";
+import { PricingLargeTeam } from "../billing/PricingLargeTeam";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
 
