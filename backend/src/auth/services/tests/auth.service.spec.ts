@@ -996,6 +996,51 @@ describe('AuthService', () => {
         service.refresh(request, makeResponse().response),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
+
+    it('clears the session cookies when the presented token cannot be rotated', async () => {
+      const { refreshTokenService, rotate } = makeRefreshTokenService();
+      rotate.mockRejectedValue(new UnauthorizedException('nope'));
+      const service = makeService({ refreshTokenService });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest('refresh_token=spent-refresh-token');
+
+      await expect(service.refresh(request, response)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('clears the session cookies when there is no refresh-token cookie', async () => {
+      const service = makeService();
+      const { response, clearCookie } = makeResponse();
+
+      await expect(
+        service.refresh(makeRequest(undefined), response),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('leaves the session cookies alone when the refresh succeeds', async () => {
+      const { refreshTokenService } = makeRefreshTokenService();
+      const service = makeService({ refreshTokenService });
+      const { response, clearCookie } = makeResponse();
+
+      await service.refresh(makeRequest('refresh_token=good'), response);
+
+      expect(clearCookie).not.toHaveBeenCalled();
+    });
   });
 
   describe('logout', () => {
