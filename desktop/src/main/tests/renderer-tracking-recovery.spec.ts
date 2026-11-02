@@ -99,6 +99,8 @@ interface Scenario {
   projectsEnabled?: boolean;
   /** A daily/weekly work time limit the server reports as already reached. */
   limitReached?: { kind: 'daily' | 'weekly'; limitHours: number };
+  /** What main answers when asked whether this launch should start the timer itself. */
+  autoStartDue?: boolean;
 }
 
 function launch(scenario: Scenario) {
@@ -108,6 +110,13 @@ function launch(scenario: Scenario) {
     eval: (code: string) => void;
     Date: DateConstructor;
   };
+
+  /**
+   * Main's side of the auto-start decision: it says yes at most once,
+   * spending the occasion (this day, this power-on) as it answers. A new
+   * day or a new power-on re-arms it — `rearmAutoStart()` here.
+   */
+  let autoStartArmed = scenario.autoStartDue ?? false;
 
   // The renderer's clock, moved forward by `advanceClock` so a test can let
   // minutes pass without waiting for them.
@@ -129,6 +138,7 @@ function launch(scenario: Scenario) {
     start: 0,
     status: 0,
     idlePolicy: 0,
+    autoStartDue: 0,
     /** The project each start named, in order. */
     startedWith: [] as (string | null)[],
     pause: 0,
@@ -339,6 +349,12 @@ function launch(scenario: Scenario) {
           })),
         });
       },
+      autoStartDue: () => {
+        calls.autoStartDue += 1;
+        const due = autoStartArmed;
+        autoStartArmed = false;
+        return Promise.resolve(due);
+      },
       idlePolicy: () => {
         calls.idlePolicy += 1;
         if (!server.revoked && calls.idlePolicy <= (scenario.failingIdlePolicyLoads ?? 0)) {
@@ -465,7 +481,17 @@ function launch(scenario: Scenario) {
       }
       wakeListeners.forEach((listener) => listener());
     },
+    /** A new day, or a new power-on: main would answer yes once more. */
+    rearmAutoStart: () => {
+      autoStartArmed = true;
+    },
     idlePromptVisible: () => !document.getElementById('idle-prompt')!.hidden,
+    autoStartNoticeVisible: () =>
+      !document.getElementById('auto-start-notice')!.hidden,
+    autoStartMessage: () =>
+      document.getElementById('auto-start-message')!.textContent,
+    clickAutoStartStop: () => document.getElementById('auto-start-stop')!.click(),
+    clickAutoStartOk: () => document.getElementById('auto-start-ok')!.click(),
     /** The passing line above the timer — what it says, or null while hidden. */
     idleNotice: () => {
       const el = document.getElementById('idle-notice')!;
@@ -623,6 +649,147 @@ describe('renderer leaves the timer stopped at launch', () => {
 
     expect(app.calls.start).toBe(1);
     expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+});
+
+describe('renderer starts the timer when the machine comes on', () => {
+  it('starts on the Project play would have used, and says so', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    expect(app.autoStartMessage()).toContain('Project One');
+    app.close();
+  });
+
+  it('starts with no Project where the organisation has none', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      autoStartDue: true,
+      projectsEnabled: false,
+    });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([null]);
+    expect(app.autoStartMessage()).toBe("You're now tracking time.");
+    app.close();
+  });
+
+  it('offers one click to undo it', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    app.clickAutoStartStop();
+    await waitFor(() => !app.isRunning() && app.playReady());
+
+    expect(app.autoStartNoticeVisible()).toBe(false);
+    expect(app.calls.timerNotices.at(-1)).toBe('Stopped timer for Project One');
+    app.close();
+  });
+
+  it('dismisses with OK, leaving the timer running', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    await waitFor(() => app.autoStartNoticeVisible());
+
+    app.clickAutoStartOk();
+
+    expect(app.autoStartNoticeVisible()).toBe(false);
+    expect(app.isRunning()).toBe(true);
+    app.close();
+  });
+
+  it('says why in the notification shelf when it is refused, and opens nothing', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    app.server.refuseStarts = true;
+    app.server.refuseStartStatus = 403;
+    await waitFor(() => app.calls.timerNotices.length > 0);
+
+    expect(app.calls.timerNotices[0]).toContain('did not start automatically');
+    expect(app.calls.timerNotices[0]).toContain('daily limit');
+    // Nobody clicked anything, so nothing is put in front of them.
+    expect(app.autoStartNoticeVisible()).toBe(false);
+    expect(app.limitDialogVisible()).toBe(false);
+    expect(app.isRunning()).toBe(false);
+    app.close();
+  });
+
+  it('leaves a timer already running elsewhere alone', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      autoStartDue: true,
+      runningElsewhere: true,
+    });
+    await waitForSetup(app);
+    await settle(FAST_POLL_MS * 3);
+
+    expect(app.calls.start).toBe(0);
+    expect(app.autoStartNoticeVisible()).toBe(false);
+    app.close();
+  });
+
+  it('lets an idle question found at launch be answered first', async () => {
+    const app = launch({
+      failingProjectLoads: 0,
+      autoStartDue: true,
+      idlePolicy: { handling: 'flag', thresholdMinutes: 20 },
+      storedHold: {
+        projectId: PROJECT.id,
+        taskId: null,
+        idleStartedAt: new Date(Date.now() - 90 * MINUTE_MS).toISOString(),
+        returnedAt: null,
+        reason: 'sleep',
+      },
+    });
+    await waitFor(() => app.idlePromptVisible());
+    await settle(FAST_POLL_MS * 3);
+
+    expect(app.autoStartNoticeVisible()).toBe(false);
+    expect(app.calls.start).toBe(0);
+    // Asked all the same: main spends the power-on as it answers, so the
+    // start this displaced cannot turn up at a sign-in hours later.
+    expect(app.calls.autoStartDue).toBe(1);
+    app.close();
+  });
+
+  // Autostart at OS login routinely beats the network up. Main is not
+  // asked until the projects are in, so the start lands on the retry.
+  it('still starts once a setup that failed at launch comes good', async () => {
+    const app = launch({ failingProjectLoads: 1, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  // Opening the lid in the morning is the only moment the app gets: the
+  // machine never went off, so nothing relaunches and setup never reruns.
+  it('starts on waking, where a new day begins without a launch', async () => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+    expect(app.calls.start).toBe(0);
+
+    app.rearmAutoStart();
+    app.wake();
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    app.close();
+  });
+
+  // Whatever reruns setup — a sign-in, a Projects setting flipping, the
+  // retry above — gets one answer between them.
+  it('starts once however often setup runs', async () => {
+    const app = launch({ failingProjectLoads: 0, autoStartDue: true });
+    await waitFor(() => app.isRunning() && app.autoStartNoticeVisible());
+    app.clickAutoStartOk();
+
+    app.trayToggleTimer();
+    await waitFor(() => !app.isRunning());
+    await settle(FAST_POLL_MS * 3);
+
+    expect(app.calls.startedWith).toEqual([PROJECT.id]);
+    expect(app.autoStartNoticeVisible()).toBe(false);
     app.close();
   });
 });
@@ -924,6 +1091,25 @@ describe('renderer takes the tray menu', () => {
 
   // Clicking the running Project's row pauses it; a menu item that reads
   // as "track this" must not.
+  it.each([
+    ['the play button', (app: ReturnType<typeof launch>) => app.clickPlay()],
+    ['the tray menu', (app: ReturnType<typeof launch>) => app.trayToggleTimer()],
+  ])('confirms a start and a stop made from %s', async (_label, toggle) => {
+    const app = launch({ failingProjectLoads: 0 });
+    await waitForSetup(app);
+
+    toggle(app);
+    await waitFor(() => app.isRunning() && app.playReady());
+    toggle(app);
+    await waitFor(() => !app.isRunning() && app.playReady());
+
+    expect(app.calls.timerNotices).toEqual([
+      'Started timer for Project One',
+      'Stopped timer for Project One',
+    ]);
+    app.close();
+  });
+
   it('starts from the tray without raising the window, and says so', async () => {
     const app = launch({ failingProjectLoads: 0 });
     await waitForSetup(app);
@@ -946,7 +1132,8 @@ describe('renderer takes the tray menu', () => {
     app.trayToggleTimer();
     await waitFor(() => !app.isRunning() && app.playReady());
 
-    expect(app.calls.timerNotices).toEqual(['Stopped timer for Project One']);
+    // The play button that started it said so too; this is the last word.
+    expect(app.calls.timerNotices.at(-1)).toBe('Stopped timer for Project One');
     expect(app.calls.shows).toBe(raisedBefore);
     app.close();
   });

@@ -21,6 +21,7 @@ export interface TrayMenuState {
   /** Null when there is no known web app to send anyone to. */
   webAppUrl: string | null;
   compactAlwaysOnTop: boolean;
+  autoStartTimer: boolean;
   closeChoiceRemembered: boolean;
 }
 
@@ -31,6 +32,7 @@ export interface TrayMenuActions {
   signOut: () => void;
   openWeb: (url: string) => void;
   toggleCompactAlwaysOnTop: () => void;
+  toggleAutoStartTimer: () => void;
   forgetCloseChoice: () => void;
   checkForUpdates: () => void;
   showAbout: () => void;
@@ -181,6 +183,18 @@ export function trayMenuTemplate(
           checked: state.compactAlwaysOnTop,
           click: actions.toggleCompactAlwaysOnTop,
         },
+        // Signed out there is nothing to track against, so the item would
+        // promise something it could not do.
+        ...(signedIn
+          ? [
+              {
+                label: 'Start timer when the computer starts',
+                type: 'checkbox' as const,
+                checked: state.autoStartTimer,
+                click: actions.toggleAutoStartTimer,
+              },
+            ]
+          : []),
         // The only way back from a remembered close choice short of wiping
         // the app's data — without it, a remembered "Quit" is permanent.
         ...(state.closeChoiceRemembered

@@ -728,6 +728,67 @@ function handleTrackingFailure(
   showTrackingError(result.message);
 }
 
+const autoStartNotice = document.getElementById("auto-start-notice")!;
+const autoStartMessage = document.getElementById("auto-start-message")!;
+const autoStartStop = document.getElementById(
+  "auto-start-stop",
+) as HTMLButtonElement;
+const autoStartOk = document.getElementById("auto-start-ok") as HTMLButtonElement;
+
+/**
+ * Says the timer started by itself, with one click to undo it. Not raised:
+ * the window is already on screen when the machine has just come on, and
+ * nothing here is worth taking the foreground for.
+ */
+function showAutoStartNotice(): void {
+  const name = trackedProjectName();
+  // A question already on screen keeps the screen; the notification shelf
+  // carries this instead, so the start is never silent either way.
+  if (aDialogIsOpen()) {
+    void window.api.windowControls.timerNotice(
+      `Started timer${name ? ` for ${name}` : ""}`,
+    );
+    return;
+  }
+  autoStartMessage.textContent = name
+    ? `You're now tracking time to ${name}.`
+    : "You're now tracking time.";
+  setMode("full", true);
+  autoStartNotice.hidden = false;
+  autoStartOk.focus();
+}
+
+autoStartOk.addEventListener("click", () => {
+  autoStartNotice.hidden = true;
+});
+
+autoStartStop.addEventListener("click", () => {
+  autoStartNotice.hidden = true;
+  // The stop button's own path, which says what it did like any other.
+  if (!timerToggle.disabled) void toggleTimer();
+});
+
+/**
+ * Starts the timer when the machine has just been turned on, for someone
+ * who asked for that in Preferences. Through the play button's own path,
+ * so it can only ever start what play itself would.
+ */
+async function autoStartTimerIfDue(): Promise<void> {
+  // Asked before the checks below, never after: main spends the power-on
+  // as it answers, and a start declined here must not be offered again
+  // later in the same one.
+  if (!(await window.api.tracking.autoStartDue())) return;
+  // Main checked these too; a question can go up in between.
+  if (runningEntry || idleHold || aDialogIsOpen()) return;
+
+  await startTracking((message) => {
+    void window.api.windowControls.timerNotice(
+      `Your timer did not start automatically. ${message}`,
+    );
+  });
+  if (isTracking()) showAutoStartNotice();
+}
+
 const timerBlocked = document.getElementById("timer-blocked")!;
 const timerBlockedMessage = document.getElementById("timer-blocked-message")!;
 const timerBlockedDismiss = document.getElementById(
@@ -2029,7 +2090,14 @@ async function resolveProjectToTrack(): Promise<{
 }
 
 /** Starts a new entry against the resolved Project, when play is pressed. */
-async function startTracking(): Promise<void> {
+async function startTracking(
+  /**
+   * Where a refusal goes instead of the dialog or the red line — the
+   * automatic start reports it to the notification shelf, since nobody
+   * clicked anything and so nothing needs dismissing.
+   */
+  reportRefusal?: (message: string) => void,
+): Promise<void> {
   if (!projectsLoaded) {
     // Setup is still waiting on its retry. Retrying now reaches the server,
     // so an ended session lands on the login screen instead of "No projects".
@@ -2043,7 +2111,9 @@ async function startTracking(): Promise<void> {
       ? await resolveProjectToTrack()
       : { projectId: null, taskId: null };
   if (!resolved) {
-    showTrackingError("No projects are available to track time against.");
+    const message = "No projects are available to track time against.";
+    if (reportRefusal) reportRefusal(message);
+    else showTrackingError(message);
     return;
   }
   const target =
@@ -2071,7 +2141,14 @@ async function startTracking(): Promise<void> {
     return;
   }
 
-  handleTrackingFailure(result);
+  // Only a refusal reaches the shelf. An unreached request is not one: the
+  // start was queued and will be replayed with its real time
+  // (docs/adr/0025-...), so the sync line owns it — and that path's wording
+  // is about idle time being safe, which this is not.
+  handleTrackingFailure(
+    result,
+    result.status === undefined ? undefined : reportRefusal,
+  );
   if (result.runningEntry && !result.unauthorized) {
     pendingSwitch = { projectId: target.projectId, taskId: target.taskId };
     switchButton.hidden = false;
@@ -2081,19 +2158,34 @@ async function startTracking(): Promise<void> {
 /** Set while the organisation tracks from another client. */
 let trackingToggleBlocked = false;
 
-async function toggleTimer(): Promise<void> {
-  {
-    timerToggle.disabled = true;
-    try {
-      if (!runningEntry) {
-        await startTracking();
-        return;
-      }
+/** Whether time is accruing right now — a paused entry is not. */
+function isTracking(): boolean {
+  return runningEntry !== null && runningEntry.pausedAt === null;
+}
 
+/** The Project a notice should name, where there is one to name. */
+function trackedProjectName(): string | null {
+  if (!projectsEnabled || !runningEntry?.projectId) return null;
+  return projectNameFor(runningEntry.projectId);
+}
+
+/**
+ * Start or stop, for the play button, both small bars and the tray's own
+ * menu item. Each confirms itself with a desktop notification, which is
+ * the only sign of it at all when the window is not on screen.
+ */
+async function toggleTimer(): Promise<void> {
+  const wasTracking = isTracking();
+  const stopping = wasTracking ? trackedProjectName() : null;
+  timerToggle.disabled = true;
+  try {
+    if (!runningEntry) {
+      await startTracking();
+    } else {
       clearTrackingError();
       // `pausedAt` is never set any more — pausing ends the entry — so this
-      // always pauses, and starting again goes through the `!runningEntry`
-      // branch above. `resume` stays reachable for an older agent.
+      // always pauses, and starting again goes through the branch above.
+      // `resume` stays reachable for an older agent.
       const result = runningEntry.pausedAt
         ? await window.api.tracking.resume()
         : await window.api.tracking.pause();
@@ -2105,10 +2197,18 @@ async function toggleTimer(): Promise<void> {
       } else {
         handleTrackingFailure(result);
       }
-    } finally {
-      timerToggle.disabled = trackingToggleBlocked;
     }
+  } finally {
+    timerToggle.disabled = trackingToggleBlocked;
   }
+  // Unchanged means it was refused, and the refusal brings the window
+  // forward by itself — claiming a start that did not happen would be
+  // worse than saying nothing.
+  if (isTracking() === wasTracking) return;
+  const name = isTracking() ? trackedProjectName() : stopping;
+  void window.api.windowControls.timerNotice(
+    `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
+  );
 }
 
 timerToggle.addEventListener("click", () => void toggleTimer());
@@ -2230,6 +2330,10 @@ async function runInitTracking(): Promise<void> {
   // refresh above, never behind it: a failed read must not swallow a
   // question nobody has answered.
   await settleIdleHold();
+
+  // Turning the machine on starts the timer, for someone who asked for
+  // that in Preferences. After the question above, which comes first.
+  await autoStartTimerIfDue();
 
   // Never starts the timer: quitting stopped it, and only the person
   // pressing play starts it again. Shows what play would resume instead,
@@ -2450,6 +2554,7 @@ window.api.idle.onWake(() => {
       console.error("[idle] status refresh on wake failed:", error);
     }
     await settleIdleHold();
+    await autoStartTimerIfDue();
   })();
 });
 
@@ -2526,36 +2631,12 @@ window.api.windowControls.onRefusedTime((refused) => {
 /**
  * The tray's Start/Stop item, taking the same click the play button does
  * rather than a second path into starting: that one already resolves the
- * Project, handles a timer running elsewhere, and honours a refusal.
+ * Project, handles a timer running elsewhere, honours a refusal, and says
+ * what it did.
  */
-/** Whether time is accruing right now — a paused entry is not. */
-function isTracking(): boolean {
-  return runningEntry !== null && runningEntry.pausedAt === null;
-}
-
-/** The Project a tray notice should name, where there is one to name. */
-function trackedProjectName(): string | null {
-  if (!projectsEnabled || !runningEntry?.projectId) return null;
-  return projectNameFor(runningEntry.projectId);
-}
-
 window.api.windowControls.onTrayToggleTimer(() => {
-  // The button's own path, including its disabled guard: the tray must
-  // never be a second way to start a timer the window would refuse.
   if (timerToggle.disabled) return;
-  void (async () => {
-    const wasTracking = isTracking();
-    const stopping = wasTracking ? trackedProjectName() : null;
-    await toggleTimer();
-    // Unchanged means it was refused, and the refusal brings the window
-    // forward by itself — claiming a start that did not happen would be
-    // worse than saying nothing.
-    if (isTracking() === wasTracking) return;
-    const name = isTracking() ? trackedProjectName() : stopping;
-    void window.api.windowControls.timerNotice(
-      `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
-    );
-  })();
+  void toggleTimer();
 });
 
 /**

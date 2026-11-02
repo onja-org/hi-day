@@ -408,6 +408,38 @@
       </div>
     </div>
 
+    <div id="auto-start-notice" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card auto-start-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="auto-start-title"
+        aria-describedby="auto-start-message"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="auto-start-title" class="close-prompt-title">
+          Your timer has automatically started
+        </h2>
+        <p id="auto-start-message" class="close-prompt-message"></p>
+        <p class="close-prompt-message">
+          Change this under Preferences in the Hi Day tray menu.
+        </p>
+        <div class="close-prompt-actions">
+          <button id="auto-start-stop" type="button" class="button button-secondary">
+            Stop timer
+          </button>
+          <button id="auto-start-ok" type="button" class="button button-sun">
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="timer-blocked" class="close-prompt" hidden>
       <div
         class="close-prompt-card timer-blocked-card"

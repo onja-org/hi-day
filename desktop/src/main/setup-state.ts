@@ -13,6 +13,9 @@ interface SetupState {
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
+  autoStartTimer?: boolean;
+  lastAutoStartedBoot?: string;
+  lastAutoStartedDay?: string;
   webAppUrl?: string;
 }
 
@@ -85,6 +88,54 @@ export function setCompactAlwaysOnTop(
   pinned: boolean,
 ): void {
   write(userDataDir, { ...read(userDataDir), compactAlwaysOnTop: pinned });
+}
+
+/**
+ * Whether turning the machine on starts the timer too — see
+ * `auto-start.ts`. A machine preference, not an account one: "this is the
+ * laptop I work on" is a property of the laptop.
+ *
+ * On unless turned off, hence `!== false` rather than `=== true`: a
+ * preference somebody has to find before the feature does anything is a
+ * feature nobody has, and the dialog it raises offers to stop the timer it
+ * started.
+ */
+export function autoStartTimer(userDataDir: string): boolean {
+  return read(userDataDir).autoStartTimer !== false;
+}
+
+export function setAutoStartTimer(userDataDir: string, on: boolean): void {
+  write(userDataDir, { ...read(userDataDir), autoStartTimer: on });
+}
+
+/**
+ * The power-on and the day this last answered for — started a timer, or
+ * deliberately declined to. Remembered so that a crash relaunch or an
+ * update restart on the same machine does not start a second timer, and so
+ * that a start something else displaced does not turn up hours later.
+ */
+export function lastAutoStartedBoot(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedBoot ?? null;
+}
+
+export function lastAutoStartedDay(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedDay ?? null;
+}
+
+/**
+ * Both at once, in one write: a day remembered without its power-on, or
+ * the reverse, reads as half an answer and starts a second timer. `boot`
+ * is null where the machine cannot tell its power-ons apart, and the day
+ * then carries the answer alone.
+ */
+export function rememberAutoStarted(
+  userDataDir: string,
+  boot: string | null,
+  day: string,
+): void {
+  const state: SetupState = { ...read(userDataDir), lastAutoStartedDay: day };
+  if (boot !== null) state.lastAutoStartedBoot = boot;
+  write(userDataDir, state);
 }
 
 function write(userDataDir: string, state: SetupState): void {

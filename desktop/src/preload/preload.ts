@@ -282,6 +282,9 @@ const api = {
       ipcRenderer.invoke("tracking:completedTotals", from, to) as Promise<
         TrackingResult<CompletedTotals>
       >,
+    /** Whether turning the machine on should start the timer — see auto-start.ts. */
+    autoStartDue: (): Promise<boolean> =>
+      ipcRenderer.invoke("tracking:autoStartDue") as Promise<boolean>,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke("tracking:idlePolicy") as Promise<
         TrackingResult<IdlePolicy>

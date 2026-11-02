@@ -57,7 +57,16 @@ describe('buildAutostartDesktopEntry', () => {
 
   it('quotes an Exec path containing whitespace', () => {
     const entry = buildAutostartDesktopEntry('/opt/Hi Day/hiday');
-    expect(entry).toContain('Exec="/opt/Hi Day/hiday"');
+    expect(entry).toContain('Exec="/opt/Hi Day/hiday" --no-sandbox');
+  });
+
+  // Without it the entry is written, validates, and silently does
+  // nothing: the binary aborts on startup wherever chrome-sandbox is not
+  // SUID and unprivileged user namespaces are restricted.
+  it('runs without the Chromium sandbox, which the launcher entries also do', () => {
+    expect(buildAutostartDesktopEntry('/opt/hiday/hiday')).toContain(
+      'Exec=/opt/hiday/hiday --no-sandbox',
+    );
   });
 });
 
