@@ -1,12 +1,16 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Not, Repository } from 'typeorm';
-import { BilledSeatsService } from '../../billing/services/billed-seats.service';
+import {
+  ENTITLEMENTS,
+  type Entitlements,
+} from '../../entitlements/entitlements';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { DevicesService } from '../../devices/services/devices.service';
@@ -91,7 +95,8 @@ export class MembershipsService {
     private readonly devicesService: DevicesService,
     private readonly authService: AuthService,
     private readonly timeEntriesService: TimeEntriesService,
-    private readonly billedSeatsService: BilledSeatsService,
+    @Inject(ENTITLEMENTS)
+    private readonly entitlements: Entitlements,
   ) {}
 
   /**
@@ -338,7 +343,7 @@ export class MembershipsService {
     // Deactivating takes someone off the bill. After the transaction, so a
     // failed sync can never roll back the deactivation itself.
     if (dto.deactivate) {
-      await this.billedSeatsService.syncToProvider(organisationId);
+      await this.entitlements.syncSeats(organisationId);
     }
 
     // Re-read rather than echo the object we just built: the hour columns

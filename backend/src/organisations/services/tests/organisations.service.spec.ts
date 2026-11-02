@@ -1,7 +1,7 @@
 import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
-import { TrialService } from '../../../billing/services/trial.service';
+import type { Entitlements } from '../../../entitlements/entitlements';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Membership } from '../../../database/entities/membership.entity';
 import { MembershipRole } from '../../../database/entities/membership-role.enum';
@@ -64,10 +64,19 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Team>;
   }
 
+  /**
+   * Entitlements stands where TrialService used to: Cloud starts a trial
+   * here, a self-hosted install does nothing. Both are covered in
+   * entitlements' own tests; this one only cares that it is called.
+   */
   function makeTrialService() {
     const startTrial = jest.fn().mockResolvedValue(undefined);
     return {
-      trialService: { startTrial } as unknown as TrialService,
+      trialService: {
+        billingEnabled: true,
+        startTrial,
+        syncSeats: jest.fn().mockResolvedValue(undefined),
+      } as unknown as Entitlements,
       startTrial,
     };
   }

@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import {
+  BILLING_ENABLED_VAR,
+  parseBillingEnabled,
+} from '../../entitlements/billing-enabled';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   CLOUD_PRICES,
@@ -12,9 +16,17 @@ import {
  * The Stripe client, and the one thing that must be true before it is used:
  * that the Prices it will charge against are the Prices this app advertises.
  *
- * Absent configuration is not an error. A self-hosted install has no Stripe
- * and must boot and work without it ("Billing switched off for self-hosted
- * installs"), so `isConfigured` is how every caller asks.
+ * Whether there is a client at all is `BILLING_ENABLED`, not whether a key
+ * happens to be lying around. A self-hosted install has no Stripe and must
+ * boot and work without one, so `isConfigured` is how every caller asks —
+ * and with billing off it is false even if a stray key is set, because the
+ * flag is the decision and the key is only the means.
+ *
+ * Billing **on** with no key is the one combination that refuses to boot.
+ * It used to degrade quietly: seat syncs became no-ops and admins were shown
+ * an "Add payment" button that led nowhere, on a Cloud deploy that looked
+ * healthy. A deployment that means to charge people and cannot is
+ * misconfigured, and the cheapest place to find that out is start-up.
  */
 @Injectable()
 export class StripeService implements OnModuleInit {
@@ -29,9 +41,24 @@ export class StripeService implements OnModuleInit {
   private resolvedProductId: string | null = null;
   private readonly freeOrganisationIds: Set<number>;
 
+  /** `BILLING_ENABLED`. See billing-enabled.ts. */
+  private readonly billingEnabled: boolean;
+
   constructor(configService: ConfigService) {
+    this.billingEnabled = parseBillingEnabled(
+      configService.get<string>(BILLING_ENABLED_VAR),
+    );
     const secretKey = configService.get<string>('STRIPE_SECRET_KEY');
-    this.client = secretKey ? new Stripe(secretKey) : null;
+
+    if (this.billingEnabled && !secretKey) {
+      throw new Error(
+        `${BILLING_ENABLED_VAR} is on but STRIPE_SECRET_KEY is not set. ` +
+          'Set the key, or turn billing off for a self-hosted install.',
+      );
+    }
+
+    this.client =
+      this.billingEnabled && secretKey ? new Stripe(secretKey) : null;
     this.configuredProductId = configService.get<string>('STRIPE_PRODUCT_ID');
     this.freeOrganisationIds = parseFreeOrganisationIds(
       configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
@@ -43,6 +70,13 @@ export class StripeService implements OnModuleInit {
     return this.freeOrganisationIds.has(publicId);
   }
 
+  /**
+   * Whether billing happens on this installation.
+   *
+   * Identical to `BILLING_ENABLED` by construction — the flag cannot be on
+   * without a key, and a key without the flag builds no client — so there is
+   * one answer here rather than two that could drift.
+   */
   get isConfigured(): boolean {
     return this.client !== null;
   }
@@ -117,8 +151,8 @@ export class StripeService implements OnModuleInit {
   onModuleInit(): void {
     this.logger.log(
       this.client
-        ? 'Stripe is configured; prices come from billing/pricing.ts.'
-        : 'Stripe is not configured; billing is off.',
+        ? 'Billing is on; prices come from billing/pricing.ts.'
+        : `Billing is off (${BILLING_ENABLED_VAR} is not "true"); no trials, no charges, no seat sync.`,
     );
   }
 }

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getSubscription } from "@/lib/subscriptionApi";
+import { useBillingEnabled } from "./useBillingEnabled";
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
 
 export const subscriptionQueryKey = (organisationId: number | string) => [
@@ -17,10 +18,14 @@ export const subscriptionQueryKey = (organisationId: number | string) => [
  */
 export function useSubscription(organisationId: number | string) {
   const organisationQuery = useCurrentOrganisation();
+  const billingEnabled = useBillingEnabled();
 
   return useQuery({
     queryKey: subscriptionQueryKey(organisationId),
-    enabled: organisationQuery.data?.role === "admin",
+  // Not requested where billing is off: the route is not registered on a
+  // self-hosted backend, so the call could only 404. Belt and braces —
+  // the only pages that call this already 404 themselves.
+    enabled: billingEnabled && organisationQuery.data?.role === "admin",
     queryFn: async () => {
       const result = await getSubscription(organisationId);
       if (!result.ok) throw new Error(result.message);

@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { ActivitiesModule } from '../../activities/modules/activities.module';
 import { AppEventsModule } from '../../app-events/modules/app-events.module';
-import { BillingModule } from '../../billing/modules/billing.module';
+import { EntitlementsModule } from '../../entitlements/entitlements.module';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { AuthModule } from '../../auth/modules/auth.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
@@ -48,7 +48,7 @@ function inviteCreateTracker(req: Request): string {
       Project,
     ]),
     AuditLogModule,
-    BillingModule,
+    EntitlementsModule.register(),
     EmailModule,
     JwtAuthModule,
     AuthModule,

@@ -8,6 +8,10 @@ import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
 import { billingRecipients } from '../billing-recipients';
+import {
+  BILLING_ENABLED_VAR,
+  parseBillingEnabled,
+} from '../../entitlements/billing-enabled';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   accessEndsAfter,
@@ -76,6 +80,14 @@ export class TrialService {
    */
   private readonly freeOrganisationIds: Set<number>;
 
+  /**
+   * `BILLING_ENABLED`. Read here rather than asked of `StripeService` so a
+   * question about whether we bill at all does not depend on the object that
+   * talks to the payment provider — the two are the same answer today, and
+   * both come from the one `parseBillingEnabled`.
+   */
+  private readonly billingEnabled: boolean;
+
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptions: Repository<Subscription>,
@@ -86,6 +98,9 @@ export class TrialService {
   ) {
     this.freeOrganisationIds = parseFreeOrganisationIds(
       configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
+    );
+    this.billingEnabled = parseBillingEnabled(
+      configService.get<string>(BILLING_ENABLED_VAR),
     );
   }
 
@@ -98,12 +113,25 @@ export class TrialService {
    * Takes the caller's `EntityManager` so the trial lands in the same
    * transaction that creates the Organisation — one can't exist without the
    * other.
+   *
+   * **With billing off, no Subscription row is written at all**, and this
+   * answers null. That is not a special case bolted on: "no row" is already
+   * how an Organisation that was never on a trial is spelled (see CONTEXT.md's
+   * Subscription entry), and both the banner and the reminder sweep already
+   * read it as nothing to say. A self-hosted install therefore gets the right
+   * behaviour from code that already existed, with no new status to handle.
+   *
+   * The alternative — writing a `trialing` row nobody ever shows — leaves a
+   * countdown running behind a hidden UI, which surfaces as a pile of expired
+   * trials the first time somebody turns billing on.
    */
   async startTrial(
     manager: EntityManager,
     organisationId: string,
     now: Date = new Date(),
-  ): Promise<Subscription> {
+  ): Promise<Subscription | null> {
+    if (!this.billingEnabled) return null;
+
     return manager.save(
       manager.create(Subscription, {
         organisationId,
@@ -166,6 +194,13 @@ export class TrialService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async sendDueTrialReminders(): Promise<void> {
+    // Nothing to remind anyone of where nothing is sold. A self-hosted
+    // install has no trial rows to find, but the sweep is stopped here too
+    // rather than relying on that: an install that once ran with billing on
+    // still has the rows, and turning the flag off must stop the emails
+    // immediately rather than at the next purge.
+    if (!this.billingEnabled) return;
+
     const now = new Date();
 
     const candidates = await this.subscriptions.find({

@@ -104,7 +104,8 @@ describe('MembershipsService', () => {
         ({
           stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
         } as unknown as TimeEntriesService),
-      { syncToProvider: jest.fn().mockResolvedValue(undefined) } as never,
+      // Entitlements: Cloud reaches Stripe here, self-hosted does nothing.
+      { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
 

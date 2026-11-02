@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SettingsCards } from "@/components/settings/SettingsCards";
+import { getPublicConfigServer } from "@/lib/getPublicConfigServer";
 import { settingsHref } from "@/lib/settingsNavigation";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -26,5 +27,12 @@ export default async function SettingsPage({
     );
   }
 
-  return <SettingsCards organisationId={organisationId} />;
+  const { billingEnabled } = await getPublicConfigServer();
+
+  return (
+    <SettingsCards
+      organisationId={organisationId}
+      billingEnabled={billingEnabled}
+    />
+  );
 }

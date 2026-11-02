@@ -20,7 +20,8 @@ import {
 } from "@phosphor-icons/react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
+import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
+import { useBillingEnabled } from "@/hooks/useBillingEnabled";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
@@ -60,6 +61,9 @@ export function Sidebar({
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
+  // No Billing entry where nothing is billed. One filter, shared with the
+  // settings cards and the section header.
+  const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
   const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
@@ -199,7 +203,7 @@ export function Sidebar({
                 icon: SquaresFour,
                 exact: true,
               },
-              ...SETTINGS_GROUPS.map((group) => ({
+              ...settingsGroups.map((group) => ({
                 kind: "link" as const,
                 label: group.label,
                 href: settingsHref(

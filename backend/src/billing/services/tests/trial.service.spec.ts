@@ -4,6 +4,7 @@ import { Organisation } from '../../../database/entities/organisation.entity';
 import { Subscription } from '../../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../../database/entities/subscription-status.enum';
 import { EmailService } from '../../../email/services/email.service';
+import { BILLING_ENABLED_VAR } from '../../../entitlements/billing-enabled';
 import { TRIAL_DAYS } from '../../trial';
 import { TrialService } from '../trial.service';
 
@@ -35,10 +36,27 @@ function makeEmailService() {
   };
 }
 
-/** Config with the given organisations listed as never paying. */
-function makeConfig(freeIds: number[] = []): ConfigService {
+/**
+ * Config with the given organisations listed as never paying.
+ *
+ * Billing is **on** by default here: every test below this point is about
+ * what a paying installation does, and `BILLING_ENABLED` off is covered on
+ * its own further down. Answers per key rather than returning one value for
+ * everything, which would otherwise feed the free-organisation list to the
+ * billing flag and quietly switch billing off for the whole file.
+ */
+function makeConfig(
+  freeIds: number[] = [],
+  billingEnabled = true,
+): ConfigService {
   return {
-    get: () => (freeIds.length > 0 ? freeIds.join(',') : undefined),
+    get: (key: string) => {
+      if (key === BILLING_ENABLED_VAR) return billingEnabled ? 'true' : 'false';
+      if (key === 'BILLING_FREE_ORGANISATION_IDS') {
+        return freeIds.length > 0 ? freeIds.join(',') : undefined;
+      }
+      return undefined;
+    },
   } as unknown as ConfigService;
 }
 
