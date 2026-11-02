@@ -18,7 +18,8 @@ function procWithOpenFiles(paths: string[]): string {
   return root;
 }
 
-describe('readOpenProfiles', () => {
+// Windows can't create the /proc symlinks without Developer Mode.
+describe.skipIf(process.platform === 'win32')('readOpenProfiles', () => {
   it('names every profile the browser has open, and where they live', () => {
     const root = procWithOpenFiles([
       'home/.config/google-chrome/Default/History',

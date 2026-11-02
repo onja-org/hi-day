@@ -62,9 +62,10 @@ describe('afterRemove.sh', () => {
 /**
  * Runs the real script, with its hardcoded scan roots pointed at a temp tree
  * so a test can never reach a real home. Everything else — the guard, the
- * marker matching, the deletion — is the shipped code.
+ * marker matching, the deletion — is the shipped code. Skipped on Windows,
+ * where sh can't glob the C:\ temp path and the script never runs anyway.
  */
-describe('afterRemove.sh, run for real', () => {
+describe.skipIf(process.platform === 'win32')('afterRemove.sh, run for real', () => {
   let root: string;
   let apps: string;
   let runnable: string;
