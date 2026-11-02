@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-only",
   "description": "Hi Day desktop agent (login, device registration, and start/stop time tracking)",
   "homepage": "https://hiday.io",
-  "author": "Rinon <rinon.ten@onja.org>",
+  "author": "Onja <https://github.com/onja-org>",
   "main": "dist/main/main.js",
   "desktopName": "hiday.desktop",
   "engines": {

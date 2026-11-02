@@ -2,6 +2,12 @@ import Stripe from 'stripe';
 import { HANDLED_STRIPE_EVENTS } from '../billing/services/stripe-webhook.service';
 
 /**
+ * **Cloud-only (hiday.io).** Nothing here is needed to self-host: billing
+ * is off by default, `BillingModule` is not even loaded, and the webhook
+ * route this registers does not exist. It is kept in the open-source tree
+ * because the billing code is, and splitting the operational script out
+ * from the feature it operates would leave both harder to follow.
+ *
  * Registers this deployment's webhook endpoint with Stripe, so nobody has to
  * click through the dashboard to set one up.
  *
