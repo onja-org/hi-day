@@ -1,5 +1,5 @@
 import { GithubLogoIcon } from "@phosphor-icons/react/dist/ssr";
-import { GITHUB_ORG_URL } from "@/lib/marketingLinks";
+import { GITHUB_REPO_URL } from "@/lib/marketingLinks";
 
 export function LandingOpenSource() {
   return (
@@ -16,7 +16,7 @@ export function LandingOpenSource() {
           </p>
         </div>
         <a
-          href={GITHUB_ORG_URL}
+          href={GITHUB_REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex h-14.5 items-center gap-2 rounded-brand-sm border-3 border-ink bg-sun px-7 text-lg font-extrabold text-ink shadow-hard transition-transform duration-150 hover:-translate-y-0.5 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-volt-light"

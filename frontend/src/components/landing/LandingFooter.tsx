@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { GITHUB_ORG_URL } from "@/lib/marketingLinks";
+import { GITHUB_REPO_URL } from "@/lib/marketingLinks";
 
 type FooterLink = { label: string; href: string; external?: boolean };
 
@@ -22,7 +22,7 @@ export function LandingFooter({ current = "home" }: { current?: "home" | "pricin
       heading: "Download",
       links: [
         { label: "Desktop app", href: current === "pricing" ? "#download" : "/pricing#download" },
-        { label: "GitHub", href: GITHUB_ORG_URL, external: true },
+        { label: "GitHub", href: GITHUB_REPO_URL, external: true },
       ],
     },
     {

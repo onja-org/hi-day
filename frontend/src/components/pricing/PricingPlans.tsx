@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { GITHUB_ORG_URL } from "@/lib/marketingLinks";
+import { GITHUB_REPO_URL } from "@/lib/marketingLinks";
 import {
   BILLING_PERIODS,
   CLOUD_BILLING_NOTE,
@@ -53,7 +53,7 @@ export function PricingPlans() {
           price="Free"
           priceNote="forever, any team size"
           ctaLabel="Get the code"
-          ctaHref={GITHUB_ORG_URL}
+          ctaHref={GITHUB_REPO_URL}
           ctaExternal
           features={[
             "All tracking features: time, activity, projects, teams, timesheets and reports",
