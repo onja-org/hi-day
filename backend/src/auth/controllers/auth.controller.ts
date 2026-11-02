@@ -22,18 +22,23 @@ import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 
-const SIGNUP_THROTTLE_TTL_MS = 15 * 60 * 1000;
-const SIGNUP_THROTTLE_LIMIT = 5;
-const LOGIN_THROTTLE_TTL_MS = 15 * 60 * 1000;
-// A coarse per-IP flood guard only — the per-email lockout is now handled by
-// LoginAttemptTracker + a required captcha (see AuthService.login), which
-// must not be blocked by this limit once a legitimate retry is captcha-verified.
-const LOGIN_THROTTLE_LIMIT = 30;
-const LOGIN_EMAIL_THROTTLE_BLOCK_DURATION_MS = 45 * 60 * 1000;
-const RESEND_VERIFICATION_THROTTLE_TTL_MS = 15 * 60 * 1000;
-const RESEND_VERIFICATION_THROTTLE_LIMIT = 5;
-const REFRESH_THROTTLE_TTL_MS = 15 * 60 * 1000;
-const REFRESH_THROTTLE_LIMIT = 20;
+const THROTTLE_TTL_MS = 15 * 60 * 1000;
+
+// `default` is per-IP, which behind the proxy means one bucket for everyone,
+// so it is sized as a global ceiling. The per-caller limits are the named
+// throttlers below. See common/throttler-trackers.util.ts.
+const GLOBAL_SIGNUP_THROTTLE_LIMIT = 200;
+const GLOBAL_LOGIN_THROTTLE_LIMIT = 600;
+const GLOBAL_EMAIL_SEND_THROTTLE_LIMIT = 200;
+const GLOBAL_REFRESH_THROTTLE_LIMIT = 2000;
+
+const PER_EMAIL_SIGNUP_THROTTLE_LIMIT = 5;
+const PER_EMAIL_SEND_THROTTLE_LIMIT = 5;
+const PER_EMAIL_THROTTLE_BLOCK_DURATION_MS = 45 * 60 * 1000;
+const PER_TOKEN_RESET_THROTTLE_LIMIT = 10;
+// Per browser session, so one dead refresh token throttles only its own
+// browser rather than everybody's.
+const PER_SESSION_REFRESH_THROTTLE_LIMIT = 20;
 
 @Controller('auth')
 export class AuthController {
@@ -42,9 +47,10 @@ export class AuthController {
   @Post('signup')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: { limit: SIGNUP_THROTTLE_LIMIT, ttl: SIGNUP_THROTTLE_TTL_MS },
+    default: { limit: GLOBAL_SIGNUP_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
+    email: { limit: PER_EMAIL_SIGNUP_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
   })
-  @SkipThrottle({ email: true })
+  @SkipThrottle({ session: true, token: true })
   @HttpCode(201)
   signUp(@Body() dto: CreateAccountDto): Promise<{ message: string }> {
     return this.authService.signUp(dto);
@@ -53,9 +59,11 @@ export class AuthController {
   @Post('login')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: { limit: LOGIN_THROTTLE_LIMIT, ttl: LOGIN_THROTTLE_TTL_MS },
+    default: { limit: GLOBAL_LOGIN_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
   })
-  @SkipThrottle({ email: true })
+  // The per-email lockout is LoginAttemptTracker + captcha (see
+  // AuthService.login), which a throttle must not block once verified.
+  @SkipThrottle({ email: true, session: true, token: true })
   @HttpCode(200)
   login(
     @Body() dto: LoginDto,
@@ -67,12 +75,10 @@ export class AuthController {
   @Post('resend-verification')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: {
-      limit: RESEND_VERIFICATION_THROTTLE_LIMIT,
-      ttl: RESEND_VERIFICATION_THROTTLE_TTL_MS,
-    },
+    default: { limit: GLOBAL_EMAIL_SEND_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
+    email: { limit: PER_EMAIL_SEND_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
   })
-  @SkipThrottle({ email: true })
+  @SkipThrottle({ session: true, token: true })
   @HttpCode(200)
   resendVerification(
     @Body() dto: ResendVerificationDto,
@@ -91,16 +97,14 @@ export class AuthController {
   @Post('password/forgot')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: {
-      limit: RESEND_VERIFICATION_THROTTLE_LIMIT,
-      ttl: RESEND_VERIFICATION_THROTTLE_TTL_MS,
-    },
+    default: { limit: GLOBAL_EMAIL_SEND_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
     email: {
-      limit: RESEND_VERIFICATION_THROTTLE_LIMIT,
-      ttl: RESEND_VERIFICATION_THROTTLE_TTL_MS,
-      blockDuration: LOGIN_EMAIL_THROTTLE_BLOCK_DURATION_MS,
+      limit: PER_EMAIL_SEND_THROTTLE_LIMIT,
+      ttl: THROTTLE_TTL_MS,
+      blockDuration: PER_EMAIL_THROTTLE_BLOCK_DURATION_MS,
     },
   })
+  @SkipThrottle({ session: true, token: true })
   @HttpCode(200)
   forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
     return this.authService.forgotPassword(dto);
@@ -109,9 +113,10 @@ export class AuthController {
   @Post('password/reset')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: { limit: SIGNUP_THROTTLE_LIMIT, ttl: SIGNUP_THROTTLE_TTL_MS },
+    default: { limit: GLOBAL_EMAIL_SEND_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
+    token: { limit: PER_TOKEN_RESET_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
   })
-  @SkipThrottle({ email: true })
+  @SkipThrottle({ email: true, session: true })
   @HttpCode(200)
   resetPassword(
     @Body() dto: ResetPasswordDto,
@@ -123,9 +128,13 @@ export class AuthController {
   @Post('refresh')
   @UseGuards(ThrottlerGuard)
   @Throttle({
-    default: { limit: REFRESH_THROTTLE_LIMIT, ttl: REFRESH_THROTTLE_TTL_MS },
+    default: { limit: GLOBAL_REFRESH_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
+    session: {
+      limit: PER_SESSION_REFRESH_THROTTLE_LIMIT,
+      ttl: THROTTLE_TTL_MS,
+    },
   })
-  @SkipThrottle({ email: true })
+  @SkipThrottle({ email: true, token: true })
   @HttpCode(200)
   refresh(
     @Req() request: Request,

@@ -9,7 +9,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import type { InvitationPreview } from '../services/invitations.service';
@@ -17,14 +17,20 @@ import { InvitationsService } from '../services/invitations.service';
 
 const TOKEN_THROTTLE_TTL_MS = 15 * 60 * 1000;
 // Anonymous, token-guessing-facing routes — coarse defense-in-depth on top
-// of the token's own 256-bit entropy.
+// of the token's own 256-bit entropy. Per invitation token, so one invitee
+// working through their own link can't lock out every other invitee.
 const TOKEN_THROTTLE_LIMIT = 10;
+// Volume across all tokens at once, which is all a per-IP key can mean here.
+const GLOBAL_THROTTLE_LIMIT = 300;
 
 @Controller('invitations')
 @UseGuards(ThrottlerGuard)
 @Throttle({
-  default: { limit: TOKEN_THROTTLE_LIMIT, ttl: TOKEN_THROTTLE_TTL_MS },
+  default: { limit: GLOBAL_THROTTLE_LIMIT, ttl: TOKEN_THROTTLE_TTL_MS },
+  token: { limit: TOKEN_THROTTLE_LIMIT, ttl: TOKEN_THROTTLE_TTL_MS },
 })
+// `invite` keys on the authenticated inviter; nobody here is signed in yet.
+@SkipThrottle({ invite: true, email: true })
 export class InvitationAcceptController {
   constructor(private readonly invitationsService: InvitationsService) {}
 

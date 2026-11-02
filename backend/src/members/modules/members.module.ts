@@ -9,6 +9,10 @@ import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { AuthModule } from '../../auth/modules/auth.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { RoleGuard } from '../../common/guards/role.guard';
+import {
+  emailTracker,
+  routeTokenTracker,
+} from '../../common/throttler-trackers.util';
 import { DevicesModule } from '../../devices/modules/devices.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { InviteLink } from '../../database/entities/invite-link.entity';
@@ -58,13 +62,27 @@ function inviteCreateTracker(req: Request): string {
     ScreenshotsModule,
     NotesModule,
     TimeEntriesModule,
+    // `default` stays per-IP, which behind the proxy makes it a global
+    // ceiling; the named ones are per-actor. See throttler-trackers.util.ts.
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 15 * 60 * 1000, limit: 10 },
+      { name: 'default', ttl: 15 * 60 * 1000, limit: 300 },
       {
         name: 'invite',
         ttl: 15 * 60 * 1000,
         limit: 20,
         getTracker: inviteCreateTracker,
+      },
+      {
+        name: 'token',
+        ttl: 15 * 60 * 1000,
+        limit: 10,
+        getTracker: routeTokenTracker,
+      },
+      {
+        name: 'email',
+        ttl: 15 * 60 * 1000,
+        limit: 5,
+        getTracker: emailTracker,
       },
     ]),
   ],
