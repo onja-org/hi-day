@@ -137,6 +137,36 @@
           <p id="pairing-status" class="centred-message">Sign in from your browser to link this device.</p>
           <p id="pairing-error" class="error-text" role="alert" hidden></p>
           <button id="login-button" type="button" class="button button-sun">Log in</button>
+
+          <!-- Hi Day is self-hostable, so most installs are not talking to
+               hiday.io. Collapsed by default: the address is right for
+               nearly everybody, and an empty field is not a decision
+               anybody should be asked to make before logging in. -->
+          <details id="server-details" class="server-details">
+            <summary id="server-summary" class="server-summary">Server</summary>
+            <label class="server-label" for="server-input">
+              The address of your Hi Day server
+            </label>
+            <input
+              id="server-input"
+              type="url"
+              class="server-input"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://hiday.example.com"
+            />
+            <p id="server-error" class="error-text" role="alert" hidden></p>
+            <p id="server-note" class="server-note" role="status" hidden></p>
+            <div class="server-actions">
+              <button id="server-save" type="button" class="button button-secondary button-small">
+                Save
+              </button>
+              <button id="server-reset" type="button" class="button button-ghost button-small" hidden>
+                Use the default
+              </button>
+            </div>
+          </details>
         </section>
 
         <section id="status-view" class="status-view" hidden>

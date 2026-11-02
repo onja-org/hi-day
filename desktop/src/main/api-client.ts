@@ -219,10 +219,25 @@ export class ApiClient {
    * caller, since that is the only place that reproduces the real shape:
    * a transport failure, no HTTP status, everywhere at once.
    */
+  private readonly resolveBaseUrl: () => string;
+
   constructor(
-    private readonly baseUrl: string,
+    /**
+     * A function where the server can change while the app is running — a
+     * self-hoster editing the Server URL on the login screen. Resolved per
+     * request rather than captured, because this client is handed to the
+     * uploaders, the queue and the tray at startup and rebuilding that
+     * whole graph to change one string would be absurd.
+     */
+    baseUrl: string | (() => string),
     private readonly isOffline: () => boolean = () => false,
-  ) {}
+  ) {
+    this.resolveBaseUrl = typeof baseUrl === 'function' ? baseUrl : () => baseUrl;
+  }
+
+  private get baseUrl(): string {
+    return this.resolveBaseUrl();
+  }
 
   /** The shape a request that never reached the server resolves to. */
   private unreachable<T>(): TrackingResult<T> {

@@ -455,22 +455,52 @@ AppImage/`.deb` directly.
 
 ## Which backend the app talks to
 
-`resolveApiBaseUrl` (`desktop/src/main/api-base-url.ts`) picks the API
-base URL in this order:
+Hi Day is self-hostable, so most installs are not talking to hiday.io.
+There is a **Server** field on the login screen for exactly that, collapsed
+by default because the built-in address is right for everybody on Hi Day
+Cloud.
+
+`resolveApiBaseUrl` (`desktop/src/main/api-base-url.ts`) picks the API base
+URL in this order:
 
 1. `DESKTOP_API_URL`, if set — always wins. Point a local build or a
-   one-off CI build at staging with this.
-2. Otherwise, [`app.isPackaged`](https://www.electronjs.org/docs/latest/api/app#appispackaged):
+   one-off CI build at staging with this. The Server field goes read-only
+   and says why, rather than disappearing.
+2. The server typed on the login screen, remembered on this machine.
+3. Otherwise, [`app.isPackaged`](https://www.electronjs.org/docs/latest/api/app#appispackaged):
    an installed `.exe`/`.dmg`/`.AppImage` defaults to the production API
-   (`https://workfoce-monitoring-api.up.railway.app`); `electron .` (dev
-   mode) defaults to `http://localhost:3001`.
+   (`https://api.hiday.io`); `electron .` (dev mode) defaults to
+   `http://localhost:3001`.
 
-This matters because an _installed_ app has no way to inherit a
-developer's shell environment — an env-var-only default would leave every
-real user's copy silently trying (and failing) to reach `localhost`. If
-the production API URL ever changes, update `PRODUCTION_API_URL` in
-`api-base-url.ts` (and re-cut a release — there's no remote config or
-auto-update yet, see **Known limitations** below).
+The env var alone used to be the only way to change this, which an
+_installed_ app cannot see — so a self-hoster had to build their own
+desktop app to reach their own server. That is what the field fixes.
+The same reasoning keeps the packaged default off localhost: an installed
+app has no shell environment to inherit, and an env-var-only default would
+leave every real user's copy silently failing to reach `localhost`.
+
+### The Server field
+
+- Stored in `setup-state.json` (`rememberServerUrl`), **not** in the
+  session — signing out must not forget the address you need in order to
+  sign back in.
+- Validated before it is saved (`validateServerUrl`). HTTPS is required,
+  except for `localhost`, `127.0.0.1`, `*.local` and the private ranges
+  `10/8`, `192.168/16` and `172.16/12`: a device token travels on every
+  request, and a self-hosted server on an office LAN very often has no
+  certificate.
+- Normalised (`normaliseServerUrl`) so a trailing slash cannot produce
+  `https://host//path`, and the same server typed two ways is one string.
+- Checked for a reply before saving, with a `GET /config` — the backend's
+  one unguarded endpoint, so a 200 means a Hi Day server genuinely serving
+  rather than anything listening on the port. Nothing is written if it
+  fails, so a typo leaves the working address in place.
+- `ApiClient` reads the address per request rather than capturing it, so
+  changing servers does not require rebuilding the uploaders, queue and
+  tray that were handed the client at startup.
+
+If the Hi Day Cloud API URL ever changes, update `PRODUCTION_API_URL` in
+`api-base-url.ts` and re-cut a release.
 
 ## Building installers
 

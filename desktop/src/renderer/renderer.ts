@@ -426,6 +426,100 @@ async function pollPairing(): Promise<void> {
   // status === 'pending' — keep waiting.
 }
 
+/* --- Which Hi Day server this agent talks to -------------------------- */
+
+const serverDetails = document.getElementById(
+  "server-details",
+) as HTMLDetailsElement;
+const serverSummary = document.getElementById("server-summary")!;
+const serverInput = document.getElementById("server-input") as HTMLInputElement;
+const serverErrorEl = document.getElementById("server-error")!;
+const serverNoteEl = document.getElementById("server-note")!;
+const serverSaveButton = document.getElementById(
+  "server-save",
+) as HTMLButtonElement;
+const serverResetButton = document.getElementById(
+  "server-reset",
+) as HTMLButtonElement;
+
+function renderServerState(state: ServerUrlState): void {
+  serverInput.value = state.url;
+  serverInput.disabled = !state.canEdit;
+  serverSaveButton.disabled = !state.canEdit;
+  // Nothing to reset to when already on the default.
+  serverResetButton.hidden = state.isDefault || !state.canEdit;
+
+  // The summary carries the host, so somebody pointed at the wrong server
+  // can see it without opening the section.
+  serverSummary.textContent = state.isDefault
+    ? "Server"
+    : `Server: ${hostOf(state.url)}`;
+
+  if (!state.canEdit) {
+    serverNoteEl.textContent =
+      "Set by DESKTOP_API_URL in this environment, so it cannot be changed here.";
+    serverNoteEl.hidden = false;
+  } else {
+    serverNoteEl.hidden = true;
+  }
+}
+
+/** Just the host, for the collapsed summary. Falls back to the whole URL. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+async function loadServerState(): Promise<void> {
+  renderServerState(await window.api.server.get());
+}
+
+serverSaveButton.addEventListener("click", () => {
+  void (async () => {
+    serverSaveButton.disabled = true;
+    serverErrorEl.hidden = true;
+    serverNoteEl.textContent = "Checking that server…";
+    serverNoteEl.hidden = false;
+
+    const result = await window.api.server.set(serverInput.value);
+
+    serverNoteEl.hidden = true;
+    if (!result.ok) {
+      serverErrorEl.textContent = result.message ?? "Could not save that address.";
+      serverErrorEl.hidden = false;
+      serverSaveButton.disabled = false;
+      return;
+    }
+
+    await loadServerState();
+    serverNoteEl.textContent = "Saved. You can log in now.";
+    serverNoteEl.hidden = false;
+    // Any existing pairing attempt was against the old server.
+    stopPairingPoll();
+    showLoginView();
+  })();
+});
+
+serverResetButton.addEventListener("click", () => {
+  void (async () => {
+    serverErrorEl.hidden = true;
+    renderServerState(await window.api.server.reset());
+    stopPairingPoll();
+    showLoginView();
+  })();
+});
+
+// Opened on its own where this install is pointed somewhere custom, so a
+// person who has changed it sees what it is without hunting.
+void (async () => {
+  const state = await window.api.server.get();
+  renderServerState(state);
+  if (!state.isDefault) serverDetails.open = true;
+})();
+
 loginButton.addEventListener("click", () => {
   void (async () => {
     loginButton.disabled = true;
