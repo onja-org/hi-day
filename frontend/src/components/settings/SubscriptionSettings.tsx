@@ -94,10 +94,15 @@ export function SubscriptionSettings({
       {trialQuery.isSuccess && !trialQuery.data?.trial && !isFree && (
         <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
           <h2 className="text-base font-bold text-primary-dark">Your plan</h2>
+          {/* Two causes land here and this card cannot tell them apart: an
+              organisation created before trials existed, and one created
+              while billing was switched off. It used to assert the first,
+              which read as plainly wrong to anybody in the second. */}
           <p className="mt-1 text-sm text-slate-900/60">
-            Your organisation isn&apos;t on a plan. It was created before the{" "}
-            {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
-            running out and nothing to pay.
+            Your organisation has no subscription, so there&apos;s nothing
+            running out and nothing to pay. That applies to organisations
+            created before the {TRIAL_DAYS}-day free trial existed, and to
+            any created while billing was switched off.
           </p>
         </section>
       )}
