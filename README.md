@@ -109,14 +109,28 @@ registered.
 
 ### Email is optional
 
-Hi Day never requires an account with an email provider. Without one:
+Hi Day starts and runs without an email provider, and signing in never
+needed one — login is email and password, with no message sent. Without a
+provider configured:
 
 - Invitation, set-password, password-reset and deletion-confirmation links
   are written to the backend log, marked `was not sent`, with the link on
   its own line.
-- When an admin invites somebody, the join link is shown **in the app**,
-  with a copy button, on the invite results — so it can be passed on
+- When an admin invites somebody, the join link is also shown **in the
+  app**, with a copy button, on the invite results — so it can be passed on
   directly without reading the log.
+
+**The one thing this genuinely costs you is self-service password reset.**
+"Forgot password" writes its link to the log, and an ordinary member cannot
+read your server's log — so resetting a password becomes something an admin
+does for them, by finding the link with
+`docker compose logs backend | grep -A5 "was not sent"` and sending it on.
+The admin-triggered reset (Members → send password reset) has the same
+shape: it works, but the link lands in the log rather than in their inbox.
+
+For a team of two or three that is a minor annoyance. Past that, configure
+email — it is a few minutes of work and it removes the only part of Hi Day
+that needs an administrator to act as a relay.
 
 To send real email, sign up at [Resend](https://resend.com), verify a
 sending domain, then set `RESEND_API_KEY` and `EMAIL_SENDER` and restart.
