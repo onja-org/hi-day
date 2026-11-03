@@ -2,10 +2,11 @@ import type { NextConfig } from "next";
 import { BACKEND_ORIGIN } from "./src/lib/backendOrigin";
 
 const nextConfig: NextConfig = {
-  // Bundles the server and only the dependencies it actually imports, so
-  // the container image carries no node_modules tree. Harmless outside
-  // Docker: it writes .next/standalone alongside the usual output.
-  output: "standalone",
+  // Only for the container image, which needs a self-contained server with
+  // no node_modules tree. Vercel does not support this option — it manages
+  // its own output — so it must stay off everywhere except the Dockerfile,
+  // which sets DOCKER_BUILD.
+  output: process.env.DOCKER_BUILD === "1" ? "standalone" : undefined,
   devIndicators: {
     position: "bottom-right",
   },

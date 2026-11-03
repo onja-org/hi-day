@@ -28,6 +28,10 @@ COPY frontend frontend
 # The default is the compose service name, which is right for every install
 # that uses the docker-compose.yml in this repo. Deploying the two services
 # somewhere else? Pass --build-arg BACKEND_ORIGIN=https://api.example.com.
+# Switches on Next.js's standalone output, which only this image wants —
+# see frontend/next.config.ts.
+ENV DOCKER_BUILD=1
+
 ARG BACKEND_ORIGIN=http://backend:3001
 ENV BACKEND_ORIGIN=$BACKEND_ORIGIN
 
