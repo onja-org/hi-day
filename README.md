@@ -228,12 +228,6 @@ server {
 }
 ```
 
-Only the **frontend** is proxied. The backend is reached through the
-frontend's own `/api/backend/*` path, so it does not need to be exposed at
-all — once the proxy is in place you can drop the `backend` service's
-`ports:` block from `docker-compose.yml` and let it stay on the internal
-network.
-
 Then set the address in `.env` and restart:
 
 ```bash
@@ -242,6 +236,48 @@ APP_URL=https://hiday.example.com
 
 That value is what invitation and password links are built from, so it has
 to be the address people actually type.
+
+#### Do you also need the backend on its own address?
+
+Depends entirely on whether anybody uses the **desktop agent**.
+
+| | Reaches the backend via | Backend needs a public address? |
+| --- | --- | --- |
+| Web console | the frontend's own `/api/backend/*` path | No |
+| Desktop agent | **directly** | **Yes** |
+
+For the web console alone, one proxied hostname is enough and the backend
+can stay on the internal network — drop the `backend` service's `ports:`
+block from `docker-compose.yml` entirely.
+
+For the desktop agent, give the backend its own hostname and proxy that
+too:
+
+```
+hiday.example.com     { reverse_proxy localhost:3000 }   # web console
+api.hiday.example.com { reverse_proxy localhost:3001 }   # desktop agent
+```
+
+People then enter `https://api.hiday.example.com` in the **Server** field on
+the desktop login screen. Its default is Hi Day Cloud's own address, so a
+self-hosted agent will not find your server until somebody changes it
+there.
+
+#### Running the app on a subdomain
+
+Common arrangement, and a sound one:
+
+| Hostname | Serves |
+| --- | --- |
+| `hiday.example.com` | your marketing or company site, if you have one |
+| `app.hiday.example.com` | the Hi Day web console |
+| `api.hiday.example.com` | the backend, for the desktop agent |
+
+Point `APP_URL` at the console's hostname (`https://app.hiday.example.com`).
+Session cookies are set without an explicit domain, so they belong to that
+host alone and are never sent to the other two — which is what you want, and
+also means a page on the parent domain cannot tell whether a visitor is
+signed in.
 
 #### Two things to know
 
