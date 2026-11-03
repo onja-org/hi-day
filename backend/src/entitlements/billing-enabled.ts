@@ -74,12 +74,15 @@ function loadEnvFile(): void {
   envFileLoaded = true;
   try {
     // Required lazily so importing this module costs nothing for the callers
-    // that only want `parseBillingEnabled`.
+    // that only want `parseBillingEnabled`. `dotenv` is a runtime dependency,
+    // not a dev one — a production install that lacked it would read a flag
+    // set in `.env` as "billing off" and say nothing, which is exactly the
+    // silent misconfiguration this function exists to prevent.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const dotenv = require('dotenv') as { config: (o?: object) => unknown };
     dotenv.config({ quiet: true });
   } catch {
-    // No dotenv, no file, or an unreadable one: the environment is then the
-    // only source, and an absent flag correctly reads as billing off.
+    // No file, or an unreadable one: the environment is then the only
+    // source, and an absent flag correctly reads as billing off.
   }
 }

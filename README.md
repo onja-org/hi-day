@@ -135,6 +135,24 @@ pnpm --filter backend migration:run        # from source
 pnpm --filter backend migration:run:prod   # from a build
 ```
 
+### Deploying the two services separately
+
+`docker-compose.yml` puts the frontend and backend on one network, where the
+backend is reachable as `http://backend:3001`. That address is **baked into
+the frontend image at build time** — Next.js freezes its proxy destination
+during `next build`, so setting it at container start is too late.
+
+Running them somewhere else, build the frontend with its real address:
+
+```bash
+docker build -f frontend/Dockerfile \
+  --build-arg BACKEND_ORIGIN=https://api.example.com -t hiday-frontend .
+```
+
+Nothing *billing*-related is baked in — the browser asks the backend for
+that at runtime (`GET /config`), so one image serves a self-hosted install
+and Hi Day Cloud alike.
+
 ### Upgrading
 
 ```bash

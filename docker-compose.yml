@@ -91,14 +91,20 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        # Baked in, not passed at runtime: Next.js freezes rewrite
+        # destinations into the build. See frontend/Dockerfile.
+        BACKEND_ORIGIN: http://backend:3001
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
     environment:
-      # Server-side only. The browser never talks to the backend directly —
-      # Next.js proxies /api/backend/* to it, which keeps the session cookie
-      # same-origin.
+      # Server-side only, and used by isAuthenticated.ts's direct
+      # server-to-server session check. The browser never talks to the
+      # backend directly — Next.js proxies /api/backend/* to it, which keeps
+      # the session cookie same-origin. That proxy's destination comes from
+      # the build arg above, not from here.
       BACKEND_ORIGIN: http://backend:3001
     ports:
       - "${APP_PORT:-3000}:3000"
