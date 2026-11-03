@@ -226,6 +226,21 @@ function launch(scenario: Scenario) {
       startPairing: () => ok({}),
       pairingStatus: () => Promise.resolve({ status: 'pending' }),
     },
+    server: {
+      get: () =>
+        Promise.resolve({
+          url: 'http://localhost:3001',
+          isDefault: true,
+          canEdit: true,
+        }),
+      set: (url: string) => Promise.resolve({ ok: true, url }),
+      reset: () =>
+        Promise.resolve({
+          url: 'http://localhost:3001',
+          isDefault: true,
+          canEdit: true,
+        }),
+    },
     logout: () => Promise.resolve({ loggedIn: false }),
     tracking: {
       projectsSetting: () => ok({ projectsEnabled: scenario.projectsEnabled ?? true }),
