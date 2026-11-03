@@ -57,6 +57,17 @@ purpose: switching billing on by accident shows a self-hoster a paywall we
 promised them they would never see, and nothing in their install would flag
 it as wrong.
 
+> **Upgrading an environment that already bills.** Before this flag existed,
+> billing was on wherever `STRIPE_SECRET_KEY` was set. Any `.env` written
+> earlier therefore has the key but no flag, which now reads as billing
+> **off** — so a deploy that does not add `BILLING_ENABLED=true` stops
+> starting trials, hides the Billing pages and stops syncing seats, while
+> looking perfectly healthy. Add it to Hi Day Cloud's environment and to
+> your own `backend/.env` when you pull this.
+>
+> `GET /config` is the quickest check: it answers `{"billingEnabled":true}`
+> on a deployment that bills.
+
 Stripe cannot reach `localhost`, so a local CLI forwards its webhooks to you.
 Without it you can take a payment and never hear that it succeeded — the
 organisation stays on a trial, and the banner keeps asking somebody who has
