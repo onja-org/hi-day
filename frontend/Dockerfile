@@ -31,6 +31,15 @@ COPY frontend frontend
 ARG BACKEND_ORIGIN=http://backend:3001
 ENV BACKEND_ORIGIN=$BACKEND_ORIGIN
 
+# Inlined into the browser bundle at build time, for the same reason. Both
+# are public by design and both are optional — blank means the captcha
+# challenge is never raised, and the in-app payment modal falls back to a
+# link instead of drawing a card field.
+ARG NEXT_PUBLIC_RECAPTCHA_SITE_KEY=
+ENV NEXT_PUBLIC_RECAPTCHA_SITE_KEY=$NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
 # Nothing *billing*-related is baked in, though: the browser asks the
 # backend at runtime (GET /config), so this one image serves a self-hosted
 # install and Hi Day Cloud alike.
