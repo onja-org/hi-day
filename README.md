@@ -93,8 +93,8 @@ under [AGPL-3.0](LICENSE).
 ### Quick start
 
 ```bash
-git clone https://github.com/onja-org/hiday.git
-cd hiday
+git clone https://github.com/onja-org/hi-day.git
+cd hi-day
 cp .env.docker.example .env
 # Fill in the two required values in .env:
 #   POSTGRES_PASSWORD   any strong string
