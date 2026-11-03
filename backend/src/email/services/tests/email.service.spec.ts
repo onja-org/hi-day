@@ -13,6 +13,11 @@ jest.mock('resend', () => ({
   })),
 }));
 
+const smtpSendMail = jest.fn().mockResolvedValue({});
+jest.mock('nodemailer', () => ({
+  createTransport: jest.fn(() => ({ sendMail: smtpSendMail })),
+}));
+
 /**
  * `RESEND_API_KEY` is read with `get`, not `getOrThrow`: it is optional, so
  * an absent one must answer undefined rather than throw. Both are stubbed
@@ -48,6 +53,7 @@ describe('EmailService', () => {
 
   beforeEach(async () => {
     sendMock.mockClear();
+    smtpSendMail.mockClear();
     service = await serviceWith(CONFIGURED);
   });
 
@@ -310,5 +316,133 @@ describe('EmailService with no provider configured', () => {
         attachment: { filename: 'r.pdf', content: Buffer.from('pdf') },
       }),
     ).resolves.toBe(true);
+  });
+});
+
+/**
+ * Which way mail leaves, and why that order.
+ *
+ * Hi Day is self-hostable, so requiring an account with one particular
+ * hosted provider before the app will start is a poor ask of somebody
+ * running it precisely to keep their staff's data in-house. SMTP is spoken
+ * by every mail system there is, so it is the way out that needs no
+ * third-party signup.
+ */
+describe('choosing how mail goes out', () => {
+  beforeEach(() => {
+    sendMock.mockClear();
+    smtpSendMail.mockClear();
+  });
+
+  it('uses SMTP when a mail server is configured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    expect(service.transportName).toBe('smtp');
+    expect(service.isDelivering).toBe(true);
+  });
+
+  it('uses Resend when only an API key is configured', async () => {
+    const service = await serviceWith(CONFIGURED);
+
+    expect(service.transportName).toBe('resend');
+    expect(service.isDelivering).toBe(true);
+  });
+
+  /**
+   * Somebody who filled in their own mail server means to use it. A
+   * leftover key from a previous deployment must not quietly override
+   * that — and on a self-hosted install, silently routing staff email
+   * through a third party would be the worst possible surprise.
+   */
+  it('prefers SMTP over a leftover Resend key', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    expect(service.transportName).toBe('smtp');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the log when neither is configured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    expect(service.transportName).toBe('console');
+    expect(service.isDelivering).toBe(false);
+  });
+
+  // Copying .env.example gives blanks, not absent keys.
+  it('treats blank settings as unconfigured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: '  ',
+      SMTP_HOST: '  ',
+    });
+
+    expect(service.transportName).toBe('console');
+  });
+
+  it('starts whichever way is configured, and never throws', async () => {
+    for (const env of [
+      { SMTP_HOST: 'smtp.acme.test' },
+      { RESEND_API_KEY: 're_test_key' },
+      {},
+    ]) {
+      await expect(
+        serviceWith({ ...CONFIGURED, RESEND_API_KEY: undefined, ...env }),
+      ).resolves.toBeDefined();
+    }
+  });
+});
+
+describe('SMTP messages actually go out', () => {
+  beforeEach(() => {
+    sendMock.mockClear();
+    smtpSendMail.mockClear();
+  });
+
+  it('sends a set-password link over SMTP, not to the log', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    await service.sendSetPasswordEmail('ada@acme.test', 'the-token', 'Acme');
+
+    expect(smtpSendMail).toHaveBeenCalledTimes(1);
+    const smtpCalls = smtpSendMail.mock.calls as unknown[][];
+    const sent = smtpCalls[0][0] as {
+      to: string;
+      html: string;
+      subject: string;
+    };
+    expect(sent.to).toBe('ada@acme.test');
+    expect(sent.html).toContain('set-password?token=the-token');
+    expect(sent.subject).toContain('Acme');
+    // The provider that is not in use must not be touched.
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the configured sender address', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+      EMAIL_SENDER: 'Hi Day <noreply@acme.test>',
+    });
+
+    await service.sendInvitationEmail('new@acme.test', 'tok', 'Acme');
+
+    expect(smtpSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'Hi Day <noreply@acme.test>' }),
+    );
   });
 });

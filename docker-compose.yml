@@ -62,9 +62,16 @@ services:
       # Free, forever, any team size. Leave this alone.
       BILLING_ENABLED: "false"
 
-      # Optional. Unset means invitation and password links are written to
-      # this container's log instead of emailed — `docker compose logs -f
-      # backend` — and shown in the app to whoever created them.
+      # Optional, two ways. SMTP wins if both are set. With neither,
+      # invitation and password links are written to this container's log
+      # instead of emailed — `docker compose logs -f backend` — and shown
+      # in the app to whoever created them.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_ALLOW_SELF_SIGNED: ${SMTP_ALLOW_SELF_SIGNED:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_SENDER: ${EMAIL_SENDER:-}
 

@@ -1,6 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import {
+  ConsoleTransport,
+  ResendTransport,
+  SmtpTransport,
+  type MailMessage,
+  type MailResult,
+  type MailTransport,
+} from './transports';
 
 const APP_NAME = 'Hi Day';
 function escapeHtml(text: string): string {
@@ -25,95 +32,127 @@ const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
 
 /**
- * Where mail appears to come from when nobody has said. Only ever used by
- * the console transport, which sends nothing — a real delivery needs a real
- * sender on a domain the provider has verified.
+ * Where mail appears to come from when nobody has said. Only ever reached
+ * by the console transport, which sends nothing — a real delivery needs a
+ * real sender that the mail system will accept.
  */
 const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
 
+/** The default SMTP port: submission with STARTTLS, what most servers want. */
+const DEFAULT_SMTP_PORT = 587;
+
+/**
+ * Reads an optional yes/no setting, as three states.
+ *
+ * `undefined` for "not set" is load-bearing: `SMTP_SECURE` left blank must
+ * mean "work it out from the port", not "false". Collapsing those two would
+ * silently break port 465, where implicit TLS is the whole point.
+ */
+function readFlag(value: string | undefined): boolean | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) return undefined;
+  return trimmed === 'true';
+}
+
 @Injectable()
-export class EmailService {
+export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
 
   /**
-   * Null where no `RESEND_API_KEY` is set, which is the normal state for a
-   * self-hosted install: email is optional, and requiring an account with a
-   * third-party provider before the app will even start would make "free to
-   * self-host" untrue. Every message is then written to the log instead —
-   * see `logInsteadOfSending`.
+   * How mail leaves — SMTP, Resend, or nowhere. Chosen once at start-up;
+   * see `chooseTransport` for the order and why.
    */
-  private readonly resend: Resend | null;
+  private readonly transport: MailTransport;
   private readonly emailSender: string;
   private readonly frontendUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
-    // The SDK throws on an empty key, and an empty key is exactly what
-    // copying .env.example gives you — so this must be checked, not passed.
-    this.resend = apiKey ? new Resend(apiKey) : null;
+    this.transport = this.chooseTransport();
     this.emailSender =
       this.configService.get<string>('EMAIL_SENDER')?.trim() || DEFAULT_SENDER;
     this.frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
   }
 
+  /**
+   * SMTP first, then Resend, then nothing.
+   *
+   * SMTP wins because it is the deliberate choice: somebody who has filled
+   * in their own mail server means to use it, and a leftover Resend key
+   * from a previous deployment should not quietly override that.
+   *
+   * Both are optional, and that is the point. Hi Day is self-hostable, and
+   * requiring an account with one particular hosted provider before the app
+   * will even start is a poor ask of somebody running it precisely to keep
+   * their staff's data in-house.
+   */
+  private chooseTransport(): MailTransport {
+    const host = this.configService.get<string>('SMTP_HOST')?.trim();
+    if (host) {
+      return new SmtpTransport({
+        host,
+        port:
+          Number(this.configService.get<string>('SMTP_PORT')) ||
+          DEFAULT_SMTP_PORT,
+        user: this.configService.get<string>('SMTP_USER')?.trim() || undefined,
+        password: this.configService.get<string>('SMTP_PASSWORD') || undefined,
+        secure: readFlag(this.configService.get<string>('SMTP_SECURE')),
+        allowSelfSigned:
+          readFlag(this.configService.get<string>('SMTP_ALLOW_SELF_SIGNED')) ===
+          true,
+      });
+    }
+
+    const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
+    // The SDK throws on an empty key, and an empty key is exactly what
+    // copying .env.example gives you — so this must be checked, not passed.
+    if (apiKey) {
+      return new ResendTransport(apiKey);
+    }
+
+    return new ConsoleTransport(this.logger);
+  }
+
+  onModuleInit(): void {
+    switch (this.transport.name) {
+      case 'smtp':
+        this.logger.log(
+          `Email goes out over SMTP (${this.configService.get<string>('SMTP_HOST')}).`,
+        );
+        break;
+      case 'resend':
+        this.logger.log('Email goes out through Resend.');
+        break;
+      case 'console':
+        this.logger.warn(
+          'No email provider configured (set SMTP_HOST or RESEND_API_KEY). ' +
+            'Invitation and password links will be written to this log ' +
+            'instead of sent. Everything else works.',
+        );
+        break;
+    }
+  }
+
   /** Whether mail actually leaves this installation. */
   get isDelivering(): boolean {
-    return this.resend !== null;
+    return this.transport.delivers;
+  }
+
+  /** Which transport is in use, for diagnostics. */
+  get transportName(): MailTransport['name'] {
+    return this.transport.name;
   }
 
   /**
-   * Sends one message, or logs it where there is no provider configured.
+   * Sends one message through whichever transport this installation has.
    *
-   * Answers in the provider's own shape so each caller's error handling is
-   * unchanged — a message that was logged rather than sent reports no
-   * error, because from the caller's point of view nothing went wrong.
+   * Answers rather than throws, which is the contract every caller already
+   * handles: a notice that failed to send is logged, and is never a reason
+   * to fail the invitation or password change behind it. A message that was
+   * only logged reports no error, because from the caller's point of view
+   * nothing went wrong.
    */
-  private async deliver(
-    payload: Parameters<Resend['emails']['send']>[0],
-  ): Promise<{ error: { message: string } | null }> {
-    if (!this.resend) {
-      this.logInsteadOfSending(payload);
-      return { error: null };
-    }
-    const { error } = await this.resend.emails.send(payload);
-    return { error: error ? { message: error.message } : null };
-  }
-
-  /**
-   * Writes a message to the log, links first.
-   *
-   * The links are the point. Several flows — setting a first password,
-   * accepting an invitation, confirming a deletion — are *only* completable
-   * through a one-time URL that is otherwise emailed. Without a provider
-   * those URLs would exist and be unreachable, so an operator could create
-   * an organisation and never be able to sign in to it. Printing them means
-   * a self-hosted install works with no email account at all: the operator
-   * reads the link out of `docker compose logs` and pastes it.
-   *
-   * Logged at warn, not log, so it stands out in a deployment that *does*
-   * intend to send mail and has simply lost its key.
-   */
-  private logInsteadOfSending(
-    payload: Parameters<Resend['emails']['send']>[0],
-  ): void {
-    const to = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
-    const links = [
-      ...String(payload.html ?? '').matchAll(/https?:\/\/[^"'<>\s]+/g),
-    ]
-      .map((match) => match[0])
-      // The same URL usually appears twice, as the href and the link text.
-      .filter((url, index, all) => all.indexOf(url) === index);
-
-    this.logger.warn(
-      [
-        `No RESEND_API_KEY set, so this email was not sent:`,
-        `  to:      ${to}`,
-        `  subject: ${payload.subject}`,
-        ...(links.length > 0
-          ? ['  links:', ...links.map((url) => `    ${url}`)]
-          : []),
-      ].join('\n'),
-    );
+  private deliver(message: MailMessage): Promise<MailResult> {
+    return this.transport.send(message);
   }
 
   private button(url: string, label: string): string {

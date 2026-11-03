@@ -99,7 +99,7 @@ Every variable is commented in `.env.docker.example` (Docker) and in
 
 | Variable | Without it |
 | --- | --- |
-| `RESEND_API_KEY`, `EMAIL_SENDER` | No email is sent. Invitation and password links are written to the backend log and shown in the app to the admin who created them |
+| `SMTP_*` or `RESEND_API_KEY` | No email is sent. Invitation and password links are written to the backend log and shown in the app to the admin who created them. **Self-service password reset stops working** — see below |
 | `WASABI_*` | Screenshots cannot be captured or viewed. Time tracking, projects, activity, reports and the desktop agent all work |
 
 **Cloud-only.** `BILLING_ENABLED` and every `STRIPE_*` variable exist for
@@ -132,8 +132,48 @@ For a team of two or three that is a minor annoyance. Past that, configure
 email — it is a few minutes of work and it removes the only part of Hi Day
 that needs an administrator to act as a relay.
 
-To send real email, sign up at [Resend](https://resend.com), verify a
-sending domain, then set `RESEND_API_KEY` and `EMAIL_SENDER` and restart.
+#### Turning email on
+
+Two ways, and **SMTP is the one to use when self-hosting** — it needs no
+account anywhere new, because SMTP is the standard every mail system
+already speaks.
+
+```bash
+# Example: Google Workspace. Also works with Microsoft 365, your own mail
+# server, Mailgun, SES, Postmark — anything that speaks SMTP.
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@yourcompany.com
+SMTP_PASSWORD=<an app password, not your account password>
+EMAIL_SENDER="Hi Day <you@yourcompany.com>"
+```
+
+Restart, and the log should say `Email goes out over SMTP (smtp.gmail.com).`
+Then use "Forgot password" on your own account to prove a real message
+arrives.
+
+| Variable | |
+| --- | --- |
+| `SMTP_HOST` | Setting this is what switches SMTP on |
+| `SMTP_PORT` | `587` (STARTTLS, the usual) or `465` (implicit TLS) |
+| `SMTP_USER` / `SMTP_PASSWORD` | Leave blank for a relay that authorises by IP. Gmail and Microsoft 365 need an **app password** |
+| `SMTP_SECURE` | Normally leave blank — inferred from the port. Set it only for a non-standard port |
+| `SMTP_ALLOW_SELF_SIGNED` | `true` only for an internal server with a self-signed certificate |
+
+If a message does not go, the error names the setting at fault rather than
+dumping a TLS trace — a rejected login points at `SMTP_USER`, an
+unreachable server at `SMTP_HOST`, a failed handshake at `SMTP_SECURE`.
+
+**Or Resend**, which is what Hi Day Cloud uses: sign up at
+[resend.com](https://resend.com), verify a sending domain, then set
+`RESEND_API_KEY` and `EMAIL_SENDER`. Worth knowing before you choose it:
+sending to anyone other than yourself needs a domain you control and can
+add DNS records to, and it means your staff's email addresses pass through
+a third party — which may be the thing you self-hosted to avoid.
+
+If both are configured, SMTP wins. Somebody who filled in their own mail
+server means to use it, and a leftover key should not quietly override
+that.
 
 ### Migrations
 
