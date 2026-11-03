@@ -189,6 +189,74 @@ pnpm --filter backend migration:run        # from source
 pnpm --filter backend migration:run:prod   # from a build
 ```
 
+### Putting it on a real domain (HTTPS)
+
+**HTTPS is required for anything but localhost.** Session cookies are issued
+with the `Secure` flag, which browsers only return over HTTPS — with one
+exception they make for `localhost`. So the quick start works on your
+machine, and a plain `http://hiday.internal:3000` would let people sign in
+and then silently fail to keep them signed in.
+
+Hi Day does not terminate TLS itself. Put a reverse proxy in front.
+
+**Caddy** is the least work — it obtains and renews certificates on its own.
+A whole `Caddyfile`:
+
+```
+hiday.example.com {
+    reverse_proxy localhost:3000
+}
+```
+
+**nginx**, if you already run it:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name hiday.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/hiday.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/hiday.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Only the **frontend** is proxied. The backend is reached through the
+frontend's own `/api/backend/*` path, so it does not need to be exposed at
+all — once the proxy is in place you can drop the `backend` service's
+`ports:` block from `docker-compose.yml` and let it stay on the internal
+network.
+
+Then set the address in `.env` and restart:
+
+```bash
+APP_URL=https://hiday.example.com
+```
+
+That value is what invitation and password links are built from, so it has
+to be the address people actually type.
+
+#### Two things to know
+
+**Rate limiting counts by IP, and a proxy hides it.** Hi Day throttles
+repeated failed logins and invitation sends per client, using the address
+the request appears to come from. Behind a proxy every request appears to
+come from the proxy, so those limits apply to everyone at once instead of
+per person. Forwarding the headers as shown above is the right start; Hi Day
+does not yet read them, so until it does, treat the login throttle as a
+global limit rather than a per-attacker one.
+
+**Signup is open to anyone who can reach the server.** Once it is on a
+public domain, strangers can create organisations on your install. Put it
+behind a VPN, an SSO proxy or a firewall rule until you want that.
+
 ### Deploying the two services separately
 
 `docker-compose.yml` puts the frontend and backend on one network, where the
@@ -276,6 +344,7 @@ case of the other and both are covered by the same test suite.
 | Product requirements | [docs/PRD.md](docs/PRD.md) |
 | Technical design | [docs/TECH_DESIGN.md](docs/TECH_DESIGN.md) |
 | Capabilities FAQ | [docs/CAPABILITIES_FAQ.md](docs/CAPABILITIES_FAQ.md) |
+| Reporting a vulnerability | [SECURITY.md](SECURITY.md) |
 
 ## Project Structure
 
