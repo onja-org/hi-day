@@ -6,15 +6,9 @@ import {
 } from "./publicConfig";
 
 /**
- * Asks the backend what this installation is: Hi Day Cloud, or a
- * self-hosted install with no billing.
- *
- * Read at runtime rather than compiled in, so one built image serves both
- * shapes — a self-hoster runs the same container we do and flips an
- * environment variable on the *backend*, with no frontend rebuild.
- *
- * Never throws. An unreachable backend answers "billing off", which is the
- * safe guess — see `DEFAULT_PUBLIC_CONFIG`.
+ * Asked at runtime rather than compiled in, so one built image serves both a
+ * self-hosted install and Hi Day Cloud. Never throws — an unreachable
+ * backend answers "billing off".
  */
 export async function getPublicConfig(): Promise<PublicConfig> {
   try {

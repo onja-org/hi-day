@@ -61,8 +61,6 @@ export function Sidebar({
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
-  // No Billing entry where nothing is billed. One filter, shared with the
-  // settings cards and the section header.
   const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;

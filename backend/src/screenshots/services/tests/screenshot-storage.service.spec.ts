@@ -16,29 +16,29 @@ const CONFIGURED = {
 };
 
 /**
- * Object storage is optional: a self-hosted install should not have to open
- * an account with a storage provider before Hi Day will start. Time
- * tracking, projects, reports and the desktop agent all work without one.
- *
- * These used to be read with `getOrThrow`. That looked fine in Docker only
- * because an empty string satisfies it — the app started and then failed on
+ * Optional so a self-hosted install need not open a storage account before
+ * Hi Day will start. These were read with `getOrThrow`, which looked fine in
+ * Docker only because an empty string satisfies it — the app then failed on
  * the first upload with an opaque credentials error.
  */
 describe('screenshot storage with nothing configured', () => {
-  it('starts with no settings at all', () => {
-    expect(() => new ScreenshotStorageService(configWith({}))).not.toThrow();
-  });
+  const blank = Object.fromEntries(Object.keys(CONFIGURED).map((k) => [k, '']));
 
-  it('starts with the settings present but blank, as Docker passes them', () => {
-    const blank = Object.fromEntries(
-      Object.keys(CONFIGURED).map((key) => [key, '']),
-    );
-
-    expect(() => new ScreenshotStorageService(configWith(blank))).not.toThrow();
-  });
-
-  it('knows it cannot store anything', () => {
+  it('starts, whether the settings are absent or blank', () => {
     expect(new ScreenshotStorageService(configWith({})).isConfigured).toBe(
+      false,
+    );
+    expect(new ScreenshotStorageService(configWith(blank)).isConfigured).toBe(
+      false,
+    );
+  });
+
+  /** One missing value is a mistake, not an opt-out, and a half-built client
+   * would fail later and less clearly. */
+  it('treats a partial configuration as none', () => {
+    const partial = { ...CONFIGURED, WASABI_SECRET_ACCESS_KEY: '' };
+
+    expect(new ScreenshotStorageService(configWith(partial)).isConfigured).toBe(
       false,
     );
   });
@@ -51,44 +51,26 @@ describe('screenshot storage with nothing configured', () => {
       /not configured/i,
     );
   });
-
-  /**
-   * One missing value is a misconfiguration, not a deliberate opt-out, and
-   * a half-built client would fail later and less clearly.
-   */
-  it('treats a partial configuration as none', () => {
-    const partial = { ...CONFIGURED, WASABI_SECRET_ACCESS_KEY: '' };
-
-    expect(new ScreenshotStorageService(configWith(partial)).isConfigured).toBe(
-      false,
-    );
-  });
 });
 
 describe('screenshot storage with a bucket configured', () => {
-  it('is ready to store', () => {
-    expect(
-      new ScreenshotStorageService(configWith(CONFIGURED)).isConfigured,
-    ).toBe(true);
-  });
-
   it('signs an upload URL for the configured bucket', async () => {
     const storage = new ScreenshotStorageService(configWith(CONFIGURED));
 
     const url = await storage.createUploadUrl('screenshots/org/dev/1.jpg');
 
+    expect(storage.isConfigured).toBe(true);
     expect(url).toContain('/shots/screenshots/org/dev/1.jpg');
     expect(url).toContain('X-Amz-Signature');
   });
 
-  // Namespaced by org and device, never derived from anything a client
-  // sends, so one device cannot overwrite another's object.
+  // Never derived from anything a client sends, so one device cannot
+  // overwrite another's object.
   it('keys objects by organisation and device', () => {
     const storage = new ScreenshotStorageService(configWith(CONFIGURED));
 
     const key = storage.buildStorageKey('org-1', 'dev-1', new Date(1700000000));
 
-    expect(key).toMatch(/^screenshots\/org-1\/dev-1\/1700000000-/);
-    expect(key.endsWith('.jpg')).toBe(true);
+    expect(key).toMatch(/^screenshots\/org-1\/dev-1\/1700000000-.+\.jpg$/);
   });
 });

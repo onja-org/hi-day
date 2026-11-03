@@ -31,23 +31,13 @@ export interface ReportEmail {
 const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
 
-/**
- * Where mail appears to come from when nobody has said. Only ever reached
- * by the console transport, which sends nothing — a real delivery needs a
- * real sender that the mail system will accept.
- */
+/** Only ever reached by the console transport, which sends nothing. */
 const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
 
-/** The default SMTP port: submission with STARTTLS, what most servers want. */
 const DEFAULT_SMTP_PORT = 587;
 
-/**
- * Reads an optional yes/no setting, as three states.
- *
- * `undefined` for "not set" is load-bearing: `SMTP_SECURE` left blank must
- * mean "work it out from the port", not "false". Collapsing those two would
- * silently break port 465, where implicit TLS is the whole point.
- */
+/** Three states: `undefined` must stay distinct from false, because
+ * `SMTP_SECURE` left blank means "infer from the port". */
 function readFlag(value: string | undefined): boolean | undefined {
   const trimmed = value?.trim().toLowerCase();
   if (!trimmed) return undefined;
@@ -58,10 +48,6 @@ function readFlag(value: string | undefined): boolean | undefined {
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
 
-  /**
-   * How mail leaves — SMTP, Resend, or nowhere. Chosen once at start-up;
-   * see `chooseTransport` for the order and why.
-   */
   private readonly transport: MailTransport;
   private readonly emailSender: string;
   private readonly frontendUrl: string;
@@ -74,16 +60,9 @@ export class EmailService implements OnModuleInit {
   }
 
   /**
-   * SMTP first, then Resend, then nothing.
-   *
-   * SMTP wins because it is the deliberate choice: somebody who has filled
-   * in their own mail server means to use it, and a leftover Resend key
-   * from a previous deployment should not quietly override that.
-   *
-   * Both are optional, and that is the point. Hi Day is self-hostable, and
-   * requiring an account with one particular hosted provider before the app
-   * will even start is a poor ask of somebody running it precisely to keep
-   * their staff's data in-house.
+   * SMTP wins over Resend: somebody who filled in their own mail server
+   * means to use it, and a leftover key must not override that. Both
+   * optional, so the app starts with no mail account anywhere.
    */
   private chooseTransport(): MailTransport {
     const host = this.configService.get<string>('SMTP_HOST')?.trim();
@@ -102,9 +81,9 @@ export class EmailService implements OnModuleInit {
       });
     }
 
+    // The SDK throws on an empty key, which is what copying .env.example
+    // gives you — so this is checked, not passed.
     const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
-    // The SDK throws on an empty key, and an empty key is exactly what
-    // copying .env.example gives you — so this must be checked, not passed.
     if (apiKey) {
       return new ResendTransport(apiKey);
     }
@@ -132,25 +111,16 @@ export class EmailService implements OnModuleInit {
     }
   }
 
-  /** Whether mail actually leaves this installation. */
   get isDelivering(): boolean {
     return this.transport.delivers;
   }
 
-  /** Which transport is in use, for diagnostics. */
   get transportName(): MailTransport['name'] {
     return this.transport.name;
   }
 
-  /**
-   * Sends one message through whichever transport this installation has.
-   *
-   * Answers rather than throws, which is the contract every caller already
-   * handles: a notice that failed to send is logged, and is never a reason
-   * to fail the invitation or password change behind it. A message that was
-   * only logged reports no error, because from the caller's point of view
-   * nothing went wrong.
-   */
+  /** A message that was only logged reports no error: from the caller's
+   * point of view nothing went wrong. */
   private deliver(message: MailMessage): Promise<MailResult> {
     return this.transport.send(message);
   }
@@ -201,13 +171,7 @@ export class EmailService implements OnModuleInit {
     }
   }
 
-  /**
-   * The link an invitation email carries.
-   *
-   * Exposed so that an installation with no email provider can hand it to
-   * the admin who created the invitation instead — built here, once, so the
-   * copyable link and the emailed link cannot drift apart.
-   */
+  /** Built here so the copyable link and the emailed link cannot drift. */
   invitationAcceptUrl(token: string): string {
     return `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
   }

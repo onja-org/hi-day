@@ -64,11 +64,8 @@ describe('OrganisationsService', () => {
     } as unknown as Repository<Team>;
   }
 
-  /**
-   * Entitlements stands where TrialService used to: Cloud starts a trial
-   * here, a self-hosted install does nothing. Both are covered in
-   * entitlements' own tests; this one only cares that it is called.
-   */
+  /** Entitlements stands where TrialService used to; this only cares that
+   * it is called. */
   function makeTrialService() {
     const startTrial = jest.fn().mockResolvedValue(undefined);
     return {

@@ -41,13 +41,7 @@ afterEach(() => {
   useBillingEnabled.mockReset();
 });
 
-/**
- * The seat consent is the nearest thing this codebase has to a billing
- * restriction: the only place billing state can hold back a submit button.
- * Both modes are covered because it is exactly what must not survive into
- * a self-hosted install, where seats are unlimited and nobody is charged
- * for arriving.
- */
+/** The only place billing state can hold back a submit button. */
 describe("the seats-full consent with billing off", () => {
   beforeEach(() => useBillingEnabled.mockReturnValue(false));
 
@@ -64,11 +58,7 @@ describe("the seats-full consent with billing off", () => {
     expect(result.current.blocked).toBe(false);
   });
 
-  /**
-   * The flag reads false while it is still loading and false if the
-   * request fails, so this is also the "backend unreachable" case — and it
-   * must still not nag anybody about money.
-   */
+  /** Also the "still loading" and "backend unreachable" case. */
   it("asks for nothing before the flag has arrived", () => {
     const { result } = renderHook(() => useSeatsFullConsent("org-1"));
 
@@ -96,11 +86,8 @@ describe("the seats-full consent with billing on", () => {
     expect(result.current.required).toBe(false);
   });
 
-  /**
-   * The figures are admin-only, so for a manager the query never resolves.
-   * Blocking them over a billing request they are not allowed to make
-   * would break the page, and the seat is charged either way.
-   */
+  /** Admin-only figures never resolve for a manager, who must not be
+   * blocked over a request they cannot make. */
   it("asks for nothing where the figures never arrive", () => {
     useBilledSeats.mockReturnValue({ data: undefined });
 

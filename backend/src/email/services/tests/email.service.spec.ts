@@ -18,11 +18,8 @@ jest.mock('nodemailer', () => ({
   createTransport: jest.fn(() => ({ sendMail: smtpSendMail })),
 }));
 
-/**
- * `RESEND_API_KEY` is read with `get`, not `getOrThrow`: it is optional, so
- * an absent one must answer undefined rather than throw. Both are stubbed
- * because `FRONTEND_URL` is still required.
- */
+/** `RESEND_API_KEY` is read with `get` since it is optional; `FRONTEND_URL`
+ * still uses `getOrThrow`. */
 function configWith(values: Record<string, string | undefined>) {
   return {
     get: (key: string) => values[key],
@@ -198,13 +195,9 @@ describe('EmailService', () => {
   });
 });
 
-/**
- * Email is optional, because requiring an account with a third-party
- * provider before the app will start would make "free to self-host"
- * untrue. The Resend SDK throws on an empty key — and an empty key is
- * exactly what copying .env.example gives you — so this is the difference
- * between a self-hosted install booting and not.
- */
+/** The Resend SDK throws on an empty key, which is what copying
+ * .env.example gives you — so this is the difference between booting and
+ * not. */
 /** Everything the logger was handed, as one searchable string. */
 function loggedLines(warn: jest.SpyInstance): string {
   return (warn.mock.calls as unknown[][])
@@ -260,12 +253,8 @@ describe('EmailService with no provider configured', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  /**
-   * The links are the point. Setting a first password, accepting an
-   * invitation and confirming a deletion are each only completable through
-   * a one-time URL. Without this, an operator could create an organisation
-   * and never be able to sign in to it.
-   */
+  /** Without the link an operator could create an organisation and never
+   * sign in to it. */
   it('logs the link so the flow can still be completed', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
@@ -293,12 +282,7 @@ describe('EmailService with no provider configured', () => {
     expect(logged).toContain('invite-token');
   });
 
-  /**
-   * Callers treat a failure as worth logging but never as a reason to fail
-   * the request behind it. A message that was logged rather than sent is
-   * not a failure from the caller's point of view, so it must not read as
-   * one.
-   */
+  /** A message that was only logged is not a failure to the caller. */
   it('reports no error for a message it only logged', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
@@ -319,15 +303,7 @@ describe('EmailService with no provider configured', () => {
   });
 });
 
-/**
- * Which way mail leaves, and why that order.
- *
- * Hi Day is self-hostable, so requiring an account with one particular
- * hosted provider before the app will start is a poor ask of somebody
- * running it precisely to keep their staff's data in-house. SMTP is spoken
- * by every mail system there is, so it is the way out that needs no
- * third-party signup.
- */
+/** SMTP needs no third-party signup, which is why it wins. */
 describe('choosing how mail goes out', () => {
   beforeEach(() => {
     sendMock.mockClear();
@@ -352,12 +328,8 @@ describe('choosing how mail goes out', () => {
     expect(service.isDelivering).toBe(true);
   });
 
-  /**
-   * Somebody who filled in their own mail server means to use it. A
-   * leftover key from a previous deployment must not quietly override
-   * that — and on a self-hosted install, silently routing staff email
-   * through a third party would be the worst possible surprise.
-   */
+  /** A leftover key must not silently route staff email through a third
+   * party. */
   it('prefers SMTP over a leftover Resend key', async () => {
     const service = await serviceWith({
       ...CONFIGURED,

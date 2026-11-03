@@ -3,15 +3,8 @@ import type { BilledSeatsService } from '../billing/services/billed-seats.servic
 import type { TrialService } from '../billing/services/trial.service';
 import type { Entitlements } from './entitlements';
 
-/**
- * Hi Day Cloud: every new Organisation gets a trial, and every change to
- * the member count reaches Stripe.
- *
- * A thin pass-through on purpose. The behaviour lives where it always has —
- * `TrialService` and `BilledSeatsService` — so introducing this seam
- * changed no billing logic and cannot have changed what a paying customer
- * experiences. All it does is give the self-hosted shape somewhere to be.
- */
+/** Hi Day Cloud. A pass-through, so the billing services stay the only
+ * place billing behaviour lives. */
 export class CloudEntitlements implements Entitlements {
   readonly billingEnabled = true;
 

@@ -6,51 +6,33 @@ import {
 } from './api-base-url';
 import { rememberedServerUrl, rememberServerUrl } from './setup-state';
 
-/** What the login screen needs in order to draw the Server URL field. */
 export interface ServerUrlState {
-  /** The address in use right now. */
   url: string;
-  /** Whether that is the built-in default rather than something chosen. */
   isDefault: boolean;
-  /**
-   * False where `DESKTOP_API_URL` is set, which wins over anything typed.
-   * The field is shown read-only then, rather than hidden, so a developer
-   * can see *why* their edit would have no effect.
-   */
+  /** False where `DESKTOP_API_URL` is set, which wins over anything typed. */
   canEdit: boolean;
 }
 
 export interface SaveServerUrlResult {
   ok: boolean;
-  /** Why it was rejected, for the field's error line. */
   message?: string;
   /** The address now in use, saved or not. */
   url: string;
 }
 
 /**
- * Reads and changes which Hi Day server this agent talks to.
- *
- * Hi Day is self-hostable, so most installs are not talking to hiday.io.
- * Before this, the only way to point the agent elsewhere was an
- * environment variable a packaged app cannot see — which meant a
- * self-hoster had to build their own desktop app to use their own server.
- *
- * Probing is part of saving on purpose. The address is typed by hand, and
- * the next thing that happens after saving is a pairing flow that opens a
- * browser; "could not reach that server" said now is far clearer than a
- * pairing that silently never completes.
+ * Which Hi Day server this agent talks to. Saving probes the address first,
+ * because the next step is a pairing flow that opens a browser — a clear
+ * "could not reach that server" beats a pairing that never completes.
  */
 export class ServerUrlSetting {
   constructor(
     private readonly userDataDir: string,
     private readonly isPackaged: boolean,
     private readonly env: NodeJS.ProcessEnv = process.env,
-    /** Injected so tests do not reach the network. */
     private readonly probe: (url: string) => Promise<boolean> = reachable,
   ) {}
 
-  /** The address in use, honouring the env override and what was saved. */
   current(): string {
     return resolveApiBaseUrl(
       this.isPackaged,
@@ -68,12 +50,8 @@ export class ServerUrlSetting {
     };
   }
 
-  /**
-   * Validates, checks the server answers, then saves.
-   *
-   * Nothing is written on a failure, so a typo leaves the working address
-   * in place rather than stranding the app on an unreachable one.
-   */
+  /** Nothing is written on a failure, so a typo leaves the working address
+   * in place. */
   async save(value: string): Promise<SaveServerUrlResult> {
     if (this.env.DESKTOP_API_URL) {
       return {
@@ -102,20 +80,15 @@ export class ServerUrlSetting {
     return { ok: true, url: candidate };
   }
 
-  /** Forgets the chosen server, handing control back to the default. */
+  /** Hands control back to the built-in default. */
   reset(): ServerUrlState {
     rememberServerUrl(this.userDataDir, null);
     return this.state();
   }
 }
 
-/**
- * Whether a Hi Day backend answers at this address.
- *
- * Asks `/config`, the one endpoint with no guard on it — so a 200 means a
- * Hi Day server that is genuinely serving, not merely something listening
- * on the port. A short timeout because somebody is waiting on a form.
- */
+/** `/config` is unguarded, so a 200 means a Hi Day server genuinely
+ * serving rather than anything listening on the port. */
 async function reachable(url: string): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);

@@ -113,7 +113,6 @@ export class BilledSeatsService {
    * invitation someone just accepted.
    */
   async syncToProvider(organisationId: string): Promise<void> {
-    // `isConfigured` is `BILLING_ENABLED` by construction — see StripeService.
     if (!this.stripeService.isConfigured) return;
 
     const subscription = await this.subscriptions.findOne({

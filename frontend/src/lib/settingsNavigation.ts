@@ -12,13 +12,7 @@ export type SettingsGroup = {
 /** The group that exists only where this installation bills somebody. */
 export const BILLING_GROUP_KEY = "billing";
 
-/**
- * The Settings structure, as the epic's shell ticket spells it out.
- *
- * The full list, including Billing. What a given installation actually
- * shows is `visibleSettingsGroups`, because whether billing exists is only
- * known at runtime — see `useBillingEnabled`.
- */
+/** The full list. What an installation shows is `visibleSettingsGroups`. */
 export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     key: "organization",
@@ -58,16 +52,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
 ];
 
-/**
- * The Settings groups this installation actually has.
- *
- * One filter, read by the sidebar, the settings cards and the section
- * header alike, so a self-hosted install has no Billing entry in any of
- * them without any of them knowing why.
- *
- * The pages themselves still 404 independently: a nav that omits a link is
- * not a route that refuses one, and a bookmarked URL must not get through.
- */
+/** One filter for the sidebar, the cards and the section header. The pages
+ * still 404 separately — omitting a link is not refusing a route. */
 export function visibleSettingsGroups(billingEnabled: boolean): SettingsGroup[] {
   if (billingEnabled) return SETTINGS_GROUPS;
   return SETTINGS_GROUPS.filter((group) => group.key !== BILLING_GROUP_KEY);
@@ -82,13 +68,9 @@ export function settingsHref(
 }
 
 /**
- * The group and section a path is showing, or null when it is not a settings
- * section — so the nav can mark one entry active without string-matching at
- * each call site.
- *
- * Takes the billing flag because a billing path on a self-hosted install is
- * not a settings section at all: nothing should highlight for it, and the
- * header should render no section tabs above a page that is about to 404.
+ * The group and section a path is showing, or null when it is not one. Takes
+ * the billing flag because a billing path on a self-hosted install is not a
+ * settings section at all.
  */
 export function activeSettingsLocation(
   pathname: string,

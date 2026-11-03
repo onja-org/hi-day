@@ -35,11 +35,8 @@ afterEach(() => {
 });
 
 describe("asking the backend what it bills for", () => {
-  /**
-   * The route is not registered on a self-hosted backend, so the call
-   * could only 404 — and an admin opening the invite form would collect a
-   * failed request for a question nobody asked.
-   */
+  /** The route is not registered when billing is off, so the call could
+   * only 404. */
   it("is not asked at all with billing off", () => {
     useBillingEnabled.mockReturnValue(false);
 

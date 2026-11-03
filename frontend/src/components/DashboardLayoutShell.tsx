@@ -30,9 +30,6 @@ export function DashboardLayoutShell({
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <DashboardHeader onOpenMenu={() => setMobileMenuOpen(true)} />
-        {/* No trial, so nothing to count down — a self-hosted install is
-            free forever and must never be shown a countdown to paying.
-            False while the flag is still loading, so nothing flashes. */}
         {billingEnabled && <TrialBanner organisationId={organisationId} />}
         <main className="container flex-1 py-8">
           <FadeIn>{children}</FadeIn>

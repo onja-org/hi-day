@@ -163,11 +163,7 @@ describe('InvitationsService', () => {
     };
   }
 
-  /**
-   * Delivering by default — the normal case. `isDelivering: false` is the
-   * self-hosted install with no provider, where the service hands the join
-   * link back to the admin instead of emailing it.
-   */
+  /** `isDelivering: false` is the self-hosted install with no provider. */
   function makeEmailService(isDelivering = true) {
     const sendInvitationEmail = jest.fn().mockResolvedValue(undefined);
     const invitationAcceptUrl = jest.fn(
@@ -246,12 +242,7 @@ describe('InvitationsService', () => {
     );
   }
 
-  /**
-   * Email is optional on a self-hosted install. An invitation nobody can
-   * receive is an invitation that does not work, so where no provider is
-   * configured the join link comes back to the admin who created it, to
-   * pass on by hand.
-   */
+  /** With no provider the join link comes back to the admin, to pass on. */
   describe('createMany where no email provider is configured', () => {
     it('hands the join link back instead', async () => {
       const { repo: membershipsRepo } = makeMembershipsRepo(null);
@@ -273,11 +264,7 @@ describe('InvitationsService', () => {
       );
     });
 
-    /**
-     * A single-use credential, so the fewer places it is written the
-     * better. On Hi Day Cloud the email carries it and the API response
-     * must not.
-     */
+    /** A single-use credential belongs in as few places as possible. */
     it('does not hand back a link where email works', async () => {
       const { repo: membershipsRepo } = makeMembershipsRepo(null);
       const { dataSource } = makeDataSource();

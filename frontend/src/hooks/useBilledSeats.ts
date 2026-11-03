@@ -9,13 +9,8 @@ export const billedSeatsQueryKey = (organisationId: number | string) => [
   String(organisationId),
 ];
 
-/**
- * Admin-only, like the rest of billing: the endpoint refuses anyone else.
- *
- * Not requested at all where billing is off — the route is not registered on
- * a self-hosted backend, so the call could only 404, and an admin opening the
- * invite form would collect a failed request for a question nobody asked.
- */
+/** Admin-only, like the rest of billing. Not requested at all where billing
+ * is off: the route is not registered, so the call could only 404. */
 export function useBilledSeats(organisationId: number | string) {
   const organisationQuery = useCurrentOrganisation();
   const billingEnabled = useBillingEnabled();

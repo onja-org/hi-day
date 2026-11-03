@@ -8,14 +8,8 @@ import { BILLING_ENABLED_VAR } from '../../../entitlements/billing-enabled';
 import { StripeService } from '../stripe.service';
 import { TrialService } from '../trial.service';
 
-/**
- * The self-hosted half of every billing behaviour: what `BILLING_ENABLED=false`
- * actually changes.
- *
- * Each case here has a paying counterpart in trial.service.spec.ts or
- * stripe.service.spec.ts — the point of the pair is that one build does both,
- * which is the whole argument for a flag over a stripped-down fork.
- */
+/** What `BILLING_ENABLED=false` changes. Each case has a paying counterpart
+ * in trial.service.spec.ts or stripe.service.spec.ts. */
 
 const NOW = new Date('2026-01-01T09:00:00.000Z');
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -72,12 +66,7 @@ describe('starting a trial with billing off', () => {
     };
   }
 
-  /**
-   * No row at all, rather than a `trialing` row behind a hidden UI. "No
-   * Subscription" is already how an Organisation that was never on a trial is
-   * spelled, and the banner and the reminder sweep both read it as nothing to
-   * say — so self-hosted gets the right behaviour from existing code.
-   */
+  /** No row at all, rather than a `trialing` row behind a hidden UI. */
   it('writes no Subscription row', async () => {
     const { service } = trialServiceWith(undefined);
     const { manager, create, save } = recordingManager();
@@ -101,11 +90,7 @@ describe('starting a trial with billing off', () => {
 });
 
 describe('the trial reminder sweep with billing off', () => {
-  /**
-   * Stopped before the query, not just before the send. An install that once
-   * ran with billing on still has `trialing` rows, and turning the flag off
-   * has to stop the emails that hour rather than whenever those rows go.
-   */
+  /** Stopped before the query: an install that once billed still has rows. */
   it('emails nobody, and does not even look for candidates', async () => {
     const { service, find, sendTrialReminderEmail } = trialServiceWith(
       undefined,
@@ -135,17 +120,13 @@ describe('the trial reminder sweep with billing off', () => {
 });
 
 describe('Stripe configuration across the two modes', () => {
-  /** The keys are not required, which is the acceptance criterion. */
   it('boots with no payment provider config at all', () => {
     const service = new StripeService(configWith({}));
 
     expect(service.isConfigured).toBe(false);
   });
 
-  /**
-   * The flag is the decision; a key is only the means. A leftover key in an
-   * environment must not switch billing back on behind the flag's back.
-   */
+  /** The flag is the decision; a key is only the means. */
   it('stays off even where a stray secret key is set', () => {
     const service = new StripeService(
       configWith({ STRIPE_SECRET_KEY: 'sk_test_leftover' }),
@@ -160,11 +141,8 @@ describe('Stripe configuration across the two modes', () => {
     expect(() => service.stripe).toThrow(/not configured/i);
   });
 
-  /**
-   * The one combination that refuses to boot. It used to degrade quietly:
-   * seat syncs became no-ops and admins saw an "Add payment" button leading
-   * nowhere, on a Cloud deploy that looked healthy.
-   */
+  /** The one combination that refuses to boot, rather than degrading into a
+   * deploy that looks healthy and cannot charge anybody. */
   it('refuses to start when billing is on without a secret key', () => {
     expect(
       () => new StripeService(configWith({ [BILLING_ENABLED_VAR]: 'true' })),

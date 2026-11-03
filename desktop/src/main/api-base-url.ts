@@ -1,27 +1,17 @@
 const PRODUCTION_API_URL = 'https://api.hiday.io';
 const DEV_API_URL = 'http://localhost:3001';
 
-/** What the login screen offers before anybody types anything. */
 export function defaultApiBaseUrl(isPackaged: boolean): string {
   return isPackaged ? PRODUCTION_API_URL : DEV_API_URL;
 }
 
 /**
- * Where this agent talks to, in order of who wins:
- *
- * 1. `DESKTOP_API_URL`, for pointing a local or CI build at staging.
- * 2. The server the person typed on the login screen, remembered on this
- *    machine. Hi Day is self-hostable, so most installs are not talking to
- *    hiday.io at all and must be able to say so without a custom build.
- * 3. Hi Day Cloud for a packaged app, localhost for `pnpm dev`.
- *
- * A *packaged* app (an installed .exe/.dmg/.AppImage) has no way to inherit
- * a developer's shell env vars, so it must never fall back to localhost —
- * `electron .` is the only case that should.
+ * `DESKTOP_API_URL`, then the server typed on the login screen, then the
+ * built-in default. A packaged app must never fall back to localhost — it
+ * has no shell environment to inherit.
  */
 export function resolveApiBaseUrl(
   isPackaged: boolean,
-  /** What this install remembered from the login screen, if anything. */
   remembered: string | null = null,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -30,30 +20,14 @@ export function resolveApiBaseUrl(
   return defaultApiBaseUrl(isPackaged);
 }
 
-/** Why a typed server address was rejected, or null if it is fine. */
 export type ServerUrlProblem = string | null;
 
-/**
- * Hosts allowed to be reached over plain HTTP.
- *
- * Everything else must be HTTPS: a device token travels on every request,
- * and over plain HTTP on a hostile network it is readable. These three are
- * the exception because the traffic never leaves the machine.
- */
 const PLAIN_HTTP_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
-/**
- * Private address ranges, also allowed plain HTTP.
- *
- * A self-hosted Hi Day on an office LAN very often has no certificate, and
- * refusing it would make the product unusable for exactly the people it is
- * meant for. The traffic stays inside their network.
- */
 function isPrivateHost(hostname: string): boolean {
   if (hostname.endsWith('.local') || hostname.endsWith('.localhost')) {
     return true;
   }
-  // 10.0.0.0/8, 192.168.0.0/16, and 172.16.0.0/12.
   const octets = hostname.split('.').map(Number);
   if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) {
     return false;
@@ -66,12 +40,11 @@ function isPrivateHost(hostname: string): boolean {
 }
 
 /**
- * Checks a server address before anything is saved or sent to it.
- *
- * Deliberately strict about the scheme and quiet about everything else: a
- * typo in the host shows up immediately as "can't reach that server", which
- * is a clearer message than anything guessed here, while a typo in the
- * scheme would silently send credentials in the clear.
+ * Strict about the scheme only: a device token travels on every request, so
+ * plain HTTP is allowed solely where traffic stays on the machine or the
+ * local network — a self-hosted server on an office LAN rarely has a
+ * certificate. A wrong host shows up on its own as "can't reach that
+ * server".
  */
 export function validateServerUrl(value: string): ServerUrlProblem {
   const trimmed = value.trim();
@@ -98,14 +71,8 @@ export function validateServerUrl(value: string): ServerUrlProblem {
   return null;
 }
 
-/**
- * Tidies a valid address into the one form that gets stored.
- *
- * A trailing slash matters: every request is built as `${base}/path`, so
- * "https://x/" would produce "https://x//path". Normalising once here means
- * no caller has to remember, and two people who typed the same server with
- * and without the slash end up on the same string.
- */
+/** Every request is built as `${base}/path`, so a stored trailing slash
+ * would double up. */
 export function normaliseServerUrl(value: string): string {
   const url = new URL(value.trim());
   return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`;

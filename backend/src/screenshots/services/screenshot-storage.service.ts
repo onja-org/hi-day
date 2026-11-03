@@ -41,19 +41,9 @@ export class ScreenshotStorageService {
   private readonly logger = new Logger(ScreenshotStorageService.name);
 
   /**
-   * Null where no object storage is configured.
-   *
-   * Screenshot capture needs somewhere to put the images, and a self-hosted
-   * install should not have to open an account with a storage provider
-   * before Hi Day will start — time tracking, projects, reports and the
-   * desktop agent all work without one. So the settings are optional and
-   * every other feature carries on; only screenshots are unavailable.
-   *
-   * These used to be read with `getOrThrow`, which made a bucket mandatory
-   * to boot. It appeared to work in Docker only because an empty string
-   * satisfies `getOrThrow` — the app then started and failed on the first
-   * upload with an opaque credentials error instead of saying plainly that
-   * nothing was configured.
+   * Null where no object storage is configured. Optional so a self-hosted
+   * install need not open a storage account before Hi Day will start; only
+   * screenshots are unavailable without it.
    */
   private readonly client: S3Client | null;
   private readonly bucket: string;
@@ -96,11 +86,7 @@ export class ScreenshotStorageService {
     return this.client !== null;
   }
 
-  /**
-   * Throws unless storage is configured. Callers that can answer without it
-   * check `isConfigured` first; the rest fail loudly here rather than
-   * sending an unsigned request to nowhere.
-   */
+  /** Fails loudly rather than sending an unsigned request to nowhere. */
   private get s3(): S3Client {
     if (!this.client) {
       throw new Error(
@@ -125,9 +111,8 @@ export class ScreenshotStorageService {
     return `screenshots/${organisationId}/${deviceId}/${capturedAt.getTime()}-${randomUUID()}.jpg`;
   }
 
-  // `async` so that an unconfigured installation rejects rather than
-  // throwing synchronously out of a function that returns a promise — a
-  // caller using `.catch()` would otherwise miss it entirely.
+  // `async` so an unconfigured install rejects rather than throwing
+  // synchronously, which a caller using `.catch()` would miss.
   async createUploadUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
       this.s3,
@@ -141,7 +126,6 @@ export class ScreenshotStorageService {
   }
 
   /** Time-limited read access for the web console's screenshot gallery — never a public/permanent URL. */
-  // `async` for the same reason as `createUploadUrl`.
   async createViewUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
       this.s3,

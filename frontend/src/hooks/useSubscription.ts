@@ -22,9 +22,6 @@ export function useSubscription(organisationId: number | string) {
 
   return useQuery({
     queryKey: subscriptionQueryKey(organisationId),
-  // Not requested where billing is off: the route is not registered on a
-  // self-hosted backend, so the call could only 404. Belt and braces —
-  // the only pages that call this already 404 themselves.
     enabled: billingEnabled && organisationQuery.data?.role === "admin",
     queryFn: async () => {
       const result = await getSubscription(organisationId);

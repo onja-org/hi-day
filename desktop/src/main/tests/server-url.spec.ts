@@ -54,10 +54,7 @@ describe('what the login screen is told', () => {
     });
   });
 
-  /**
-   * Shown read-only rather than hidden, so a developer wondering why their
-   * edit does nothing can see the reason.
-   */
+  /** Read-only rather than hidden, so the reason is visible. */
   it('is read-only where DESKTOP_API_URL is set', () => {
     const { subject } = setting({
       env: { DESKTOP_API_URL: 'https://staging.example.test' },
@@ -90,10 +87,7 @@ describe('saving a server address', () => {
     expect(rememberedServerUrl(dir)).toBe('https://hiday.acme.example');
   });
 
-  /**
-   * Nothing is written on a failure: a typo must leave the working address
-   * in place rather than stranding the app somewhere unreachable.
-   */
+  /** A typo must leave the working address in place. */
   it('saves nothing when the address is invalid', async () => {
     const { subject, probe } = setting();
 
@@ -114,11 +108,7 @@ describe('saving a server address', () => {
     expect(rememberedServerUrl(dir)).toBeNull();
   });
 
-  /**
-   * The next thing after saving is a pairing flow that opens a browser.
-   * "Could not reach that server" said now beats a pairing that silently
-   * never completes.
-   */
+  /** Beats a pairing flow that silently never completes. */
   it('saves nothing when no server answers', async () => {
     const { subject } = setting({ answers: false });
 

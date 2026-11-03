@@ -11,12 +11,7 @@ import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
 
 type SettingsCardsProps = {
   organisationId: string;
-  /**
-   * Whether this installation bills anybody. A prop rather than a hook
-   * because this is a Server Component — its page asks the backend
-   * directly and hands the answer down, so no Billing card is ever drawn
-   * and then removed.
-   */
+  /** A prop rather than a hook: this is a Server Component. */
   billingEnabled: boolean;
 };
 

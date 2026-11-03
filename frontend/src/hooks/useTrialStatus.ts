@@ -25,9 +25,6 @@ export function useTrialStatus(organisationId: number | string) {
 
   return useQuery({
     queryKey: trialStatusQueryKey(organisationId),
-  // Not requested where billing is off: the route is not registered on a
-  // self-hosted backend, so the call could only 404. Belt and braces —
-  // the only pages that call this already 404 themselves.
     enabled: billingEnabled && isAdmin,
     queryFn: async () => {
       const result = await getTrialStatus(organisationId);

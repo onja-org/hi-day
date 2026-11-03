@@ -20,11 +20,7 @@ describe("SETTINGS_GROUPS", () => {
   });
 });
 
-/**
- * One filter, read by the sidebar, the settings cards and the section
- * header alike — which is what lets a self-hosted install lose the Billing
- * entry from all three without any of them knowing why.
- */
+/** One filter for the sidebar, the cards and the section header. */
 describe("visibleSettingsGroups", () => {
   it("keeps every group, in card order, where billing is on", () => {
     expect(visibleSettingsGroups(true).map((group) => group.key)).toEqual([
@@ -96,11 +92,7 @@ describe("activeSettingsLocation", () => {
     ).toBeNull();
   });
 
-  /**
-   * With billing off a billing path is not a settings section at all, so
-   * nothing highlights and the header draws no section tabs above a page
-   * that is about to 404.
-   */
+  /** A billing path is not a settings section when billing is off. */
   it("resolves a billing path only where billing is on", () => {
     const path = "/organisations/org-1/settings/billing/subscription";
 
