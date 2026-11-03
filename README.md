@@ -12,25 +12,70 @@ console), **`backend`** (NestJS API) and **`desktop`** (Electron agent).
 
 ## Quick Start
 
-Running Hi Day rather than developing it? Use
-[Self-hosting](#self-hosting) — two commands with Docker. To work on the
-code:
+Running Hi Day rather than developing it? See
+[Self-hosting](#self-hosting) — two commands with Docker.
+
+To work on the code, start with:
 
 ```bash
-pnpm install                          # installs deps for every package
-
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# install Postgres locally and update backend/.env's DATABASE_URL to match —
-# see backend/README.md's Quick Start for OS-specific install steps
-pnpm --filter backend migration:run   # creates the database tables
-
-pnpm --filter frontend dev            # http://localhost:3000
-pnpm --filter backend start:dev       # http://localhost:3001
+pnpm install        # every package
 ```
 
-See each package's own README for details: [frontend/README.md](frontend/README.md), [backend/README.md](backend/README.md).
+Then set up whichever parts you need. The backend is needed by both the
+others.
+
+### Backend — `http://localhost:3001`
+
+```bash
+cp backend/.env.example backend/.env
+# set DATABASE_URL to your own Postgres, and JWT_SECRET to anything long
+pnpm --filter backend migration:run
+pnpm --filter backend start:dev
+```
+
+Needs a local PostgreSQL — see
+[backend/README.md](backend/README.md#1-install-and-run-postgres-locally)
+for OS-specific steps. Billing is off by default; add
+`BILLING_ENABLED=true` to work on it.
+
+### Frontend — `http://localhost:3000`
+
+```bash
+cp frontend/.env.example frontend/.env
+pnpm --filter frontend dev
+```
+
+Needs the backend running — it proxies `/api/backend/*` to it.
+
+### Desktop
+
+```bash
+nvm use 22
+pnpm --filter desktop dev
+```
+
+**Node 22 only.** Electron's native modules are compiled against it, and
+24 breaks both the install and the tests. If the tests report
+`NODE_MODULE_VERSION`, rebuild them:
+
+```bash
+pnpm --filter desktop rebuild:node        # for tests
+pnpm --filter desktop rebuild:electron    # for the app
+```
+
+Needs the backend running, and a display — Electron will not start
+headless.
+
+### Everything
+
+```bash
+pnpm lint && pnpm test && pnpm build      # all packages, via turbo
+```
+
+More detail in each package's own README:
+[backend](backend/README.md) · [frontend](frontend/README.md) ·
+[desktop](desktop/README.md). If you want to send a change, read
+[CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## Self-hosting
 
@@ -380,6 +425,7 @@ case of the other and both are covered by the same test suite.
 | Product requirements | [docs/PRD.md](docs/PRD.md) |
 | Technical design | [docs/TECH_DESIGN.md](docs/TECH_DESIGN.md) |
 | Capabilities FAQ | [docs/CAPABILITIES_FAQ.md](docs/CAPABILITIES_FAQ.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Reporting a vulnerability | [SECURITY.md](SECURITY.md) |
 
 ## Project Structure
