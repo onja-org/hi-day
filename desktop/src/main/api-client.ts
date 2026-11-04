@@ -572,8 +572,18 @@ export class ApiClient {
         // its overloads even though Buffer *is* structurally a Uint8Array.
         body: new Uint8Array(buffer),
       });
+      if (!response.ok) {
+        // The body is the only thing that names the cause —
+        // SignatureDoesNotMatch, NoSuchBucket, "Request has expired".
+        // Without it a failed upload is silent retries and no explanation.
+        const detail = await response.text().catch(() => '');
+        console.error(
+          `[screenshot-upload] storage rejected the upload: ${response.status} ${detail.slice(0, 300)}`,
+        );
+      }
       return response.ok;
-    } catch {
+    } catch (error) {
+      console.error('[screenshot-upload] could not reach storage:', error);
       return false;
     }
   }

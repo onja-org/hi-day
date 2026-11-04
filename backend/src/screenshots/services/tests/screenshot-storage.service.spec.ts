@@ -74,3 +74,39 @@ describe('screenshot storage with a bucket configured', () => {
     expect(key).toMatch(/^screenshots\/org-1\/dev-1\/1700000000-.+\.jpg$/);
   });
 });
+
+/**
+ * `Number('')` is 0 and `Number('abc')` is NaN, and either signs a URL that
+ * has already expired — so every upload is rejected and no screenshot is
+ * ever recorded, with nothing in the logs saying why. A blank value is what
+ * copying .env.example and deleting the number leaves behind, and `get`'s
+ * default does not cover it: an empty string is defined.
+ */
+describe('how long a presigned URL lasts', () => {
+  async function ttlOf(raw: string | undefined): Promise<number> {
+    const storage = new ScreenshotStorageService(
+      configWith({ ...CONFIGURED, SCREENSHOT_URL_TTL_SECONDS: raw }),
+    );
+    const url = await storage.createUploadUrl('screenshots/x.jpg');
+    return Number(new URL(url).searchParams.get('X-Amz-Expires'));
+  }
+
+  it('uses the configured number of seconds', async () => {
+    await expect(ttlOf('900')).resolves.toBe(900);
+  });
+
+  it('falls back to five minutes when unset', async () => {
+    await expect(ttlOf(undefined)).resolves.toBe(300);
+  });
+
+  it('falls back rather than expiring instantly on a blank value', async () => {
+    await expect(ttlOf('')).resolves.toBe(300);
+    await expect(ttlOf('   ')).resolves.toBe(300);
+  });
+
+  it('falls back on a value that is not a positive number', async () => {
+    for (const raw of ['abc', '0', '-60']) {
+      await expect(ttlOf(raw)).resolves.toBe(300);
+    }
+  });
+});

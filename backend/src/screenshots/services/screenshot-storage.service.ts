@@ -27,6 +27,10 @@ const MAX_DELETE_BATCH_SIZE = 1000;
  * upload directly from the desktop agent to the bucket
  * (docs/TECH_DESIGN.md §4).
  */
+/** Five minutes: long enough for an upload, short enough that a leaked
+ * link dies quickly. */
+const DEFAULT_URL_TTL_SECONDS = 300;
+
 /** The settings without which there is nowhere to put a screenshot. */
 const REQUIRED_STORAGE_VARS = [
   'WASABI_BUCKET',
@@ -51,8 +55,8 @@ export class ScreenshotStorageService {
 
   constructor(configService: ConfigService) {
     this.bucket = configService.get<string>('WASABI_BUCKET')?.trim() ?? '';
-    this.urlTtlSeconds = Number(
-      configService.get<string>('SCREENSHOT_URL_TTL_SECONDS', '300'),
+    this.urlTtlSeconds = this.readUrlTtl(
+      configService.get<string>('SCREENSHOT_URL_TTL_SECONDS'),
     );
 
     const settings = REQUIRED_STORAGE_VARS.map(
@@ -79,6 +83,28 @@ export class ScreenshotStorageService {
       // <bucket>.<endpoint> style.
       forcePathStyle: true,
     });
+  }
+
+  /**
+   * Seconds a presigned URL stays valid.
+   *
+   * Guarded because `Number('')` is 0 and `Number('abc')` is NaN, and
+   * either makes `expiresIn` sign a URL that is already expired — so every
+   * upload is rejected and no screenshot is ever recorded, with nothing in
+   * the logs naming the cause. A blank value is exactly what copying
+   * .env.example and deleting the number leaves behind, and `get`'s own
+   * default does not cover it: an empty string is defined.
+   */
+  private readUrlTtl(raw: string | undefined): number {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+
+    if (raw !== undefined && raw.trim() !== '') {
+      this.logger.warn(
+        `SCREENSHOT_URL_TTL_SECONDS is "${raw}", which is not a positive number. Using ${DEFAULT_URL_TTL_SECONDS}s.`,
+      );
+    }
+    return DEFAULT_URL_TTL_SECONDS;
   }
 
   /** Whether screenshots can be stored at all on this installation. */
