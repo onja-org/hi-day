@@ -19,8 +19,11 @@ export class AddTimeEntryType1790400000000 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "time_entries" ADD "type" "TimeEntryType" NOT NULL DEFAULT 'normal'`,
     );
+    // Compare as text: `'manual'` was added to "TimeEntrySource" by an
+    // earlier migration that may share this transaction, and Postgres
+    // refuses to use an enum value before the transaction adding it commits.
     await queryRunner.query(
-      `UPDATE "time_entries" SET "type" = 'manual' WHERE "source" = 'manual'`,
+      `UPDATE "time_entries" SET "type" = 'manual' WHERE "source"::text = 'manual'`,
     );
   }
 
