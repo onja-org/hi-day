@@ -3,7 +3,9 @@ import type { NextRequest } from "next/server";
 import { BACKEND_ORIGIN } from "@/lib/backendOrigin";
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // The optional leading segment skips static files served under an
+  // ASSET_PREFIX (see next.config.ts) as well as the unprefixed ones.
+  matcher: ["/((?!(?:[^/]+/)?_next/static|_next/image|favicon.ico).*)"],
 };
 
 // The access-token cookie is short-lived relative to the refresh token
