@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
-import { BillingModule } from '../../billing/modules/billing.module';
+import { EntitlementsModule } from '../../entitlements/entitlements.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -32,7 +32,7 @@ import { TimesheetReasonsService } from '../services/timesheet-reasons.service';
       User,
     ]),
     AuditLogModule,
-    BillingModule,
+    EntitlementsModule.register(),
     JwtAuthModule,
     EmailModule,
     ScreenshotStorageModule,

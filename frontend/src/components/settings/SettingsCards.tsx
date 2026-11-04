@@ -7,10 +7,12 @@ import {
   UsersIcon,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon } from "@phosphor-icons/react";
-import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
+import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
 
 type SettingsCardsProps = {
   organisationId: string;
+  /** A prop rather than a hook: this is a Server Component. */
+  billingEnabled: boolean;
 };
 
 /** One per group, keyed so the nav tree stays free of components. */
@@ -24,10 +26,13 @@ const GROUP_ICONS: Record<string, Icon> = {
 
 /** Every settings group as a card of links — the whole area at a glance,
  * rather than a nav someone has to open to find out what is in it. */
-export function SettingsCards({ organisationId }: SettingsCardsProps) {
+export function SettingsCards({
+  organisationId,
+  billingEnabled,
+}: SettingsCardsProps) {
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {SETTINGS_GROUPS.map((group) => {
+      {visibleSettingsGroups(billingEnabled).map((group) => {
         const GroupIcon = GROUP_ICONS[group.key];
         return (
           <section

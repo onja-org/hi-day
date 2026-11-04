@@ -1,3 +1,4 @@
+import { BILLING_ENABLED_VAR } from '../../../entitlements/billing-enabled';
 import { StripeService } from '../stripe.service';
 import { CLOUD_PRICES, CLOUD_PRODUCT_NAME } from '../../pricing';
 
@@ -7,13 +8,17 @@ function serviceFor({
 }: { productId?: string; found?: { id: string }[] } = {}) {
   const search = jest.fn().mockResolvedValue({ data: found });
   const create = jest.fn().mockResolvedValue({ id: 'prod_created' });
+  // Billing on: everything in this file is about what a paying installation
+  // charges. The off case lives in billing-disabled.service.spec.ts.
   const service = new StripeService({
     get: (key: string) =>
-      key === 'STRIPE_SECRET_KEY'
-        ? 'sk_test'
-        : key === 'STRIPE_PRODUCT_ID'
-          ? productId
-          : undefined,
+      key === BILLING_ENABLED_VAR
+        ? 'true'
+        : key === 'STRIPE_SECRET_KEY'
+          ? 'sk_test'
+          : key === 'STRIPE_PRODUCT_ID'
+            ? productId
+            : undefined,
   } as never);
   // The constructor builds a real client; only the product calls are used.
   Object.defineProperty(service, 'client', {

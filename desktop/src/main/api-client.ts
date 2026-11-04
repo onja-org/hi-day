@@ -219,10 +219,25 @@ export class ApiClient {
    * caller, since that is the only place that reproduces the real shape:
    * a transport failure, no HTTP status, everywhere at once.
    */
+  private readonly resolveBaseUrl: () => string;
+
   constructor(
-    private readonly baseUrl: string,
+    /**
+     * A function where the server can change while the app is running — a
+     * self-hoster editing the Server URL on the login screen. Resolved per
+     * request rather than captured, because this client is handed to the
+     * uploaders, the queue and the tray at startup and rebuilding that
+     * whole graph to change one string would be absurd.
+     */
+    baseUrl: string | (() => string),
     private readonly isOffline: () => boolean = () => false,
-  ) {}
+  ) {
+    this.resolveBaseUrl = typeof baseUrl === 'function' ? baseUrl : () => baseUrl;
+  }
+
+  private get baseUrl(): string {
+    return this.resolveBaseUrl();
+  }
 
   /** The shape a request that never reached the server resolves to. */
   private unreachable<T>(): TrackingResult<T> {
@@ -557,8 +572,18 @@ export class ApiClient {
         // its overloads even though Buffer *is* structurally a Uint8Array.
         body: new Uint8Array(buffer),
       });
+      if (!response.ok) {
+        // The body is the only thing that names the cause —
+        // SignatureDoesNotMatch, NoSuchBucket, "Request has expired".
+        // Without it a failed upload is silent retries and no explanation.
+        const detail = await response.text().catch(() => '');
+        console.error(
+          `[screenshot-upload] storage rejected the upload: ${response.status} ${detail.slice(0, 300)}`,
+        );
+      }
       return response.ok;
-    } catch {
+    } catch (error) {
+      console.error('[screenshot-upload] could not reach storage:', error);
       return false;
     }
   }

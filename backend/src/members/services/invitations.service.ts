@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -9,7 +10,10 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { isEmail } from 'class-validator';
 import type { Request, Response } from 'express';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
-import { BilledSeatsService } from '../../billing/services/billed-seats.service';
+import {
+  ENTITLEMENTS,
+  type Entitlements,
+} from '../../entitlements/entitlements';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { hashToken } from '../../common/hash-token.util';
@@ -59,6 +63,12 @@ export interface InvitationEntryResult {
   email: string;
   outcome: InvitationOutcome;
   message?: string;
+  /**
+   * Present only where no email provider is configured, so the admin can
+   * pass the link on by hand. Absent wherever mail is sent — it is a
+   * single-use credential and belongs in as few places as possible.
+   */
+  acceptUrl?: string;
 }
 
 export interface InvitationSummary {
@@ -106,7 +116,8 @@ export class InvitationsService {
     private readonly projects: Repository<Project>,
     @InjectRepository(InviteLink)
     private readonly inviteLinks: Repository<InviteLink>,
-    private readonly billedSeatsService: BilledSeatsService,
+    @Inject(ENTITLEMENTS)
+    private readonly entitlements: Entitlements,
   ) {}
 
   async createMany(
@@ -493,7 +504,7 @@ export class InvitationsService {
 
     // A new Membership puts someone on the bill. After the transaction, so a
     // failed sync can never undo the acceptance itself.
-    await this.billedSeatsService.syncToProvider(invitation.organisationId);
+    await this.entitlements.syncSeats(invitation.organisationId);
 
     return { message: `Welcome to ${invitation.organisation.name}.` };
   }
@@ -749,7 +760,13 @@ export class InvitationsService {
       resend: isResend,
     });
 
-    return { email, outcome: isResend ? 'resent' : 'sent' };
+    return {
+      email,
+      outcome: isResend ? 'resent' : 'sent',
+      ...(this.emailService.isDelivering
+        ? {}
+        : { acceptUrl: this.emailService.invitationAcceptUrl(token) }),
+    };
   }
 
   private readAuthenticatedUserId(request: Request): string | null {

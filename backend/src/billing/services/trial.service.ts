@@ -8,6 +8,10 @@ import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
 import { billingRecipients } from '../billing-recipients';
+import {
+  BILLING_ENABLED_VAR,
+  parseBillingEnabled,
+} from '../../entitlements/billing-enabled';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   accessEndsAfter,
@@ -76,6 +80,8 @@ export class TrialService {
    */
   private readonly freeOrganisationIds: Set<number>;
 
+  private readonly billingEnabled: boolean;
+
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptions: Repository<Subscription>,
@@ -86,6 +92,9 @@ export class TrialService {
   ) {
     this.freeOrganisationIds = parseFreeOrganisationIds(
       configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
+    );
+    this.billingEnabled = parseBillingEnabled(
+      configService.get<string>(BILLING_ENABLED_VAR),
     );
   }
 
@@ -98,12 +107,18 @@ export class TrialService {
    * Takes the caller's `EntityManager` so the trial lands in the same
    * transaction that creates the Organisation — one can't exist without the
    * other.
+   *
+   * With billing off no row is written and this answers null — already how
+   * an Organisation that was never on a trial is spelled, so every surface
+   * gets the right answer from existing code.
    */
   async startTrial(
     manager: EntityManager,
     organisationId: string,
     now: Date = new Date(),
-  ): Promise<Subscription> {
+  ): Promise<Subscription | null> {
+    if (!this.billingEnabled) return null;
+
     return manager.save(
       manager.create(Subscription, {
         organisationId,
@@ -166,6 +181,10 @@ export class TrialService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async sendDueTrialReminders(): Promise<void> {
+    // Stopped here rather than relying on there being no rows: an install
+    // that once billed still has them, and the emails must stop at once.
+    if (!this.billingEnabled) return;
+
     const now = new Date();
 
     const candidates = await this.subscriptions.find({

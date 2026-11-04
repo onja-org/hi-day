@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { json, raw, urlencoded } from 'express';
 import { AppModule } from './app.module';
+import { isBillingEnabled } from './entitlements/billing-enabled';
 
 setDefaultResultOrder('ipv4first');
 setDefaultAutoSelectFamily(false);
@@ -19,7 +20,13 @@ const STRIPE_WEBHOOK_PATH = '/billing/webhook';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use(STRIPE_WEBHOOK_PATH, raw({ type: 'application/json' }));
+  // Only where there is a webhook controller to receive it. With billing off
+  // the route does not exist, and leaving the middleware mounted would hand
+  // an unparsed body to a 404 — harmless, but it advertises a billing
+  // endpoint on an install that has none.
+  if (isBillingEnabled()) {
+    app.use(STRIPE_WEBHOOK_PATH, raw({ type: 'application/json' }));
+  }
   app.use(json({ limit: REQUEST_BODY_SIZE_LIMIT }));
   app.use(urlencoded({ limit: REQUEST_BODY_SIZE_LIMIT, extended: true }));
   const configService = app.get(ConfigService);

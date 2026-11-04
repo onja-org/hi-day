@@ -13,30 +13,45 @@ jest.mock('resend', () => ({
   })),
 }));
 
+const smtpSendMail = jest.fn().mockResolvedValue({});
+jest.mock('nodemailer', () => ({
+  createTransport: jest.fn(() => ({ sendMail: smtpSendMail })),
+}));
+
+/** `RESEND_API_KEY` is read with `get` since it is optional; `FRONTEND_URL`
+ * still uses `getOrThrow`. */
+function configWith(values: Record<string, string | undefined>) {
+  return {
+    get: (key: string) => values[key],
+    getOrThrow: (key: string) => values[key],
+  };
+}
+
+const CONFIGURED = {
+  RESEND_API_KEY: 're_test_key',
+  EMAIL_SENDER: 'noreply@example.com',
+  FRONTEND_URL: 'http://localhost:3000',
+};
+
+async function serviceWith(
+  values: Record<string, string | undefined>,
+): Promise<EmailService> {
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      EmailService,
+      { provide: ConfigService, useValue: configWith(values) },
+    ],
+  }).compile();
+  return module.get(EmailService);
+}
+
 describe('EmailService', () => {
   let service: EmailService;
 
   beforeEach(async () => {
     sendMock.mockClear();
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EmailService,
-        {
-          provide: ConfigService,
-          useValue: {
-            getOrThrow: (key: string) =>
-              ({
-                RESEND_API_KEY: 're_test_key',
-                EMAIL_SENDER: 'noreply@example.com',
-                FRONTEND_URL: 'http://localhost:3000',
-              })[key],
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get(EmailService);
+    smtpSendMail.mockClear();
+    service = await serviceWith(CONFIGURED);
   });
 
   it('sends a set-password email with a link containing the token and mentions the app and org', async () => {
@@ -177,5 +192,229 @@ describe('EmailService', () => {
 
       expect(await service.sendReportEmail(report)).toBe(false);
     });
+  });
+});
+
+/** The Resend SDK throws on an empty key, which is what copying
+ * .env.example gives you — so this is the difference between booting and
+ * not. */
+/** Everything the logger was handed, as one searchable string. */
+function loggedLines(warn: jest.SpyInstance): string {
+  return (warn.mock.calls as unknown[][])
+    .map((call) => String(call[0]))
+    .join('\n');
+}
+
+describe('EmailService with no provider configured', () => {
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    sendMock.mockClear();
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => warn.mockRestore());
+
+  for (const [label, key] of [
+    ['unset', undefined],
+    ['empty', ''],
+    ['whitespace', '   '],
+  ] as const) {
+    it(`starts with a ${label} key`, async () => {
+      await expect(
+        serviceWith({ ...CONFIGURED, RESEND_API_KEY: key }),
+      ).resolves.toBeDefined();
+    });
+  }
+
+  it('knows it is not delivering', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    expect(offline.isDelivering).toBe(false);
+  });
+
+  it('is delivering once a key is set', async () => {
+    const online = await serviceWith(CONFIGURED);
+
+    expect(online.isDelivering).toBe(true);
+  });
+
+  it('sends nothing to the provider', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendSetPasswordEmail('owner@acme.test', 'tok', 'Acme');
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  /** Without the link an operator could create an organisation and never
+   * sign in to it. */
+  it('logs the link so the flow can still be completed', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendSetPasswordEmail('owner@acme.test', 'the-token', 'Acme');
+
+    const logged = loggedLines(warn);
+    expect(logged).toContain(
+      'http://localhost:3000/set-password?token=the-token',
+    );
+    expect(logged).toContain('owner@acme.test');
+  });
+
+  it('logs invitation links too', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await offline.sendInvitationEmail('new@acme.test', 'invite-token', 'Acme');
+
+    const logged = loggedLines(warn);
+    expect(logged).toContain('invite-token');
+  });
+
+  /** A message that was only logged is not a failure to the caller. */
+  it('reports no error for a message it only logged', async () => {
+    const offline = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    await expect(
+      offline.sendReportEmail({
+        to: ['someone@acme.test'],
+        subject: 'Weekly report',
+        message: 'Here it is',
+        senderName: 'Owner',
+        senderEmail: 'owner@acme.test',
+        organisationName: 'Acme',
+        attachment: { filename: 'r.pdf', content: Buffer.from('pdf') },
+      }),
+    ).resolves.toBe(true);
+  });
+});
+
+/** SMTP needs no third-party signup, which is why it wins. */
+describe('choosing how mail goes out', () => {
+  beforeEach(() => {
+    sendMock.mockClear();
+    smtpSendMail.mockClear();
+  });
+
+  it('uses SMTP when a mail server is configured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    expect(service.transportName).toBe('smtp');
+    expect(service.isDelivering).toBe(true);
+  });
+
+  it('uses Resend when only an API key is configured', async () => {
+    const service = await serviceWith(CONFIGURED);
+
+    expect(service.transportName).toBe('resend');
+    expect(service.isDelivering).toBe(true);
+  });
+
+  /** A leftover key must not silently route staff email through a third
+   * party. */
+  it('prefers SMTP over a leftover Resend key', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    expect(service.transportName).toBe('smtp');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the log when neither is configured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+    });
+
+    expect(service.transportName).toBe('console');
+    expect(service.isDelivering).toBe(false);
+  });
+
+  // Copying .env.example gives blanks, not absent keys.
+  it('treats blank settings as unconfigured', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: '  ',
+      SMTP_HOST: '  ',
+    });
+
+    expect(service.transportName).toBe('console');
+  });
+
+  it('starts whichever way is configured, and never throws', async () => {
+    for (const env of [
+      { SMTP_HOST: 'smtp.acme.test' },
+      { RESEND_API_KEY: 're_test_key' },
+      {},
+    ]) {
+      await expect(
+        serviceWith({ ...CONFIGURED, RESEND_API_KEY: undefined, ...env }),
+      ).resolves.toBeDefined();
+    }
+  });
+});
+
+describe('SMTP messages actually go out', () => {
+  beforeEach(() => {
+    sendMock.mockClear();
+    smtpSendMail.mockClear();
+  });
+
+  it('sends a set-password link over SMTP, not to the log', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+    });
+
+    await service.sendSetPasswordEmail('ada@acme.test', 'the-token', 'Acme');
+
+    expect(smtpSendMail).toHaveBeenCalledTimes(1);
+    const smtpCalls = smtpSendMail.mock.calls as unknown[][];
+    const sent = smtpCalls[0][0] as {
+      to: string;
+      html: string;
+      subject: string;
+    };
+    expect(sent.to).toBe('ada@acme.test');
+    expect(sent.html).toContain('set-password?token=the-token');
+    expect(sent.subject).toContain('Acme');
+    // The provider that is not in use must not be touched.
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the configured sender address', async () => {
+    const service = await serviceWith({
+      ...CONFIGURED,
+      RESEND_API_KEY: undefined,
+      SMTP_HOST: 'smtp.acme.test',
+      EMAIL_SENDER: 'Hi Day <noreply@acme.test>',
+    });
+
+    await service.sendInvitationEmail('new@acme.test', 'tok', 'Acme');
+
+    expect(smtpSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'Hi Day <noreply@acme.test>' }),
+    );
   });
 });

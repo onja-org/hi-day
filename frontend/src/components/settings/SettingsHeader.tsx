@@ -11,10 +11,11 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import { useBillingEnabled } from "@/hooks/useBillingEnabled";
 import {
   activeSettingsLocation,
   settingsHref,
-  SETTINGS_GROUPS,
+  visibleSettingsGroups,
 } from "@/lib/settingsNavigation";
 
 type SettingsHeaderProps = {
@@ -35,7 +36,8 @@ const GROUP_ICONS: Record<string, Icon> = {
  */
 export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
   const pathname = usePathname();
-  const active = activeSettingsLocation(pathname ?? "");
+  const billingEnabled = useBillingEnabled();
+  const active = activeSettingsLocation(pathname ?? "", billingEnabled);
 
   if (!active) {
     return (
@@ -48,7 +50,9 @@ export function SettingsHeader({ organisationId }: SettingsHeaderProps) {
     );
   }
 
-  const group = SETTINGS_GROUPS.find((candidate) => candidate.key === active.groupKey);
+  const group = visibleSettingsGroups(billingEnabled).find(
+    (candidate) => candidate.key === active.groupKey,
+  );
   if (!group) return null;
   const GroupIcon = GROUP_ICONS[group.key];
 

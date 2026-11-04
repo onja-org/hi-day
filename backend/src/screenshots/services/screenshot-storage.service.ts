@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectsCommand,
@@ -27,31 +27,100 @@ const MAX_DELETE_BATCH_SIZE = 1000;
  * upload directly from the desktop agent to the bucket
  * (docs/TECH_DESIGN.md §4).
  */
+/** Five minutes: long enough for an upload, short enough that a leaked
+ * link dies quickly. */
+const DEFAULT_URL_TTL_SECONDS = 300;
+
+/** The settings without which there is nowhere to put a screenshot. */
+const REQUIRED_STORAGE_VARS = [
+  'WASABI_BUCKET',
+  'WASABI_REGION',
+  'WASABI_ENDPOINT',
+  'WASABI_ACCESS_KEY_ID',
+  'WASABI_SECRET_ACCESS_KEY',
+] as const;
+
 @Injectable()
 export class ScreenshotStorageService {
-  private readonly client: S3Client;
+  private readonly logger = new Logger(ScreenshotStorageService.name);
+
+  /**
+   * Null where no object storage is configured. Optional so a self-hosted
+   * install need not open a storage account before Hi Day will start; only
+   * screenshots are unavailable without it.
+   */
+  private readonly client: S3Client | null;
   private readonly bucket: string;
   private readonly urlTtlSeconds: number;
 
   constructor(configService: ConfigService) {
-    this.bucket = configService.getOrThrow<string>('WASABI_BUCKET');
-    this.urlTtlSeconds = Number(
-      configService.get<string>('SCREENSHOT_URL_TTL_SECONDS', '300'),
+    this.bucket = configService.get<string>('WASABI_BUCKET')?.trim() ?? '';
+    this.urlTtlSeconds = this.readUrlTtl(
+      configService.get<string>('SCREENSHOT_URL_TTL_SECONDS'),
     );
+
+    const settings = REQUIRED_STORAGE_VARS.map(
+      (name) => configService.get<string>(name)?.trim() ?? '',
+    );
+    const missing = REQUIRED_STORAGE_VARS.filter((_, i) => settings[i] === '');
+
+    if (missing.length > 0) {
+      this.client = null;
+      this.logger.warn(
+        `Screenshot storage is not configured (${missing.join(', ')}), so ` +
+          'screenshots cannot be captured or viewed. Everything else works.',
+      );
+      return;
+    }
+
+    const [, region, endpoint, accessKeyId, secretAccessKey] = settings;
     this.client = new S3Client({
-      region: configService.getOrThrow<string>('WASABI_REGION'),
-      endpoint: configService.getOrThrow<string>('WASABI_ENDPOINT'),
-      credentials: {
-        accessKeyId: configService.getOrThrow<string>('WASABI_ACCESS_KEY_ID'),
-        secretAccessKey: configService.getOrThrow<string>(
-          'WASABI_SECRET_ACCESS_KEY',
-        ),
-      },
+      region,
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
       // Wasabi (like most non-AWS S3-compatible providers) serves buckets
       // at <endpoint>/<bucket>/<key>, not AWS's default virtual-hosted
       // <bucket>.<endpoint> style.
       forcePathStyle: true,
     });
+  }
+
+  /**
+   * Seconds a presigned URL stays valid.
+   *
+   * Guarded because `Number('')` is 0 and `Number('abc')` is NaN, and
+   * either makes `expiresIn` sign a URL that is already expired — so every
+   * upload is rejected and no screenshot is ever recorded, with nothing in
+   * the logs naming the cause. A blank value is exactly what copying
+   * .env.example and deleting the number leaves behind, and `get`'s own
+   * default does not cover it: an empty string is defined.
+   */
+  private readUrlTtl(raw: string | undefined): number {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+
+    if (raw !== undefined && raw.trim() !== '') {
+      this.logger.warn(
+        `SCREENSHOT_URL_TTL_SECONDS is "${raw}", which is not a positive number. Using ${DEFAULT_URL_TTL_SECONDS}s.`,
+      );
+    }
+    return DEFAULT_URL_TTL_SECONDS;
+  }
+
+  /** Whether screenshots can be stored at all on this installation. */
+  get isConfigured(): boolean {
+    return this.client !== null;
+  }
+
+  /** Fails loudly rather than sending an unsigned request to nowhere. */
+  private get s3(): S3Client {
+    if (!this.client) {
+      throw new Error(
+        'Screenshot storage is not configured on this installation. Set ' +
+          `${REQUIRED_STORAGE_VARS.join(', ')} to enable screenshots.`,
+      );
+    }
+    return this.client;
   }
 
   /**
@@ -68,9 +137,11 @@ export class ScreenshotStorageService {
     return `screenshots/${organisationId}/${deviceId}/${capturedAt.getTime()}-${randomUUID()}.jpg`;
   }
 
-  createUploadUrl(storageKey: string): Promise<string> {
+  // `async` so an unconfigured install rejects rather than throwing
+  // synchronously, which a caller using `.catch()` would miss.
+  async createUploadUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.s3,
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: storageKey,
@@ -81,9 +152,9 @@ export class ScreenshotStorageService {
   }
 
   /** Time-limited read access for the web console's screenshot gallery — never a public/permanent URL. */
-  createViewUrl(storageKey: string): Promise<string> {
+  async createViewUrl(storageKey: string): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.s3,
       new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }),
       { expiresIn: this.urlTtlSeconds },
     );
@@ -93,7 +164,7 @@ export class ScreenshotStorageService {
   async deleteObjects(storageKeys: string[]): Promise<void> {
     for (let i = 0; i < storageKeys.length; i += MAX_DELETE_BATCH_SIZE) {
       const batch = storageKeys.slice(i, i + MAX_DELETE_BATCH_SIZE);
-      await this.client.send(
+      await this.s3.send(
         new DeleteObjectsCommand({
           Bucket: this.bucket,
           Delete: { Objects: batch.map((key) => ({ Key: key })) },
@@ -122,7 +193,7 @@ export class ScreenshotStorageService {
 
   /** True if any object still exists under the prefix. */
   async hasObjectsWithPrefix(prefix: string): Promise<boolean> {
-    const result = await this.client.send(
+    const result = await this.s3.send(
       new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,
@@ -133,7 +204,7 @@ export class ScreenshotStorageService {
   }
 
   private async listKeys(prefix: string): Promise<string[]> {
-    const result = await this.client.send(
+    const result = await this.s3.send(
       new ListObjectsV2Command({
         Bucket: this.bucket,
         Prefix: prefix,

@@ -17,6 +17,7 @@ interface SetupState {
   lastAutoStartedBoot?: string;
   lastAutoStartedDay?: string;
   webAppUrl?: string;
+  serverUrl?: string;
 }
 
 /**
@@ -57,6 +58,32 @@ export function hasWaylandScreenshotGrant(userDataDir: string): boolean {
 
 export function markWaylandScreenshotGranted(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
+}
+
+/**
+ * The Hi Day server this install talks to, as typed on the login screen.
+ *
+ * Kept here rather than on the session because signing out must not forget
+ * it — the address is exactly what you need in order to sign back in, and
+ * a self-hoster who had to retype their server every time would rightly
+ * consider the field broken. Null until somebody changes it, which leaves
+ * the built-in default in charge.
+ */
+export function rememberedServerUrl(userDataDir: string): string | null {
+  return read(userDataDir).serverUrl ?? null;
+}
+
+export function rememberServerUrl(
+  userDataDir: string,
+  serverUrl: string | null,
+): void {
+  const state = read(userDataDir);
+  if (serverUrl === null) {
+    delete state.serverUrl;
+    write(userDataDir, state);
+    return;
+  }
+  write(userDataDir, { ...state, serverUrl });
 }
 
 /** Kept so a signed-out agent can still nudge: settings arrive over an

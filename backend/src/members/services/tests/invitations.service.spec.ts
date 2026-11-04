@@ -163,11 +163,21 @@ describe('InvitationsService', () => {
     };
   }
 
-  function makeEmailService() {
+  /** `isDelivering: false` is the self-hosted install with no provider. */
+  function makeEmailService(isDelivering = true) {
     const sendInvitationEmail = jest.fn().mockResolvedValue(undefined);
+    const invitationAcceptUrl = jest.fn(
+      (token: string) =>
+        `http://localhost:3000/accept-invitation?token=${token}`,
+    );
     return {
-      emailService: { sendInvitationEmail } as unknown as EmailService,
+      emailService: {
+        sendInvitationEmail,
+        invitationAcceptUrl,
+        isDelivering,
+      } as unknown as EmailService,
       sendInvitationEmail,
+      invitationAcceptUrl,
     };
   }
 
@@ -227,9 +237,69 @@ describe('InvitationsService', () => {
         ({
           findOne: jest.fn().mockResolvedValue(null),
         } as unknown as Repository<InviteLink>),
-      { syncToProvider: jest.fn().mockResolvedValue(undefined) } as never,
+      // Entitlements: Cloud reaches Stripe here, self-hosted does nothing.
+      { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
+
+  /** With no provider the join link comes back to the admin, to pass on. */
+  describe('createMany where no email provider is configured', () => {
+    it('hands the join link back instead', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result.outcome).toBe('sent');
+      expect(result.acceptUrl).toMatch(
+        /^http:\/\/localhost:3000\/accept-invitation\?token=.+/,
+      );
+    });
+
+    /** A single-use credential belongs in as few places as possible. */
+    it('does not hand back a link where email works', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(true);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result).not.toHaveProperty('acceptUrl');
+    });
+
+    // The link is a fallback for delivery, not a replacement for trying.
+    it('still asks the email service to send', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+  });
 
   describe('createMany', () => {
     it("rejects a manager's admin invite without creating a row or sending an email", async () => {

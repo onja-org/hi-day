@@ -26,6 +26,7 @@ import type {
 } from "./api-client";
 import { ApiClient, isTransportFailure } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
+import { ServerUrlSetting } from "./server-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
@@ -205,7 +206,21 @@ const NOT_LOGGED_IN: TrackingResult<never> = {
   unauthorized: true,
 };
 
-const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
+/**
+ * Which Hi Day server this agent talks to. Built once the app knows its
+ * userData path — see `serverUrlSetting` inside `main()`.
+ *
+ * Hi Day is self-hostable, so most installs are not talking to hiday.io.
+ * The address is read per request rather than captured, because somebody
+ * can change it on the login screen while the app is running.
+ */
+let serverUrlSetting: ServerUrlSetting | null = null;
+
+function apiBaseUrl(): string {
+  return serverUrlSetting
+    ? serverUrlSetting.current()
+    : resolveApiBaseUrl(app.isPackaged);
+}
 
 interface AuthStatus {
   loggedIn: boolean;
@@ -988,7 +1003,11 @@ async function registerIpcHandlers(): Promise<void> {
     read: () => offlineCache.read().runningEntry,
     write: (entry) => offlineCache.rememberRunning(entry),
   });
-  const apiClient = new ApiClient(API_BASE_URL, offlineSimulated);
+  serverUrlSetting = new ServerUrlSetting(
+    app.getPath("userData"),
+    app.isPackaged,
+  );
+  const apiClient = new ApiClient(apiBaseUrl, offlineSimulated);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
   // screenshot is persisted to SQLite before it's sent, and drained in
@@ -1731,6 +1750,21 @@ async function registerIpcHandlers(): Promise<void> {
 
     return result;
   });
+
+  /**
+   * The Server URL field on the login screen.
+   *
+   * Pre-login on purpose: it is the address the pairing flow will use, so
+   * it has to be settable before anybody can sign in — which was the whole
+   * problem with `DESKTOP_API_URL`, a variable a packaged app cannot see.
+   */
+  ipcMain.handle("server:get", () => serverUrlSetting!.state());
+
+  ipcMain.handle("server:set", async (_event, url: unknown) =>
+    serverUrlSetting!.save(typeof url === "string" ? url : ""),
+  );
+
+  ipcMain.handle("server:reset", () => serverUrlSetting!.reset());
 
   ipcMain.handle("auth:logout", async (): Promise<AuthStatus> => {
     const session = authStore.load();

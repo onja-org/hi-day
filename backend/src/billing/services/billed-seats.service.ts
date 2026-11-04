@@ -99,10 +99,10 @@ export class BilledSeatsService {
    * that can change the number: an invitation accepted, a member removed or
    * deactivated, a role changed.
    *
-   * A no-op in the three cases where there is nothing to tell: Stripe is not
-   * configured (a self-hosted install, where `BILLING_ENABLED` is off and no
-   * seat sync may happen at all), or the Organisation has no subscription
-   * with the provider — which is every Organisation until checkout exists.
+   * A no-op in the two cases where there is nothing to tell: billing is off
+   * (`BILLING_ENABLED` — a self-hosted install, where no seat sync may happen
+   * at all), or the Organisation has no subscription with the provider, which
+   * is every Organisation until checkout completes.
    *
    * Where the count **rose** the seats were charged for on the spot, so the
    * purchase is written up to match — otherwise the Organisation stays

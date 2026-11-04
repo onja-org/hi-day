@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
-import { TrialService } from '../../billing/services/trial.service';
+import {
+  ENTITLEMENTS,
+  type Entitlements,
+} from '../../entitlements/entitlements';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -178,7 +181,8 @@ export class OrganisationsService {
     private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
     private readonly timeEntriesService: TimeEntriesService,
-    private readonly trialService: TrialService,
+    @Inject(ENTITLEMENTS)
+    private readonly entitlements: Entitlements,
   ) {}
 
   async createForUser(
@@ -229,10 +233,12 @@ export class OrganisationsService {
       }),
     );
 
-    // Signup asks for no card, so every new Organisation starts its 14-day
-    // trial here rather than anyone choosing to — same transaction, so an
-    // Organisation never exists without one (see CONTEXT.md's Trial entry).
-    await this.trialService.startTrial(manager, organisation.id);
+    // Signup asks for no card, so every new Organisation on Hi Day Cloud
+    // starts its 14-day trial here rather than anyone choosing to — same
+    // transaction, so an Organisation never exists without one (see
+    // CONTEXT.md's Trial entry). A self-hosted install starts none: this is
+    // the no-op half of Entitlements, not a branch in this service.
+    await this.entitlements.startTrial(manager, organisation.id);
 
     await this.auditLogService.record(manager, {
       action: 'organisation.created',
