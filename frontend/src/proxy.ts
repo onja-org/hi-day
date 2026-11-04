@@ -31,6 +31,18 @@ export async function proxy(request: NextRequest) {
       headers: { cookie: request.headers.get("cookie") ?? "" },
     });
 
+    // The token is spent, so drop it — otherwise every later request retries
+    // a refresh that cannot succeed. A 429 or a backend blip says nothing
+    // about the token, so those fall through and the session is left alone.
+    if (refreshResponse.status === 401 || refreshResponse.status === 403) {
+      // Path must match what the cookies were set under ("/"), or the browser
+      // scopes the deletion to the current page's directory.
+      const response = NextResponse.next();
+      response.cookies.delete({ name: "refresh_token", path: "/" });
+      response.cookies.delete({ name: "access_token", path: "/" });
+      return response;
+    }
+
     if (!refreshResponse.ok) {
       return NextResponse.next();
     }

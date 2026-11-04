@@ -12,7 +12,10 @@ import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { readCookie } from '../../common/cookies.util';
-import { setSessionCookies } from '../../common/session-cookies.util';
+import {
+  clearSessionCookies,
+  setSessionCookies,
+} from '../../common/session-cookies.util';
 import { DeviceSessionService } from '../../devices/services/device-session.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -402,13 +405,25 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const presentedToken = readCookie(request, REFRESH_TOKEN_COOKIE);
 
+    // Clear on a failed refresh, or the browser retries the same doomed
+    // token on every page load. Only here: a request that never reaches the
+    // rotation says nothing about whether the token is still good.
     if (!presentedToken) {
+      clearSessionCookies(response);
       throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
     }
 
-    const { userId, token: refreshToken } = await this.dataSource.transaction(
-      (manager) => this.refreshTokenService.rotate(manager, presentedToken),
-    );
+    let rotated: { userId: string; token: string };
+    try {
+      rotated = await this.dataSource.transaction((manager) =>
+        this.refreshTokenService.rotate(manager, presentedToken),
+      );
+    } catch (error) {
+      clearSessionCookies(response);
+      throw error;
+    }
+
+    const { userId, token: refreshToken } = rotated;
 
     const accessToken = this.tokenService.signAccessToken(userId);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
