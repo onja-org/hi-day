@@ -4,9 +4,9 @@ import { getManagerScopeTeamIds } from './manager-scope.util';
 
 /**
  * Whether `caller` may view data belonging to `target`: always themselves,
- * admins see everyone, managers see anyone sharing one of their managed
- * teams, and peers never see each other. Requires both `caller` and
- * `target` to have `teamMemberships` loaded.
+ * an admin everyone, a manager the *members* of the teams they manage —
+ * never a peer manager or an admin, team or no team. Both need
+ * `teamMemberships` loaded.
  */
 export function canViewMembership(
   caller: Membership,
@@ -21,6 +21,10 @@ export function canViewMembership(
   }
 
   if (caller.role === MembershipRole.MANAGER) {
+    if (target.role !== MembershipRole.MEMBER) {
+      return false;
+    }
+
     const scopeTeamIds = getManagerScopeTeamIds(caller);
     if (scopeTeamIds.length === 0) {
       return false;

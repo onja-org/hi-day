@@ -30,7 +30,7 @@ import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
-import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
+import { canViewMembership } from '../../common/membership-visibility.util';
 import {
   DEFAULT_ALLOWED_APPS,
   isTimerSourceAllowed,
@@ -2472,9 +2472,7 @@ export class TimeEntriesService {
 
   /**
    * Whose timesheet this caller may read, and so — with `canModifyTime` —
-   * whose they may write. Their own always, an admin everyone's, a manager
-   * only members sharing a team they manage: the same rule the Members
-   * list and Activity use, so a manager of no team sees only themselves.
+   * whose they may write. The same `canViewMembership` every other read uses.
    */
   private async canSeeMembership(
     caller: Membership,
@@ -2482,19 +2480,12 @@ export class TimeEntriesService {
     targetMembershipId: string,
   ): Promise<boolean> {
     if (targetMembershipId === caller.id) return true;
-    if (caller.role === MembershipRole.ADMIN) return true;
-    if (caller.role !== MembershipRole.MANAGER) return false;
-
-    const scopeTeamIds = getManagerScopeTeamIds(caller);
-    if (scopeTeamIds.length === 0) return false;
 
     const target = await this.memberships.findOne({
       where: { id: targetMembershipId, organisationId },
       relations: { teamMemberships: true },
     });
-    return (target?.teamMemberships ?? []).some((teamMembership) =>
-      scopeTeamIds.includes(teamMembership.teamId),
-    );
+    return !!target && canViewMembership(caller, target);
   }
 
   private async getActiveMembership(

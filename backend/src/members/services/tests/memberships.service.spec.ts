@@ -435,6 +435,91 @@ describe('MembershipsService', () => {
       );
     });
 
+    it('records which overrides an admin changed, and their values', async () => {
+      const caller = {
+        id: 'admin-membership',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+        auditLogService,
+      });
+
+      await service.update('org-1', 'membership-1', 'admin-1', {
+        dailyLimitHours: 12,
+        // A cleared override must be distinguishable from "not sent".
+        trackingDisabledDays: null,
+      });
+
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'membership.updated',
+          metadata: expect.objectContaining({
+            overrides: { dailyLimitHours: 12, trackingDisabledDays: null },
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('leaves overrides off the audit row when none were sent', async () => {
+      const caller = {
+        id: 'admin-membership',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      };
+      const membership = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        disclosureRegion: null,
+        user: { id: 'user-1', email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(membership);
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+        auditLogService,
+      });
+
+      await service.update('org-1', 'membership-1', 'admin-1', {
+        disclosureRegion: 'FR',
+      });
+
+      const [, entry] = record.mock.calls[0] as [
+        unknown,
+        { metadata: Record<string, unknown> },
+      ];
+      expect(entry.metadata).not.toHaveProperty('overrides');
+    });
+
     it('does not sign out devices when the membership is not being deactivated', async () => {
       const caller = {
         id: 'admin-membership',
@@ -808,6 +893,15 @@ describe('MembershipsService', () => {
       { timesheetRequireApproval: false },
       { appUrlTracking: 'off' },
       { allowedApps: 'all' },
+      { projectsEnabled: true },
+      // Added after the original block was written, which never listed them.
+      { expectedWorkDays: [1, 2, 3] },
+      { trackingDisabledDays: [0] },
+      { expectedWeeklyHours: 40 },
+      { weeklyLimitHours: 50 },
+      { dailyLimitHours: 12 },
+      { screenshotFrequencySeconds: 0 },
+      { canDeleteScreenshots: true },
     ] as const)(
       "rejects a manager changing a team member's setting override %p",
       async (dto) => {
@@ -835,6 +929,84 @@ describe('MembershipsService', () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
       },
     );
+
+    it("lets a manager change a team member's role, short of admin", async () => {
+      const caller = {
+        id: 'manager-membership',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      };
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      const { dataSource } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update(
+        'org-1',
+        'membership-1',
+        'manager-1',
+        {
+          role: MembershipRole.MANAGER,
+        },
+      );
+
+      expect(result.role).toBe(MembershipRole.MANAGER);
+    });
+
+    it("lets a manager change a team member's name and disclosure region", async () => {
+      const target = {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        status: MembershipStatus.ACTIVE,
+        deactivatedAt: null,
+        createdAt: new Date('2026-01-01'),
+        disclosureRegion: null,
+        user: { id: 'user-1', email: 'a@b.test', name: 'A B' },
+      };
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'manager-membership',
+          role: MembershipRole.MANAGER,
+          teamMemberships: [{ teamId: 'team-1', isManager: true }],
+        })
+        .mockResolvedValueOnce(target);
+      const { dataSource } = makeDataSource();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+
+      const result = await service.update(
+        'org-1',
+        'membership-1',
+        'manager-1',
+        {
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          disclosureRegion: 'FR',
+        },
+      );
+
+      expect(result.disclosureRegion).toBe('FR');
+    });
 
     it('allows a manager to modify a member who is also on another team the manager does not manage', async () => {
       const caller = {

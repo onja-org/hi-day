@@ -40,6 +40,7 @@ describe('ManualTimeEditsService', () => {
       },
       {
         id: 'other',
+        role: MembershipRole.MEMBER,
         user: { name: 'Other', email: 'o@example.com' },
         teamMemberships: options.otherTeams ?? [],
       },

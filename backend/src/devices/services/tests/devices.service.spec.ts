@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
@@ -264,7 +264,7 @@ describe('DevicesService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("refuses to sign out an admin's device, even on their team", async () => {
+    it("cannot reach an admin's device at all, even on their team", async () => {
       const service = serviceWithOwner({
         id: 'membership-1',
         userId: 'user-1',
@@ -274,7 +274,20 @@ describe('DevicesService', () => {
 
       await expect(
         service.signOutAsAdmin('org-1', 'device-1', 'manager-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("cannot reach a peer manager's device on a team they manage", async () => {
+      const service = serviceWithOwner({
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-a', isManager: true }],
+      });
+
+      await expect(
+        service.signOutAsAdmin('org-1', 'device-1', 'manager-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

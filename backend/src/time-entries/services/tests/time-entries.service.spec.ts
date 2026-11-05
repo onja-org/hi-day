@@ -2120,11 +2120,22 @@ describe('TimeEntriesService', () => {
           findOne: findEntryThenNoOverlap({ ...completedEntry }),
         }),
         membershipsRepo: makeMembershipsRepo({
-          findOne: jest.fn().mockResolvedValue({
-            id: 'm-1',
-            role: MembershipRole.MEMBER,
-            timesheetModifyTime: 'add_edit',
-          }),
+          findOne: jest.fn((options: { where: { userId?: string } }) =>
+            Promise.resolve(
+              options.where.userId
+                ? {
+                    id: 'm-1',
+                    role: MembershipRole.MEMBER,
+                    timesheetModifyTime: 'add_edit',
+                    teamMemberships: [],
+                  }
+                : {
+                    id: 'm-other',
+                    role: MembershipRole.MEMBER,
+                    teamMemberships: [],
+                  },
+            ),
+          ),
         }),
       });
 
@@ -2150,6 +2161,7 @@ describe('TimeEntriesService', () => {
                 }
               : {
                   id: 'm-other',
+                  role: MembershipRole.MEMBER,
                   teamMemberships: targetTeamIds.map((teamId) => ({ teamId })),
                 },
           ),
@@ -3698,7 +3710,11 @@ describe('TimeEntriesService', () => {
                     role: MembershipRole.MANAGER,
                     teamMemberships: [{ teamId: 't-1', isManager: true }],
                   }
-                : { id: 'm-other', teamMemberships: [{ teamId: 't-1' }] },
+                : {
+                    id: 'm-other',
+                    role: MembershipRole.MEMBER,
+                    teamMemberships: [{ teamId: 't-1' }],
+                  },
             ),
           ),
         }),
