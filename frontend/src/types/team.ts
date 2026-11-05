@@ -1,4 +1,5 @@
 import type { ApiResult } from "./api";
+import type { MembershipRole } from "./membership";
 
 export type OrganisationTeam = {
   id: string;
@@ -23,6 +24,8 @@ export type TeamMember = {
   name: string | null;
   email: string;
   isManager: boolean;
+  /** Their org role — an admin's row is read-only to a team manager. */
+  role: MembershipRole;
 };
 
 export type TeamDetail = {

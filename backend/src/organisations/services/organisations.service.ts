@@ -166,6 +166,7 @@ export interface TeamOverviewMember {
   name: string | null;
   email: string;
   isManager: boolean;
+  role: MembershipRole;
 }
 
 export interface TeamOverview {
@@ -364,6 +365,7 @@ export class OrganisationsService {
         name: teamMembership.membership.user.name,
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
+        role: teamMembership.membership.role,
       })),
       projectCount: (team.projectTeams ?? []).length,
     }));

@@ -54,9 +54,30 @@ export class MembershipsController {
     private readonly notesService: NotesService,
   ) {}
 
+  /**
+   * The Members page's own list — managing who is in the Organisation is
+   * admin work, so a manager is refused here even though they may still
+   * read the people they supervise through `visible` below.
+   */
   @Get()
-  @AllowTeamManagers()
+  @RequireRole(MembershipRole.ADMIN)
   list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberListItem[]> {
+    return this.membershipsService.listActiveForOrganisation(
+      request.organisationId!,
+      request.userId,
+    );
+  }
+
+  /**
+   * The people this caller may see — an admin everyone, whoever manages a
+   * team that team's members. What the pickers, filters, dashboards and
+   * reports fan out over; the service scopes it per caller either way.
+   */
+  @Get('visible')
+  @AllowTeamManagers()
+  listVisible(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ActiveMemberListItem[]> {
     return this.membershipsService.listActiveForOrganisation(
       request.organisationId!,
       request.userId,

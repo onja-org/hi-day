@@ -6,7 +6,7 @@ const member = (membershipId: string) => ({
   userId: `u-${membershipId}`,
   name: null,
   email: `${membershipId}@example.com`,
-  isManager: false,
+  isManager: false, role: "member" as const,
 });
 
 const teams = [

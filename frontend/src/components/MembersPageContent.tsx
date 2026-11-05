@@ -28,12 +28,12 @@ export function MembersPageContent({ organisationId }: MembersPageContentProps) 
   // Inviting is admin-only, so a manager gets neither tab nor its data.
   const isAdmin = useIsAdmin();
   // Both lists load up front so each tab can show its count.
-  const membersQuery = useActiveMembers(organisationId);
+  const membersQuery = useActiveMembers(organisationId, { scope: "organisation" });
   const invitationsQuery = usePendingInvitations(organisationId, { enabled: isAdmin });
   const inviteLinksQuery = useInviteLinks(organisationId, { enabled: isAdmin });
 
   return (
-    <RequireRole role={["admin", "manager"]}>
+    <RequireRole role="admin">
       <div className="flex flex-col gap-6">
         <h1 className="text-2xl font-semibold text-primary-dark">
           {TITLES[tab]}
