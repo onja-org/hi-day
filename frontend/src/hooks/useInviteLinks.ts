@@ -6,7 +6,10 @@ export const INVITE_LINKS_QUERY_KEY = (organisationId: string) => [
   organisationId,
 ];
 
-export function useInviteLinks(organisationId: string) {
+export function useInviteLinks(
+  organisationId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: INVITE_LINKS_QUERY_KEY(organisationId),
     queryFn: async () => {
@@ -16,5 +19,6 @@ export function useInviteLinks(organisationId: string) {
       }
       return result.inviteLinks;
     },
+      enabled: options.enabled ?? true,
   });
 }

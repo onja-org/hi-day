@@ -7,7 +7,10 @@ export const PENDING_INVITATIONS_QUERY_KEY = (organisationId: string) => [
   organisationId,
 ];
 
-export function usePendingInvitations(organisationId: string) {
+export function usePendingInvitations(
+  organisationId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: PENDING_INVITATIONS_QUERY_KEY(organisationId),
     queryFn: async () => {
@@ -17,5 +20,6 @@ export function usePendingInvitations(organisationId: string) {
       }
       return result.invitations;
     },
+      enabled: options.enabled ?? true,
   });
 }
