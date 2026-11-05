@@ -235,14 +235,19 @@ describe('ScreenshotsService', () => {
         '2026-09-08',
       );
 
-      expect(result).toEqual([
-        {
-          id: 'screenshot-1',
-          capturedAt: '2026-09-08T12:00:00.000Z',
-          url: 'https://view.example/get',
-          projectId: 'project-day',
-        },
-      ]);
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'screenshot-1',
+            capturedAt: '2026-09-08T12:00:00.000Z',
+            url: 'https://view.example/get',
+            projectId: 'project-day',
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 8,
+      });
       expect(createViewUrl).toHaveBeenCalledWith(
         'screenshots/org-1/device-1/123-uuid.jpg',
       );
@@ -278,7 +283,7 @@ describe('ScreenshotsService', () => {
         '2026-09-08',
       );
 
-      expect(result[0].projectId).toBe('project-1');
+      expect(result.items[0].projectId).toBe('project-1');
     });
 
     it('filters to a given project, excluding screenshots outside its covering entries', async () => {
@@ -319,8 +324,9 @@ describe('ScreenshotsService', () => {
         },
       );
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('screenshot-1');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('screenshot-1');
+      expect(result.total).toBe(1);
     });
 
     // Screenshots outside every entry are dropped rather than labelled
@@ -360,8 +366,9 @@ describe('ScreenshotsService', () => {
         '2026-09-08',
       );
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('screenshot-1');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('screenshot-1');
+      expect(result.total).toBe(1);
     });
 
     it('rejects a malformed date', async () => {
@@ -377,6 +384,236 @@ describe('ScreenshotsService', () => {
       await expect(
         service.getMyScreenshots('org-1', 'user-1', 'not-a-date'),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('pagination', () => {
+    /** `count` rows a minute apart from 09:00, all inside ALL_DAY. */
+    function rowsFrom(count: number): Screenshot[] {
+      return Array.from(
+        { length: count },
+        (_, i) =>
+          ({
+            id: `screenshot-${i + 1}`,
+            capturedAt: new Date(Date.UTC(2026, 8, 8, 9, i)),
+            storageKey: `screenshots/org-1/device-1/${i + 1}.jpg`,
+          }) as Screenshot,
+      );
+    }
+
+    function makeService(
+      rows: Screenshot[],
+      coveringEntries: FakeCoveringEntry[] = [ALL_DAY],
+    ) {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const screenshotsRepo = makeScreenshotsRepo(rows);
+      const storageMocks = makeStorage();
+      const service = new ScreenshotsService(
+        screenshotsRepo.repo,
+        makeMembershipsRepo({ findOne }),
+        makeOrganisationsService(),
+        storageMocks.storage,
+        makeTimeEntriesService(coveringEntries),
+      );
+      return { service, find: screenshotsRepo.find, ...storageMocks };
+    }
+
+    const ids = (page: { items: { id: string }[] }) =>
+      page.items.map((item) => item.id);
+
+    it('serves the first 8 by default, but counts the whole day', async () => {
+      const { service } = makeService(rowsFrom(20));
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+      );
+
+      expect(ids(result)).toEqual([
+        'screenshot-1',
+        'screenshot-2',
+        'screenshot-3',
+        'screenshot-4',
+        'screenshot-5',
+        'screenshot-6',
+        'screenshot-7',
+        'screenshot-8',
+      ]);
+      expect(result.total).toBe(20);
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(8);
+    });
+
+    it('serves the requested page, with a short last page', async () => {
+      const { service } = makeService(rowsFrom(20));
+
+      const second = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 2 },
+      );
+      const third = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 3 },
+      );
+
+      expect(ids(second)[0]).toBe('screenshot-9');
+      expect(second.items).toHaveLength(8);
+      expect(ids(third)).toEqual([
+        'screenshot-17',
+        'screenshot-18',
+        'screenshot-19',
+        'screenshot-20',
+      ]);
+    });
+
+    // The point of paging: a day of captures costs eight signatures, not
+    // one per screenshot.
+    it('signs a view URL only for the page it serves', async () => {
+      const { service, createViewUrl } = makeService(rowsFrom(20));
+
+      await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 3 },
+      );
+
+      expect(createViewUrl).toHaveBeenCalledTimes(4);
+      expect(createViewUrl).toHaveBeenCalledWith(
+        'screenshots/org-1/device-1/17.jpg',
+      );
+    });
+
+    // Deleting everything on the last page leaves the gallery asking for
+    // a page that no longer exists — it gets the new last page instead
+    // of an empty grid with screenshots still on earlier pages.
+    it('serves the last page when asked for one past the end', async () => {
+      const { service } = makeService(rowsFrom(10));
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 5 },
+      );
+
+      expect(result.page).toBe(2);
+      expect(ids(result)).toEqual(['screenshot-9', 'screenshot-10']);
+    });
+
+    it('serves page 1 of nothing for an empty day', async () => {
+      const { service } = makeService([]);
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 3 },
+      );
+
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 8 });
+    });
+
+    it('honours a custom page size', async () => {
+      const { service } = makeService(rowsFrom(10));
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { page: 2, pageSize: 3 },
+      );
+
+      expect(ids(result)).toEqual([
+        'screenshot-4',
+        'screenshot-5',
+        'screenshot-6',
+      ]);
+      expect(result.pageSize).toBe(3);
+    });
+
+    // Pages are cut after the coverage and project filters, so a page is
+    // never short just because hidden screenshots fell inside it, and the
+    // total matches what the gallery can actually show.
+    it('pages and counts only what the filters let through', async () => {
+      const rows = rowsFrom(20);
+      const firstTenMinutes: FakeCoveringEntry = {
+        id: 'te-1',
+        projectId: 'project-1',
+        startedAt: new Date(Date.UTC(2026, 8, 8, 9, 0)),
+        endedAt: new Date(Date.UTC(2026, 8, 8, 9, 9, 30)),
+      };
+      const rest: FakeCoveringEntry = {
+        id: 'te-2',
+        projectId: 'project-2',
+        startedAt: new Date(Date.UTC(2026, 8, 8, 9, 9, 30)),
+        endedAt: new Date(Date.UTC(2026, 8, 8, 9, 15, 30)),
+      };
+      const { service } = makeService(rows, [firstTenMinutes, rest]);
+
+      const result = await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        { projectId: 'project-2' },
+        { page: 1 },
+      );
+
+      // 09:10–09:15 is project-2; 09:16 onwards nothing covers.
+      expect(result.total).toBe(6);
+      expect(ids(result)).toEqual([
+        'screenshot-11',
+        'screenshot-12',
+        'screenshot-13',
+        'screenshot-14',
+        'screenshot-15',
+        'screenshot-16',
+      ]);
+    });
+
+    it('asks the database for oldest first by default, newest first on request', async () => {
+      const { service, find } = makeService([]);
+
+      await service.getMyScreenshots('org-1', 'user-1', '2026-09-08');
+      await service.getMyScreenshots(
+        'org-1',
+        'user-1',
+        '2026-09-08',
+        {},
+        { newestFirst: true },
+      );
+
+      expect(find).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ order: { capturedAt: 'ASC' } }),
+      );
+      expect(find).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ order: { capturedAt: 'DESC' } }),
+      );
+    });
+
+    it('loads only the columns paging needs, not whole rows', async () => {
+      const { service, find } = makeService([]);
+
+      await service.getMyScreenshots('org-1', 'user-1', '2026-09-08');
+
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: { id: true, capturedAt: true, storageKey: true },
+        }),
+      );
     });
   });
 
@@ -409,7 +646,7 @@ describe('ScreenshotsService', () => {
           'target-1',
           '2026-09-08',
         ),
-      ).resolves.toEqual([]);
+      ).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 8 });
     });
 
     it("rejects a manager viewing someone outside their team's scope", async () => {

@@ -340,18 +340,23 @@ export class TeamDashboardService {
 
     return Promise.all(
       candidates.map(async (member) => {
-        const screenshots =
+        // Only the newest few are signed, not the whole day.
+        const latest =
           await this.screenshotsService.getScreenshotsForMembership(
             organisationId,
             callerUserId,
             member.membershipId,
+            undefined,
+            {},
+            {
+              pageSize: RECENT_ACTIVITY_SCREENSHOTS_PER_MEMBER,
+              newestFirst: true,
+            },
           );
         return {
           membershipId: member.membershipId,
           name: member.name,
-          screenshots: screenshots
-            .slice(-RECENT_ACTIVITY_SCREENSHOTS_PER_MEMBER)
-            .reverse(),
+          screenshots: latest.items,
         };
       }),
     );

@@ -23,7 +23,8 @@ import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import type { NoteEntry } from '../../notes/services/notes.service';
 import { NotesService } from '../../notes/services/notes.service';
-import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
+import { ListScreenshotsDto } from '../../screenshots/dto/list-screenshots.dto';
+import type { ScreenshotsPage } from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
@@ -294,16 +295,20 @@ export class MembershipsController {
   )
   getScreenshots(
     @Param('membershipId') membershipId: string,
-    @Query('date') date: string | undefined,
-    @Query('projectId') projectId: string | undefined,
+    @Query() query: ListScreenshotsDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ScreenshotSummaryItem[]> {
+  ): Promise<ScreenshotsPage> {
     return this.screenshotsService.getScreenshotsForMembership(
       request.organisationId!,
       request.userId,
       membershipId,
-      date,
-      { projectId },
+      query.date,
+      { projectId: query.projectId },
+      {
+        page: query.page,
+        pageSize: query.pageSize,
+        newestFirst: query.order === 'newest',
+      },
     );
   }
 
