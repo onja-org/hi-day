@@ -1,10 +1,8 @@
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
 
-/** Whether the caller's role in the current organisation can see other
- * members' data — admin org-wide, manager for their team(s). Mirrors the
- * backend's own admin/manager gate on team-scoped endpoints. */
+/** Whether the caller may see other members' data — an admin org-wide, and
+ * whoever manages a team for that team. Resolved by the backend, because
+ * the role alone does not say: managing a team is the grant. */
 export function useCanViewOthers(): boolean {
-  const organisationQuery = useCurrentOrganisation();
-  const role = organisationQuery.data?.role;
-  return role === "admin" || role === "manager";
+  return useCurrentOrganisation().data?.canViewOthers ?? false;
 }

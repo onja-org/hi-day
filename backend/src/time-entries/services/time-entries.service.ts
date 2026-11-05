@@ -31,6 +31,7 @@ import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { actsAsManager } from '../../common/manager-scope.util';
 import {
   DEFAULT_ALLOWED_APPS,
   isTimerSourceAllowed,
@@ -72,6 +73,13 @@ import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
 
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
+
+/** Whether this caller can reach anybody else's timesheet at all — the
+ * cheap check before looking a target up, so a 404 never says whether an
+ * id exists. */
+function canSeeAnyone(membership: Membership): boolean {
+  return membership.role === MembershipRole.ADMIN || actsAsManager(membership);
+}
 
 // A personal timesheet listing, not a report — plenty for one person's own
 // history at a glance. Revisit with real pagination if/when this becomes a
@@ -936,7 +944,7 @@ export class TimeEntriesService {
       // Role first, existence second: a member who can never read anyone
       // else's timesheet shouldn't learn from a 404-vs-403 whether a given
       // membership id exists.
-      if (!ORG_WIDE_ROLES.includes(membership.role)) {
+      if (!canSeeAnyone(membership)) {
         throw new ForbiddenException(
           "Only an admin or manager can view another member's timesheet.",
         );

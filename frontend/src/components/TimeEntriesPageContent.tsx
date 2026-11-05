@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ClockIcon, FunnelIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useMyProjects } from "@/hooks/useMyProjects";
@@ -81,8 +82,7 @@ export function TimeEntriesPageContent({
   const [weekOffset, setWeekOffset] = useState(0);
 
   const organisationQuery = useCurrentOrganisation();
-  const canViewOthers =
-    organisationQuery.data?.role === "admin" || organisationQuery.data?.role === "manager";
+  const canViewOthers = useCanViewOthers();
   const canModifyTime = organisationQuery.data?.canModifyTime ?? false;
   const membersQuery = useActiveMembers(organisationId);
   const profileQuery = useMyProfile();

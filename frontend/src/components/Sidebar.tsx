@@ -22,6 +22,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
 import { useBillingEnabled } from "@/hooks/useBillingEnabled";
+import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
@@ -60,11 +61,12 @@ export function Sidebar({
   const openSavedReportId = pathname.match(/\/reports\/saved\/([^/]+)/)?.[1];
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
+  const canViewOthers = useCanViewOthers();
   const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
   const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
-  const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
+  const canSeeMembers = canViewOthers;
 
   const teamsLink: NavLink = {
     kind: "link",

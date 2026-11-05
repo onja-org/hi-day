@@ -146,6 +146,7 @@ describe('RoleGuard', () => {
         organisationId: 'org-uuid-1',
         status: MembershipStatus.ACTIVE,
       },
+      relations: { teamMemberships: true },
     });
   });
 

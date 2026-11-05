@@ -1,11 +1,12 @@
 import { Membership } from '../database/entities/membership.entity';
 import { MembershipRole } from '../database/entities/membership-role.enum';
-import { getManagerScopeTeamIds } from './manager-scope.util';
+import { actsAsManager, getManagerScopeTeamIds } from './manager-scope.util';
 
 /**
  * Whether `caller` may view data belonging to `target`: always themselves,
- * an admin everyone, a manager the *members* of the teams they manage —
- * never a peer manager or an admin, team or no team. Both need
+ * an admin everyone, and whoever manages a team the plain members of that
+ * team — never another manager or an admin. Managing a team is the grant,
+ * not the org `manager` role (see `actsAsManager`). Both need
  * `teamMemberships` loaded.
  */
 export function canViewMembership(
@@ -20,21 +21,20 @@ export function canViewMembership(
     return true;
   }
 
-  if (caller.role === MembershipRole.MANAGER) {
-    if (target.role !== MembershipRole.MEMBER) {
-      return false;
-    }
-
-    const scopeTeamIds = getManagerScopeTeamIds(caller);
-    if (scopeTeamIds.length === 0) {
-      return false;
-    }
-
-    const targetTeamIds = (target.teamMemberships ?? []).map(
-      (teamMembership) => teamMembership.teamId,
-    );
-    return targetTeamIds.some((teamId) => scopeTeamIds.includes(teamId));
+  if (!actsAsManager(caller)) {
+    return false;
   }
 
-  return false;
+  // Only plain members are visible: an admin or anyone *labelled* manager
+  // stays hidden even where they manage nothing, so the answer never
+  // contradicts the role shown beside their name.
+  if (target.role !== MembershipRole.MEMBER || actsAsManager(target)) {
+    return false;
+  }
+
+  const scopeTeamIds = getManagerScopeTeamIds(caller);
+  const targetTeamIds = (target.teamMemberships ?? []).map(
+    (teamMembership) => teamMembership.teamId,
+  );
+  return targetTeamIds.some((teamId) => scopeTeamIds.includes(teamId));
 }

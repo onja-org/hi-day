@@ -14,6 +14,7 @@ import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { ALLOW_SUSPENDED_ORGANISATION_KEY } from '../decorators/allow-suspended-organisation.decorator';
+import { actsAsManager } from '../manager-scope.util';
 import { REQUIRE_ROLE_KEY } from '../decorators/require-role.decorator';
 
 @Injectable()
@@ -62,6 +63,8 @@ export class RoleGuard implements CanActivate {
         organisationId: organisation.id,
         status: MembershipStatus.ACTIVE,
       },
+      // actsAsManager reads the caller's teams.
+      relations: { teamMemberships: true },
     });
 
     if (!membership) {
@@ -74,11 +77,14 @@ export class RoleGuard implements CanActivate {
       MembershipRole[] | undefined
     >(REQUIRE_ROLE_KEY, [context.getHandler(), context.getClass()]);
 
-    if (
-      requiredRoles &&
-      requiredRoles.length > 0 &&
-      !requiredRoles.includes(membership.role)
-    ) {
+    // A route open to managers is open to whoever manages a team, whatever
+    // their org role — managing a team is the grant (see actsAsManager).
+    const allowed =
+      requiredRoles?.includes(membership.role) ||
+      (requiredRoles?.includes(MembershipRole.MANAGER) &&
+        actsAsManager(membership));
+
+    if (requiredRoles && requiredRoles.length > 0 && !allowed) {
       throw new ForbiddenException(
         'You do not have the required role for this organisation.',
       );

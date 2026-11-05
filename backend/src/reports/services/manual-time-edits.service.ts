@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { actsAsManager } from '../../common/manager-scope.util';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -41,8 +42,6 @@ const ACTION_BY_AUDIT_ACTION: Record<string, ManualTimeEditAction> = {
 // A month of edits is a few hundred rows at most; this only stops a runaway
 // range from loading the whole audit table.
 const ROW_LIMIT = 2000;
-
-const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 
 interface Span {
   startedAt: Date | null;
@@ -118,7 +117,11 @@ export class ManualTimeEditsService {
         'You do not have the required role for this organisation.',
       );
     }
-    if (scope === 'all' && !ORG_WIDE_ROLES.includes(caller.role)) {
+    if (
+      scope === 'all' &&
+      caller.role !== MembershipRole.ADMIN &&
+      !actsAsManager(caller)
+    ) {
       throw new ForbiddenException(
         "Only an admin or manager can view other members' manual time edits.",
       );

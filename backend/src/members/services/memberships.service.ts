@@ -145,7 +145,7 @@ export class MembershipsService {
 
     let memberships: Membership[];
 
-    if (caller.role === MembershipRole.MANAGER) {
+    if (caller.role !== MembershipRole.ADMIN) {
       const scopeTeamIds = getManagerScopeTeamIds(caller);
       if (scopeTeamIds.length === 0) {
         // A teamless (or non-managing) manager manages no team, so they see
@@ -171,10 +171,14 @@ export class MembershipsService {
         .andWhere('membership.status = :status', {
           status: MembershipStatus.ACTIVE,
         })
-        // canViewMembership in SQL, themselves excepted — this list is also
-        // how a manager reaches their own row.
+        // canViewMembership in SQL: no admin, nobody who manages a team of
+        // their own, themselves excepted — this list is also how a manager
+        // reaches their own row.
         .andWhere(
-          '(membership.role = :memberRole OR membership.id = :callerId)',
+          `(membership.id = :callerId OR (membership.role = :memberRole AND NOT EXISTS (
+             SELECT 1 FROM team_memberships mgr
+             WHERE mgr."membershipId" = membership.id AND mgr."isManager"
+           )))`,
           { memberRole: MembershipRole.MEMBER, callerId: caller.id },
         )
         .orderBy('membership.createdAt', 'ASC')

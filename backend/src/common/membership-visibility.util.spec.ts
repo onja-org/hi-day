@@ -62,6 +62,49 @@ describe('canViewMembership', () => {
     expect(canViewMembership(manager, target)).toBe(true);
   });
 
+  it('allows whoever manages a team to view its members, org role aside', () => {
+    const teamManager = makeMembership({
+      id: 'member-lead',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [{ teamId: 'team-1', isManager: true }],
+    } as Partial<Membership>);
+    const target = makeMembership({
+      id: 'member-1',
+      teamMemberships: [{ teamId: 'team-1', isManager: false }],
+    } as Partial<Membership>);
+
+    expect(canViewMembership(teamManager, target)).toBe(true);
+  });
+
+  it('denies a team manager viewing another manager of the same team', () => {
+    const teamManager = makeMembership({
+      id: 'member-lead',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [{ teamId: 'team-1', isManager: true }],
+    } as Partial<Membership>);
+    const coLead = makeMembership({
+      id: 'member-colead',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [{ teamId: 'team-1', isManager: true }],
+    } as Partial<Membership>);
+
+    expect(canViewMembership(teamManager, coLead)).toBe(false);
+  });
+
+  it('denies the manager role on its own, with no team to manage', () => {
+    const manager = makeMembership({
+      id: 'manager-1',
+      role: MembershipRole.MANAGER,
+      teamMemberships: [{ teamId: 'team-1', isManager: false }],
+    } as Partial<Membership>);
+    const target = makeMembership({
+      id: 'member-1',
+      teamMemberships: [{ teamId: 'team-1', isManager: false }],
+    } as Partial<Membership>);
+
+    expect(canViewMembership(manager, target)).toBe(false);
+  });
+
   it('denies a manager viewing an admin on a team they manage', () => {
     const manager = makeMembership({
       id: 'manager-1',
