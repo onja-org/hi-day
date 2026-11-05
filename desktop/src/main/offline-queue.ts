@@ -11,6 +11,8 @@ export const DEFAULT_MAX_RETRY_DELAY_MS = 30 * 60_000;
 /** Safety valve against unbounded local disk growth during a very long offline stretch — a generous default a sender can override. */
 export const DEFAULT_MAX_QUEUED_ITEMS_PER_KIND = 20_000;
 const TICK_JITTER_RATIO = 0.2;
+/** Later than any `nextAttemptAt`, as a date and as an ISO string. */
+const IGNORE_BACKOFF_DUE_BY = new Date('9999-12-31T23:59:59.999Z');
 
 export interface QueuedItem<T = unknown> {
   id: number;
@@ -95,6 +97,12 @@ export class OfflineQueue {
   private readonly senders = new Map<string, QueueSender>();
   private readonly inFlight = new Map<string, Promise<void>>();
   private handle: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Who is logged in now (session-owner.ts), or null for nobody. Unset,
+   * the queue is single-owner — every row is stamped and read as NULL —
+   * which is what the tests of the queue mechanics rely on.
+   */
+  private ownerSource: (() => string | null) | null = null;
 
   constructor(
     private readonly store: OfflineQueueStore,
@@ -106,11 +114,47 @@ export class OfflineQueue {
     this.senders.set(sender.kind, sender);
   }
 
+  /**
+   * Ties every row to the person logged in when it was captured, and sends
+   * only the rows of whoever is logged in now. The backend reuses one
+   * Device for everybody on a machine, so a device token cannot tell A's
+   * backlog from B's — this is what keeps A's screenshots and window
+   * titles from uploading under B's login.
+   */
+  setOwnerSource(source: () => string | null): void {
+    this.ownerSource = source;
+  }
+
+  /** Whose rows to read and write now; `undefined` when nobody is logged in. */
+  private currentOwner(): string | null | undefined {
+    if (!this.ownerSource) return null;
+    return this.ownerSource() ?? undefined;
+  }
+
+  /** Deletes everything queued by anyone but `owner` — called when `owner` logs in. */
+  discardOtherOwners(owner: string): number {
+    return this.store.discardOtherOwners(owner);
+  }
+
+  /** Deletes everything queued — called on logout, once sending has had its chance. */
+  discardAll(): number {
+    return this.store.discardAll();
+  }
+
+  /** Gives rows from before owners were recorded to `owner`. */
+  adoptUnowned(owner: string): void {
+    this.store.adoptUnowned(owner);
+  }
+
   /** Persists one captured item for `kind` — the durability step every capture sink calls before any network request is attempted. */
   enqueue(kind: string, payload: unknown, blob: Buffer | null = null): void {
+    const owner = this.currentOwner();
+    // Nobody to attribute it to. A capture that outlives its session by a
+    // tick must not wait around for whoever logs in next.
+    if (owner === undefined) return;
     const sender = this.senders.get(kind);
     const maxQueuedItems = sender?.maxQueuedItems ?? DEFAULT_MAX_QUEUED_ITEMS_PER_KIND;
-    this.store.enqueue(kind, JSON.stringify(payload), blob, new Date(), maxQueuedItems);
+    this.store.enqueue(kind, JSON.stringify(payload), blob, new Date(), maxQueuedItems, owner);
 
     if (sender?.flushOnEnqueue) {
       void this.flushKind(kind);
@@ -124,9 +168,12 @@ export class OfflineQueue {
    * towards zero does.
    */
   pendingCount(): number {
+    const owner = this.currentOwner();
+    // Another person's rows are never sent, so they are not "waiting".
+    if (owner === undefined) return 0;
     let total = 0;
     for (const kind of this.senders.keys()) {
-      total += this.store.countPending(kind);
+      total += this.store.countPending(kind, owner);
     }
     return total;
   }
@@ -161,9 +208,13 @@ export class OfflineQueue {
     }, delay);
   }
 
-  async flushAll(): Promise<void> {
+  /**
+   * @param ignoreBackoff Sends rows still waiting out a retry delay too —
+   * for a last chance, like logout, after which they are deleted anyway.
+   */
+  async flushAll({ ignoreBackoff = false }: { ignoreBackoff?: boolean } = {}): Promise<void> {
     for (const kind of this.senders.keys()) {
-      await this.flushKind(kind);
+      await this.flushKind(kind, ignoreBackoff);
     }
   }
 
@@ -181,23 +232,37 @@ export class OfflineQueue {
    * already draining just attaches to that in-flight run instead of
    * starting its own.
    */
-  flushKind(kind: string): Promise<void> {
+  flushKind(kind: string, ignoreBackoff = false): Promise<void> {
     const existing = this.inFlight.get(kind);
     if (existing) return existing;
 
     const sender = this.senders.get(kind);
     if (!sender) return Promise.resolve();
 
-    const run = this.drainKind(kind, sender).finally(() => {
+    const run = this.drainKind(kind, sender, ignoreBackoff).finally(() => {
       this.inFlight.delete(kind);
     });
     this.inFlight.set(kind, run);
     return run;
   }
 
-  private async drainKind(kind: string, sender: QueueSender): Promise<void> {
+  private async drainKind(
+    kind: string,
+    sender: QueueSender,
+    ignoreBackoff: boolean,
+  ): Promise<void> {
     for (;;) {
-      const rows = this.store.takeBatch(kind, sender.maxBatchSize, new Date());
+      // Read fresh each batch: a login can change between batches. Within
+      // one, there is no await between this and the sender reading the
+      // session for its token, so the two cannot disagree.
+      const owner = this.currentOwner();
+      if (owner === undefined) return;
+      // The store compares ISO strings, so "everything is due" has to be a
+      // date whose string sorts after every real one. Not the largest Date
+      // JS allows: that prints as "+275760-…", and "+" sorts before digits,
+      // which made it match nothing at all.
+      const dueBy = ignoreBackoff ? IGNORE_BACKOFF_DUE_BY : new Date();
+      const rows = this.store.takeBatch(kind, sender.maxBatchSize, dueBy, owner);
       if (rows.length === 0) return;
 
       const items: QueuedItem[] = rows.map((row) => ({

@@ -391,6 +391,8 @@ describe('DevicePairingService', () => {
         status: 'approved',
         deviceId: 'device-1',
         deviceToken: 'device-token',
+        userId: 'user-1',
+        organisationId: 'org-1',
         email: 'jane@acme.test',
         name: 'jane@acme.test',
         organisationName: 'Acme Inc',

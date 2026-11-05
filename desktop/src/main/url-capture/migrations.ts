@@ -36,6 +36,15 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    // Who was logged in when each session was captured (session-owner.ts).
+    // device_id cannot say: the backend reuses one Device for everybody on
+    // a machine. Existing rows stay NULL, which no logged-in owner matches.
+    id: '0002_add_url_sessions_owner',
+    up: (db) => {
+      db.exec('ALTER TABLE url_sessions ADD COLUMN owner TEXT');
+    },
+  },
 ];
 
 /**
