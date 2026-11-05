@@ -17,6 +17,7 @@ import { AppEventsService } from '../../app-events/services/app-events.service';
 import type { AppActivityDay } from '../../app-events/services/app-events.service';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { AllowTeamManagers } from '../../common/decorators/allow-team-managers.decorator';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -54,6 +55,7 @@ export class MembershipsController {
   ) {}
 
   @Get()
+  @AllowTeamManagers()
   list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberListItem[]> {
     return this.membershipsService.listActiveForOrganisation(
       request.organisationId!,

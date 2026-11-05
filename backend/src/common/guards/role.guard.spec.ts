@@ -9,6 +9,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { ALLOW_TEAM_MANAGERS_KEY } from '../decorators/allow-team-managers.decorator';
 import { RoleGuard } from './role.guard';
 
 describe('RoleGuard', () => {
@@ -26,11 +27,21 @@ describe('RoleGuard', () => {
     } as unknown as ExecutionContext & { request: typeof request };
   }
 
-  function makeReflector(requiredRoles: MembershipRole[] | undefined) {
+  function makeReflector(
+    requiredRoles: MembershipRole[] | undefined,
+    allowTeamManagers = false,
+  ) {
     return {
-      getAllAndOverride: jest.fn().mockReturnValue(requiredRoles),
+      getAllAndOverride: jest.fn((key: string) =>
+        key === ALLOW_TEAM_MANAGERS_KEY ? allowTeamManagers : requiredRoles,
+      ),
     } as unknown as Reflector;
   }
+
+  const teamManager = {
+    role: MembershipRole.MEMBER,
+    teamMemberships: [{ teamId: 'team-1', isManager: true }],
+  };
 
   function makeMembershipsRepo(
     overrides: Partial<Repository<Membership>> = {},
@@ -170,6 +181,51 @@ describe('RoleGuard', () => {
     const guard = new RoleGuard(
       makeReflector([MembershipRole.ADMIN]),
       makeMembershipsRepo({ findOne }),
+      makeOrganisationsRepo(),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('lets whoever manages a team through a manager route that opted in', async () => {
+    const guard = new RoleGuard(
+      makeReflector([MembershipRole.ADMIN, MembershipRole.MANAGER], true),
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(teamManager),
+      }),
+      makeOrganisationsRepo(),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).resolves.toBe(true);
+  });
+
+  it('refuses a team manager a manager route that did not opt in', async () => {
+    const guard = new RoleGuard(
+      makeReflector([MembershipRole.ADMIN, MembershipRole.MANAGER]),
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(teamManager),
+      }),
+      makeOrganisationsRepo(),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses the manager role with no team even where the route opted in', async () => {
+    const guard = new RoleGuard(
+      makeReflector([MembershipRole.ADMIN], true),
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          role: MembershipRole.MANAGER,
+          teamMemberships: [],
+        }),
+      }),
       makeOrganisationsRepo(),
     );
 

@@ -105,6 +105,28 @@ describe('canViewMembership', () => {
     expect(canViewMembership(manager, target)).toBe(false);
   });
 
+  it('denies a team manager viewing an admin who shares several of their teams', () => {
+    const teamManager = makeMembership({
+      id: 'member-lead',
+      role: MembershipRole.MEMBER,
+      teamMemberships: [
+        { teamId: 'team-1', isManager: true },
+        { teamId: 'team-2', isManager: true },
+      ],
+    } as Partial<Membership>);
+    const admin = makeMembership({
+      id: 'admin-1',
+      role: MembershipRole.ADMIN,
+      teamMemberships: [
+        { teamId: 'team-1', isManager: false },
+        { teamId: 'team-2', isManager: false },
+        { teamId: 'team-3', isManager: true },
+      ],
+    } as Partial<Membership>);
+
+    expect(canViewMembership(teamManager, admin)).toBe(false);
+  });
+
   it('denies a manager viewing an admin on a team they manage', () => {
     const manager = makeMembership({
       id: 'manager-1',

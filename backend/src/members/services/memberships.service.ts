@@ -255,14 +255,14 @@ export class MembershipsService {
       // (currently just disclosureRegion), not just role/deactivate. An
       // admin editing their own disclosureRegion is fine: there's no
       // self-demotion-style footgun in it, unlike role/deactivate.
-      if (caller.role === MembershipRole.MANAGER) {
+      if (caller.role !== MembershipRole.ADMIN) {
         throw new ForbiddenException(
           'Managers cannot modify their own membership.',
         );
       }
     }
 
-    if (caller.role === MembershipRole.MANAGER) {
+    if (caller.role !== MembershipRole.ADMIN) {
       this.assertManagerCanModify(caller, membership, dto);
     }
 
@@ -450,7 +450,7 @@ export class MembershipsService {
         continue;
       }
       if (
-        caller.role === MembershipRole.MANAGER &&
+        caller.role !== MembershipRole.ADMIN &&
         !this.managerCanModify(caller, target, undefined)
       ) {
         skip('You can only reset passwords for members of your own team.');
