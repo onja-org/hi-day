@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type Stripe from 'stripe';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import {
@@ -15,6 +16,8 @@ import {
   nextPaymentFrom,
   type BillingPeriod,
 } from '../pricing';
+import { isStripeMissing } from '../stripe-missing';
+import { hasEnded } from '../stripe-subscription-states';
 import { BilledSeatsService } from './billed-seats.service';
 import { StripeService } from './stripe.service';
 
@@ -43,6 +46,20 @@ export interface SubscriptionIntent {
    */
   nextPaymentAt: string;
   currency: string;
+}
+
+/** What paying may start from, once nothing live stands in the way. */
+interface ReadyToCharge {
+  organisation: Organisation;
+  seats: number;
+  /** The Stripe customer from an earlier attempt, still usable; else null. */
+  customerId: string | null;
+  /**
+   * A subscription still awaiting its first payment — a declined card, a
+   * failed 3-D Secure check, a modal closed mid-way — whose open invoice can
+   * be paid instead of raising another.
+   */
+  awaitingFirstPayment: Stripe.Subscription | null;
 }
 
 @Injectable()
@@ -93,10 +110,8 @@ export class CheckoutService {
      */
     expectedSeats?: number,
   ): Promise<SubscriptionIntent> {
-    const { organisation, seats } = await this.readyToCharge(
-      organisationId,
-      period,
-    );
+    const { organisation, seats, customerId, awaitingFirstPayment } =
+      await this.readyToCharge(organisationId, period);
 
     if (expectedSeats !== undefined && expectedSeats !== seats) {
       throw new BadRequestException(
@@ -104,16 +119,111 @@ export class CheckoutService {
       );
     }
 
-    const customer = await this.stripeService.stripe.customers.create({
-      // The billing address when set, else the owner's — the same rule the
-      // billing mail follows (see `billingRecipients`).
-      email: organisation.billingEmail ?? undefined,
-      name: organisation.name,
-      metadata: { [ORGANISATION_METADATA_KEY]: organisationId },
-    });
+    // A retry after a declined card: pay the invoice already raised rather
+    // than raising another. Its payment can be confirmed again with a new
+    // card, and one open invoice is what Stripe's fraud checks and the
+    // customer's statement both expect.
+    const reusable = await this.reuseOrDiscard(
+      awaitingFirstPayment,
+      seats,
+      period,
+    );
+    const subscription =
+      reusable ??
+      (await this.createIncompleteSubscription(
+        organisationId,
+        organisation,
+        customerId,
+        seats,
+        period,
+      ));
 
-    const subscription = await this.stripeService.stripe.subscriptions.create({
-      customer: customer.id,
+    const invoice = subscription.latest_invoice;
+    const clientSecret =
+      invoice && typeof invoice !== 'string'
+        ? invoice.confirmation_secret?.client_secret
+        : null;
+    if (!clientSecret) {
+      // Nothing to confirm against means the modal has no way to take a
+      // card, and showing it anyway would be a form that cannot submit.
+      throw new BadRequestException(
+        'Stripe did not return a payment secret for this subscription.',
+      );
+    }
+
+    const amountMinor = CLOUD_PRICES[period].amountMinor * seats;
+
+    this.logger.log(
+      `Subscription intent ${reusable ? 'reused' : 'created'} for organisation ${organisation.publicId}: ${seats} seat(s), ${period}.`,
+    );
+
+    return {
+      clientSecret,
+      seats,
+      period,
+      amountMinor,
+      chargedTodayMinor: amountMinor,
+      nextPaymentAt: nextPaymentFrom(new Date(), period).toISOString(),
+      currency: CLOUD_PRICES[period].currency,
+    };
+  }
+
+  /**
+   * The subscription awaiting its first payment, if it is for exactly what
+   * is being bought now and still has a payment to confirm. Anything else —
+   * the seats or the cycle changed since — is cancelled, so the old invoice
+   * can't be paid later beside the new one, and null is returned.
+   */
+  private async reuseOrDiscard(
+    pending: Stripe.Subscription | null,
+    seats: number,
+    period: BillingPeriod,
+  ): Promise<Stripe.Subscription | null> {
+    if (!pending) return null;
+
+    const items = pending.items?.data ?? [];
+    const invoice = pending.latest_invoice;
+    const sameOrder =
+      items.length === 1 &&
+      items[0].quantity === seats &&
+      pending.metadata?.period === period;
+    const payable =
+      invoice !== null &&
+      typeof invoice !== 'string' &&
+      Boolean(invoice.confirmation_secret?.client_secret);
+    if (sameOrder && payable) return pending;
+
+    try {
+      await this.stripeService.stripe.subscriptions.cancel(pending.id);
+    } catch (error) {
+      if (!isStripeMissing(error)) throw error;
+    }
+    return null;
+  }
+
+  private async createIncompleteSubscription(
+    organisationId: string,
+    organisation: Organisation,
+    customerId: string | null,
+    seats: number,
+    period: BillingPeriod,
+  ): Promise<Stripe.Subscription> {
+    // One customer per Organisation across attempts and resubscriptions, so
+    // its invoices, card and history stay together in Stripe.
+    const customer =
+      customerId ??
+      (
+        await this.stripeService.stripe.customers.create({
+          // The billing address when set, else the owner's — the same rule
+          // the billing mail follows (see `billingRecipients`).
+          email: organisation.billingEmail ?? undefined,
+          name: organisation.name,
+          metadata: { [ORGANISATION_METADATA_KEY]: organisationId },
+        })
+      ).id;
+
+    return this.stripeService.stripe.subscriptions.create({
+      customer,
       items: [
         {
           price_data: await this.stripeService.priceDataFor(period),
@@ -140,45 +250,22 @@ export class CheckoutService {
       // Organisation that paid for it.
       metadata: { [ORGANISATION_METADATA_KEY]: organisationId, period },
     });
-
-    const invoice = subscription.latest_invoice;
-    const clientSecret =
-      invoice && typeof invoice !== 'string'
-        ? invoice.confirmation_secret?.client_secret
-        : null;
-    if (!clientSecret) {
-      // Nothing to confirm against means the modal has no way to take a
-      // card, and showing it anyway would be a form that cannot submit.
-      throw new BadRequestException(
-        'Stripe did not return a payment secret for this subscription.',
-      );
-    }
-
-    const amountMinor = CLOUD_PRICES[period].amountMinor * seats;
-
-    this.logger.log(
-      `Subscription intent created for organisation ${organisation.publicId}: ${seats} seat(s), ${period}.`,
-    );
-
-    return {
-      clientSecret,
-      seats,
-      period,
-      amountMinor,
-      chargedTodayMinor: amountMinor,
-      nextPaymentAt: nextPaymentFrom(new Date(), period).toISOString(),
-      currency: CLOUD_PRICES[period].currency,
-    };
   }
 
   /**
    * The checks both ways of paying share: a real Organisation, one that
-   * pays, a configured Stripe, and no subscription already.
+   * pays, a configured Stripe, and no subscription that can still charge.
+   *
+   * The stored subscription is looked up in Stripe rather than judged by
+   * our row (`docs/adr/0032-...`). Only having an id used to be enough to
+   * refuse, which locked out everybody whose first card was declined (the
+   * webhook stores the id of the still-incomplete subscription within
+   * seconds) and every customer who cancelled and came back.
    */
   private async readyToCharge(
     organisationId: string,
     period: BillingPeriod,
-  ): Promise<{ organisation: Organisation; seats: number }> {
+  ): Promise<ReadyToCharge> {
     if (!BILLING_PERIODS.includes(period)) {
       throw new BadRequestException(`Unknown billing period: ${period}`);
     }
@@ -200,12 +287,19 @@ export class CheckoutService {
       );
     }
 
-    const existing = await this.subscriptions.findOne({
+    const row = await this.subscriptions.findOne({
       where: { organisationId },
     });
-    if (existing?.stripeSubscriptionId) {
+    const stored = await this.storedSubscription(row?.stripeSubscriptionId);
+
+    // Allowed only beside nothing, one that has ended, or one still awaiting
+    // its first payment. Anything else could charge — including a status
+    // Stripe adds later — and a second subscription would bill twice.
+    if (stored && stored.status !== 'incomplete' && !hasEnded(stored.status)) {
       throw new BadRequestException(
-        'This organisation already has a subscription.',
+        stored.status === 'past_due' || stored.status === 'unpaid'
+          ? 'This organisation already has a subscription with a payment due. Update the card under Manage billing instead.'
+          : 'This organisation already has a subscription.',
       );
     }
 
@@ -214,7 +308,44 @@ export class CheckoutService {
     // fourteen. See `billedSeatCount`.
     const { count } =
       await this.billedSeatsService.forOrganisation(organisationId);
-    return { organisation, seats: count };
+    return {
+      organisation,
+      seats: count,
+      customerId: await this.usableCustomer(row?.stripeCustomerId),
+      awaitingFirstPayment: stored?.status === 'incomplete' ? stored : null,
+    };
+  }
+
+  /** Null for no id, or one Stripe no longer has. Other errors throw. */
+  private async storedSubscription(
+    subscriptionId: string | null | undefined,
+  ): Promise<Stripe.Subscription | null> {
+    if (!subscriptionId) return null;
+    try {
+      return await this.stripeService.stripe.subscriptions.retrieve(
+        subscriptionId,
+        // What a retry needs to confirm the same invoice again.
+        { expand: ['latest_invoice.confirmation_secret'] },
+      );
+    } catch (error) {
+      if (isStripeMissing(error)) return null;
+      throw error;
+    }
+  }
+
+  /** The stored customer, unless Stripe has since deleted it. */
+  private async usableCustomer(
+    customerId: string | null | undefined,
+  ): Promise<string | null> {
+    if (!customerId) return null;
+    try {
+      const customer =
+        await this.stripeService.stripe.customers.retrieve(customerId);
+      return customer.deleted ? null : customer.id;
+    } catch (error) {
+      if (isStripeMissing(error)) return null;
+      throw error;
+    }
   }
 
   /**
@@ -227,39 +358,25 @@ export class CheckoutService {
     organisationId: string,
     period: BillingPeriod,
   ): Promise<string> {
-    if (!BILLING_PERIODS.includes(period)) {
-      throw new BadRequestException(`Unknown billing period: ${period}`);
-    }
-    if (!this.stripeService.isConfigured) {
-      throw new BadRequestException(
-        'Billing is not available on this installation.',
-      );
+    const {
+      organisation,
+      seats: count,
+      customerId,
+      awaitingFirstPayment,
+    } = await this.readyToCharge(organisationId, period);
+
+    // Checkout raises its own subscription, so one left awaiting its first
+    // payment from the modal is cancelled rather than left payable beside it.
+    if (awaitingFirstPayment) {
+      try {
+        await this.stripeService.stripe.subscriptions.cancel(
+          awaitingFirstPayment.id,
+        );
+      } catch (error) {
+        if (!isStripeMissing(error)) throw error;
+      }
     }
 
-    const organisation = await this.organisations.findOne({
-      where: { id: organisationId },
-    });
-    if (!organisation) {
-      throw new NotFoundException('Organisation not found.');
-    }
-
-    if (this.stripeService.isFree(organisation.publicId)) {
-      throw new BadRequestException(
-        'This organisation does not pay for Hi Day.',
-      );
-    }
-
-    const subscription = await this.subscriptions.findOne({
-      where: { organisationId },
-    });
-    if (subscription?.stripeSubscriptionId) {
-      throw new BadRequestException(
-        'This organisation already has a subscription.',
-      );
-    }
-
-    const { count } =
-      await this.billedSeatsService.forOrganisation(organisationId);
     const billingHref = `${this.frontendUrl}/organisations/${organisation.publicId}/settings/billing/subscription`;
 
     const session = await this.stripeService.stripe.checkout.sessions.create({
@@ -276,10 +393,13 @@ export class CheckoutService {
       subscription_data: {
         metadata: { [ORGANISATION_METADATA_KEY]: organisationId, period },
       },
-      // Where invoices and Stripe's own dunning mail go. Undefined lets
-      // Checkout collect it, which is what happened before an Organisation
-      // could say: the payer's address, known only to Stripe.
-      customer_email: organisation.billingEmail ?? undefined,
+      // The customer from an earlier attempt or subscription, so its
+      // history stays in one place. Otherwise, where invoices and Stripe's
+      // own dunning mail go: undefined lets Checkout collect it, which is
+      // what happened before an Organisation could say.
+      ...(customerId
+        ? { customer: customerId }
+        : { customer_email: organisation.billingEmail ?? undefined }),
       success_url: `${billingHref}?checkout=done`,
       cancel_url: `${billingHref}?checkout=cancelled`,
     });

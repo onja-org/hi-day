@@ -2,6 +2,7 @@
 
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { useSubscription } from "@/hooks/useSubscription";
+import { canStartSubscription } from "@/lib/canStartSubscription";
 import { TRIAL_DAYS } from "@/lib/pricing.generated";
 import { BillingPlanCard } from "./BillingPlanCard";
 import { TrialCard } from "./TrialCard";
@@ -112,11 +113,12 @@ export function SubscriptionSettings({
       {!isFree && (
         <>
           {/* Seats stay editable once paying; the price and "Add payment"
-              do not — the summary card above is their plan, and offering to
-              pay again is asking them to pay twice. */}
+              do not while the subscription can still charge — offering to
+              pay again then is asking them to pay twice. Once it has ended,
+              or a first payment did not go through, they come back. */}
           <BillingPlanCard
             organisationId={organisationId}
-            showPurchase={!trialQuery.data?.trial?.isPaid}
+            showPurchase={canStartSubscription(trialQuery.data?.trial)}
             paidPlan={subscriptionQuery.data?.plan ?? null}
           />
           <PricingLargeTeam />

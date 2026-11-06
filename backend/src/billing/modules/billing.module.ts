@@ -12,6 +12,7 @@ import { BilledSeatsService } from '../services/billed-seats.service';
 import { CheckoutService } from '../services/checkout.service';
 import { StripeWebhookService } from '../services/stripe-webhook.service';
 import { StripeService } from '../services/stripe.service';
+import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { SubscriptionReconcilerService } from '../services/subscription-reconciler.service';
 import { SubscriptionService } from '../services/subscription.service';
 import { TrialService } from '../services/trial.service';
@@ -30,9 +31,15 @@ import { TrialService } from '../services/trial.service';
     StripeWebhookService,
     TrialService,
     RoleGuard,
+    SubscriptionCancellationService,
     SubscriptionReconcilerService,
     SubscriptionService,
   ],
-  exports: [BilledSeatsService, StripeService, TrialService],
+  exports: [
+    BilledSeatsService,
+    StripeService,
+    SubscriptionCancellationService,
+    TrialService,
+  ],
 })
 export class BillingModule {}

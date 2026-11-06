@@ -84,21 +84,6 @@ describe('events Stripe should send again', () => {
     );
   });
 
-  it('asks for a retry when the organisation itself is not there', async () => {
-    const { service } = serviceFor({
-      subscription: {
-        id: 'sub-row-1',
-        organisationId: 'org-1',
-        status: SubscriptionStatus.TRIALING,
-      },
-      organisation: null,
-    });
-
-    await expect(service.handle(paidInvoice)).rejects.toBeInstanceOf(
-      UnplacedStripeEvent,
-    );
-  });
-
   it('carries a 503, which is the status that makes Stripe retry', () => {
     expect(new UnplacedStripeEvent('nope').getStatus()).toBe(503);
   });
@@ -148,6 +133,59 @@ describe('events we ignore on purpose', () => {
       } as unknown as Stripe.Event),
     ).resolves.toBeUndefined();
     expect(update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A deleted organisation never comes back, so no retry can place these.
+   * Answering 503 had Stripe retrying each for three days, and risked it
+   * disabling the endpoint for every customer.
+   */
+  describe('for an organisation that has been deleted', () => {
+    // The usual one: our own cancellation during the purge, whose event
+    // arrives after the organisation's row is gone.
+    it('accepts the subscription.deleted that the purge itself causes', async () => {
+      const { service, update } = serviceFor({ organisation: null });
+
+      await expect(
+        service.handle({
+          type: 'customer.subscription.deleted',
+          data: {
+            object: {
+              id: 'sub_1',
+              customer: 'cus_1',
+              status: 'canceled',
+              items: { data: [] },
+              metadata: { [ORGANISATION_METADATA_KEY]: 'org-1' },
+            },
+          },
+        } as unknown as Stripe.Event),
+      ).resolves.toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a paid invoice whose organisation and row are both gone', async () => {
+      const { service, update } = serviceFor({
+        subscription: null,
+        organisation: null,
+      });
+
+      await expect(service.handle(paidInvoice)).resolves.toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('accepts an event whose row survived but whose organisation did not', async () => {
+      const { service, update } = serviceFor({
+        subscription: {
+          id: 'sub-row-1',
+          organisationId: 'org-1',
+          status: SubscriptionStatus.TRIALING,
+        },
+        organisation: null,
+      });
+
+      await expect(service.handle(paidInvoice)).resolves.toBeUndefined();
+      expect(update).not.toHaveBeenCalled();
+    });
   });
 
   // Metadata is fixed when the session is created, so a retry would carry

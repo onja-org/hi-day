@@ -18,7 +18,7 @@ An owner can close their Organisation "now" or on a scheduled date. Both end in 
 
 ## Not built — and what the spec's edge cases resolve to
 
-- **Billing.** No subscription or billing code exists, so "cancel subscription" and the unpaid-balance / mid-cycle case are **unimplemented**, not merely stubbed. When billing lands, cancellation belongs in `suspend()` (stop charging when access stops) and the balance policy needs deciding then.
+- **Billing.** *Superseded by ADR-0034:* suspension now stops the Stripe subscription renewing (undone by a restore), and the purge cancels it outright before erasing anything. The unpaid-balance / mid-cycle policy is still undecided; see that ADR's "Not handled".
 - **Data export.** No full-organisation export exists. The UI says so and points to the per-report CSV/PDF exports; the acceptance criterion "owner is offered a full export" is only partly met.
 - **Backups.** Deleted data must not resurrect from a backup. Two rules, both operational (nothing in code can enforce them): backups must age out within a documented retention limit (recommend ≤ 35 days), and **any restore from backup must be followed by re-running the purges recorded in `audit_logs`** (`action = 'organisation.purged'`, with the public id) before the restored database is put back in service. Wasabi objects aren't part of DB backups, so they're unaffected. Record the retention limit wherever backups are configured.
 - **Legal hold.** Out of scope. If added, it should block `confirm`, `suspend` and the purge cron with a single check on the Organisation.
