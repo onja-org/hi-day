@@ -812,7 +812,23 @@ export class TimeEntriesService {
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
+    /**
+     * One id per row this writes — see `SwitchTimeEntryDto`. A switch whose
+     * response was lost replays as the queued stop/start pair the agent
+     * records offline, and those carry the same two ids, so each half finds
+     * the row the switch already wrote instead of colliding with it.
+     */
+    options: { stopOperationId?: string; startOperationId?: string } = {},
   ): Promise<TimeEntrySummary> {
+    // Before anything else, exactly as `start` and `stop` do: a switch that
+    // already happened must answer with what it wrote, not start a second
+    // entry beside it.
+    const replayed = await this.entryForOperation(
+      'startOperationId',
+      options.startOperationId,
+    );
+    if (replayed) return await this.toSummary(replayed);
+
     const { membership, task } = await this.validateStart(
       organisationId,
       userId,
@@ -837,6 +853,7 @@ export class TimeEntriesService {
       if (running) {
         const stoppedAt = new Date();
         running.endedAt = stoppedAt;
+        running.stopOperationId = options.stopOperationId ?? null;
         await manager.save(running);
         await this.closeOpenPause(
           manager.getRepository(TimeEntryPause),
@@ -861,6 +878,7 @@ export class TimeEntriesService {
         source,
         deviceId,
         lastSeenAt: deviceId === null ? new Date() : null,
+        startOperationId: options.startOperationId ?? null,
       });
       const savedEntry = await manager.save(entry);
 
@@ -2215,9 +2233,12 @@ export class TimeEntriesService {
     organisationId: string,
     userId: string,
     deviceId: string | null,
+    /** See `PauseTimeEntryDto.opId` — a pause is a stop, and replays alike. */
+    options: { operationId?: string } = {},
   ): Promise<TimeEntrySummary> {
     return await this.stop(organisationId, userId, deviceId, undefined, {
       action: 'time_entry.paused',
+      operationId: options.operationId,
     });
   }
 
@@ -2601,16 +2622,40 @@ export class TimeEntriesService {
     // and its entry ending at the last poll is the whole truth.
     if (deviceId === null) return null;
 
-    const latest = await this.timeEntries.findOne({
-      where: { membershipId, deviceId: Equal(deviceId) },
+    const abandoned = await this.timeEntries.findOne({
+      where: {
+        membershipId,
+        deviceId: Equal(deviceId),
+        closedAsAbandoned: true,
+      },
       order: { startedAt: 'DESC' },
     });
-    if (!latest?.closedAsAbandoned || !latest.endedAt) return null;
-    if (endedAt.getTime() <= latest.endedAt.getTime()) return null;
-    if (Date.now() - latest.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
+    if (!abandoned?.endedAt) return null;
+    if (endedAt.getTime() <= abandoned.endedAt.getTime()) return null;
+    if (Date.now() - abandoned.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
       return null;
     }
-    return latest;
+
+    // Anything this Device started after it. Usually nothing — the agent
+    // replays its queue before it starts anything — but the crash prompt's
+    // "I was still working" answer deliberately starts a fresh entry, and a
+    // queued stop arriving afterwards would otherwise find the newest entry
+    // not abandoned, give up, and 404. The hours are real and were being
+    // reported to the person as lost.
+    const next = await this.timeEntries.findOne({
+      where: {
+        membershipId,
+        deviceId: Equal(deviceId),
+        startedAt: MoreThan(abandoned.startedAt),
+      },
+      order: { startedAt: 'ASC' },
+    });
+    // Touching endpoints are fine — that is what `switch` produces — but a
+    // genuine overlap is not, so the sweeper's guess stands and the person
+    // is told rather than having two entries claim the same minutes.
+    if (next && endedAt.getTime() > next.startedAt.getTime()) return null;
+
+    return abandoned;
   }
 
   /**

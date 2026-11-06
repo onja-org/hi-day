@@ -1130,22 +1130,33 @@ async function registerIpcHandlers(): Promise<void> {
   }
 
   /**
-   * Deletes every queued screenshot, window sample, activity sample, URL
-   * and timer action — for a session that has ended, once nothing more
-   * can be sent for it.
+   * Deletes every queued screenshot, window sample, activity sample and URL
+   * of a session that has ended, once nothing more can be sent for it.
+   *
+   * **Queued timer actions are deliberately kept.** They are the hours
+   * somebody worked, and a session ending is not a reason to delete them —
+   * a remote sign-out in the middle of an offline stretch used to do
+   * exactly that, with nothing said. They survive because they cannot
+   * reach the wrong timesheet: each one carries its owner, the person it
+   * belongs to replays it when they log back in, and anybody else logging
+   * in deletes it (`discardOtherOwnersData`).
+   *
+   * Captures do not follow them, and the difference is the point: a
+   * screenshot and a browsing history belong to the session that took
+   * them, and leaving those on a shared machine is a disclosure. Hours are
+   * pay.
    */
-  function discardAllQueuedData(): void {
+  function discardEndedSessionCaptures(): void {
     const captures = offlineQueue.discardAll();
-    const timerOps = pendingOps.discardAll();
     const urls = UrlSessionStore.discardAllAt(urlSessionsPath);
-    if (captures + timerOps + urls > 0) {
+    if (captures + urls > 0) {
       // Counts only — never what was in them.
       console.warn(
-        `[auth] discarded unsent data from the ended session: ${captures} capture(s), ${timerOps} timer action(s), ${urls} URL session(s)`,
+        `[auth] discarded unsent captures from the ended session: ${captures} capture(s), ${urls} URL session(s)`,
       );
     }
   }
-  discardQueuedData = discardAllQueuedData;
+  discardQueuedData = discardEndedSessionCaptures;
 
   /**
    * Uploads the logged-in person's whole backlog, rows waiting out a retry
@@ -1161,12 +1172,21 @@ async function registerIpcHandlers(): Promise<void> {
     // when the queue no longer accepts it, so the last minutes of
     // activity were lost. Closing it now queues it with everything else.
     await activitySampler.flush();
+    // Timer actions count too. They are kept rather than deleted when the
+    // session ends, but this is the last moment the token still works —
+    // sending them now means the person does not wait for their next login
+    // to see the hours land. `retryNow` because a replay the server asked
+    // us to back off from would otherwise sit out this whole loop.
+    pendingOps.retryNow();
     const unsent = (): number =>
-      offlineQueue.pendingCount() + (urlCaptureService?.unsentCount() ?? 0);
+      offlineQueue.pendingCount() +
+      pendingOps.load().length +
+      (urlCaptureService?.unsentCount() ?? 0);
     let before = unsent();
     while (before > 0) {
       await Promise.all([
         offlineQueue.flushAll({ ignoreBackoff: true }).catch(() => {}),
+        flushPendingOps().catch(() => {}),
         urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
       ]);
       const after = unsent();
@@ -1955,7 +1975,8 @@ async function registerIpcHandlers(): Promise<void> {
     stopSync();
     // Whatever did not upload — offline, or a send that failed. On a
     // shared machine none of it may sit on disk for whoever logs in next.
-    discardAllQueuedData();
+    // The timer actions stay: see `discardEndedSessionCaptures`.
+    discardEndedSessionCaptures();
     // No session left to poll against — both gates resolve to "off",
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
@@ -1994,21 +2015,29 @@ async function registerIpcHandlers(): Promise<void> {
         pendingOps.remember(data as TimeEntry);
       }
     }
-    if (!result.ok && result.unauthorized) {
-      authStore.clear();
-      // That session is over, and the signed-out reminder is about logging
-      // back in rather than about any stop.
-      timerStoppedByAgent = false;
-      // None of it is this machine's to keep once the session is gone.
-      offlineCache.clear();
-      stopUrlCapture();
-      stopHeartbeat();
-      stopSync();
-      // Signed out remotely: the token is dead, so nothing queued can be
-      // sent any more, and it must not wait for whoever logs in next.
-      discardAllQueuedData();
-    }
+    if (!result.ok && result.unauthorized) signOutLocally();
     return result;
+  }
+
+  /**
+   * Drops the session this machine holds, without asking the server
+   * anything — it has already said the session is gone. The renderer finds
+   * out on its next poll, which is how a remote sign-out has always
+   * surfaced.
+   */
+  function signOutLocally(): void {
+    authStore.clear();
+    // That session is over, and the signed-out reminder is about logging
+    // back in rather than about any stop.
+    timerStoppedByAgent = false;
+    // None of it is this machine's to keep once the session is gone.
+    offlineCache.clear();
+    stopUrlCapture();
+    stopHeartbeat();
+    stopSync();
+    // The token is dead, so no capture can be sent any more and none of it
+    // may sit on a shared machine. The hours stay — see the function.
+    discardEndedSessionCaptures();
   }
 
 /**
@@ -2150,6 +2179,9 @@ async function registerIpcHandlers(): Promise<void> {
     // watching has to keep moving even when nothing else is.
     let lastKnown = unsentRecordCount();
     const ticker = setInterval(() => sendQuitProgress(lastKnown), 1000);
+    // Pressing Quit is asking for one last try, whatever wait a struggling
+    // server set on the replay queue.
+    pendingOps.retryNow();
 
     try {
       while (!closed && Date.now() < quitDeadline) {
@@ -2165,6 +2197,10 @@ async function registerIpcHandlers(): Promise<void> {
         lastKnown = remaining;
         sendQuitProgress(remaining);
         if (remaining === 0) break;
+        // Nothing left but a replay the server asked us to wait before
+        // retrying. Spinning on it to the deadline holds the quit open for
+        // no reason, and the ops go up on the next launch regardless.
+        if (remaining === pendingOps.load().length && !pendingOps.isDue()) break;
         // Short, so the deadline buys as many real attempts as it can.
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
@@ -2218,7 +2254,7 @@ async function registerIpcHandlers(): Promise<void> {
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    const { settled, refused } = await pendingOps.flush(
+    const { settled, refused, signedOut } = await pendingOps.flush(
       session.deviceToken,
       apiClient,
     );
@@ -2228,6 +2264,13 @@ async function registerIpcHandlers(): Promise<void> {
     // remember what they were doing.
     if (refused.length > 0) {
       mainWindow?.webContents.send("tracking:refused", refused);
+    }
+    // This loop is the one caller that does not go through
+    // `callDeviceApi`, so without this a remotely revoked session is
+    // retried here every fifteen seconds and nothing ever says so.
+    if (signedOut) {
+      signOutLocally();
+      refreshTrayMenu();
     }
     if (settled) void timerStatusGate.pollOnce();
     checkSyncBacklog();

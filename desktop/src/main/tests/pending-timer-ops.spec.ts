@@ -96,7 +96,13 @@ describe('PendingTimerOps', () => {
   it('passes a backdated start to the server and queues it with that time offline', async () => {
     const startTimer = vi.fn(() => Promise.resolve(ok));
     await new PendingTimerOps(dir).start('t', 'p2', null, client({ startTimer }), '2026-10-09T09:00:00.000Z');
-    expect(startTimer).toHaveBeenCalledWith('t', 'p2', null, '2026-10-09T09:00:00.000Z');
+    expect(startTimer).toHaveBeenCalledWith(
+      't',
+      'p2',
+      null,
+      '2026-10-09T09:00:00.000Z',
+      expect.any(String),
+    );
 
     const ops = new PendingTimerOps(dir);
     await ops.start('t', 'p2', null, client(), '2026-10-09T09:00:00.000Z');
@@ -417,7 +423,7 @@ describe('PendingTimerOps', () => {
       ]);
     });
 
-    it('says nothing about a sign-out, which is not lost time', async () => {
+    it('says nothing about a sign-out, and keeps the hours for the login that follows', async () => {
       const ops = new PendingTimerOps(dir);
       await ops.start('t', 'p2', null, client());
       const signedOut = { ...offline, status: 401, unauthorized: true };
@@ -427,7 +433,12 @@ describe('PendingTimerOps', () => {
         client({ startTimer: () => Promise.resolve(signedOut) }),
       );
 
+      // A revoked session is not a verdict on the work. Dropping the queue
+      // here wiped a day's tracking with no message at all.
       expect(result.refused).toEqual([]);
+      expect(result.signedOut).toBe(true);
+      expect(result.settled).toBe(false);
+      expect(ops.load()).toHaveLength(1);
     });
 
     it('reports nothing when everything lands', async () => {
@@ -440,6 +451,313 @@ describe('PendingTimerOps', () => {
       );
 
       expect(result.refused).toEqual([]);
+    });
+  });
+
+  // The bug this file's `serverVerdict` split exists for: a replay used to
+  // leave the queue on *any* HTTP status, so reconnecting into a deploy,
+  // an overloaded minute or a revoked session deleted real hours.
+  describe('hours the server has not decided about', () => {
+    const unavailable = { ...offline, status: 503, message: 'Service Unavailable' };
+
+    it('keeps a start the server was too busy to answer, and replays it after', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+      const queued = ops.load();
+
+      const first = await ops.flush('t', client({ startTimer: () => Promise.resolve(unavailable) }));
+
+      expect(first.settled).toBe(false);
+      expect(first.refused).toEqual([]);
+      expect(ops.load()).toEqual(queued);
+
+      // Past the wait, with the deploy finished.
+      ops.retryNow();
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      expect((await ops.flush('t', client({ startTimer }))).settled).toBe(true);
+      expect(startTimer).toHaveBeenCalledWith('t', 'p2', null, (queued[0] as { at: string }).at, expect.any(String));
+    });
+
+    it('keeps the stop paired to a start the server could not answer', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+
+      await ops.flush('t', client({ startTimer: () => Promise.resolve(unavailable) }));
+
+      // Dropping the start used to take its stop with it — correct for a
+      // refusal, catastrophic for a blip.
+      expect(ops.load().map((op) => op.type)).toEqual(['start', 'stop']);
+    });
+
+    it('keeps a stop whose start already landed, rather than leaving the entry open for ever', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+
+      const result = await ops.flush(
+        't',
+        client({
+          startTimer: () => Promise.resolve(ok),
+          stopTimer: () => Promise.resolve(unavailable),
+        }),
+      );
+
+      expect(result.settled).toBe(false);
+      expect(ops.load().map((op) => op.type)).toEqual(['stop']);
+    });
+
+    it('keeps an op a proxy answered with something nobody recognises', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+
+      await ops.flush('t', client({ startTimer: () => Promise.resolve({ ...offline, status: 451 }) }));
+
+      expect(ops.load()).toHaveLength(1);
+    });
+
+    it('still drops and reports a work-time limit, which is a real answer', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+      const limit = {
+        ...offline,
+        status: 403,
+        message: 'You have reached your daily limit of 8 hours.',
+      };
+
+      const result = await ops.flush('t', client({ startTimer: () => Promise.resolve(limit) }));
+
+      // 403 is not in the ticket's suggested drop list; leaving it out
+      // would have this retry for ever and the queue never drain.
+      expect(result.settled).toBe(true);
+      expect(result.refused).toEqual([
+        { op: expect.objectContaining({ type: 'start' }) as unknown, message: limit.message },
+      ]);
+      expect(ops.load()).toEqual([]);
+    });
+  });
+
+  describe('leaving a struggling server alone', () => {
+    const unavailable = { ...offline, status: 503, message: 'Service Unavailable' };
+    let clock: number;
+    const options = () => ({ now: () => clock, random: () => 0 });
+
+    beforeEach(() => {
+      clock = 1_000_000;
+    });
+
+    it('does not ask again until the backoff has elapsed', async () => {
+      const ops = new PendingTimerOps(dir, undefined, options());
+      await ops.start('t', 'p2', null, client());
+      await ops.flush('t', client({ startTimer: () => Promise.resolve(unavailable) }));
+
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      clock += 15_000; // the next replay tick
+      expect((await ops.flush('t', client({ startTimer }))).settled).toBe(false);
+      expect(startTimer).not.toHaveBeenCalled();
+
+      clock += 30_000;
+      expect((await ops.flush('t', client({ startTimer }))).settled).toBe(true);
+      expect(startTimer).toHaveBeenCalledTimes(1);
+    });
+
+    it('backs off further each time it is told to wait', async () => {
+      const ops = new PendingTimerOps(dir, undefined, { now: () => clock, random: () => 1 });
+      await ops.start('t', 'p2', null, client());
+      const busy = client({ startTimer: () => Promise.resolve(unavailable) });
+
+      await ops.flush('t', busy); // 30s
+      clock += 30_000;
+      await ops.flush('t', busy); // doubles to 60s at full jitter
+      clock += 30_000;
+
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      await ops.flush('t', client({ startTimer }));
+      // A flat delay would have been due by now; the doubled one is not.
+      expect(startTimer).not.toHaveBeenCalled();
+    });
+
+    it('forgets the wait as soon as something lands', async () => {
+      // Full jitter, so a second consecutive failure would wait 60s and a
+      // reset one waits 30s — the difference this is checking.
+      const ops = new PendingTimerOps(dir, undefined, { now: () => clock, random: () => 1 });
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+      await ops.flush('t', client({ startTimer: () => Promise.resolve(unavailable) }));
+      clock += 30_000;
+
+      // The start lands, the stop is refused again: the wait restarts from
+      // the bottom rather than carrying the first failure's exponent.
+      await ops.flush(
+        't',
+        client({
+          startTimer: () => Promise.resolve(ok),
+          stopTimer: () => Promise.resolve(unavailable),
+        }),
+      );
+
+      const stopTimer = vi.fn(() => Promise.resolve(ok));
+      clock += 30_000;
+      expect((await ops.flush('t', client({ stopTimer }))).settled).toBe(true);
+    });
+
+    it('waits for no server that never answered — that is an outage, not a refusal', async () => {
+      const ops = new PendingTimerOps(dir, undefined, options());
+      await ops.start('t', 'p2', null, client());
+      await ops.flush('t', client());
+
+      // Quick retries are the only thing that notices a reconnection.
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      expect((await ops.flush('t', client({ startTimer }))).settled).toBe(true);
+    });
+
+    it('tries once more when somebody presses Quit', async () => {
+      const ops = new PendingTimerOps(dir, undefined, options());
+      await ops.start('t', 'p2', null, client());
+      await ops.flush('t', client({ startTimer: () => Promise.resolve(unavailable) }));
+
+      expect(ops.isDue()).toBe(false);
+      ops.retryNow();
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      await ops.flush('t', client({ startTimer }));
+      expect(startTimer).toHaveBeenCalled();
+    });
+  });
+
+
+  // The same rule, applied to the click itself rather than its replay:
+  // a 503 on Play used to surface as an error and lose the start outright.
+  describe('a click the server could not answer', () => {
+    it('queues a start the server was too busy for', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+
+      const result = await ops.start(
+        't',
+        'p2',
+        null,
+        client({ startTimer: () => Promise.resolve({ ...offline, status: 503 }) }),
+      );
+
+      expect(result.ok && result.fromCache).toBe(true);
+      expect(ops.load()).toHaveLength(1);
+    });
+
+    it('still surfaces a refusal the person has to see', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+
+      const result = await ops.start(
+        't',
+        'p2',
+        null,
+        client({
+          startTimer: () =>
+            Promise.resolve({ ...offline, status: 409, message: 'A timer is already running on this device.' }),
+        }),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(ops.load()).toEqual([]);
+    });
+
+    it('refuses to start a clock for a session that is already gone', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+
+      const signedOut = { ...offline, status: 401, unauthorized: true };
+      const result = await ops.start('t', 'p3', null, client({ startTimer: () => Promise.resolve(signedOut) }));
+
+      // Queueing it would tick in front of somebody whose hours can never
+      // land; `unauthorized` is what makes main sign out instead.
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.unauthorized).toBe(true);
+      expect(ops.load()).toHaveLength(1);
+    });
+  });
+
+  // A request that times out after the server applied it used to come back
+  // as "time could not be saved", because the queued copy was given a new
+  // name and the server could not recognise it as the same operation.
+  describe('an answer that never arrived', () => {
+    /** What a 5s `REQUEST_TIMEOUT_MS` abort looks like: no status at all. */
+    const timedOut = () => Promise.resolve(offline);
+
+    it('queues a start under the id the first attempt already sent', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      const startTimer = vi.fn(timedOut);
+
+      await ops.start('t', 'p2', null, client({ startTimer }));
+
+      const sent = (startTimer.mock.calls[0] as unknown[])[4] as string;
+      expect(sent).toEqual(expect.any(String));
+      expect((ops.load()[0] as { opId: string }).opId).toBe(sent);
+    });
+
+    it('queues a pause under the id the first attempt already sent', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const pauseTimer = vi.fn(timedOut);
+
+      await ops.pause('t', client({ pauseTimer }));
+
+      const sent = (pauseTimer.mock.calls[0] as unknown[])[1] as string;
+      expect(sent).toEqual(expect.any(String));
+      expect((ops.load()[0] as { opId: string }).opId).toBe(sent);
+    });
+
+    it('queues an idle stop under the id the first attempt already sent', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const stopTimer = vi.fn(timedOut);
+
+      await ops.stopAt('t', client({ stopTimer }), '2026-10-09T09:30:00.000Z');
+
+      const sent = (stopTimer.mock.calls[0] as unknown[])[2] as string;
+      expect(sent).toEqual(expect.any(String));
+      expect((ops.load()[0] as { opId: string }).opId).toBe(sent);
+    });
+
+    it('names the write-ahead pause, which is the one that cannot be retried', async () => {
+      // `pauseDurably` runs while the OS is already shutting the machine
+      // down — the likeliest moment of all for a reply not to arrive.
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const pauseTimer = vi.fn(timedOut);
+
+      await ops.pauseDurably('t', client({ pauseTimer }));
+
+      expect((pauseTimer.mock.calls[0] as unknown[])[1]).toBe(
+        (ops.load()[0] as { opId: string }).opId,
+      );
+    });
+
+    it('sends the switch under the ids its queued halves will carry', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const switchTimer = vi.fn(timedOut);
+
+      await ops.switchTo('t', 'p2', null, client({ switchTimer }));
+
+      // A switch writes two rows, so recognising a replay of it takes two
+      // ids — and they have to be the ones the first attempt sent, or the
+      // queued stop meets the entry the switch just started and is refused.
+      const [, , , sentStop, sentStart] = switchTimer.mock.calls[0] as unknown[];
+      const [stop, start] = ops.load() as { opId: string }[];
+      expect(sentStop).toBe(stop.opId);
+      expect(sentStart).toBe(start.opId);
+    });
+
+    it('replays the whole switch under the ids its own halves were queued with', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      await ops.switchTo('t', 'p2', null, client());
+      const [stop, start] = ops.load() as { opId: string }[];
+
+      const stopTimer = vi.fn(() => Promise.resolve({ ...ok, data: { ...entry, endedAt: '2026-10-09T09:00:00.000Z' } }));
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      await ops.flush('t', client({ stopTimer, startTimer }));
+
+      expect((stopTimer.mock.calls[0] as unknown[])[2]).toBe(stop.opId);
+      expect((startTimer.mock.calls[0] as unknown[])[4]).toBe(start.opId);
     });
   });
 });

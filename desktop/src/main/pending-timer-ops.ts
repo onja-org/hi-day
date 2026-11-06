@@ -1,15 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isTransportFailure } from './api-client';
+import { serverVerdict } from './api-client';
 import type { TimeEntry, TrackingResult } from './api-client';
+import { computeRetryDelayMs } from './offline-queue';
 
 const FILE_NAME = 'pending-timer-ops.json';
 
 /**
- * `owner` is who pressed the button (session-owner.ts). Absent on an op
- * written before owners were recorded, and in tests that never set one.
+ * What a caller gets back when the queue cannot be sent because the
+ * session is gone. Carries `unauthorized` so `callDeviceApi` signs out on
+ * it exactly as it does for a 401 off the wire — the alternative is a
+ * clock ticking in front of somebody whose hours can never land.
  */
+const SIGNED_OUT: TrackingResult<never> = {
+  ok: false,
+  message: "You've been signed out — please log in to continue.",
+  unauthorized: true,
+  status: 401,
+};
+
 export type PendingOp =
   | { type: 'stop'; at: string; opId?: string; owner?: string }
   | {
@@ -37,10 +47,17 @@ export interface FlushResult {
   /** True when nothing is left waiting — the queue is empty. */
   settled: boolean;
   refused: RefusedOp[];
+  /**
+   * The session was refused while replaying. The queue is kept — these
+   * are the person's hours and a login brings them back — and the caller
+   * is expected to sign out locally rather than retry a dead token every
+   * fifteen seconds in silence.
+   */
+  signedOut: boolean;
 }
 
 export interface PendingTimerClient {
-  pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>>;
+  pauseTimer(deviceToken: string, opId?: string): Promise<TrackingResult<TimeEntry>>;
   stopTimer(
     deviceToken: string,
     endedAt?: string,
@@ -57,6 +74,8 @@ export interface PendingTimerClient {
     deviceToken: string,
     projectId: string | null,
     taskId: string | null,
+    stopOpId?: string,
+    startOpId?: string,
   ): Promise<TrackingResult<TimeEntry>>;
 }
 
@@ -92,21 +111,44 @@ class InMemoryRunningEntryStore implements RunningEntryStore {
  * once the server is reachable — so hours land when the person pressed the
  * button, not when the connection came back.
  *
- * Each carries an `opId` generated once, when the operation is queued, and
- * reused on every replay of it. A reconnect that dies after the server
- * committed but before the response arrived would otherwise send the same
- * start again and write the hours twice; the server recognises the id and
- * returns what it already wrote (see docs/adr/0025-...).
+ * Each carries an `opId` generated once, **before the first attempt**, and
+ * reused by the queued copy and every replay of it. A request that dies
+ * after the server committed but before the response arrived would
+ * otherwise send the same start again and write the hours twice; the
+ * server recognises the id and returns what it already wrote (see
+ * docs/adr/0025-...).
+ *
+ * Minting it at queue time instead — which is what this did — left the
+ * first attempt anonymous, so the one case the id exists for was the one
+ * case it could not cover. A five-second timeout (`REQUEST_TIMEOUT_MS`) on
+ * a request the server had already applied queued a *differently* named
+ * copy of it, and the replay met a 409 for a start or a 404 for a stop and
+ * told the person their hours could not be saved. They had been saved.
  */
 export class PendingTimerOps {
+  /** Consecutive replays the server answered with "not now". */
+  private attempts = 0;
+  /** Nothing is sent before this, so a struggling server is left alone. */
+  private nextAttemptAt = 0;
+
   /** Who is logged in now, or null for nobody. Unset, every op is one owner's. */
   private ownerSource: (() => string | null) | null = null;
+
+  private readonly now: () => number;
+  private readonly random: () => number;
 
   constructor(
     private readonly userDataDir: string,
     /** Defaults to memory-only, which is enough for a single session. */
     private readonly running: RunningEntryStore = new InMemoryRunningEntryStore(),
-  ) {}
+    options: {
+      now?: () => number;
+      random?: () => number;
+    } = {},
+  ) {
+    this.now = options.now ?? Date.now;
+    this.random = options.random ?? Math.random;
+  }
 
   private get filePath(): string {
     return join(this.userDataDir, FILE_NAME);
@@ -192,6 +234,33 @@ export class PendingTimerOps {
     writeFileSync(this.filePath, JSON.stringify(ops), 'utf-8');
   }
 
+  /**
+   * Whether a replay may be attempted now. Only an *answered* refusal
+   * sets a wait — a server that cannot be reached is an outage, and the
+   * fifteen-second tick is how a reconnect gets noticed at all.
+   */
+  isDue(): boolean {
+    return this.now() >= this.nextAttemptAt;
+  }
+
+  /** Drops the wait: somebody pressing Quit is asking for one last try. */
+  retryNow(): void {
+    this.nextAttemptAt = 0;
+  }
+
+  private backOff(): void {
+    this.attempts += 1;
+    this.nextAttemptAt =
+      this.now() +
+      computeRetryDelayMs(this.attempts, undefined, undefined, this.random);
+  }
+
+  /** An op settled either way is progress, and the queue is moving again. */
+  private progressed(): void {
+    this.attempts = 0;
+    this.nextAttemptAt = 0;
+  }
+
   hasPending(): boolean {
     return this.load().length > 0;
   }
@@ -223,6 +292,12 @@ export class PendingTimerOps {
    * timer, or the server still sees the old entry. Reports anything the
    * server refused, so the person can be told about hours that did not land
    * rather than finding the gap themselves later.
+   *
+   * An operation leaves the queue only on a verdict — accepted, or refused
+   * in terms the server would repeat. Everything else keeps its place:
+   * this used to drop anything carrying an HTTP status at all, so a deploy
+   * or an overloaded minute during a reconnect deleted hours somebody had
+   * really worked, and a revoked session deleted them without a word.
    */
   async flush(
     deviceToken: string,
@@ -230,6 +305,9 @@ export class PendingTimerOps {
   ): Promise<FlushResult> {
     const ops = this.load();
     const refused: RefusedOp[] = [];
+    if (ops.length === 0) return { settled: true, refused, signedOut: false };
+    if (!this.isDue()) return { settled: false, refused, signedOut: false };
+
     while (ops.length > 0) {
       const op = ops[0];
       const result =
@@ -242,15 +320,32 @@ export class PendingTimerOps {
               op.at,
               op.opId,
             );
-      if (isTransportFailure(result)) break;
+      const verdict = serverVerdict(result);
+
+      // Not this session's to send any more — but still this person's, and
+      // a login brings the token back. `owner` is what stops them reaching
+      // the next person to use the machine.
+      if (verdict === 'signedOut') {
+        this.save(ops);
+        return { settled: false, refused, signedOut: true };
+      }
+
+      if (verdict === 'undecided') {
+        // A server that answered — 503, 502, 429 — is asking to be left
+        // alone, and every device that failed with it is about to try
+        // again at the same moment. One that never answered is an outage,
+        // where the fifteen-second tick is the only reconnect detector.
+        if (!result.ok && result.status !== undefined) this.backOff();
+        break;
+      }
+
+      this.progressed();
       if (result.ok && result.data && !result.data.endedAt) {
         this.running.write(result.data);
       }
       // A rejection the server will give again however many times it is
       // asked. The time is lost; saying so is the least that is owed.
-      if (!result.ok && !result.unauthorized) {
-        refused.push({ op, message: result.message });
-      }
+      if (!result.ok) refused.push({ op, message: result.message });
       ops.shift();
       // The server answered with a rejection, so retrying can't help. A
       // start that never happened must not leave its matching stop to end
@@ -259,18 +354,37 @@ export class PendingTimerOps {
       this.save(ops);
     }
     this.save(ops);
-    return { settled: ops.length === 0, refused };
+    return { settled: ops.length === 0, refused, signedOut: false };
+  }
+
+  /**
+   * Replays what is waiting before an action of this person's own, which
+   * every public method here has to do: a lone stop sent ahead of a queued
+   * start would end whatever the server still thinks is running. Answers
+   * with what the caller should return instead of acting, or null to go on.
+   */
+  private async settleFirst(
+    deviceToken: string,
+    client: PendingTimerClient,
+    queue: () => TrackingResult<TimeEntry>,
+  ): Promise<TrackingResult<TimeEntry> | null> {
+    if (!this.hasPending()) return null;
+    const { settled, signedOut } = await this.flush(deviceToken, client);
+    // Queueing this click would start a clock in front of somebody whose
+    // session is already gone, and nothing it recorded could ever land.
+    if (signedOut) return SIGNED_OUT;
+    return settled ? null : queue();
   }
 
   async pause(deviceToken: string, client: PendingTimerClient): Promise<TrackingResult<TimeEntry>> {
     const at = new Date().toISOString();
     // Anything waiting happened before this click, and must reach the server first.
-    if (this.hasPending() && !(await this.flush(deviceToken, client)).settled) {
-      return this.queueStop(at);
-    }
-    const result = await client.pauseTimer(deviceToken);
+    const opId = randomUUID();
+    const answer = await this.settleFirst(deviceToken, client, () => this.queueStop(at, opId));
+    if (answer) return answer;
+    const result = await client.pauseTimer(deviceToken, opId);
     if (result.ok) this.running.write(null);
-    return isTransportFailure(result) ? this.queueStop(at) : result;
+    return serverVerdict(result) === 'undecided' ? this.queueStop(at, opId) : result;
   }
 
   /**
@@ -286,12 +400,12 @@ export class PendingTimerOps {
     endedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     const at = endedAt ?? new Date().toISOString();
-    if (this.hasPending() && !(await this.flush(deviceToken, client)).settled) {
-      return this.queueStop(at);
-    }
-    const result = await client.stopTimer(deviceToken, endedAt);
+    const opId = randomUUID();
+    const answer = await this.settleFirst(deviceToken, client, () => this.queueStop(at, opId));
+    if (answer) return answer;
+    const result = await client.stopTimer(deviceToken, endedAt, opId);
     if (result.ok) this.running.write(null);
-    return isTransportFailure(result) ? this.queueStop(at) : result;
+    return serverVerdict(result) === 'undecided' ? this.queueStop(at, opId) : result;
   }
 
   /**
@@ -338,7 +452,7 @@ export class PendingTimerOps {
 
     const result = endedAt
       ? await client.stopTimer(deviceToken, endedAt, opId)
-      : await client.pauseTimer(deviceToken);
+      : await client.pauseTimer(deviceToken, opId);
     if (!result.ok) return { ok: true, data: ended, fromCache: true };
     // It landed, so the record written ahead of it has nothing left to do.
     this.save(this.load().filter((op) => op.opId !== opId));
@@ -351,10 +465,10 @@ export class PendingTimerOps {
    * main counts a queued action as a reply and resets the clock that
    * decides how stale the cache is.
    */
-  private queueStop(at: string): TrackingResult<TimeEntry> {
+  private queueStop(at: string, opId = randomUUID()): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };
-    this.save([...this.load(), this.stamp({ type: 'stop', at, opId: randomUUID() })]);
+    this.save([...this.load(), this.stamp({ type: 'stop', at, opId })]);
     const entry = { ...current, endedAt: at };
     this.running.write(null);
     return { ok: true, data: entry, fromCache: true };
@@ -368,18 +482,27 @@ export class PendingTimerOps {
     startedAt?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     const at = startedAt ?? new Date().toISOString();
-    if (this.hasPending() && !(await this.flush(deviceToken, client)).settled) {
-      return this.queueStart(projectId, taskId, at);
-    }
-    const result = await client.startTimer(deviceToken, projectId, taskId, startedAt);
+    const opId = randomUUID();
+    const answer = await this.settleFirst(deviceToken, client, () =>
+      this.queueStart(projectId, taskId, at, opId),
+    );
+    if (answer) return answer;
+    const result = await client.startTimer(deviceToken, projectId, taskId, startedAt, opId);
     if (result.ok) this.running.write(result.data);
-    return isTransportFailure(result) ? this.queueStart(projectId, taskId, at) : result;
+    return serverVerdict(result) === 'undecided'
+      ? this.queueStart(projectId, taskId, at, opId)
+      : result;
   }
 
-  private queueStart(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
+  private queueStart(
+    projectId: string | null,
+    taskId: string | null,
+    at: string,
+    opId = randomUUID(),
+  ): TrackingResult<TimeEntry> {
     this.save([
       ...this.load(),
-      this.stamp({ type: 'start', at, projectId, taskId, opId: randomUUID() }),
+      this.stamp({ type: 'start', at, projectId, taskId, opId }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
@@ -393,21 +516,44 @@ export class PendingTimerOps {
     client: PendingTimerClient,
   ): Promise<TrackingResult<TimeEntry>> {
     const at = new Date().toISOString();
-    if (this.hasPending() && !(await this.flush(deviceToken, client)).settled) {
-      return this.queueSwitch(projectId, taskId, at);
-    }
-    const result = await client.switchTimer(deviceToken, projectId, taskId);
+    // One id per row the switch writes, minted here so the queued stop and
+    // start reuse them. Without that, a switch the server applied but could
+    // not answer replayed as two anonymous operations: the stop met the
+    // entry the switch had just started and was refused for ending before
+    // its own start, and the start met a timer already running. Both were
+    // reported to the person as time that could not be saved.
+    const stopOpId = randomUUID();
+    const startOpId = randomUUID();
+    const answer = await this.settleFirst(deviceToken, client, () =>
+      this.queueSwitch(projectId, taskId, at, stopOpId, startOpId),
+    );
+    if (answer) return answer;
+    const result = await client.switchTimer(
+      deviceToken,
+      projectId,
+      taskId,
+      stopOpId,
+      startOpId,
+    );
     if (result.ok) this.running.write(result.data);
-    return isTransportFailure(result) ? this.queueSwitch(projectId, taskId, at) : result;
+    return serverVerdict(result) === 'undecided'
+      ? this.queueSwitch(projectId, taskId, at, stopOpId, startOpId)
+      : result;
   }
 
   /** An offline switch is a stop and a start at the same instant. */
-  private queueSwitch(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
-    if (!this.running.read()) return this.queueStart(projectId, taskId, at);
+  private queueSwitch(
+    projectId: string | null,
+    taskId: string | null,
+    at: string,
+    stopOpId = randomUUID(),
+    startOpId = randomUUID(),
+  ): TrackingResult<TimeEntry> {
+    if (!this.running.read()) return this.queueStart(projectId, taskId, at, startOpId);
     this.save([
       ...this.load(),
-      this.stamp({ type: 'stop', at, opId: randomUUID() }),
-      this.stamp({ type: 'start', at, projectId, taskId, opId: randomUUID() }),
+      this.stamp({ type: 'stop', at, opId: stopOpId }),
+      this.stamp({ type: 'start', at, projectId, taskId, opId: startOpId }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
