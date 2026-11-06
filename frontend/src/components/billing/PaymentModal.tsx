@@ -20,6 +20,8 @@ import { getStripe } from "@/lib/stripeClient";
 import { createSubscriptionIntent } from "@/lib/createSubscriptionIntent";
 import { useBilledSeats } from "@/hooks/useBilledSeats";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { invoicesQueryKey } from "@/hooks/useInvoices";
+import { subscriptionQueryKey } from "@/hooks/useSubscription";
 import { trialStatusQueryKey } from "@/hooks/useTrialStatus";
 import { formatMoney, nextPaymentFrom, seatPricing } from "@/lib/seatPricing";
 import { formatShortDate } from "@/lib/formatShortDate";
@@ -286,9 +288,16 @@ function CardDetails({
     toast.success(
       `Payment confirmed — your subscription is active. Next payment ${formatShortDate(created.intent.nextPaymentAt)}.`,
     );
-    void queryClient.invalidateQueries({
-      queryKey: trialStatusQueryKey(organisationId),
-    });
+    // Everything a payment changes. The live subscription matters most: a
+    // declined first try leaves it cached as unpaid with no card, and the
+    // page would go on saying "Payment failed" for a payment that worked.
+    for (const queryKey of [
+      trialStatusQueryKey(organisationId),
+      subscriptionQueryKey(organisationId),
+      invoicesQueryKey(organisationId),
+    ]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
     onClose();
   }
 

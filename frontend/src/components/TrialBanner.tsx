@@ -1,14 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { SealPercentIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { trialBannerCopy } from "@/lib/trialBannerCopy";
-import { CLOUD_PRICING_URL } from "@/lib/cloudSiteUrl";
-import { hasStripeKey } from "@/lib/stripeClient";
-import { PaymentModal } from "./billing/PaymentModal";
 
 type TrialBannerProps = {
   organisationId: number;
@@ -25,24 +21,25 @@ type TrialBannerProps = {
  */
 export function TrialBanner({ organisationId }: TrialBannerProps) {
   const trialQuery = useTrialStatus(organisationId);
-  const [payingOpen, setPayingOpen] = useState(false);
 
   // No banner while it loads, for a non-admin, or for an organisation that
   // predates trials — and none on failure either: a billing notice nobody
   // asked for is not worth an error message across every page.
   // Nothing to count down for an organisation that never pays, so no banner
   // on any page — a payment prompt it can never act on is pure noise.
-  // Nothing to count down once they are paying, on any page: the banner is
-  // about a trial running out, and theirs ended the day they paid.
+  // Once paying, only one thing is worth a banner: the paid plan has ended
+  // and the grace days are running. Hiding it for every paid organisation
+  // used to mean somebody whose plan ran out was never told on any page.
+  const trial = trialQuery.data?.trial;
   if (
-    !trialQuery.data?.trial ||
-    trialQuery.data.isFree ||
-    trialQuery.data.trial.isPaid
+    !trial ||
+    trialQuery.data?.isFree ||
+    (trial.isPaid && !trial.isInPaidGrace)
   ) {
     return null;
   }
 
-  const { headline, detail, tone } = trialBannerCopy(trialQuery.data.trial);
+  const { headline, detail, tone } = trialBannerCopy(trial);
   const Icon = tone === "urgent" ? WarningCircleIcon : SealPercentIcon;
 
   return (
@@ -62,33 +59,16 @@ export function TrialBanner({ organisationId }: TrialBannerProps) {
         </span>
       </p>
 
-      {/* Takes the card here rather than sending them away to start again.
-          Falls back to Hi Day Cloud's pricing page where no publishable key
-          is configured, since the modal could not draw a card field at all
-          — an absolute URL because that page lives in its own repo now. */}
-      {hasStripeKey() ? (
-        <button
-          type="button"
-          onClick={() => setPayingOpen(true)}
-          className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary/90"
-        >
-          Add payment
-        </button>
-      ) : (
-        <Link
-          href={CLOUD_PRICING_URL}
-          className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
-        >
-          Add payment
-        </Link>
-      )}
-
-      {payingOpen && (
-        <PaymentModal
-          organisationId={organisationId}
-          onClose={() => setPayingOpen(false)}
-        />
-      )}
+      {/* To the Billing page rather than straight into the card form, so the
+          plan, billing cycle and seat count are in front of them before they
+          pay. Its own "Add payment" or "Resume subscription" takes it from
+          there. */}
+      <Link
+        href={`/organisations/${organisationId}/settings/billing/subscription`}
+        className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white transition-colors hover:bg-primary/90"
+      >
+        {trial.isPaid ? "Resume subscription" : "Add payment"}
+      </Link>
     </aside>
   );
 }

@@ -1,14 +1,24 @@
 "use client";
 
-import { ArrowsClockwiseIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
+import { ArrowsClockwiseIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { formatShortDate } from "@/lib/formatShortDate";
 import { formatMoney } from "@/lib/seatPricing";
 import { autoRenewCopy } from "@/lib/autoRenewCopy";
 import type { PaidSubscription } from "@/types/subscription";
+import { SubscriptionStatusPill } from "./SubscriptionStatusPill";
 
 type SubscriptionCardProps = {
   subscription: PaidSubscription;
+  /** Shown beside the renewal line — the page passes `AutoRenewControl`,
+   * keeping this card itself free of data fetching. */
+  renewalControl?: ReactNode;
+  /** When access stops — the period end plus its grace days — and whether
+   * that is still ahead, both from the server's billing status. Let an
+   * ended subscription say how long the team can still work. */
+  accessEndsAt?: string | null;
+  hasAccess?: boolean;
 };
 
 /**
@@ -19,18 +29,23 @@ type SubscriptionCardProps = {
  * preview. None of it is stored or recalculated here, so the page cannot
  * disagree with the invoice.
  *
- * Read-only. Neither the billing cycle nor auto-renew can be changed from
- * here: the renewal line states what will happen, and anything that alters
- * it is Stripe's Customer Portal, reached from Billing info.
+ * The renewal line states what will happen; `renewalControl` beside it is
+ * the one thing that changes it (cancel, or resume). The billing cycle and
+ * the card are Stripe's Customer Portal, reached from Billing info.
  */
-export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
+export function SubscriptionCard({
+  subscription,
+  renewalControl,
+  accessEndsAt,
+  hasAccess = false,
+}: SubscriptionCardProps) {
   const { line } = autoRenewCopy(subscription);
 
   return (
     <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <StatusPill subscription={subscription} />
+          <SubscriptionStatusPill subscription={subscription} />
           <h2 className="mt-3 font-display text-2xl font-extrabold tracking-heading text-primary-dark">
             {subscription.plan === "annual" ? "Annual" : "Monthly"} plan
           </h2>
@@ -56,32 +71,38 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
         )}
       </div>
 
-      {/* Nothing to renew, switch or turn back on: Stripe's `canceled` is
-          terminal, so the only honest action is subscribing again. */}
+      {/* Stripe's `canceled` is terminal, so resuming starts a new
+          subscription. During the grace days the team still works, and the
+          card says until when. */}
       {subscription.isEnded ? (
-        <p className="mt-5 rounded-brand-sm border-2 border-ink bg-sun px-4 py-3 text-sm text-slate-900">
-          <strong>This subscription has ended.</strong>{" "}
-          {subscription.currentPeriodEnd
-            ? `It ran until ${formatShortDate(subscription.currentPeriodEnd)}.`
-            : ""}{" "}
-          Subscribing again starts a new one.
-        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-brand-sm border-2 border-ink bg-sun px-4 py-3 text-sm text-slate-900">
+          <p>
+            <strong>This subscription has ended.</strong>{" "}
+            {subscription.currentPeriodEnd
+              ? `It ran until ${formatShortDate(subscription.currentPeriodEnd)}.`
+              : ""}{" "}
+            {hasAccess && accessEndsAt
+              ? `Your team can keep working until ${formatShortDate(accessEndsAt)}. Resume before then to carry on.`
+              : "Subscribing again starts a new one."}
+          </p>
+          {renewalControl}
+        </div>
       ) : (
-      <div
-        className={clsx(
-          "mt-5 flex flex-wrap items-center justify-between gap-3 rounded-brand-sm border-2 px-4 py-3 text-sm",
-          subscription.cancelAtPeriodEnd
-            ? "border-ink bg-sun"
-            : "border-volt-tint bg-volt-tint/40",
-        )}
-      >
-        {/* A statement, not a control. It sits directly under the next
-            payment so the date and the promise about it are read together. */}
-        <p className="flex items-center gap-2 text-slate-900">
-          <ArrowsClockwiseIcon size={16} aria-hidden="true" className="shrink-0" />
-          {line}
-        </p>
-      </div>
+        <div
+          className={clsx(
+            "mt-5 flex flex-wrap items-center justify-between gap-3 rounded-brand-sm border-2 px-4 py-3 text-sm",
+            subscription.cancelAtPeriodEnd && "border-ink bg-sun",
+            !subscription.cancelAtPeriodEnd && "border-volt-tint bg-volt-tint/40",
+          )}
+        >
+          {/* Directly under the next payment, so the date and the promise
+              about it are read together — with the control that changes it. */}
+          <p className="flex items-center gap-2 text-slate-900">
+            <ArrowsClockwiseIcon size={16} aria-hidden="true" className="shrink-0" />
+            {line}
+          </p>
+          {renewalControl}
+        </div>
       )}
 
       <div className="mt-5 border-t-2 border-ink/10 pt-4">
@@ -112,25 +133,5 @@ export function SubscriptionCard({ subscription }: SubscriptionCardProps) {
         </p>
       )}
     </section>
-  );
-}
-
-function StatusPill({ subscription }: { subscription: PaidSubscription }) {
-  const trouble = subscription.paymentFailed || subscription.isEnded;
-  const Icon = trouble ? WarningCircleIcon : CheckCircleIcon;
-  return (
-    <p
-      className={clsx(
-        "inline-flex items-center gap-1.5 rounded-full border-2 border-ink px-3 py-1 text-xs font-extrabold",
-        trouble ? "bg-sun text-ink" : "bg-success/15 text-success",
-      )}
-    >
-      <Icon size={14} weight="bold" aria-hidden="true" />
-      {subscription.isEnded
-        ? "Ended"
-        : subscription.paymentFailed
-          ? "Payment failed"
-          : "Active"}
-    </p>
   );
 }

@@ -128,6 +128,24 @@ export class BillingController {
     return this.subscriptionService.detailsFor(request.organisationId!);
   }
 
+  /**
+   * Auto-renew off sets `cancel_at_period_end`; on clears it. The Billing
+   * page's "Cancel subscription" and "Keep subscription": the next renewal
+   * is not charged, and access runs to the end of the paid period exactly as
+   * it would have. See `SubscriptionService.setAutoRenew`.
+   */
+  @Put('auto-renew')
+  async setAutoRenew(
+    @Req() request: AuthenticatedRequest,
+    @Body('on') on: unknown,
+  ): Promise<PaidSubscriptionDetails | null> {
+    if (typeof on !== 'boolean') {
+      throw new BadRequestException('`on` must be true or false.');
+    }
+    await this.subscriptionService.setAutoRenew(request.organisationId!, on);
+    return this.subscriptionService.detailsFor(request.organisationId!);
+  }
+
   /** What a seat change would cost, from Stripe's own invoice preview. */
   @Post('seats/preview')
   async previewSeats(

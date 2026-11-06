@@ -1,10 +1,16 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type Stripe from 'stripe';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { invoiceSeatCount } from '../invoice-seats';
 import { prorationTotal, recurringTotal } from '../invoice-split';
+import { hasEnded } from '../stripe-subscription-states';
 import {
   subscriptionView,
   type PaidSubscriptionView,
@@ -211,6 +217,46 @@ export class SubscriptionService {
         return_url: returnUrl,
       });
     return session.url;
+  }
+
+  /**
+   * Auto-renew, from the Billing page. Off sets `cancel_at_period_end`: the
+   * next renewal is not charged, and access runs to the end of the period
+   * already paid for (`docs/adr/0030-...`) — Stripe ends the subscription
+   * then, not now. On clears it again. Deliberately never
+   * `subscriptions.cancel`, which is terminal and would take away a period
+   * somebody has paid for (see CONTEXT.md, Auto-renew).
+   *
+   * Unlike the read-only lookups here, a failure to reach Stripe throws:
+   * the admin has to know the change did not happen.
+   */
+  async setAutoRenew(organisationId: string, on: boolean): Promise<void> {
+    const row = await this.subscriptions.findOne({ where: { organisationId } });
+    if (!this.stripeService.isConfigured || !row?.stripeSubscriptionId) {
+      throw new NotFoundException('This organisation has no subscription.');
+    }
+
+    const remote = await this.stripeService.stripe.subscriptions.retrieve(
+      row.stripeSubscriptionId,
+    );
+    if (hasEnded(remote.status)) {
+      throw new BadRequestException(
+        'This subscription has already ended. Subscribe again to carry on.',
+      );
+    }
+    if (remote.status === 'incomplete') {
+      throw new BadRequestException(
+        'This subscription has not been paid for yet, so there is no renewal to change.',
+      );
+    }
+    if (remote.cancel_at_period_end === !on) return;
+
+    await this.stripeService.stripe.subscriptions.update(remote.id, {
+      cancel_at_period_end: !on,
+    });
+    this.logger.log(
+      `Auto-renew turned ${on ? 'on' : 'off'} for organisation ${organisationId}.`,
+    );
   }
 
   /** The Stripe subscription behind an Organisation, expanded for the view. */

@@ -23,6 +23,8 @@ export type TrialStatus = {
   /** ISO timestamp: when access stops, once enforcement exists. Measured
    * from the paid period's end once they have paid, the trial's before. */
   accessEndsAt: string;
+  /** Whether `accessEndsAt` is still ahead, decided by the server's clock. */
+  hasAccess: boolean;
   /** The end of the period paid for; null while on trial. */
   currentPeriodEnd: string | null;
   /** The paid period has run out but access has not — the trial's grace,
