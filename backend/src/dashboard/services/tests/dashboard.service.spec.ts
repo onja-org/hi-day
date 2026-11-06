@@ -65,10 +65,11 @@ describe('DashboardService', () => {
   function makeOrganisationsService(
     hoursPerDay = 8,
     weekStartsOn: WeekStart = 'monday',
+    timezone = 'UTC',
   ): OrganisationsService {
     return {
       getWorkingHoursPolicy: jest.fn().mockResolvedValue({ hoursPerDay }),
-      getWeekStart: jest.fn().mockResolvedValue(weekStartsOn),
+      getWeekCalendar: jest.fn().mockResolvedValue({ weekStartsOn, timezone }),
     } as unknown as OrganisationsService;
   }
 
@@ -146,6 +147,60 @@ describe('DashboardService', () => {
       0,
       0,
     ]);
+  });
+
+  describe("on the Organisation's own calendar", () => {
+    // Monday 2 Nov 2026, 01:30 in Madagascar (UTC+3) — still Sunday in UTC,
+    // which is where the server's clock is.
+    const MADAGASCAR_NOW = new Date('2026-11-01T22:30:00Z');
+
+    beforeEach(() => {
+      jest.setSystemTime(MADAGASCAR_NOW);
+    });
+
+    it("starts the week at midnight in the Organisation's timezone", async () => {
+      const timeEntries = makeTimeEntriesRepo([], [], []);
+      const service = new DashboardService(
+        timeEntries,
+        makePausesRepo(),
+        makeMembershipsRepo(),
+        makeOrganisationsService(8, 'monday', 'Indian/Antananarivo'),
+      );
+
+      const summary = await service.getSummary('org-1', 'user-1');
+
+      expect(summary.thisWeekByDay[0].date).toBe('2026-11-02');
+      const [thisWeekQuery] = (timeEntries.find as jest.Mock).mock.calls[0] as [
+        { where: { startedAt: { value: Date[] } } },
+      ];
+      expect(
+        thisWeekQuery.where.startedAt.value.map((at) => at.toISOString()),
+      ).toEqual(['2026-11-01T21:00:00.000Z', '2026-11-08T21:00:00.000Z']);
+    });
+
+    it("counts work just after the Organisation's midnight as today, not yesterday", async () => {
+      const justAfterMidnight = [
+        entry({
+          projectId: 'p-1',
+          startedAt: new Date('2026-11-01T21:15:00Z'), // 00:15 Mon EAT
+          endedAt: new Date('2026-11-01T22:15:00Z'), // 01:15 Mon EAT, 1h
+        }),
+      ];
+      const service = new DashboardService(
+        makeTimeEntriesRepo(justAfterMidnight, [], []),
+        makePausesRepo(),
+        makeMembershipsRepo(),
+        makeOrganisationsService(8, 'monday', 'Indian/Antananarivo'),
+      );
+
+      const summary = await service.getSummary('org-1', 'user-1');
+
+      expect(summary.workedTodaySeconds).toBe(3600);
+      expect(summary.thisWeekByDay[0]).toEqual({
+        date: '2026-11-02',
+        seconds: 3600,
+      });
+    });
   });
 
   it('computes week-over-week and day-over-day deltas from the same-span comparison periods', async () => {

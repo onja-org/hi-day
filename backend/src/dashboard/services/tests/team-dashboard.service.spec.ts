@@ -110,9 +110,10 @@ describe('TeamDashboardService', () => {
 
   function makeOrganisationsService(
     weekStartsOn: WeekStart = 'monday',
+    timezone = 'UTC',
   ): OrganisationsService {
     return {
-      getWeekStart: jest.fn().mockResolvedValue(weekStartsOn),
+      getWeekCalendar: jest.fn().mockResolvedValue({ weekStartsOn, timezone }),
     } as unknown as OrganisationsService;
   }
 
@@ -196,6 +197,47 @@ describe('TeamDashboardService', () => {
     expect(summary.recentActivity).toEqual([]);
     expect(summary.appsAndSites).toEqual([]);
     expect(find).not.toHaveBeenCalled();
+  });
+
+  it("works out today and this week on the Organisation's own calendar", async () => {
+    // Monday 2 Nov 2026, 01:30 in Madagascar — still Sunday on the server.
+    jest.setSystemTime(new Date('2026-11-01T22:30:00Z'));
+    const members = [member({ id: 'm-1' })];
+    const justAfterMidnight = [
+      entry({
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date('2026-11-01T21:15:00Z'), // 00:15 Mon EAT
+        endedAt: new Date('2026-11-01T22:15:00Z'), // 1h
+      }),
+    ];
+    const timeEntries = makeTimeEntriesRepo(justAfterMidnight, [], []);
+    const service = new TeamDashboardService(
+      timeEntries,
+      makePausesRepo(),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService('monday', 'Indian/Antananarivo'),
+      makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    const [thisWeekQuery] = (timeEntries.find as jest.Mock).mock.calls[0] as [
+      { where: { startedAt: { value: Date[] } } },
+    ];
+    expect(
+      thisWeekQuery.where.startedAt.value.map((at) => at.toISOString()),
+    ).toEqual(['2026-11-01T21:00:00.000Z', '2026-11-08T21:00:00.000Z']);
+    expect(summary.members).toEqual([
+      expect.objectContaining({
+        membershipId: 'm-1',
+        workedTodaySeconds: 3600,
+      }),
+    ]);
   });
 
   it('aggregates seconds and projects worked across every scoped member', async () => {
