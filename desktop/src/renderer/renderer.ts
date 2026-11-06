@@ -630,6 +630,8 @@ const idleAssignList = document.getElementById(
 ) as HTMLUListElement;
 const idleNotice = document.getElementById("idle-notice")!;
 const todayTotalEl = document.getElementById("today-total")!;
+const todayStat = document.getElementById("today-stat")!;
+const timerStats = document.getElementById("timer-stats")!;
 const trackingProjectNameEl = document.getElementById("tracking-project-name")!;
 const taskTrigger = document.getElementById(
   "task-trigger",
@@ -1803,6 +1805,12 @@ function applyProjectsMode(): void {
   projectsSection.hidden = !projectsEnabled;
   taskTrigger.hidden = !projectsEnabled;
   idleAssignToggle.hidden = !projectsEnabled;
+  // The day's total belongs to the Project picture too: with Projects off
+  // there is one bucket, and the figure says nothing the running clock
+  // above it does not already say.
+  todayStat.hidden = !projectsEnabled;
+  // Both of its cells are gone, and an empty grid still occupies its row.
+  timerStats.hidden = todayStat.hidden && taskTrigger.hidden;
 }
 
 /** Tells the person an admin just switched Projects on or off under them. */
