@@ -25,7 +25,7 @@ import {
   ACCESS_TOKEN_COOKIE,
   TokenService,
 } from '../../auth/services/token.service';
-import { JwtService } from '@nestjs/jwt';
+import { AccessTokenService } from '../../auth/services/access-token.service';
 import { InviteLink } from '../../database/entities/invite-link.entity';
 import { Invitation } from '../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../database/entities/invitation-status.enum';
@@ -104,7 +104,7 @@ export class InvitationsService {
     private readonly organisations: Repository<Organisation>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
-    private readonly jwtService: JwtService,
+    private readonly accessTokenService: AccessTokenService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
     private readonly refreshTokenService: RefreshTokenService,
@@ -348,7 +348,7 @@ export class InvitationsService {
     let issueNewSession = false;
 
     if (existingUser?.passwordHash) {
-      const authenticatedUserId = this.readAuthenticatedUserId(request);
+      const authenticatedUserId = await this.readAuthenticatedUserId(request);
 
       if (authenticatedUserId !== existingUser.id) {
         throw new ConflictException({
@@ -489,7 +489,7 @@ export class InvitationsService {
     });
 
     if (issueNewSession) {
-      const accessToken = this.tokenService.signAccessToken(userId);
+      const accessToken = await this.accessTokenService.sign(userId);
       const refreshToken = await this.refreshTokenService.issue(
         this.dataSource.manager,
         userId,
@@ -769,17 +769,10 @@ export class InvitationsService {
     };
   }
 
-  private readAuthenticatedUserId(request: Request): string | null {
+  private async readAuthenticatedUserId(
+    request: Request,
+  ): Promise<string | null> {
     const token = readCookie(request, ACCESS_TOKEN_COOKIE);
-
-    if (!token) {
-      return null;
-    }
-
-    try {
-      return this.jwtService.verify<{ sub: string }>(token).sub;
-    } catch {
-      return null;
-    }
+    return token ? this.accessTokenService.verify(token) : null;
   }
 }

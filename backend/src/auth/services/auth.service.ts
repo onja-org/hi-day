@@ -30,6 +30,7 @@ import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
+import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
 import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { PasswordService } from './password.service';
@@ -76,6 +77,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
+    private readonly accessTokenService: AccessTokenService,
     private readonly refreshTokenService: RefreshTokenService,
     private readonly emailService: EmailService,
     private readonly organisationsService: OrganisationsService,
@@ -219,7 +221,7 @@ export class AuthService {
       refreshToken = await this.refreshTokenService.issue(manager, user.id);
     });
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Password set. You are now signed in.' };
@@ -295,7 +297,7 @@ export class AuthService {
       return { message: 'Logged in.', deviceId, deviceToken };
     }
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     const refreshToken = await this.refreshTokenService.issue(
       this.dataSource.manager,
       user.id,
@@ -381,7 +383,11 @@ export class AuthService {
         passwordResetExpiresAt: null,
       });
 
+      // Ends every session, including access tokens that haven't expired.
+      // The new access token below is signed after this commits, so it
+      // carries the bumped version and this browser stays signed in.
       await this.refreshTokenService.revokeAll(manager, user.id);
+      await this.accessTokenService.endAllSessions(manager, user.id);
       refreshToken = await this.refreshTokenService.issue(manager, user.id);
 
       await this.auditLogService.record(manager, {
@@ -392,7 +398,7 @@ export class AuthService {
 
     await this.signOutAllDevices(user.id);
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
     recordAnalyticsEvent('password_reset_completed', { userId: user.id });
 
@@ -425,7 +431,7 @@ export class AuthService {
 
     const { userId, token: refreshToken } = rotated;
 
-    const accessToken = this.tokenService.signAccessToken(userId);
+    const accessToken = await this.accessTokenService.sign(userId);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Session refreshed.' };
@@ -459,32 +465,50 @@ export class AuthService {
   }
 
   /**
-   * The explicit "sign out everywhere" action: ends this web session *and*
-   * every paired device (desktop app, etc.), stopping whatever timer each
-   * revoked device had running. Use when the account may be compromised or
-   * a device needs to be cut off — ordinary `logout` no longer implies this
-   * (see ADR-0017).
+   * The explicit "sign out everywhere" action: ends every web session the
+   * user has — every refresh token, and every access token through the
+   * session version, so other browsers are cut off immediately rather than
+   * when their access token expires — plus every paired device (desktop
+   * app, etc.), stopping whatever timer each revoked device had running.
+   * Use when the account may be compromised or a device needs to be cut
+   * off — ordinary `logout` no longer implies this (see ADR-0017).
    */
   async logoutEverywhere(
     request: Request,
     response: Response,
   ): Promise<{ message: string }> {
-    const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
+    const userId = await this.resolveSessionOwner(request);
 
+    if (userId) {
+      await this.dataSource.transaction(async (manager) => {
+        await this.refreshTokenService.revokeAll(manager, userId);
+        await this.accessTokenService.endAllSessions(manager, userId);
+      });
+      await this.signOutAllDevices(userId);
+    }
+
+    clearSessionCookies(response);
+
+    return { message: 'Logged out everywhere.' };
+  }
+
+  /**
+   * Whose sessions this browser may end: the owner of a still-usable
+   * refresh token, or failing that a still-valid access token. A revoked
+   * or expired cookie identifies nobody.
+   */
+  private async resolveSessionOwner(request: Request): Promise<string | null> {
+    const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
     if (refreshToken) {
-      const userId = await this.refreshTokenService.revokeByValue(
+      const owner = await this.refreshTokenService.findLiveOwner(
         this.dataSource.manager,
         refreshToken,
       );
-      if (userId) {
-        await this.signOutAllDevices(userId);
-      }
+      if (owner) return owner;
     }
 
-    response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
-    response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
-
-    return { message: 'Logged out everywhere.' };
+    const accessToken = readCookie(request, ACCESS_TOKEN_COOKIE);
+    return accessToken ? this.accessTokenService.verify(accessToken) : null;
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
