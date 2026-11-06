@@ -28,7 +28,7 @@ export function trialBannerCopy(trial: TrialStatus): TrialBannerCopy {
   if (trial.isInPaidGrace) {
     return {
       headline: "Your plan has ended",
-      detail: `Your team can keep working until ${formatShortDate(trial.accessEndsAt)}. Renew before then to carry on.`,
+      detail: `Your team can keep working until ${formatShortDate(trial.accessEndsAt)}. Resume your subscription before then to carry on.`,
       tone: "urgent",
     };
   }

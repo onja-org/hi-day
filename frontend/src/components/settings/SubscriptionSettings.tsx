@@ -3,7 +3,9 @@
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { useSubscription } from "@/hooks/useSubscription";
 import { canStartSubscription } from "@/lib/canStartSubscription";
+import { seatsMode } from "@/lib/seatsMode";
 import { TRIAL_DAYS } from "@/lib/pricing.generated";
+import { AutoRenewControl } from "./AutoRenewControl";
 import { BillingPlanCard } from "./BillingPlanCard";
 import { TrialCard } from "./TrialCard";
 import { SubscriptionCard } from "./SubscriptionCard";
@@ -31,6 +33,7 @@ export function SubscriptionSettings({
   const subscriptionQuery = useSubscription(organisationId);
 
   const isFree = trialQuery.data?.isFree ?? false;
+  const mode = seatsMode(subscriptionQuery.data);
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,7 +74,18 @@ export function SubscriptionSettings({
         !isFree &&
         (trialQuery.data.trial.isPaid ? (
           subscriptionQuery.data ? (
-            <SubscriptionCard subscription={subscriptionQuery.data} />
+            <SubscriptionCard
+              subscription={subscriptionQuery.data}
+              accessEndsAt={trialQuery.data.trial.accessEndsAt}
+              hasAccess={trialQuery.data.trial.hasAccess}
+              renewalControl={
+                <AutoRenewControl
+                  organisationId={organisationId}
+                  subscription={subscriptionQuery.data}
+                  hasAccess={trialQuery.data.trial.hasAccess}
+                />
+              }
+            />
           ) : subscriptionQuery.isLoading ? null : (
             /* Paid here, but Stripe has nothing to show — a webhook that
                never landed, or a subscription since deleted. Says so rather
@@ -112,14 +126,19 @@ export function SubscriptionSettings({
           count and a price are both just wrong numbers. */}
       {!isFree && (
         <>
-          {/* Seats stay editable once paying; the price and "Add payment"
-              do not while the subscription can still charge — offering to
-              pay again then is asking them to pay twice. Once it has ended,
-              or a first payment did not go through, they come back. */}
+          {/* The price and "Add payment" are hidden while the subscription
+              can still charge — offering to pay again then is asking them to
+              pay twice. Seats are confirmed changes while it renews, locked
+              while it is set to end, and a plain purchase otherwise. */}
           <BillingPlanCard
             organisationId={organisationId}
             showPurchase={canStartSubscription(trialQuery.data?.trial)}
-            paidPlan={subscriptionQuery.data?.plan ?? null}
+            paidPlan={mode === "change" ? (subscriptionQuery.data?.plan ?? null) : null}
+            seatsLock={
+              mode === "locked"
+                ? { endsOn: subscriptionQuery.data?.currentPeriodEnd ?? null }
+                : null
+            }
           />
           <PricingLargeTeam />
         </>

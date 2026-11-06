@@ -141,6 +141,78 @@ describe('TrialService', () => {
         isExpired: false,
       });
     });
+
+    /**
+     * A paying organisation that cancelled: access runs to the end of the
+     * period it paid for, then seven grace days on top (`docs/adr/0030-...`)
+     * — measured from the period end, never from the day they cancelled.
+     */
+    describe('a cancelled paid subscription', () => {
+      function cancelledEndingIn(daysFromNow: number): Subscription {
+        return {
+          ...subscriptionEndingIn(-300),
+          status: SubscriptionStatus.ACTIVE,
+          stripeStatus: daysFromNow > 0 ? 'active' : 'canceled',
+          currentPeriodEnd: new Date(NOW.getTime() + daysFromNow * MS_PER_DAY),
+        };
+      }
+
+      async function statusFor(daysFromNow: number) {
+        const service = new TrialService(
+          makeSubscriptionsRepo({
+            findOne: jest
+              .fn()
+              .mockResolvedValue(cancelledEndingIn(daysFromNow)),
+          }),
+          makeOrganisationsRepo(null),
+          makeEmailService().emailService,
+          makeConfig(),
+        );
+        return service.findStatus('org-1', NOW);
+      }
+
+      it('keeps the paid period, not yet in grace, before it ends', async () => {
+        const status = await statusFor(10);
+
+        expect(status).toMatchObject({
+          isPaid: true,
+          isInPaidGrace: false,
+          hasAccess: true,
+        });
+        expect(status!.accessEndsAt).toBe(
+          new Date(NOW.getTime() + 17 * MS_PER_DAY).toISOString(),
+        );
+      });
+
+      it('is in grace for seven days after the period ends', async () => {
+        for (const daysAgo of [0, 1, 3, 6.9]) {
+          await expect(statusFor(-daysAgo)).resolves.toMatchObject({
+            isPaid: true,
+            isInPaidGrace: true,
+            hasAccess: true,
+          });
+        }
+      });
+
+      it('names the day access stops: the period end plus seven days', async () => {
+        const status = await statusFor(-3);
+
+        expect(status!.accessEndsAt).toBe(
+          new Date(NOW.getTime() + 4 * MS_PER_DAY).toISOString(),
+        );
+      });
+
+      it('is out of grace once the seven days are over', async () => {
+        await expect(statusFor(-7)).resolves.toMatchObject({
+          isInPaidGrace: false,
+          hasAccess: false,
+        });
+        await expect(statusFor(-30)).resolves.toMatchObject({
+          isInPaidGrace: false,
+          hasAccess: false,
+        });
+      });
+    });
   });
 
   describe('free organisations', () => {

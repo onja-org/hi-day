@@ -6,6 +6,7 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { billedSeatCount, isOverPurchasedSeats, seatsAreFull } from '../seats';
+import { hasEnded } from '../stripe-subscription-states';
 import { StripeService } from './stripe.service';
 
 export interface BilledSeats {
@@ -177,6 +178,17 @@ export class BilledSeatsService {
     const remote = await this.stripeService.stripe.subscriptions.retrieve(
       subscription.stripeSubscriptionId,
     );
+    // Nothing to bill a seat on. An ended subscription cannot change, and
+    // one still awaiting its first payment is replaced at checkout if the
+    // count no longer matches — updating it here would raise a stray
+    // invoice. Either way the purchase is already saved on our side, and
+    // becomes the quantity of the next subscription.
+    if (hasEnded(remote.status) || remote.status === 'incomplete') {
+      this.logger.log(
+        `Organisation ${subscription.organisationId} bills ${count} seat(s); its subscription is ${remote.status}, so nothing to update.`,
+      );
+      return false;
+    }
     const item = remote.items.data[0];
     if (!item) {
       this.logger.error(

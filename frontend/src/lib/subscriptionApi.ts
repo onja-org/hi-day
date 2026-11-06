@@ -57,6 +57,17 @@ export function getInvoices(organisationId: number | string) {
 }
 
 /**
+ * Auto-renew: off sets Stripe's `cancel_at_period_end`, on clears it.
+ * Answers with the subscription as it now stands.
+ */
+export function setAutoRenew(organisationId: number | string, on: boolean) {
+  return call<PaidSubscription | null>(
+    `/organisations/${organisationId}/billing/auto-renew`,
+    { method: "PUT", body: JSON.stringify({ on }) },
+  );
+}
+
+/**
  * A one-time link into Stripe's Customer Portal, for managing the card, the
  * billing email and the invoice history. `returnUrl` is where Stripe sends
  * them back to when they are done.

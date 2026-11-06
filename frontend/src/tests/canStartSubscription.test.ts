@@ -13,6 +13,7 @@ function trial(overrides: Partial<TrialStatus>): TrialStatus {
     isExpired: false,
     isInGrace: false,
     accessEndsAt: "2026-11-10T09:00:00.000Z",
+    hasAccess: true,
     currentPeriodEnd: null,
     isInPaidGrace: false,
     billingPeriod: null,
