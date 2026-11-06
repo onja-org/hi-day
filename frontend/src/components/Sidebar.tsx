@@ -22,6 +22,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
 import { useBillingEnabled } from "@/hooks/useBillingEnabled";
+import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
@@ -64,9 +65,8 @@ export function Sidebar({
   const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
-  // Managing who is in the organisation is admin work, even for
-  // somebody who runs a team.
-  const canSeeMembers = isAdmin;
+  // Whoever runs a team sees its members; Devices stays admin-only here.
+  const canSeeMembers = useCanViewOthers();
 
   const teamsLink: NavLink = {
     kind: "link",
@@ -174,7 +174,7 @@ export function Sidebar({
       ],
     },
     peopleEntry,
-    ...(canSeeMembers
+    ...(isAdmin
       ? [
           {
             kind: "link" as const,

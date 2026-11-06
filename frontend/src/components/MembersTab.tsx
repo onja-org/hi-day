@@ -22,7 +22,8 @@ export function MembersTab({ organisationId }: MembersTabProps) {
   const [search, setSearch] = useState("");
   const [perPage, setPerPage] = useState(25);
   const [requestedPage, setRequestedPage] = useState(1);
-  const membersQuery = useActiveMembers(organisationId, { scope: "organisation" });
+  // The visible list: everyone for an admin, a manager only their teams' members.
+  const membersQuery = useActiveMembers(organisationId);
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
 
