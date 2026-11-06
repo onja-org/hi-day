@@ -133,6 +133,14 @@ to a minute of genuinely worked time was reported to the person as lost. It now 
 entry the sweeper closed regardless of what followed, and extends it only when doing so stays within
 the next entry's start — touching endpoints are fine, a real overlap still refuses and still says so.
 
+**A switch carries two ids, because it writes two rows.** It ends the running entry and starts the
+next in one request, and offline the same action is recorded as a stop and a start — so one id cannot
+name it. `POST /device/time-entries/switch` takes `stopOpId` and `startOpId`, writes them to the two
+rows, and the queued pair replays under those very ids. Without them a switch the server applied but
+could not answer replayed as two anonymous operations: the stop met the entry the switch had just
+started and was refused for ending before its own start, and the start met a timer already running.
+Both were reported to the person as time that could not be saved, for work that had landed.
+
 **Replay is idempotent for time entries only.** Each queued operation carries an `opId` generated once
 and reused on every replay; `startOperationId`/`stopOperationId` on `time_entries` are unique
 (partial, so the web and every pre-existing row may stay null). The service checks for an existing row

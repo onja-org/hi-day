@@ -812,7 +812,23 @@ export class TimeEntriesService {
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
+    /**
+     * One id per row this writes — see `SwitchTimeEntryDto`. A switch whose
+     * response was lost replays as the queued stop/start pair the agent
+     * records offline, and those carry the same two ids, so each half finds
+     * the row the switch already wrote instead of colliding with it.
+     */
+    options: { stopOperationId?: string; startOperationId?: string } = {},
   ): Promise<TimeEntrySummary> {
+    // Before anything else, exactly as `start` and `stop` do: a switch that
+    // already happened must answer with what it wrote, not start a second
+    // entry beside it.
+    const replayed = await this.entryForOperation(
+      'startOperationId',
+      options.startOperationId,
+    );
+    if (replayed) return await this.toSummary(replayed);
+
     const { membership, task } = await this.validateStart(
       organisationId,
       userId,
@@ -837,6 +853,7 @@ export class TimeEntriesService {
       if (running) {
         const stoppedAt = new Date();
         running.endedAt = stoppedAt;
+        running.stopOperationId = options.stopOperationId ?? null;
         await manager.save(running);
         await this.closeOpenPause(
           manager.getRepository(TimeEntryPause),
@@ -861,6 +878,7 @@ export class TimeEntriesService {
         source,
         deviceId,
         lastSeenAt: deviceId === null ? new Date() : null,
+        startOperationId: options.startOperationId ?? null,
       });
       const savedEntry = await manager.save(entry);
 

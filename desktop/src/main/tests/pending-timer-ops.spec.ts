@@ -730,6 +730,22 @@ describe('PendingTimerOps', () => {
       );
     });
 
+    it('sends the switch under the ids its queued halves will carry', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const switchTimer = vi.fn(timedOut);
+
+      await ops.switchTo('t', 'p2', null, client({ switchTimer }));
+
+      // A switch writes two rows, so recognising a replay of it takes two
+      // ids — and they have to be the ones the first attempt sent, or the
+      // queued stop meets the entry the switch just started and is refused.
+      const [, , , sentStop, sentStart] = switchTimer.mock.calls[0] as unknown[];
+      const [stop, start] = ops.load() as { opId: string }[];
+      expect(sentStop).toBe(stop.opId);
+      expect(sentStart).toBe(start.opId);
+    });
+
     it('replays the whole switch under the ids its own halves were queued with', async () => {
       const ops = new PendingTimerOps(dir, diskBackedStore());
       ops.remember(entry);
