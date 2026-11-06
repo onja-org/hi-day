@@ -39,3 +39,21 @@ export function offlineSimulated(
   const raw = env.WM_SIMULATE_OFFLINE;
   return raw === '1' || raw === 'true';
 }
+
+/**
+ * Holds the first window back by this many milliseconds, so a test can land
+ * a second launch inside the gap between the app becoming ready and its
+ * window existing. That gap is where duplicate windows came from, and it is
+ * normally too short to aim at by hand — 161ms on a developer machine with
+ * an empty profile, seconds on a device with a full offline queue.
+ *
+ * Zero unless asked for, and ignored in a packaged build, so nothing a
+ * person installs can be slowed down by it.
+ */
+export function startupWindowDelayMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const parsed = Number(env.WM_STARTUP_WINDOW_DELAY_MS);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(parsed, 30_000);
+}
