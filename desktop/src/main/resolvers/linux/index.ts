@@ -75,12 +75,13 @@ async function main(): Promise<void> {
     const ready: ReadyEvent = { ev: 'ready', platform: 'linux', caps: ['focus'] };
     writeLine(ready);
     writeLine({ ev: 'error', code: 'unsupported-session', detail: support.reason });
-    startProtocolLoop(null, null);
+    startProtocolLoop(() => null, () => null, () => undefined);
     return;
   }
 
   const registry = loadBrowserRegistry();
   let lastFocus: AtspiWindow | null = null;
+  let connected: AtspiClient | null = null;
 
   const client = new AtspiClient({
     logger: (line) => process.stderr.write(`${line}\n`),
@@ -98,8 +99,17 @@ async function main(): Promise<void> {
     },
   });
 
+  // Before the connection, not after: connecting can take several seconds on
+  // a cold login, and a side-car that is not answering pings by then is
+  // killed and respawned until the manager gives up on it.
+  startProtocolLoop(
+    () => connected,
+    () => lastFocus,
+    () => registry,
+  );
+
   try {
-    await client.start();
+    await startWithRetry(client);
   } catch (error) {
     const registration = error instanceof EventRegistrationError;
     process.stderr.write(
@@ -110,11 +120,14 @@ async function main(): Promise<void> {
     writeLine({
       ev: 'error',
       code: registration ? 'event-registration-failed' : 'a11y-bus-unavailable',
-      detail: registration ? eventRegistrationFailedReason() : accessibilityBusUnavailableReason(),
+      detail: registration
+        ? eventRegistrationFailedReason()
+        : accessibilityBusUnavailableReason(error),
     });
-    startProtocolLoop(null, null);
     return;
   }
+
+  connected = client;
 
   // No `private` capability: Chromium exposes no incognito marker through
   // AT-SPI that has been confirmed on a real machine, and claiming the
@@ -124,14 +137,65 @@ async function main(): Promise<void> {
   // session engine already handles.
   const ready: ReadyEvent = { ev: 'ready', platform: 'linux', caps: ['focus', 'url'] };
   writeLine(ready);
-
-  startProtocolLoop(client, () => lastFocus, registry);
 }
 
+/**
+ * Delays between connection attempts at start-up, in milliseconds.
+ *
+ * The agent starts itself at login (`~/.config/autostart`), and the
+ * accessibility bus is activated on demand by whatever asks for it first —
+ * so on a cold login the side-car can be the one asking before the session
+ * is ready to answer. A single attempt made that a whole session with no
+ * website tracking, reported as "the accessibility service is not running"
+ * on a machine where it was running a second later.
+ *
+ * Deliberately short and finite. Once the session is up this either works or
+ * is genuinely missing, and a side-car retrying forever would hide a real
+ * fault behind a capability that silently arrives minutes late.
+ */
+const START_RETRY_DELAYS_MS = [1_000, 3_000, 6_000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A registration refusal is not retried: the bus answered, and it will
+ * answer the same way again (see `eventRegistrationFailedReason`).
+ */
+export async function startWithRetry(
+  client: Pick<AtspiClient, 'start'>,
+  delaysMs: number[] = START_RETRY_DELAYS_MS,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await client.start();
+      return;
+    } catch (error) {
+      if (error instanceof EventRegistrationError) throw error;
+      if (attempt >= delaysMs.length) throw error;
+      process.stderr.write(
+        `[linux-resolver] accessibility bus not ready, retrying in ${delaysMs[attempt]}ms\n`,
+      );
+      await wait(delaysMs[attempt]);
+    }
+  }
+}
+
+/**
+ * Answers pings from the moment it is called, and reads whatever client is
+ * available *at the time of each request* rather than one captured when it
+ * started. The manager pings every 5s and kills a side-car that misses two
+ * (`resolver-manager.ts`), so anything slow — retrying a bus that is not up
+ * yet at login — has to happen with this already listening, or the watchdog
+ * ends the process mid-connect and the restart budget drains into a
+ * "kept stopping" message instead of the real reason.
+ */
 function startProtocolLoop(
-  client: AtspiClient | null,
-  getLastFocus: (() => AtspiWindow | null) | null,
-  registry?: ReturnType<typeof loadBrowserRegistry>,
+  getClient: () => AtspiClient | null,
+  getLastFocus: () => AtspiWindow | null,
+  getRegistry: () => ReturnType<typeof loadBrowserRegistry> | undefined,
 ): void {
   function handlePing(request: PingRequest): void {
     writeLine({ id: request.id, ok: true });
@@ -144,7 +208,8 @@ function startProtocolLoop(
       writeLine(failure);
     };
 
-    if (!client || !getLastFocus) {
+    const client = getClient();
+    if (!client) {
       fail('[unsupported-session] URL capture is disabled for this desktop session.');
       return;
     }
@@ -185,6 +250,7 @@ function startProtocolLoop(
         return;
       }
 
+      const registry = getRegistry();
       const browser = registry
         ? lookupBrowser(registry, 'linux', normalizeAppName(focus.appName)).key
         : focus.appName;

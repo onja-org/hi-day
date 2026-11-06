@@ -171,6 +171,32 @@ linux:
 
 deb:
   packageName: hiday
+  # electron-builder's own default list, plus `at-spi2-core`. Naming any
+  # `depends` replaces the default outright, so the first nine are repeated
+  # here rather than inherited.
+  #
+  # `at-spi2-core` is what website tracking actually needs: it ships
+  # `at-spi-bus-launcher` and `/usr/share/dbus-1/services/org.a11y.Bus.service`,
+  # without which `org.a11y.Bus.GetAddress` is not even activatable and the
+  # Linux resolver starts with no `url` capability at all. The default list's
+  # `libatspi2.0-0` is only the client library — it *Recommends* at-spi2-core
+  # rather than depending on it, so any install that skips recommends
+  # (`--no-install-recommends`, `APT::Install-Recommends "false"`, a managed
+  # fleet image) gets an agent that tracks apps and silently never tracks a
+  # single website. That is the difference between the Linux devices that
+  # report websites and the ones that report "the accessibility service is
+  # not running".
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - at-spi2-core
   # electron-builder's own after-install minus the AppArmor profile it
   # generates — that profile's label is what stops a snap-confined browser
   # sending us its accessibility events. See the script for the measurements.

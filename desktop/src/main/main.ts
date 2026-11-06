@@ -118,7 +118,11 @@ import {
   NullDebugHarness,
   type DebugSink,
 } from "./url-capture/debug-harness";
-import { intervalFromEnv, offlineSimulated } from "./tuning";
+import {
+  intervalFromEnv,
+  offlineSimulated,
+  startupWindowDelayMs,
+} from "./tuning";
 import { resolveWebAppUrl } from "./web-app-url";
 import { pinLevel, shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
@@ -277,7 +281,10 @@ app.setName("Hi Day");
 // build for the single-instance lock. Without this, `pnpm dev` loses the
 // lock to the packaged app autostarted at login and merely raises that
 // window — which looks exactly like the dev build failing to start.
-if (!app.isPackaged) {
+// `--user-data-dir` is Chromium's own switch and `getPath` already honours
+// it; overriding unconditionally meant a dev run could not be pointed
+// anywhere else, which is what an isolated test needs.
+if (!app.isPackaged && !app.commandLine.hasSwitch("user-data-dir")) {
   app.setPath("userData", join(app.getPath("appData"), "Hi Day (dev)"));
 }
 
@@ -630,8 +637,34 @@ function stopUrlCapture(): void {
   urlCaptureService = null;
 }
 
+/** False until startup has built the first window — see `reopenMainWindow`. */
+let startupComplete = false;
+
+/**
+ * Startup is not the only thing that reaches here: `second-instance` fires
+ * the moment a second launch happens, which can be *while* startup is still
+ * awaiting `registerIpcHandlers` (it opens the SQLite queue and runs its
+ * migrations — seconds on a slow disk). This used to assign straight over
+ * `mainWindow`, so the window startup made a moment later orphaned the one
+ * already on screen: two Hi Days, two clocks, seconds apart.
+ *
+ * The orphan was not inert — `ipcMain` handlers are process-wide, so its
+ * renderer kept polling and showing live figures — but every push the main
+ * process makes goes to `mainWindow` alone, so the idle prompt only ever
+ * reached the other one. Closing the orphan ran the close prompt against
+ * the tracked window and took both down.
+ *
+ * There is exactly one window, and everything here depends on that: raise
+ * the one that exists rather than build a second.
+ */
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    console.log("[window] raised the existing window");
+    showMainWindow();
+    return;
+  }
+
+  const window = new BrowserWindow({
     ...FULL_WINDOW_SIZE,
     useContentSize: true,
     resizable: false,
@@ -657,19 +690,32 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  mainWindow.on("close", (event) => {
+  mainWindow = window;
+  console.log("[window] opened");
+  void window.loadFile(join(__dirname, "../renderer/index.html"));
+  window.on("close", (event) => {
+    // `handleCloseRequest` acts on the tracked window. For any other one
+    // that is the wrong window entirely: pressing its close button ran the
+    // *tracked* window's close prompt and left this one open — "I tried to
+    // close the other app but it is not actually closed". Nothing above can
+    // produce a second window any more; this is here so that if anything
+    // ever does, the person can still get rid of it.
+    if (mainWindow !== window) return;
     if (isQuitting) return;
     event.preventDefault();
     handleCloseRequest();
   });
   // Windows logoff/shutdown closes windows without a before-quit first;
   // hiding there would hold the session open.
-  mainWindow.on("session-end", () => {
+  window.on("session-end", () => {
     isQuitting = true;
   });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    // Only while it is still the tracked one. Clearing it unconditionally
+    // is what turned a single duplicate into a run of them: a stale window
+    // closing left `mainWindow` null with a live window still on screen,
+    // and the next reopen built another beside it.
+    if (mainWindow === window) mainWindow = null;
   });
 }
 
@@ -689,7 +735,9 @@ function forceToFront(): void {
 }
 
 function showMainWindow(): void {
-  if (!mainWindow) {
+  // `isDestroyed` as well as null: every method below throws on a destroyed
+  // window, and `createWindow` treats the two the same.
+  if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
     return;
   }
@@ -704,6 +752,11 @@ function showMainWindow(): void {
  * this tells it to re-read the day's time from the server instead.
  */
 function reopenMainWindow(): void {
+  // A second launch (or a deep link) arriving while this instance is still
+  // starting: the window it is asking for is already on its way, and
+  // building one here would race startup's own. `app.isReady()` is not the
+  // question — the app is ready well before the first window exists.
+  if (!startupComplete) return;
   const wasHidden = mainWindow !== null && !mainWindow.isVisible();
   showMainWindow();
   if (wasHidden) mainWindow?.webContents.send("window:reopened");
@@ -2812,7 +2865,7 @@ if (!gotSingleInstanceLock) {
   // macOS delivers it to the running instance, possibly before ready.
   app.on("open-url", (event) => {
     event.preventDefault();
-    if (app.isReady()) reopenMainWindow();
+    reopenMainWindow();
   });
 
   // Windows groups a running window with the taskbar shortcut that shares
@@ -2825,7 +2878,14 @@ if (!gotSingleInstanceLock) {
     activateBrowsersOnLinux();
     syncAutoLaunch();
     await registerIpcHandlers();
+    const delayMs = startupWindowDelayMs();
+    if (delayMs > 0 && !app.isPackaged) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     createWindow();
+    // Only now may a second launch act on the window; before this there is
+    // nothing to raise and anything that built one would be duplicating it.
+    startupComplete = true;
     createTray();
     startAutoUpdater((line) => console.log(line));
     // Last, and never awaited: claiming a URL scheme is the least

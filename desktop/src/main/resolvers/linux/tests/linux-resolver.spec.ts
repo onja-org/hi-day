@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ADDRESS_BAR_ROLES, MAX_SEARCH_DEPTH, hasReadableAddressBarText } from '../atspi';
-import { hwndFromPath, normalizeAppName, pidFromBusName } from '../index';
-import { evaluateSupport, readSessionEnvironment } from '../support-gate';
+import { hwndFromPath, normalizeAppName, pidFromBusName, startWithRetry } from '../index';
+import { EventRegistrationError } from '../atspi';
+import {
+  accessibilityBusUnavailableReason,
+  evaluateSupport,
+  readSessionEnvironment,
+} from '../support-gate';
 
 describe('evaluateSupport — Step 20 support matrix', () => {
   it('enables GNOME on Wayland', () => {
@@ -218,5 +223,88 @@ describe('MAX_SEARCH_DEPTH', () => {
     // At the previous bound of 8, Opera produced no URLs at all and nothing
     // reported an error, so this guards the bound rather than the symptom.
     expect(MAX_SEARCH_DEPTH).toBeGreaterThanOrEqual(15);
+  });
+});
+
+/**
+ * Every failure to reach the bus was reported as "at-spi2-core is not
+ * running", including the ones where it plainly was. A fleet told to run an
+ * install command that changes nothing reports the fix did not work.
+ */
+describe('why the accessibility bus could not be reached', () => {
+  /** What dbus-next raises when nothing can activate the name. */
+  const serviceUnknown = Object.assign(new Error('The name org.a11y.Bus was not provided'), {
+    type: 'org.freedesktop.DBus.Error.ServiceUnknown',
+  });
+
+  it('asks for at-spi2-core only when the name cannot be activated', () => {
+    expect(accessibilityBusUnavailableReason(serviceUnknown)).toContain('apt install at-spi2-core');
+  });
+
+  it('treats a name with no owner the same way', () => {
+    const noOwner = Object.assign(new Error('no owner'), {
+      type: 'org.freedesktop.DBus.Error.NameHasNoOwner',
+    });
+    expect(accessibilityBusUnavailableReason(noOwner)).toContain('apt install at-spi2-core');
+  });
+
+  it('names the real problem when there is no session bus to ask', () => {
+    const detail = accessibilityBusUnavailableReason(
+      new Error('DBUS_SESSION_BUS_ADDRESS is not set'),
+    );
+    expect(detail).toContain('desktop session bus');
+    expect(detail).not.toContain('apt install');
+  });
+
+  it('does not send somebody to the package manager for an unrecognised failure', () => {
+    const detail = accessibilityBusUnavailableReason(new Error('Connection timed out'));
+    expect(detail).not.toContain('apt install');
+    expect(detail).toContain('Connection timed out');
+  });
+
+  it('keeps the original wording when the caller has no error to offer', () => {
+    expect(accessibilityBusUnavailableReason()).toContain('apt install at-spi2-core');
+  });
+});
+
+/**
+ * The agent starts itself at login, and the accessibility bus is activated
+ * on demand — so the side-car can be the first to ask, before the session is
+ * ready to answer. One attempt made that a whole session with no website
+ * tracking, blamed on a package that was installed all along.
+ */
+describe('reaching the bus on a cold login', () => {
+  const delays = [1, 2, 3];
+  const noWait = (): Promise<void> => Promise.resolve();
+
+  it('succeeds on a later attempt rather than giving up on the first', async () => {
+    let calls = 0;
+    const start = vi.fn(() => {
+      calls += 1;
+      return calls < 3 ? Promise.reject(new Error('not ready')) : Promise.resolve();
+    });
+
+    await expect(startWithRetry({ start }, delays, noWait)).resolves.toBeUndefined();
+    expect(start).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up with the original error once the attempts are spent', async () => {
+    const boom = new Error('still not ready');
+    const start = vi.fn(() => Promise.reject(boom));
+
+    await expect(startWithRetry({ start }, delays, noWait)).rejects.toBe(boom);
+    // One attempt per delay, plus the first.
+    expect(start).toHaveBeenCalledTimes(delays.length + 1);
+  });
+
+  it('does not retry a refusal the bus already answered', async () => {
+    // The bus replied; it will reply the same way again. Retrying would
+    // delay a message that is already correct.
+    const start = vi.fn(() => Promise.reject(new EventRegistrationError('refused')));
+
+    await expect(startWithRetry({ start }, delays, noWait)).rejects.toBeInstanceOf(
+      EventRegistrationError,
+    );
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });

@@ -124,12 +124,56 @@ export function evaluateSupport(environment: SessionEnvironment): SupportVerdict
  * are — verified with that setting false), and it is a switch the person
  * being tracked can turn back off, so nothing may depend on it.
  */
-export function accessibilityBusUnavailableReason(): string {
+export function accessibilityBusUnavailableReason(error?: unknown): string {
+  if (sessionBusUnreachable(error)) {
+    return (
+      'The desktop session bus could not be reached, so website tracking is off. ' +
+      'This usually means Hi Day was started outside your desktop session — ' +
+      'quit it and open it again from your applications menu.'
+    );
+  }
+  if (error !== undefined && !accessibilityServiceMissing(error)) {
+    return (
+      'The accessibility service could not be reached, so website tracking is off. ' +
+      `Sign out and back in; if it persists, report this: ${describeError(error)}`
+    );
+  }
   return (
     'The accessibility service is not running, so website tracking is off. ' +
     'Install and start at-spi2-core (Debian/Ubuntu: `sudo apt install at-spi2-core`), ' +
     'then sign out and back in.'
   );
+}
+
+/**
+ * `org.a11y.Bus` is D-Bus *activatable* — asking for its address starts
+ * `at-spi-bus-launcher` on demand — so the name being unknown means the
+ * `.service` file is absent, which means `at-spi2-core` is not installed.
+ * That is the one case the install instruction answers, and it used to be
+ * given for every failure here: a machine that already had the package was
+ * told to install it, and a machine started outside its desktop session was
+ * told the same.
+ */
+/** Errors arrive as `unknown` from a `catch`; name one without stringifying an object. */
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : JSON.stringify(error);
+}
+
+function accessibilityServiceMissing(error: unknown): boolean {
+  const type = (error as { type?: unknown })?.type;
+  if (typeof type === 'string') {
+    return (
+      type === 'org.freedesktop.DBus.Error.ServiceUnknown' ||
+      type === 'org.freedesktop.DBus.Error.NameHasNoOwner'
+    );
+  }
+  return /ServiceUnknown|NameHasNoOwner/.test(describeError(error));
+}
+
+/** No session bus at all: nothing on it could be reached, a11y included. */
+function sessionBusUnreachable(error: unknown): boolean {
+  return /DBUS_SESSION_BUS_ADDRESS|session bus|ENOENT|ECONNREFUSED/i.test(describeError(error));
 }
 
 /**

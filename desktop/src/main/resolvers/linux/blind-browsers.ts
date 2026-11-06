@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ACTIVATION_FLAG } from './browser-activation';
 
@@ -37,6 +37,17 @@ export interface BrowserProcess {
  * derived from the discovered entries, so a browser released tomorrow is
  * covered. Vendor and packaging words are dropped: `google` would claim
  * Google Drive, `stable` would claim anything.
+ *
+ * The second group is infrastructure vocabulary. Any `.desktop` file whose
+ * `MimeType` mentions `x-scheme-handler/http` contributes tokens here, and
+ * that is a far wider net than browsers — so one entry named after a
+ * background process is enough to turn a word every background process
+ * shares into a browser name. A real session reported Avahi-daemon,
+ * Dbus-daemon, Accounts-daemon, Rtkit-daemon, Ibus-daemon, Goa-daemon,
+ * Gnome-remote-de and Gnome-keyring-d as browsers running without website
+ * tracking: every process on a GNOME desktop whose name contains `daemon`,
+ * from a single token. None of these can ever distinguish one browser from
+ * another, so none of them may become a token.
  */
 const FILENAME_NOISE = new Set([
   'com',
@@ -49,6 +60,19 @@ const FILENAME_NOISE = new Set([
   'browser',
   'www',
   'app',
+  'daemon',
+  'service',
+  'server',
+  'agent',
+  'session',
+  'shell',
+  'portal',
+  'applet',
+  'indicator',
+  'keyring',
+  'manager',
+  'launcher',
+  'settings',
 ]);
 
 export function browserTokens(desktopFileNames: string[]): string[] {
@@ -153,6 +177,22 @@ const HELPER_BINARY_WORDS = [
   'native',
 ];
 
+/**
+ * Binaries that are never a browser somebody opened, whatever token happens
+ * to match them. A second gate rather than a wider `FILENAME_NOISE`, because
+ * the two answer different questions: that list says what cannot *name* a
+ * browser, this says what cannot *be* one. Either alone would have stopped
+ * the daemon report; both, because this match has produced a false positive
+ * five times now (see the comments above) and the next bad token will come
+ * from a `.desktop` file nobody here has seen.
+ */
+const NEVER_A_BROWSER_BINARY_WORDS = [
+  'daemon',
+  'portald',
+  'indicator',
+  'keyring',
+];
+
 /** Matched on the executable's filename: a path match would claim anything
  * under a vendor directory, and `comm` is truncated to 15 characters. */
 export function isBrowserProcess(
@@ -161,6 +201,7 @@ export function isBrowserProcess(
 ): boolean {
   const binary = (process.executablePath.split('/').pop() ?? '').toLowerCase();
   if (HELPER_BINARY_WORDS.some((word) => binary.includes(word))) return false;
+  if (NEVER_A_BROWSER_BINARY_WORDS.some((word) => binary.includes(word))) return false;
   return tokens.some((token) => binary.includes(token));
 }
 
@@ -173,14 +214,31 @@ export function displayName(command: string): string {
   return command.charAt(0).toUpperCase() + command.slice(1);
 }
 
-/** Every process this user owns, with what it is and how it was started. */
-export function readBrowserProcesses(procRoot = '/proc'): BrowserProcess[] {
+/**
+ * Every process this user owns, with what it is and how it was started.
+ *
+ * The ownership half was only ever a comment: this read all of `/proc`, so
+ * a root or system-user daemon could be offered as a browser to restart.
+ * Nobody opens a browser as `avahi` or `rtkit`, and a process this user does
+ * not own is one they could not have started from a shortcut — which is the
+ * entire claim the blind-browser notice makes about it.
+ *
+ * Not sufficient on its own, which is why the token and binary gates exist
+ * too: `goa-daemon`, `ibus-daemon`, `gnome-keyring-daemon` and the session
+ * `dbus-daemon` all run as the person sitting at the machine.
+ */
+export function readBrowserProcesses(
+  procRoot = '/proc',
+  /** Negative disables the check — a platform with no `getuid`. */
+  ownUid: number = process.getuid?.() ?? -1,
+): BrowserProcess[] {
   const processes: BrowserProcess[] = [];
   for (const entry of safeReaddir(procRoot)) {
     const pid = Number(entry);
     if (!Number.isInteger(pid) || pid <= 0) continue;
 
     try {
+      if (ownUid >= 0 && statSync(join(procRoot, entry)).uid !== ownUid) continue;
       const command = readFileSync(join(procRoot, entry, 'comm'), 'utf-8').trim();
       // Whitespace as well as NUL: Chrome rewrites its own argv, leaving
       // `cmdline` one space-separated blob. On NUL alone every flag was
