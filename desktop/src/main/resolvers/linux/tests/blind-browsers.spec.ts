@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   browserTokens,
   isBrowserProcess,
+  readBrowserProcesses,
   selectBlindBrowsers,
   selectRunningBrowsers,
   type BrowserProcess,
@@ -258,5 +262,114 @@ describe('selectRunningBrowsers', () => {
     });
 
     expect(selectRunningBrowsers([editor], tokens)).toEqual([]);
+  });
+});
+
+/**
+ * A production GNOME session reported Avahi-daemon, Dbus-daemon,
+ * Accounts-daemon, Rtkit-daemon, Ibus-daemon, Goa-daemon, Gnome-remote-de
+ * and Gnome-keyring-d as "running without website tracking" — every process
+ * on the machine whose name contains `daemon`. One `.desktop` file named
+ * after a background process is all it takes: its filename contributes
+ * `daemon` as a token, and the token match is a bare substring test.
+ *
+ * (The two truncated names are the kernel's: `comm` stops at 15 characters.)
+ */
+describe('system daemons are not browsers', () => {
+  /** Shapes and owners read off a real GNOME 46 session. */
+  const daemons: { comm: string; exe: string }[] = [
+    { comm: 'avahi-daemon', exe: 'avahi-daemon:' },
+    { comm: 'dbus-daemon', exe: '/usr/bin/dbus-daemon' },
+    { comm: 'accounts-daemon', exe: '/usr/libexec/accounts-daemon' },
+    { comm: 'rtkit-daemon', exe: '/usr/libexec/rtkit-daemon' },
+    { comm: 'ibus-daemon', exe: '/usr/bin/ibus-daemon' },
+    { comm: 'goa-daemon', exe: '/usr/libexec/goa-daemon' },
+    { comm: 'gnome-remote-de', exe: '/usr/libexec/gnome-remote-desktop-daemon' },
+    { comm: 'gnome-keyring-d', exe: '/usr/bin/gnome-keyring-daemon' },
+  ];
+
+  /** The entry that poisoned the token list on the affected machine. */
+  const poisoned = browserTokens([
+    'google-chrome.desktop',
+    'firefox_firefox.desktop',
+    'com.microsoft.Edge.desktop',
+    'some-sync-daemon.desktop',
+  ]);
+
+  it('never lets a word every background process shares become a token', () => {
+    expect(poisoned).not.toContain('daemon');
+  });
+
+  it.each(daemons)('does not take $comm for a browser', ({ comm, exe }) => {
+    const process = chrome({ command: comm, executablePath: exe, cmdline: [exe] });
+    expect(isBrowserProcess(process, poisoned)).toBe(false);
+    expect(isBrowserProcess(process, [...poisoned, 'daemon'])).toBe(false);
+  });
+
+  it('reports none of them as blind, which is what reached the Devices page', () => {
+    const processes = daemons.map(({ comm, exe }) =>
+      chrome({ command: comm, executablePath: exe, cmdline: [exe] }),
+    );
+    expect(selectBlindBrowsers(processes, [...poisoned, 'daemon'])).toEqual([]);
+  });
+});
+
+/** The gates above must not cost a single browser anyone actually uses. */
+describe('real browsers still match', () => {
+  const tokensFromRealEntries = browserTokens([
+    'google-chrome.desktop',
+    'firefox_firefox.desktop',
+    'com.microsoft.Edge.desktop',
+    'microsoft-edge.desktop',
+    'brave_brave.desktop',
+    'opera_opera.desktop',
+    'vivaldi_vivaldi-stable.desktop',
+    'chromium_chromium.desktop',
+  ]);
+
+  it.each([
+    ['chrome', '/opt/google/chrome/chrome'],
+    ['chrome', '/usr/bin/google-chrome-stable'],
+    ['firefox', '/usr/lib/firefox/firefox'],
+    ['firefox', '/snap/firefox/current/usr/lib/firefox/firefox'],
+    // Edge's binary is `msedge`, which only a substring match reaches —
+    // the reason this stayed a substring test rather than becoming exact.
+    ['msedge', '/opt/microsoft/msedge/msedge'],
+    ['brave', '/opt/brave.com/brave/brave'],
+    ['opera', '/usr/lib/x86_64-linux-gnu/opera/opera'],
+    ['vivaldi-bin', '/opt/vivaldi/vivaldi-bin'],
+    ['chromium', '/usr/lib/chromium/chromium'],
+  ])('still recognises %s at %s', (command, executablePath) => {
+    expect(
+      isBrowserProcess(chrome({ command, executablePath, cmdline: [executablePath] }), tokensFromRealEntries),
+    ).toBe(true);
+  });
+});
+
+describe('only this user’s processes', () => {
+  let procRoot: string;
+
+  beforeEach(() => {
+    procRoot = mkdtempSync(join(tmpdir(), 'proc-'));
+    mkdirSync(join(procRoot, '4242'));
+    writeFileSync(join(procRoot, '4242', 'comm'), 'avahi-daemon\n');
+    writeFileSync(join(procRoot, '4242', 'cmdline'), 'avahi-daemon:\0running\0');
+  });
+  afterEach(() => rmSync(procRoot, { recursive: true, force: true }));
+
+  it('reads a process this user owns', () => {
+    const own = process.getuid?.() ?? -1;
+    expect(readBrowserProcesses(procRoot, own)).toHaveLength(1);
+  });
+
+  it('skips one owned by root or a system user', () => {
+    // The scan read all of /proc despite its own doc comment; nobody opens
+    // a browser as `avahi`.
+    const someoneElse = (process.getuid?.() ?? 0) + 1;
+    expect(readBrowserProcesses(procRoot, someoneElse)).toEqual([]);
+  });
+
+  it('reads everything where there is no uid to compare against', () => {
+    expect(readBrowserProcesses(procRoot, -1)).toHaveLength(1);
   });
 });
