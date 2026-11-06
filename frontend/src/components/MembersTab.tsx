@@ -22,7 +22,7 @@ export function MembersTab({ organisationId }: MembersTabProps) {
   const [search, setSearch] = useState("");
   const [perPage, setPerPage] = useState(25);
   const [requestedPage, setRequestedPage] = useState(1);
-  const membersQuery = useActiveMembers(organisationId);
+  const membersQuery = useActiveMembers(organisationId, { scope: "organisation" });
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
 

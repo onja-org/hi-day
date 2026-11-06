@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { runMigrations } from './migrations';
 import type { UrlSession } from './session-types';
@@ -64,10 +65,44 @@ function toRow(raw: UrlSessionRawRow): UrlSessionRow {
 export class UrlSessionStore {
   private readonly db: Database.Database;
 
-  constructor(dbPath: string) {
+  /**
+   * @param owner Who is logged in (session-owner.ts). Every session
+   * written is stamped with it, and only its sessions are offered for
+   * sync — another person's never are. Null in tests that don't care.
+   */
+  constructor(
+    dbPath: string,
+    private readonly owner: string | null = null,
+  ) {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     runMigrations(this.db);
+  }
+
+  /**
+   * Deletes every row in the database at `dbPath` — for logout, when URL
+   * capture may not be running and so no store is open to ask.
+   */
+  static discardAllAt(dbPath: string): number {
+    if (!existsSync(dbPath)) return 0;
+    const store = new UrlSessionStore(dbPath);
+    try {
+      return store.db.prepare('DELETE FROM url_sessions').run().changes;
+    } finally {
+      store.close();
+    }
+  }
+
+  /**
+   * Deletes every session captured by anyone but this store's owner — rows
+   * from before owners were recorded included. Called as capture starts
+   * for a login, so nobody else's browsing is left on the machine.
+   */
+  discardOtherOwners(): number {
+    if (!this.isOpen) return 0;
+    return this.db
+      .prepare('DELETE FROM url_sessions WHERE owner IS NOT ?')
+      .run(this.owner).changes;
   }
 
   /**
@@ -101,9 +136,10 @@ export class UrlSessionStore {
       .prepare(
         `INSERT INTO url_sessions
            (id, url, host, path, title, browser, is_private, device_id,
-            started_at, ended_at, active_ms, tz_offset_min, source, confidence, synced_at)
+            started_at, ended_at, active_ms, tz_offset_min, source, confidence, synced_at, owner)
          VALUES (@id, @url, @host, @path, @title, @browser, @is_private, @device_id,
-                 @started_at, @ended_at, @active_ms, @tz_offset_min, @source, @confidence, NULL)
+                 @started_at, @ended_at, @active_ms, @tz_offset_min, @source, @confidence, NULL,
+                 @owner)
          ON CONFLICT(id) DO UPDATE SET
            url = excluded.url,
            host = excluded.host,
@@ -118,7 +154,8 @@ export class UrlSessionStore {
            tz_offset_min = excluded.tz_offset_min,
            source = excluded.source,
            confidence = excluded.confidence,
-           synced_at = NULL`,
+           synced_at = NULL,
+           owner = excluded.owner`,
       )
       .run({
         id: session.id,
@@ -135,6 +172,7 @@ export class UrlSessionStore {
         tz_offset_min: session.tzOffsetMin,
         source: session.source,
         confidence: session.confidence,
+        owner: this.owner,
       });
   }
 
@@ -148,9 +186,9 @@ export class UrlSessionStore {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM url_sessions
-         WHERE ended_at IS NOT NULL AND synced_at IS NULL`,
+         WHERE ended_at IS NOT NULL AND synced_at IS NULL AND owner IS ?`,
       )
-      .get() as { count: number };
+      .get(this.owner) as { count: number };
     return row.count;
   }
 
@@ -159,11 +197,11 @@ export class UrlSessionStore {
     const rows = this.db
       .prepare(
         `SELECT * FROM url_sessions
-         WHERE ended_at IS NOT NULL AND synced_at IS NULL
+         WHERE ended_at IS NOT NULL AND synced_at IS NULL AND owner IS ?
          ORDER BY ended_at ASC
          LIMIT ?`,
       )
-      .all(limit) as UrlSessionRawRow[];
+      .all(this.owner, limit) as UrlSessionRawRow[];
     return rows.map(toRow);
   }
 

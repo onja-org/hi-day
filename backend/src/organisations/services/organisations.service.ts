@@ -7,6 +7,7 @@ import {
   type Entitlements,
 } from '../../entitlements/entitlements';
 import { Membership } from '../../database/entities/membership.entity';
+import { actsAsManager } from '../../common/manager-scope.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -76,6 +77,10 @@ export interface OrganisationProfile {
    */
   ownerEmail: string | null;
   role: MembershipRole;
+  /** Whether this caller may see anyone else's data — an admin, or whoever
+   * manages a team. The resolved answer, since `role` alone no longer
+   * settles it (see CONTEXT.md's Team-scoping). */
+  canViewOthers: boolean;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
@@ -161,6 +166,7 @@ export interface TeamOverviewMember {
   name: string | null;
   email: string;
   isManager: boolean;
+  role: MembershipRole;
 }
 
 export interface TeamOverview {
@@ -256,7 +262,7 @@ export class OrganisationsService {
       where: { userId, status: MembershipStatus.ACTIVE },
       // `owner` for the billing email's fallback — the Billing page says
       // which of the two addresses receipts actually reach.
-      relations: { organisation: { owner: true } },
+      relations: { organisation: { owner: true }, teamMemberships: true },
       order: {
         organisation: { suspendedAt: { direction: 'ASC', nulls: 'FIRST' } },
       },
@@ -270,6 +276,7 @@ export class OrganisationsService {
       membership.organisation,
       membership.role,
       userId,
+      membership.role === MembershipRole.ADMIN || actsAsManager(membership),
       membership.timesheetModifyTime,
       membership.canDeleteScreenshots,
       await this.projectsContext(
@@ -358,6 +365,7 @@ export class OrganisationsService {
         name: teamMembership.membership.user.name,
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
+        role: teamMembership.membership.role,
       })),
       projectCount: (team.projectTeams ?? []).length,
     }));
@@ -490,6 +498,7 @@ export class OrganisationsService {
       organisation,
       MembershipRole.ADMIN,
       userId,
+      true,
       adminMembership?.timesheetModifyTime ?? null,
       adminMembership?.canDeleteScreenshots ?? null,
       await this.projectsContext(
@@ -717,6 +726,7 @@ export class OrganisationsService {
     organisation: Organisation,
     role: MembershipRole,
     userId: string,
+    canViewOthers: boolean,
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
     membershipCanDeleteScreenshots: boolean | null = null,
@@ -739,6 +749,7 @@ export class OrganisationsService {
       billingEmail: organisation.billingEmail ?? null,
       ownerEmail: organisation.owner?.email ?? null,
       role,
+      canViewOthers,
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,

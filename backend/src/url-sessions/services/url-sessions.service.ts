@@ -8,8 +8,8 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Between, DataSource, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
+import { canViewMembership } from '../../common/membership-visibility.util';
 import { Membership } from '../../database/entities/membership.entity';
-import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { UrlSession } from '../../database/entities/url-session.entity';
 import { UrlSessionConfidence } from '../../database/entities/url-session-confidence.enum';
@@ -17,7 +17,6 @@ import { OrganisationsService } from '../../organisations/services/organisations
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../dto/url-session-entry.dto';
 
-const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -376,6 +375,7 @@ export class UrlSessionsService {
 
     const target = await this.memberships.findOne({
       where: { id: targetMembershipId, organisationId },
+      relations: { teamMemberships: true },
     });
     if (!target) {
       throw new NotFoundException('Member not found.');
@@ -385,6 +385,11 @@ export class UrlSessionsService {
     if (caller.id === target.id) {
       throw new ForbiddenException(
         'You cannot delete your own tracked website activity.',
+      );
+    }
+    if (!canViewMembership(caller, target)) {
+      throw new ForbiddenException(
+        "You cannot delete this member's tracked website activity.",
       );
     }
 
@@ -408,6 +413,11 @@ export class UrlSessionsService {
     });
   }
 
+  /**
+   * Website activity reads under `canViewMembership`, like every other
+   * capture type. This used to accept any admin/manager, which reached
+   * anyone in the Organisation.
+   */
   private async resolveSubjectMembershipId(
     organisationId: string,
     callerMembership: Membership,
@@ -416,16 +426,17 @@ export class UrlSessionsService {
     if (!targetMembershipId || targetMembershipId === callerMembership.id) {
       return callerMembership.id;
     }
-    if (!ORG_WIDE_ROLES.includes(callerMembership.role)) {
-      throw new ForbiddenException(
-        "Only an admin or manager can view another member's website activity.",
-      );
-    }
     const target = await this.memberships.findOne({
       where: { id: targetMembershipId, organisationId },
+      relations: { teamMemberships: true },
     });
     if (!target) {
       throw new NotFoundException('Member not found.');
+    }
+    if (!canViewMembership(callerMembership, target)) {
+      throw new ForbiddenException(
+        "You cannot view this member's website activity.",
+      );
     }
     return target.id;
   }
@@ -446,6 +457,8 @@ export class UrlSessionsService {
   ): Promise<Membership> {
     const membership = await this.memberships.findOne({
       where: { userId, organisationId, status: MembershipStatus.ACTIVE },
+      // canViewMembership reads the caller's teams.
+      relations: { teamMemberships: true },
     });
     if (!membership) {
       throw new ForbiddenException(

@@ -7,6 +7,9 @@ type ConfirmDialogProps = {
   title: string;
   message: string;
   confirmLabel: string;
+  /** The dismiss button. "Cancel" unless that would read as the action —
+   * e.g. beside "Cancel subscription". */
+  cancelLabel?: string;
   isDangerous?: boolean;
   isPending?: boolean;
   onConfirm: () => void;
@@ -17,6 +20,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel,
+  cancelLabel = "Cancel",
   isDangerous,
   isPending,
   onConfirm,
@@ -33,7 +37,7 @@ export function ConfirmDialog({
           onClick={onClose}
           className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-semibold text-slate-900 hover:bg-cream"
         >
-          Cancel
+          {cancelLabel}
         </button>
         <button
           type="button"

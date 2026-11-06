@@ -90,6 +90,7 @@ export function TeamDetail({ organisationId, teamId, showName = true }: TeamDeta
                 teamId={teamId}
                 member={member}
                 canManage={canManageMembers}
+                isOrgAdmin={isAdmin}
               />
             ))}
           </ul>

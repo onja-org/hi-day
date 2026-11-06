@@ -340,18 +340,18 @@ export class TeamDashboardService {
 
     return Promise.all(
       candidates.map(async (member) => {
+        // Only the newest few are read and signed, not the whole day.
         const screenshots =
-          await this.screenshotsService.getScreenshotsForMembership(
+          await this.screenshotsService.getLatestScreenshotsForMembership(
             organisationId,
             callerUserId,
             member.membershipId,
+            RECENT_ACTIVITY_SCREENSHOTS_PER_MEMBER,
           );
         return {
           membershipId: member.membershipId,
           name: member.name,
-          screenshots: screenshots
-            .slice(-RECENT_ACTIVITY_SCREENSHOTS_PER_MEMBER)
-            .reverse(),
+          screenshots,
         };
       }),
     );

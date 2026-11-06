@@ -1,7 +1,15 @@
 import { API_URL } from "./apiUrl";
-import type { GetScreenshotsResult } from "@/types/screenshot";
+import type {
+  GetScreenshotsPageResult,
+  ScreenshotsPage,
+  ScreenshotsPaging,
+} from "@/types/screenshot";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
+
+/** The Activity gallery's page size. Each screenshot on a page costs a
+ * signed URL and a full-size image download. */
+export const SCREENSHOTS_PAGE_SIZE = 8;
 
 export type GetActivityScreenshotsFilter = {
   date?: string;
@@ -10,23 +18,22 @@ export type GetActivityScreenshotsFilter = {
 };
 
 /**
- * Filtered variant of the screenshots activity feed — a separate lib
- * function (and, via `useActivityScreenshots`, a separately-keyed query)
- * from `getMyScreenshots`/`useMyScreenshots`, which the dashboard's
- * RecentActivityScreenshots widget still uses unfiltered. Sharing one
- * cache entry between "today, all projects" (the dashboard) and "some past
- * day, one project" (this page) would make the dashboard preview flicker
- * between the two depending on mount order.
+ * One page of a member's screenshots for a day — the caller's own without
+ * `membershipId`, today without `date`. Both the Activity gallery and the
+ * "Me" dashboard's preview read through this, each asking for only what it
+ * shows. (The "All" dashboard's previews come embedded in its summary.)
  */
 export async function getActivityScreenshots(
   organisationId: string,
   filter: GetActivityScreenshotsFilter = {},
-): Promise<GetScreenshotsResult> {
+  paging: ScreenshotsPaging = {},
+): Promise<GetScreenshotsPageResult> {
   const params = new URLSearchParams();
-  if (filter.date) params.set("date", filter.date); else if (filter.projectId) {
-    params.set("projectId", filter.projectId);
-  }
-  const query = params.toString();
+  if (filter.date) params.set("date", filter.date);
+  if (filter.projectId) params.set("projectId", filter.projectId);
+  params.set("page", String(paging.page ?? 1));
+  params.set("pageSize", String(paging.pageSize ?? SCREENSHOTS_PAGE_SIZE));
+  if (paging.newestFirst) params.set("order", "newest");
 
   const path = filter.membershipId
     ? `memberships/${filter.membershipId}/screenshots`
@@ -35,7 +42,7 @@ export async function getActivityScreenshots(
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/${path}${query ? `?${query}` : ""}`,
+      `${API_URL}/organisations/${organisationId}/${path}?${params.toString()}`,
       { method: "GET", credentials: "include" },
     );
   } catch {
@@ -43,8 +50,8 @@ export async function getActivityScreenshots(
   }
 
   if (response.ok) {
-    const screenshots = await response.json();
-    return { ok: true, screenshots };
+    const screenshotsPage = (await response.json()) as ScreenshotsPage;
+    return { ok: true, page: screenshotsPage };
   }
 
   const data = (await response.json().catch(() => null)) as {

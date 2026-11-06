@@ -6,14 +6,19 @@ import type { TimeEntry, TrackingResult } from './api-client';
 
 const FILE_NAME = 'pending-timer-ops.json';
 
+/**
+ * `owner` is who pressed the button (session-owner.ts). Absent on an op
+ * written before owners were recorded, and in tests that never set one.
+ */
 export type PendingOp =
-  | { type: 'stop'; at: string; opId?: string }
+  | { type: 'stop'; at: string; opId?: string; owner?: string }
   | {
       type: 'start';
       at: string;
       projectId: string | null;
       taskId: string | null;
       opId?: string;
+      owner?: string;
     };
 
 /**
@@ -94,6 +99,9 @@ class InMemoryRunningEntryStore implements RunningEntryStore {
  * returns what it already wrote (see docs/adr/0025-...).
  */
 export class PendingTimerOps {
+  /** Who is logged in now, or null for nobody. Unset, every op is one owner's. */
+  private ownerSource: (() => string | null) | null = null;
+
   constructor(
     private readonly userDataDir: string,
     /** Defaults to memory-only, which is enough for a single session. */
@@ -104,7 +112,28 @@ export class PendingTimerOps {
     return join(this.userDataDir, FILE_NAME);
   }
 
-  load(): PendingOp[] {
+  /**
+   * Ties each queued action to whoever took it, and replays only the
+   * actions of whoever is logged in now. One Device serves everybody on a
+   * machine, so without this A's offline start and stop would replay
+   * under B's token and become hours on B's timesheet.
+   */
+  setOwnerSource(source: () => string | null): void {
+    this.ownerSource = source;
+  }
+
+  /** `undefined` when nobody is logged in; null when no source is set. */
+  private currentOwner(): string | null | undefined {
+    if (!this.ownerSource) return null;
+    return this.ownerSource() ?? undefined;
+  }
+
+  private stamp<T extends PendingOp>(op: T): T {
+    const owner = this.currentOwner();
+    return owner ? { ...op, owner } : op;
+  }
+
+  private loadAll(): PendingOp[] {
     try {
       if (!existsSync(this.filePath)) return [];
       const parsed = JSON.parse(readFileSync(this.filePath, 'utf-8')) as unknown;
@@ -114,6 +143,47 @@ export class PendingTimerOps {
     }
   }
 
+  /** The actions of whoever is logged in now — nobody's when nobody is. */
+  load(): PendingOp[] {
+    const owner = this.currentOwner();
+    if (owner === undefined) return [];
+    return this.loadAll().filter((op) => (op.owner ?? null) === owner);
+  }
+
+  /**
+   * Drops every action not taken by `owner` — called when `owner` logs in,
+   * so nobody else's can ever be replayed. Returns how many went.
+   */
+  discardOtherOwners(owner: string): number {
+    const all = this.loadAll();
+    const kept = all.filter((op) => op.owner === owner);
+    this.save(kept);
+    return all.length - kept.length;
+  }
+
+  /**
+   * Drops every queued action, whoever took it — on logout and remote
+   * sign-out, once nothing more can be sent. Returns how many went.
+   */
+  discardAll(): number {
+    const count = this.loadAll().length;
+    this.save([]);
+    return count;
+  }
+
+  /** Gives actions written before owners were recorded to `owner`. */
+  adoptUnowned(owner: string): void {
+    const all = this.loadAll();
+    if (!all.some((op) => !op.owner)) return;
+    this.save(all.map((op) => (op.owner ? op : { ...op, owner })));
+  }
+
+  /**
+   * Writes `ops` as the whole queue. Every caller passes what `load`
+   * returned plus or minus its own change, so another owner's actions are
+   * dropped here — by then the person logged in is not them, and theirs
+   * must never be replayed for somebody else.
+   */
   private save(ops: PendingOp[]): void {
     if (ops.length === 0) {
       if (existsSync(this.filePath)) unlinkSync(this.filePath);
@@ -255,7 +325,7 @@ export class PendingTimerOps {
     const at = endedAt ?? new Date().toISOString();
     const opId = randomUUID();
     const waiting = this.load();
-    this.save([...waiting, { type: 'stop', at, opId }]);
+    this.save([...waiting, this.stamp({ type: 'stop', at, opId })]);
     this.running.write(null);
     const ended: TimeEntry = { ...current, endedAt: at };
 
@@ -284,7 +354,7 @@ export class PendingTimerOps {
   private queueStop(at: string): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };
-    this.save([...this.load(), { type: 'stop', at, opId: randomUUID() }]);
+    this.save([...this.load(), this.stamp({ type: 'stop', at, opId: randomUUID() })]);
     const entry = { ...current, endedAt: at };
     this.running.write(null);
     return { ok: true, data: entry, fromCache: true };
@@ -309,7 +379,7 @@ export class PendingTimerOps {
   private queueStart(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
     this.save([
       ...this.load(),
-      { type: 'start', at, projectId, taskId, opId: randomUUID() },
+      this.stamp({ type: 'start', at, projectId, taskId, opId: randomUUID() }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
@@ -336,8 +406,8 @@ export class PendingTimerOps {
     if (!this.running.read()) return this.queueStart(projectId, taskId, at);
     this.save([
       ...this.load(),
-      { type: 'stop', at, opId: randomUUID() },
-      { type: 'start', at, projectId, taskId, opId: randomUUID() },
+      this.stamp({ type: 'stop', at, opId: randomUUID() }),
+      this.stamp({ type: 'start', at, projectId, taskId, opId: randomUUID() }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);

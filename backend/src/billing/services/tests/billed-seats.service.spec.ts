@@ -5,7 +5,11 @@ function serviceFor(
   memberCount: number,
   purchasedSeats: number | null,
   /** Present once the Organisation has paid, which is what `pushQuantity` needs. */
-  stripe?: { interval: 'month' | 'year'; currentQuantity?: number },
+  stripe?: {
+    interval: 'month' | 'year';
+    currentQuantity?: number;
+    status?: string;
+  },
 ) {
   const update = jest.fn();
   const subscriptionsUpdate = jest.fn().mockResolvedValue({});
@@ -29,6 +33,7 @@ function serviceFor(
       stripe: {
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({
+            status: stripe?.status ?? 'active',
             items: {
               data: [
                 {
@@ -125,6 +130,30 @@ describe('BilledSeatsService.setPurchasedSeats', () => {
 });
 
 describe('pushing the quantity to Stripe', () => {
+  /**
+   * Nothing to bill a seat on: an ended subscription cannot change, and an
+   * unpaid first attempt is replaced at checkout when the count no longer
+   * matches. The purchase is still saved, as the next subscription's size.
+   */
+  it.each(['canceled', 'incomplete_expired', 'incomplete'])(
+    'saves the seats but leaves a %s subscription alone',
+    async (status) => {
+      const { service, update, subscriptionsUpdate } = serviceFor(4, 8, {
+        interval: 'month',
+        currentQuantity: 5,
+        status,
+      });
+
+      await service.setPurchasedSeats('org-1', 8);
+
+      expect(update).toHaveBeenCalledWith(
+        { id: 'org-1' },
+        { purchasedSeats: 8 },
+      );
+      expect(subscriptionsUpdate).not.toHaveBeenCalled();
+    },
+  );
+
   // The point of the whole change: a seat added is a seat paid for now, not
   // at a renewal weeks away. An admin ticked a box in the invite form saying
   // exactly this would happen.

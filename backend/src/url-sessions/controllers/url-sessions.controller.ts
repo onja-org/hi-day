@@ -1,6 +1,7 @@
 import { Controller, Delete, Get, Query, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { AllowTeamManagers } from '../../common/decorators/allow-team-managers.decorator';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -53,6 +54,7 @@ export class UrlSessionsController {
   // editing, there's no "manager can't delete their own" nuance here).
   @Delete()
   @RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+  @AllowTeamManagers()
   async delete(
     @Query('membershipId') membershipId: string,
     @Query('url') url: string,

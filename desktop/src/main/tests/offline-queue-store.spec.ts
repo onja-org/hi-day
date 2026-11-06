@@ -1,7 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import initSqlJs from 'sql.js';
 import { OfflineQueueStore } from '../offline-queue-store';
 
 describe('OfflineQueueStore', () => {
@@ -136,5 +137,66 @@ describe('OfflineQueueStore', () => {
     reopened.close();
 
     expect(row.blob).toEqual(blob);
+  });
+
+  describe('owners', () => {
+    const now = new Date('2026-11-04T13:50:00.000Z');
+
+    it("only hands back the owner's own rows", () => {
+      store.enqueue('app-event', '"a"', null, now, 100, 'owner-a');
+      store.enqueue('app-event', '"b"', null, now, 100, 'owner-b');
+
+      expect(store.takeBatch('app-event', 10, now, 'owner-b').map((r) => r.payload)).toEqual([
+        '"b"',
+      ]);
+      expect(store.countPending('app-event', 'owner-b')).toBe(1);
+      expect(store.countPending('app-event')).toBe(2);
+    });
+
+    it("discards everyone else's rows, and their images", async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'offline-queue-owners-'));
+      const dbPath = join(dir, 'queue.db');
+      const onDisk = await OfflineQueueStore.create(dbPath);
+      onDisk.enqueue('screenshot', '{}', Buffer.from('a-jpeg'), now, 100, 'owner-a');
+      onDisk.enqueue('screenshot', '{}', Buffer.from('b-jpeg'), now, 100, 'owner-b');
+
+      expect(onDisk.discardOtherOwners('owner-b')).toBe(1);
+
+      expect(onDisk.countPending('screenshot')).toBe(1);
+      expect(readdirSync(`${dbPath}.blobs`)).toHaveLength(1);
+      onDisk.close();
+    });
+
+    it('adds the owner column to a database written before it existed', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'offline-queue-upgrade-'));
+      const dbPath = join(dir, 'queue.db');
+      const SQL = await initSqlJs();
+      const old = new SQL.Database();
+      old.run(`
+        CREATE TABLE queued_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          kind TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          hasBlob INTEGER NOT NULL DEFAULT 0,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          createdAt TEXT NOT NULL,
+          nextAttemptAt TEXT NOT NULL
+        );
+        INSERT INTO queued_items (kind, payload, createdAt, nextAttemptAt)
+          VALUES ('app-event', '"old"', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z');
+      `);
+      writeFileSync(dbPath, Buffer.from(old.export()));
+      old.close();
+      expect(existsSync(dbPath)).toBe(true);
+
+      const upgraded = await OfflineQueueStore.create(dbPath);
+      // Recorded before owners existed, so it is nobody's until adopted.
+      expect(upgraded.takeBatch('app-event', 10, now, 'owner-a')).toEqual([]);
+      upgraded.adoptUnowned('owner-a');
+      expect(upgraded.takeBatch('app-event', 10, now, 'owner-a')).toHaveLength(1);
+      upgraded.enqueue('app-event', '"new"', null, now, 100, 'owner-a');
+      expect(upgraded.countPending('app-event', 'owner-a')).toBe(2);
+      upgraded.close();
+    });
   });
 });

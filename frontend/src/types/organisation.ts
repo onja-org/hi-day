@@ -68,6 +68,9 @@ export type OrganisationProfile = {
   /** The owner's own address, shown as the fallback. Read-only. */
   ownerEmail: string | null;
   role: MembershipRole;
+  /** Whether this caller may see anyone else's data — an admin, or whoever
+   * manages a team. `role` alone no longer settles it. */
+  canViewOthers: boolean;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;

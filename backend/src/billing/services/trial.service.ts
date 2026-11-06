@@ -49,6 +49,13 @@ export interface TrialStatus {
   /** ISO timestamp: when access stops, once enforcement exists. */
   accessEndsAt: string;
   /**
+   * Whether `accessEndsAt` is still ahead — the paid period or the trial,
+   * plus its grace days. Answered here so the browser never decides it from
+   * its own clock. What lets the Billing page offer to resume an ended
+   * subscription for exactly as long as the team can still work.
+   */
+  hasAccess: boolean;
+  /**
    * Set once they have paid: the end of the period paid for, which a
    * cancellation runs until and a renewal moves forward. Null while on
    * trial, and for an Organisation that never subscribed.
@@ -150,6 +157,7 @@ export class TrialService {
     // trial's own dates stay on the row as history, and reading them for
     // the banner would say "your trial ended" to somebody who is paying.
     const periodEnd = subscription.currentPeriodEnd;
+    const accessEndsAt = accessEndsAfter(periodEnd ?? subscription.trialEndsAt);
 
     return {
       status: subscription.status,
@@ -162,9 +170,8 @@ export class TrialService {
       daysLeft: trialDaysLeft(subscription.trialEndsAt, now),
       isExpired: isTrialExpired(subscription.trialEndsAt, now),
       isInGrace: isInTrialGrace(subscription.trialEndsAt, now),
-      accessEndsAt: accessEndsAfter(
-        periodEnd ?? subscription.trialEndsAt,
-      ).toISOString(),
+      accessEndsAt: accessEndsAt.toISOString(),
+      hasAccess: now.getTime() < accessEndsAt.getTime(),
       currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
       isInPaidGrace: periodEnd ? isInGrace(periodEnd, now) : false,
       billingPeriod: subscription.billingPeriod,

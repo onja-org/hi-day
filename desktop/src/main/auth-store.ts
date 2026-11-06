@@ -8,6 +8,13 @@ export interface StoredSession {
   /** Absent on a session saved before this field existed — falls back to email in the UI. */
   name?: string;
   organisationName: string;
+  /**
+   * Who and where this session is, for stamping queued data (see
+   * session-owner.ts). Absent on a session saved before pairing returned
+   * them.
+   */
+  userId?: string;
+  organisationId?: string;
   deviceId: string;
   deviceToken: string;
   /**

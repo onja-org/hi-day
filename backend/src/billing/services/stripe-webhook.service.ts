@@ -16,6 +16,8 @@ import { EmailService } from '../../email/services/email.service';
 import { billingRecipients, invoiceRecipient } from '../billing-recipients';
 import { declineReason } from '../payment-failure';
 import { formatMinor } from '../pricing';
+import { isStripeMissing } from '../stripe-missing';
+import { hasEnded } from '../stripe-subscription-states';
 import { ORGANISATION_METADATA_KEY } from './checkout.service';
 import { StripeService } from './stripe.service';
 
@@ -76,9 +78,12 @@ export const HANDLED_STRIPE_EVENTS = [
 ] as const satisfies readonly Stripe.WebhookEndpointCreateParams.EnabledEvent[];
 
 /**
- * The only writer of Stripe state. Never the browser returning from
- * checkout: that redirect is lost to a closed tab or a flaky network, and a
- * payment that succeeded must still be recorded.
+ * The writer of Stripe state. Never the browser returning from checkout:
+ * that redirect is lost to a closed tab or a flaky network, and a payment
+ * that succeeded must still be recorded. The one exception is checkout
+ * itself, which stores the customer and subscription ids it has just
+ * created so that a second checkout cannot start beside them — the events
+ * for those then confirm what is already there.
  *
  * A 2xx tells Stripe never to send an event again, so the difference
  * between "ignored on purpose" and "could not do it" has to reach the HTTP
@@ -197,6 +202,27 @@ export class StripeWebhookService {
       );
     }
 
+    // An Organisation can go through more than one subscription — a retry
+    // after a declined card, a customer coming back after cancelling — and
+    // Stripe does not deliver events in order. An event about a subscription
+    // other than the stored one must not point our row at it unless it is
+    // the one that should win, or the live subscription is lost: seats stop
+    // syncing, the portal and deletion act on the wrong one, and paying
+    // again would bill twice.
+    const current =
+      existing ??
+      (await this.subscriptions.findOne({ where: { organisationId: target } }));
+    if (
+      current?.stripeSubscriptionId &&
+      current.stripeSubscriptionId !== subscription.id &&
+      !(await this.replaces(subscription, current.stripeSubscriptionId))
+    ) {
+      this.logger.log(
+        `Subscription ${subscription.id} (${subscription.status}) was replaced by ${current.stripeSubscriptionId}; event acknowledged without action.`,
+      );
+      return;
+    }
+
     const periodEnd = currentPeriodEndOf(subscription);
 
     await this.write(target, {
@@ -238,6 +264,16 @@ export class StripeWebhookService {
       : await this.subscriptionForStripeId(details?.subscription);
 
     if (!existing) {
+      // Deleted organisations are cancelled in Stripe before their row goes,
+      // so this should never happen — but if it does, no retry can bring the
+      // organisation back. Shouted about rather than retried: money was
+      // taken, and somebody needs to look at whether it is owed back.
+      if (organisationId && (await this.isGone(organisationId))) {
+        this.logger.error(
+          `Paid invoice ${invoice.id} is for organisation ${organisationId}, which has been deleted; acknowledged without action. Check whether it needs refunding.`,
+        );
+        return;
+      }
       // The common cause is a race: Stripe raises and pays the first invoice
       // while `checkout.session.completed` is still being written. Retrying
       // is exactly right, and the money is already taken — losing this event
@@ -417,6 +453,42 @@ export class StripeWebhookService {
     }
   }
 
+  /**
+   * Whether `incoming` should take over from the subscription our row points
+   * at. Never one that has ended or is older. And never an attempt still
+   * awaiting its first payment over one that can still charge: an unpaid
+   * second tab must not displace the subscription actually being paid.
+   *
+   * A stored id Stripe no longer has is replaced; any other failure throws,
+   * and Stripe retries the event.
+   */
+  private async replaces(
+    incoming: Stripe.Subscription,
+    storedId: string,
+  ): Promise<boolean> {
+    if (hasEnded(incoming.status)) return false;
+
+    let stored: Stripe.Subscription;
+    try {
+      stored = await this.stripeService.stripe.subscriptions.retrieve(storedId);
+    } catch (error) {
+      if (isStripeMissing(error)) return true;
+      throw error;
+    }
+
+    if (incoming.created < stored.created) return false;
+    const storedCanCharge =
+      stored.status !== 'incomplete' && !hasEnded(stored.status);
+    return !(incoming.status === 'incomplete' && storedCanCharge);
+  }
+
+  private async isGone(organisationId: string): Promise<boolean> {
+    const organisation = await this.organisations.findOne({
+      where: { id: organisationId },
+    });
+    return organisation === null;
+  }
+
   /** The row behind a Stripe subscription id, expanded or not. */
   private async subscriptionForStripeId(
     subscription: string | Stripe.Subscription | undefined,
@@ -437,7 +509,16 @@ export class StripeWebhookService {
       where: { id: organisationId },
     });
     if (!organisation) {
-      throw new UnplacedStripeEvent(`Organisation ${organisationId} not found`);
+      // Not a race — the organisation exists long before any checkout — so
+      // it has been deleted, and a retry can never succeed. The common
+      // case is our own cancellation during the purge, whose
+      // `customer.subscription.deleted` lands after the row is gone.
+      // Answering 503 here had Stripe retrying for three days per event,
+      // and risked it disabling the endpoint for every customer.
+      this.logger.warn(
+        `Organisation ${organisationId} no longer exists; Stripe event acknowledged without action.`,
+      );
+      return;
     }
     // The one case that is genuinely ignored rather than retried: a
     // free-by-config Organisation must never start owing money, however

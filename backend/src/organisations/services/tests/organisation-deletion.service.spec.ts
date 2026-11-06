@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { SubscriptionCancellationService } from '../../../billing/services/subscription-cancellation.service';
 import { hashToken } from '../../../common/hash-token.util';
 import { OrganisationDeletionMode } from '../../../database/entities/organisation-deletion-request.entity';
 import { EmailService } from '../../../email/services/email.service';
@@ -20,7 +22,17 @@ function updateChanges(manager: { update: jest.Mock }, call: number): unknown {
 function makeService(
   organisation: Record<string, unknown>,
   request: Record<string, unknown> | null = null,
-  { otherMemberships = 0 }: { otherMemberships?: number } = {},
+  {
+    otherMemberships = 0,
+    billing,
+    suspendedOrganisations = [],
+  }: {
+    otherMemberships?: number;
+    /** Omitted = billing off, as on a self-hosted install. */
+    billing?: { stopRenewal: jest.Mock; resumeRenewal: jest.Mock };
+    /** What the hourly job's "every suspended organisation" query finds. */
+    suspendedOrganisations?: Record<string, unknown>[];
+  } = {},
 ) {
   const manager = {
     delete: jest.fn(),
@@ -56,6 +68,15 @@ function makeService(
         purgeAt: null,
         ...organisation,
       }),
+      // Only the suspended-organisations sweep filters on both columns;
+      // nothing is due for suspension or purge in these tests.
+      find: jest.fn(({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve(
+          'suspendedAt' in where && 'purgeAt' in where
+            ? suspendedOrganisations
+            : [],
+        ),
+      ),
     } as never,
     memberships as never,
     {} as never,
@@ -70,8 +91,16 @@ function makeService(
     {
       get: (_: string, fallback: string) => fallback,
     } as unknown as ConfigService,
+    billing as unknown as SubscriptionCancellationService | undefined,
   );
   return { service, manager, email, record, purge, memberships };
+}
+
+function makeBilling() {
+  return {
+    stopRenewal: jest.fn().mockResolvedValue(undefined),
+    resumeRenewal: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('OrganisationDeletionService', () => {
@@ -361,6 +390,136 @@ describe('OrganisationDeletionService', () => {
       await expect(
         service.cancelDeletion('org-1', 'someone-else'),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  /**
+   * A deleted organisation must stop being charged: renewal stops when
+   * access stops, and comes back if the owner restores it. The purge's own
+   * outright cancellation is covered in the purge spec.
+   */
+  describe('billing', () => {
+    const nowRequest = {
+      requestedByUserId: OWNER,
+      mode: OrganisationDeletionMode.NOW,
+      scheduledFor: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      tokenHash: hashToken('t'),
+    };
+    const suspended = {
+      suspendedAt: new Date(),
+      purgeAt: new Date(Date.now() + 86_400_000),
+    };
+
+    it('stops renewal when "now" suspends the organisation', async () => {
+      const billing = makeBilling();
+      const { service } = makeService({}, nowRequest, { billing });
+
+      await service.confirmDeletion('org-1', OWNER, 't');
+
+      expect(billing.stopRenewal).toHaveBeenCalledWith('org-1');
+    });
+
+    // The suspension is what the owner asked for and has already happened;
+    // the hourly job retries the billing half.
+    it('still suspends when Stripe cannot be reached', async () => {
+      const billing = makeBilling();
+      billing.stopRenewal.mockRejectedValue(new Error('Stripe is down'));
+      const { service, manager } = makeService({}, nowRequest, { billing });
+
+      await expect(
+        service.confirmDeletion('org-1', OWNER, 't'),
+      ).resolves.toEqual(expect.objectContaining({ signedOut: false }));
+      expect(
+        (updateChanges(manager, 0) as { suspendedAt: unknown }).suspendedAt,
+      ).toBeInstanceOf(Date);
+    });
+
+    // Nothing is suspended yet, so the organisation is still in use and
+    // still paid for.
+    it('leaves billing alone when deletion is only scheduled', async () => {
+      const billing = makeBilling();
+      const { service } = makeService(
+        {},
+        {
+          ...nowRequest,
+          mode: OrganisationDeletionMode.SCHEDULED,
+          scheduledFor: new Date(Date.now() + 86_400_000),
+        },
+        { billing },
+      );
+
+      await service.confirmDeletion('org-1', OWNER, 't');
+
+      expect(billing.stopRenewal).not.toHaveBeenCalled();
+    });
+
+    it('resumes renewal when a suspended organisation is restored', async () => {
+      const billing = makeBilling();
+      const { service, manager } = makeService(suspended, null, { billing });
+
+      await service.cancelDeletion('org-1', OWNER);
+
+      expect(billing.resumeRenewal).toHaveBeenCalledWith('org-1');
+      expect(updateChanges(manager, 0)).toEqual(
+        expect.objectContaining({ suspendedAt: null }),
+      );
+    });
+
+    // Restoring with renewal still off would cut the organisation off again
+    // at the period end, weeks later, with nothing to say why.
+    it('refuses to restore, changing nothing, when Stripe cannot be reached', async () => {
+      const billing = makeBilling();
+      billing.resumeRenewal.mockRejectedValue(new Error('Stripe is down'));
+      const { service, manager } = makeService(suspended, null, { billing });
+
+      await expect(
+        service.cancelDeletion('org-1', OWNER),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('does not touch billing when cancelling a schedule that never suspended', async () => {
+      const billing = makeBilling();
+      const { service } = makeService(
+        { deletionScheduledFor: new Date(Date.now() + 86_400_000) },
+        null,
+        { billing },
+      );
+
+      await service.cancelDeletion('org-1', OWNER);
+
+      expect(billing.resumeRenewal).not.toHaveBeenCalled();
+    });
+
+    // Catches anything Stripe was unreachable for at suspension time.
+    it('stops renewal for every suspended organisation each hour, one failure not blocking the rest', async () => {
+      const billing = makeBilling();
+      billing.stopRenewal
+        .mockRejectedValueOnce(new Error('Stripe is down'))
+        .mockResolvedValue(undefined);
+      const { service } = makeService({}, null, {
+        billing,
+        suspendedOrganisations: [
+          { id: 'org-a', publicId: 1 },
+          { id: 'org-b', publicId: 2 },
+        ],
+      });
+
+      await service.processDueDeletions();
+
+      expect(billing.stopRenewal).toHaveBeenCalledWith('org-a');
+      expect(billing.stopRenewal).toHaveBeenCalledWith('org-b');
+    });
+
+    it('works unchanged with billing off', async () => {
+      const { service, manager } = makeService(suspended);
+
+      await service.cancelDeletion('org-1', OWNER);
+
+      expect(updateChanges(manager, 0)).toEqual(
+        expect.objectContaining({ suspendedAt: null }),
+      );
     });
   });
 });

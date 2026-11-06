@@ -12,6 +12,12 @@ const NOOP_UPLOAD: UploadFn = () => Promise.resolve({ acked: [] });
 
 export interface UrlCaptureServiceOptions {
   deviceId: string;
+  /**
+   * Who is logged in (session-owner.ts). Sessions are stamped with it and
+   * only its own are synced; anyone else's left on the machine are deleted
+   * as capture starts. Left out only by tests that don't care.
+   */
+  owner?: string;
   userDataDir: string;
   powerMonitor: MinimalPowerMonitor;
   idleThresholdMs?: number;
@@ -41,7 +47,16 @@ export class UrlCaptureService {
 
   constructor(options: UrlCaptureServiceOptions) {
     this.logger = options.logger ?? ((): void => undefined);
-    this.store = new UrlSessionStore(join(options.userDataDir, 'url-sessions.sqlite'));
+    this.store = new UrlSessionStore(
+      join(options.userDataDir, 'url-sessions.sqlite'),
+      options.owner ?? null,
+    );
+    if (options.owner) {
+      const discarded = this.store.discardOtherOwners();
+      if (discarded > 0) {
+        this.logger(`[url-capture] discarded ${discarded} session(s) captured under another login`);
+      }
+    }
     this.syncQueue = new SyncQueue(this.store, options.upload ?? NOOP_UPLOAD);
     this.engine = new SessionEngine({
       deviceId: options.deviceId,

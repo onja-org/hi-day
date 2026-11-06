@@ -67,9 +67,11 @@ export class Subscription {
   trialReminderSentAtDaysLeft: number | null;
 
   /**
-   * Stripe's own records, written only by the webhook handler. Null until an
-   * admin completes checkout — a self-hosted install, a free-by-config
-   * Organisation and anyone still on trial all stay null forever.
+   * Stripe's own records, kept up to date by the webhook handler. Checkout
+   * also stores the ids the moment it creates them, so a second checkout
+   * can't start beside them before the webhook lands. Null until an admin
+   * starts paying — a self-hosted install, a free-by-config Organisation and
+   * anyone still on trial who never pressed Add payment stay null forever.
    */
   @Column({ type: 'text', nullable: true })
   stripeCustomerId: string | null;

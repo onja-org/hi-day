@@ -305,7 +305,63 @@ describe('UrlSessionsService', () => {
     });
 
     it("rejects a plain member trying to view another member's activity", async () => {
-      const service = makeService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'm-1', role: MembershipRole.MEMBER })
+            .mockResolvedValueOnce({
+              id: 'other-membership',
+              role: MembershipRole.MEMBER,
+            }),
+        }),
+      });
+
+      await expect(
+        service.listGroupedByUrl('org-1', 'user-1', 'other-membership'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager viewing a member outside the teams they manage', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'm-manager',
+              role: MembershipRole.MANAGER,
+              teamMemberships: [{ teamId: 'team-a', isManager: true }],
+            })
+            .mockResolvedValueOnce({
+              id: 'other-membership',
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-b', isManager: false }],
+            }),
+        }),
+      });
+
+      await expect(
+        service.listGroupedByUrl('org-1', 'user-1', 'other-membership'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a manager viewing an admin on a team they manage', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'm-manager',
+              role: MembershipRole.MANAGER,
+              teamMemberships: [{ teamId: 'team-a', isManager: true }],
+            })
+            .mockResolvedValueOnce({
+              id: 'other-membership',
+              role: MembershipRole.ADMIN,
+              teamMemberships: [{ teamId: 'team-a', isManager: false }],
+            }),
+        }),
+      });
 
       await expect(
         service.listGroupedByUrl('org-1', 'user-1', 'other-membership'),

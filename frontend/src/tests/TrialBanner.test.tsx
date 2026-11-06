@@ -12,11 +12,6 @@ vi.mock("@/hooks/useTrialStatus", () => ({
     String(organisationId),
   ],
 }));
-vi.mock("@/lib/stripeClient", () => ({ hasStripeKey: () => false }));
-vi.mock("@/components/billing/PaymentModal", () => ({
-  PaymentModal: () => null,
-}));
-
 const { TrialBanner } = await import("@/components/TrialBanner");
 
 function trial(overrides: Partial<TrialStatus> = {}): TrialStatus {
@@ -30,6 +25,7 @@ function trial(overrides: Partial<TrialStatus> = {}): TrialStatus {
     isExpired: false,
     isInGrace: false,
     accessEndsAt: "2026-11-10T09:00:00.000Z",
+    hasAccess: true,
     currentPeriodEnd: null,
     isInPaidGrace: false,
     billingPeriod: null,
@@ -52,6 +48,16 @@ describe("TrialBanner", () => {
     );
   });
 
+  // The Billing page shows the plan, cycle and seats before the card form.
+  it("sends Add payment to the Billing page", () => {
+    renderWith({ trial: trial(), isFree: false });
+
+    expect(screen.getByRole("link", { name: "Add payment" })).toHaveAttribute(
+      "href",
+      "/organisations/100000/settings/billing/subscription",
+    );
+  });
+
   /**
    * The whole point of the paid switch: the trial ended the day they paid,
    * so a countdown would be counting down something that is over. Keyed on
@@ -66,6 +72,50 @@ describe("TrialBanner", () => {
         trialEndedAt: "2026-10-26T09:00:00.000Z",
         billingPeriod: "annual",
         stripeStatus: "active",
+      }),
+      isFree: false,
+    });
+
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  });
+
+  /**
+   * A paid plan that has run out: the grace days are the window to resume,
+   * and every page should say so. Hidden for every paid organisation, this
+   * used to go unannounced.
+   */
+  it("warns during the grace days after a paid plan ends, offering to resume", () => {
+    renderWith({
+      trial: trial({
+        isPaid: true,
+        status: "active",
+        stripeStatus: "canceled",
+        currentPeriodEnd: "2026-11-03T09:00:00.000Z",
+        isInPaidGrace: true,
+        accessEndsAt: "2026-11-10T09:00:00.000Z",
+      }),
+      isFree: false,
+    });
+
+    expect(screen.getByRole("complementary")).toHaveTextContent(
+      /Your plan has ended.*keep working until .*Nov 10/,
+    );
+    expect(screen.getByRole("link", { name: "Resume subscription" })).toHaveAttribute(
+      "href",
+      "/organisations/100000/settings/billing/subscription",
+    );
+  });
+
+  // Cancelled but still inside the paid period: nothing has ended yet, and
+  // the Billing page already says when it will.
+  it("says nothing for a cancelled plan whose paid period is still running", () => {
+    renderWith({
+      trial: trial({
+        isPaid: true,
+        status: "active",
+        stripeStatus: "active",
+        currentPeriodEnd: "2026-12-01T09:00:00.000Z",
+        isInPaidGrace: false,
       }),
       isFree: false,
     });

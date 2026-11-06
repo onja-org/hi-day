@@ -451,8 +451,11 @@ function renderServerState(state: ServerUrlState): void {
 
   // The summary carries the host, so somebody pointed at the wrong server
   // can see it without opening the section.
+  // Named for the only people it is for. On Hi Day Cloud this is the one
+  // control on the screen nobody should touch, so it says so rather than
+  // reading as a setting somebody might be missing.
   serverSummary.textContent = state.isDefault
-    ? "Server"
+    ? "Self-hosted? Change server"
     : `Server: ${hostOf(state.url)}`;
 
   if (!state.canEdit) {

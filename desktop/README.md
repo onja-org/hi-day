@@ -502,6 +502,62 @@ leave every real user's copy silently failing to reach `localhost`.
 If the Hi Day Cloud API URL ever changes, update `PRODUCTION_API_URL` in
 `api-base-url.ts` and re-cut a release.
 
+## Self-hosting the agent
+
+A company running their own Hi Day has two ways to get the desktop app to
+their staff.
+
+### Use the official build (recommended)
+
+Install from
+[`onja-org/hi-day-releases`](https://github.com/onja-org/hi-day-releases)
+as everybody else does, then on the login screen open **Self-hosted?
+Change server** and enter the backend's address — `https://api.example.com`.
+
+That address is kept in `setup-state.json` in the app's own data
+directory, so it survives logging out, re-pairing and an update installed
+over the top. Staff set it once.
+
+Auto-updates keep coming from `onja-org/hi-day-releases`, which is what
+you want: the same open-source agent, updated, pointed at your server.
+Nothing about using your own backend makes Onja's builds less
+appropriate.
+
+### Build your own
+
+The source is AGPL, so nothing stops you:
+
+```bash
+pnpm --filter desktop dist:linux    # or dist:win / dist:mac
+```
+
+Three things to know before you do.
+
+**Change the `publish` block, or your build will be replaced by ours.**
+`electron-builder.yml` writes it into the installed app as
+`app-update.yml`, and the updater runs with `autoDownload` and
+`autoInstallOnAppQuit` on:
+
+```yaml
+publish:
+  provider: github
+  owner: onja-org          # <- point this at your own releases
+  repo: hi-day-releases    #    or remove it to disable updates
+```
+
+Leave it as it is and your customised build quietly becomes Onja's on the
+next restart.
+
+**Signing is yours.** Unsigned builds trip Gatekeeper on macOS and
+SmartScreen on Windows. The certificates and their cost are your problem.
+
+**Two native sidecars need their own toolchains**: the .NET resolver on
+Windows and the Swift Firefox helper on macOS. See **Building
+installers** below.
+
+Unless you mean to change how the agent behaves, the first option is far
+less work and stays current on its own.
+
 ## Building installers
 
 To cut a release that reaches users, follow [RELEASING.md](RELEASING.md). The
