@@ -44,6 +44,9 @@ export type PairingPollResult =
       status: 'approved';
       deviceId: string;
       deviceToken: string;
+      /** Absent from a backend older than this field — see session-owner.ts's fallback. */
+      userId?: string;
+      organisationId?: string;
       email: string;
       name: string;
       organisationName: string;
@@ -61,6 +64,8 @@ interface PairingPollResponseBody {
   status?: 'pending' | 'approved' | 'expired';
   deviceId?: string;
   deviceToken?: string;
+  userId?: string;
+  organisationId?: string;
   email?: string;
   name?: string;
   organisationName?: string;
@@ -304,6 +309,8 @@ export class ApiClient {
         status: 'approved',
         deviceId: body.deviceId,
         deviceToken: body.deviceToken,
+        userId: body.userId,
+        organisationId: body.organisationId,
         email: body.email,
         name: body.name,
         organisationName: body.organisationName,

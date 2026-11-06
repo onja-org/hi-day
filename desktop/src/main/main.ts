@@ -32,6 +32,7 @@ import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore, recentProjectIds } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { sessionOwner } from "./session-owner";
 import { OfflineCache } from "./offline-cache";
 import { keepActionFor, recoveryActionFor } from "./recovered-timer";
 import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
@@ -132,6 +133,7 @@ import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import { syncWithOlderBackendFallback } from "./url-capture/older-backend-fallback";
 import type { SyncResponseBody, UploadFn } from "./url-capture/sync-contract";
 import { UrlCaptureService } from "./url-capture/url-capture-service";
+import { UrlSessionStore } from "./url-capture/store";
 
 /**
  * All three platforms now have a resolver. Returns null only on a platform
@@ -299,6 +301,7 @@ const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
  * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+
 /** The gate's copy lives in `registerIpcHandlers`; the menu needs its own. */
 let trayTimerRunning = false;
 /** Asks the renderer to do what pressing its own play/stop button does. */
@@ -350,6 +353,12 @@ let pauseRunningTimer: (() => Promise<void>) | null = null;
 /** Set once IPC handlers are registered, like `pauseRunningTimer`: what suspend and wake do with a running timer. */
 let holdRunningTimerForSleep: (() => void) | null = null;
 let markIdleReturnedOnWake: (() => void) | null = null;
+/**
+ * Set once IPC handlers are registered: deletes every queued capture and
+ * timer action. For a session that has ended for good, whose data can no
+ * longer be sent and must not wait on disk for whoever logs in next.
+ */
+let discardQueuedData: (() => void) | null = null;
 /** The latest idle reading, for working out when input stopped as the machine sleeps. */
 const IDLE_SAMPLE_INTERVAL_MS = 10_000;
 let lastIdleReading: { seconds: number; atMs: number } | null = null;
@@ -475,6 +484,9 @@ function buildUrlSessionUploadFn(
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
+      // Signed out remotely: the token is dead, so nothing queued can be
+      // sent any more.
+      discardQueuedData?.();
       return { acked: [] };
     }
 
@@ -522,12 +534,17 @@ function stopSync(): void {
 // events in; anywhere else resolverSpawnConfigForPlatform returns null and
 // this degrades to timer/idle-only tracking rather than throwing. Started
 // only by `syncUrlCapture`, which owns the lifecycle.
-function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService {
+function startUrlCapture(
+  deviceId: string,
+  owner: string,
+  upload: UploadFn,
+): UrlCaptureService {
   urlCaptureService?.stop();
   resolverOrchestrator?.stop();
 
   urlCaptureService = new UrlCaptureService({
     deviceId,
+    owner,
     userDataDir: app.getPath("userData"),
     powerMonitor,
     logger: (line) => console.log(line),
@@ -1019,6 +1036,92 @@ async function registerIpcHandlers(): Promise<void> {
   );
   const offlineQueue = new OfflineQueue(offlineQueueStore);
 
+  // Everything queued is stamped with who was logged in, and only ever
+  // sent for that same person: the backend keeps one Device for whoever
+  // logs in on this machine, so a token alone would upload A's offline
+  // backlog under B's login (pre-launch audit, 2026-11-02).
+  const currentOwner = (): string | null => {
+    const session = authStore.load();
+    return session ? sessionOwner(session) : null;
+  };
+  offlineQueue.setOwnerSource(currentOwner);
+  pendingOps.setOwnerSource(currentOwner);
+  // Rows queued by a version that did not record owners. If somebody is
+  // still logged in from then, they were that person's; if nobody is,
+  // they stay unowned and are deleted at the next login.
+  const ownerAtLaunch = currentOwner();
+  if (ownerAtLaunch) {
+    offlineQueue.adoptUnowned(ownerAtLaunch);
+    pendingOps.adoptUnowned(ownerAtLaunch);
+  }
+  const urlSessionsPath = join(app.getPath("userData"), "url-sessions.sqlite");
+
+  /** Deletes every queued capture and timer action not belonging to `owner`. */
+  function discardOtherOwnersData(owner: string): void {
+    const captures = offlineQueue.discardOtherOwners(owner);
+    const timerOps = pendingOps.discardOtherOwners(owner);
+    // URL capture is stopped while logged out, so no store is open here.
+    const store = new UrlSessionStore(urlSessionsPath, owner);
+    let urls = 0;
+    try {
+      urls = store.discardOtherOwners();
+    } finally {
+      store.close();
+    }
+    if (captures + timerOps + urls > 0) {
+      // Counts only — never what was in them.
+      console.warn(
+        `[auth] discarded data from an earlier login: ${captures} capture(s), ${timerOps} timer action(s), ${urls} URL session(s)`,
+      );
+    }
+  }
+
+  /**
+   * Deletes every queued screenshot, window sample, activity sample, URL
+   * and timer action — for a session that has ended, once nothing more
+   * can be sent for it.
+   */
+  function discardAllQueuedData(): void {
+    const captures = offlineQueue.discardAll();
+    const timerOps = pendingOps.discardAll();
+    const urls = UrlSessionStore.discardAllAt(urlSessionsPath);
+    if (captures + timerOps + urls > 0) {
+      // Counts only — never what was in them.
+      console.warn(
+        `[auth] discarded unsent data from the ended session: ${captures} capture(s), ${timerOps} timer action(s), ${urls} URL session(s)`,
+      );
+    }
+  }
+  discardQueuedData = discardAllQueuedData;
+
+  /**
+   * Uploads the logged-in person's whole backlog, rows waiting out a retry
+   * included, for as long as it keeps going up. Stops at the first attempt
+   * that makes no progress — offline, or the server refusing — and what is
+   * left is deleted by the caller. No time limit: online, a large backlog
+   * is this person's tracked work, and deleting it to save a wait would
+   * lose it. Each request is still bounded by the API client's timeout.
+   */
+  async function sendBacklogBeforeLogout(): Promise<void> {
+    // The part-finished activity period is otherwise only emitted once
+    // the timer-stop reaches the sampler — after the session is cleared,
+    // when the queue no longer accepts it, so the last minutes of
+    // activity were lost. Closing it now queues it with everything else.
+    await activitySampler.flush();
+    const unsent = (): number =>
+      offlineQueue.pendingCount() + (urlCaptureService?.unsentCount() ?? 0);
+    let before = unsent();
+    while (before > 0) {
+      await Promise.all([
+        offlineQueue.flushAll({ ignoreBackoff: true }).catch(() => {}),
+        urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
+      ]);
+      const after = unsent();
+      if (after >= before) return;
+      before = after;
+    }
+  }
+
   const appEventUploader = new AppEventUploader(
     authStore,
     apiClient,
@@ -1241,6 +1344,7 @@ async function registerIpcHandlers(): Promise<void> {
 
     const service = startUrlCapture(
       session.deviceId,
+      sessionOwner(session),
       buildUrlSessionUploadFn(
         apiClient,
         authStore,
@@ -1724,13 +1828,21 @@ async function registerIpcHandlers(): Promise<void> {
 
     if (result.status === "approved") {
       pendingPairingCode = null;
-      authStore.save({
+      const newSession = {
         email: result.email,
         name: result.name,
         organisationName: result.organisationName,
+        userId: result.userId,
+        organisationId: result.organisationId,
         deviceId: result.deviceId,
         deviceToken: result.deviceToken,
-      });
+      };
+      authStore.save(newSession);
+      // Anything still queued from an earlier login on this machine — left
+      // by a remote sign-out, or by a logout that could not reach the
+      // server — belongs to somebody else unless it is this person's own.
+      // It would never be sent now, and is not this login's to keep.
+      discardOtherOwnersData(sessionOwner(newSession));
       // Approval is the new "just logged in" moment — the password
       // handler these hung off no longer exists.
       startHeartbeat(apiClient, result.deviceToken);
@@ -1773,6 +1885,9 @@ async function registerIpcHandlers(): Promise<void> {
       // and the running entry could never be paused, leaving it to run
       // unattended until the next login noticed it.
       await pendingOps.pause(session.deviceToken, apiClient);
+      // The last moment this person's token works, so the last chance to
+      // send what they captured. Whatever doesn't make it is deleted below.
+      await sendBacklogBeforeLogout();
       await apiClient.logout(session.deviceToken);
       authStore.clear();
       // Projects, settings and totals all belong to the session that just
@@ -1785,6 +1900,9 @@ async function registerIpcHandlers(): Promise<void> {
     stopUrlCapture();
     stopHeartbeat();
     stopSync();
+    // Whatever did not upload — offline, or a send that failed. On a
+    // shared machine none of it may sit on disk for whoever logs in next.
+    discardAllQueuedData();
     // No session left to poll against — both gates resolve to "off",
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
@@ -1833,6 +1951,9 @@ async function registerIpcHandlers(): Promise<void> {
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
+      // Signed out remotely: the token is dead, so nothing queued can be
+      // sent any more, and it must not wait for whoever logs in next.
+      discardAllQueuedData();
     }
     return result;
   }
