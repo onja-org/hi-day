@@ -23,7 +23,7 @@ import { InviteLinksService } from '../services/invite-links.service';
 // Admins manage every link; managers only their own (see InviteLinksService).
 @Controller('organisations/:id/invite-links')
 @UseGuards(JwtAuthGuard, RoleGuard)
-@RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+@RequireRole(MembershipRole.ADMIN)
 export class InviteLinksController {
   constructor(private readonly inviteLinksService: InviteLinksService) {}
 

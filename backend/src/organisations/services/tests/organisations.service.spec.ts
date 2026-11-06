@@ -235,6 +235,7 @@ describe('OrganisationsService', () => {
         allowedApps: 'all',
         timesheetModifyTime: 'off',
         canModifyTime: false,
+        canViewOthers: false,
         timesheetRequireApproval: false,
         timesheetManagersApproveOwn: false,
         timesheetRequireReason: true,

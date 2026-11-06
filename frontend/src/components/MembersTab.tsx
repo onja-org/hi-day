@@ -18,7 +18,7 @@ type MembersTabProps = {
 export function MembersTab({ organisationId }: MembersTabProps) {
   const projectsEnabled = useProjectsEnabled();
   const [search, setSearch] = useState("");
-  const membersQuery = useActiveMembers(organisationId);
+  const membersQuery = useActiveMembers(organisationId, { scope: "organisation" });
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
 

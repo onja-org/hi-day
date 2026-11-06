@@ -23,6 +23,10 @@ const COPIES = [
     from: 'backend/src/billing/seats.ts',
     to: 'frontend/src/lib/seatRules.generated.ts',
   },
+  {
+    from: 'backend/src/members/team-member-permissions.ts',
+    to: 'frontend/src/lib/teamMemberPermissions.generated.ts',
+  },
 ];
 
 for (const { from, to } of COPIES) {

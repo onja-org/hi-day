@@ -64,7 +64,9 @@ export function Sidebar({
   const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
-  const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
+  // Managing who is in the organisation is admin work, even for
+  // somebody who runs a team.
+  const canSeeMembers = isAdmin;
 
   const teamsLink: NavLink = {
     kind: "link",

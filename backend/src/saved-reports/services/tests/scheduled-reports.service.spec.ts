@@ -482,6 +482,9 @@ describe('ScheduledReportsService', () => {
         },
       });
       filtered.membership.role = MembershipRole.MANAGER;
+      filtered.membership.teamMemberships = [
+        { teamId: 't2', isManager: true },
+      ] as never;
 
       await service.runOne(filtered, NOW);
 

@@ -14,6 +14,8 @@ import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { ALLOW_SUSPENDED_ORGANISATION_KEY } from '../decorators/allow-suspended-organisation.decorator';
+import { ALLOW_TEAM_MANAGERS_KEY } from '../decorators/allow-team-managers.decorator';
+import { actsAsManager } from '../manager-scope.util';
 import { REQUIRE_ROLE_KEY } from '../decorators/require-role.decorator';
 
 @Injectable()
@@ -62,6 +64,8 @@ export class RoleGuard implements CanActivate {
         organisationId: organisation.id,
         status: MembershipStatus.ACTIVE,
       },
+      // actsAsManager reads the caller's teams.
+      relations: { teamMemberships: true },
     });
 
     if (!membership) {
@@ -74,11 +78,19 @@ export class RoleGuard implements CanActivate {
       MembershipRole[] | undefined
     >(REQUIRE_ROLE_KEY, [context.getHandler(), context.getClass()]);
 
-    if (
-      requiredRoles &&
-      requiredRoles.length > 0 &&
-      !requiredRoles.includes(membership.role)
-    ) {
+    // Only where the route opted in: managing a team is a grant over that
+    // team's people, not over everything the `manager` role can reach.
+    const allowsTeamManagers = this.reflector.getAllAndOverride<
+      boolean | undefined
+    >(ALLOW_TEAM_MANAGERS_KEY, [context.getHandler(), context.getClass()]);
+
+    const allowed =
+      requiredRoles?.includes(membership.role) ||
+      (allowsTeamManagers &&
+        requiredRoles?.includes(MembershipRole.MANAGER) &&
+        actsAsManager(membership));
+
+    if (requiredRoles && requiredRoles.length > 0 && !allowed) {
       throw new ForbiddenException(
         'You do not have the required role for this organisation.',
       );
