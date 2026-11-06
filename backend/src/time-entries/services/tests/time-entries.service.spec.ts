@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Between, EntityManager, Not, Repository } from 'typeorm';
+import { Between, EntityManager, FindOperator, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../../captures/services/capture-cleanup.service';
@@ -1587,6 +1587,100 @@ describe('TimeEntriesService', () => {
       });
 
       await expect(start(service)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    describe('where the weekly limit counts from', () => {
+      // The week start used to be read in the server's timezone, so it only
+      // went wrong when that differed from the organisation's. Tests run
+      // with the server in UTC, as production does (jest.global-setup.js),
+      // so these fail on a machine set to Madagascar time too.
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      async function weeklyWindowStart(
+        now: string,
+        settings: Record<string, unknown>,
+      ): Promise<string> {
+        jest.useFakeTimers({
+          now: new Date(now),
+          doNotFake: [
+            'nextTick',
+            'setImmediate',
+            'clearImmediate',
+            'setTimeout',
+            'clearTimeout',
+            'setInterval',
+            'clearInterval',
+            'queueMicrotask',
+          ],
+        });
+        const find = jest.fn().mockResolvedValue([]);
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ weeklyLimitHours: 40, ...settings }),
+          timeEntriesRepo: makeTimeEntriesRepo({
+            find,
+            save: jest.fn((entry: unknown) => Promise.resolve(entry)),
+          }),
+        });
+
+        await start(service);
+
+        const where = find.mock.calls
+          .map(
+            ([options]) =>
+              (options as { where?: Record<string, unknown> }).where,
+          )
+          .find((clause) => clause !== undefined && 'startedAt' in clause);
+        return (where!.startedAt as FindOperator<Date>).value.toISOString();
+      }
+
+      it('starts on Monday midnight in Madagascar, not the Tuesday before', async () => {
+        // Monday 2 Nov, 09:00 EAT.
+        await expect(
+          weeklyWindowStart('2026-11-02T06:00:00Z', {
+            timezone: 'Indian/Antananarivo',
+          }),
+        ).resolves.toBe('2026-11-01T21:00:00.000Z');
+      });
+
+      it('still counts Monday on the Sunday night that ends the week', async () => {
+        // Sunday 8 Nov, 23:00 EAT.
+        await expect(
+          weeklyWindowStart('2026-11-08T20:00:00Z', {
+            timezone: 'Indian/Antananarivo',
+          }),
+        ).resolves.toBe('2026-11-01T21:00:00.000Z');
+      });
+
+      it('starts on Sunday midnight for an organisation whose week starts on Sunday', async () => {
+        await expect(
+          weeklyWindowStart('2026-11-02T06:00:00Z', {
+            timezone: 'Indian/Antananarivo',
+            weekStartsOn: 'sunday',
+          }),
+        ).resolves.toBe('2026-10-31T21:00:00.000Z');
+      });
+
+      it('starts on Monday midnight west of UTC too', async () => {
+        // Monday 2 Nov, 08:00 EST.
+        await expect(
+          weeklyWindowStart('2026-11-02T13:00:00Z', {
+            timezone: 'America/New_York',
+          }),
+        ).resolves.toBe('2026-11-02T05:00:00.000Z');
+      });
+
+      it('keeps the week start on midnight across a daylight-saving change', async () => {
+        // Wednesday 4 Nov, noon EST; clocks went back on Sunday 1 Nov, so
+        // that Sunday's midnight was still EDT (UTC-4).
+        await expect(
+          weeklyWindowStart('2026-11-04T17:00:00Z', {
+            timezone: 'America/New_York',
+            weekStartsOn: 'sunday',
+          }),
+        ).resolves.toBe('2026-11-01T04:00:00.000Z');
+      });
     });
 
     it('does not treat expected weekly hours as a cap', async () => {
