@@ -8,6 +8,10 @@ import { Subscription } from '../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../database/entities/subscription-status.enum';
 import { EmailService } from '../../email/services/email.service';
 import { billingRecipients } from '../billing-recipients';
+import {
+  BILLING_ENABLED_VAR,
+  parseBillingEnabled,
+} from '../../entitlements/billing-enabled';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   accessEndsAfter,
@@ -45,6 +49,13 @@ export interface TrialStatus {
   /** ISO timestamp: when access stops, once enforcement exists. */
   accessEndsAt: string;
   /**
+   * Whether `accessEndsAt` is still ahead — the paid period or the trial,
+   * plus its grace days. Answered here so the browser never decides it from
+   * its own clock. What lets the Billing page offer to resume an ended
+   * subscription for exactly as long as the team can still work.
+   */
+  hasAccess: boolean;
+  /**
    * Set once they have paid: the end of the period paid for, which a
    * cancellation runs until and a renewal moves forward. Null while on
    * trial, and for an Organisation that never subscribed.
@@ -76,6 +87,8 @@ export class TrialService {
    */
   private readonly freeOrganisationIds: Set<number>;
 
+  private readonly billingEnabled: boolean;
+
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptions: Repository<Subscription>,
@@ -86,6 +99,9 @@ export class TrialService {
   ) {
     this.freeOrganisationIds = parseFreeOrganisationIds(
       configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
+    );
+    this.billingEnabled = parseBillingEnabled(
+      configService.get<string>(BILLING_ENABLED_VAR),
     );
   }
 
@@ -98,12 +114,18 @@ export class TrialService {
    * Takes the caller's `EntityManager` so the trial lands in the same
    * transaction that creates the Organisation — one can't exist without the
    * other.
+   *
+   * With billing off no row is written and this answers null — already how
+   * an Organisation that was never on a trial is spelled, so every surface
+   * gets the right answer from existing code.
    */
   async startTrial(
     manager: EntityManager,
     organisationId: string,
     now: Date = new Date(),
-  ): Promise<Subscription> {
+  ): Promise<Subscription | null> {
+    if (!this.billingEnabled) return null;
+
     return manager.save(
       manager.create(Subscription, {
         organisationId,
@@ -135,6 +157,7 @@ export class TrialService {
     // trial's own dates stay on the row as history, and reading them for
     // the banner would say "your trial ended" to somebody who is paying.
     const periodEnd = subscription.currentPeriodEnd;
+    const accessEndsAt = accessEndsAfter(periodEnd ?? subscription.trialEndsAt);
 
     return {
       status: subscription.status,
@@ -147,9 +170,8 @@ export class TrialService {
       daysLeft: trialDaysLeft(subscription.trialEndsAt, now),
       isExpired: isTrialExpired(subscription.trialEndsAt, now),
       isInGrace: isInTrialGrace(subscription.trialEndsAt, now),
-      accessEndsAt: accessEndsAfter(
-        periodEnd ?? subscription.trialEndsAt,
-      ).toISOString(),
+      accessEndsAt: accessEndsAt.toISOString(),
+      hasAccess: now.getTime() < accessEndsAt.getTime(),
       currentPeriodEnd: periodEnd ? periodEnd.toISOString() : null,
       isInPaidGrace: periodEnd ? isInGrace(periodEnd, now) : false,
       billingPeriod: subscription.billingPeriod,
@@ -166,6 +188,10 @@ export class TrialService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async sendDueTrialReminders(): Promise<void> {
+    // Stopped here rather than relying on there being no rows: an install
+    // that once billed still has them, and the emails must stop at once.
+    if (!this.billingEnabled) return;
+
     const now = new Date();
 
     const candidates = await this.subscriptions.find({

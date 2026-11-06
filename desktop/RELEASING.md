@@ -1,10 +1,14 @@
 # Releasing the desktop app
 
-Releases are built on our own machines and uploaded to the public
+Releases are built on maintainer machines and uploaded to the public
 [`onja-org/hi-day-releases`](https://github.com/onja-org/hi-day-releases)
-repo. GitHub Actions can't do it any more: the org has used up its minutes and
-storage. Users notice nothing, because installed apps only ever check that
-releases repo for updates. They don't care where a file was built.
+repo, rather than on hosted CI runners. Installed apps only ever check that
+releases repo for updates, so where a file was built makes no difference to
+anybody running Hi Day.
+
+Building on three machines is what produces signed, native artifacts for
+Linux, Windows and macOS — each platform's installer has to be built on
+that platform.
 
 Everything goes through [`scripts/release.sh`](scripts/release.sh). Every
 command is safe to re-run: if one fails, fix the cause and run the same command

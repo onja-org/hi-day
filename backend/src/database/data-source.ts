@@ -67,5 +67,9 @@ export default new DataSource({
     SavedReport,
     Subscription,
   ],
-  migrations: [__dirname + '/migrations/*.ts'],
+  // Both extensions, so the one data source serves the TypeScript CLI in
+  // development and the compiled build in a container — where there is no
+  // ts-node and the files are .js. A .ts-only glob silently matches nothing
+  // in dist, which looks like "no migrations to run" rather than an error.
+  migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

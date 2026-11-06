@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiClient, isTransportFailure } from '../api-client';
+import { ApiClient, isTransportFailure, serverVerdict } from '../api-client';
 
 const BASE_URL = 'https://api.example.com';
 
@@ -357,5 +357,44 @@ describe('ApiClient request deadline', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.signal).toBeUndefined();
+  });
+});
+
+describe('serverVerdict', () => {
+  const failed = (extra: Record<string, unknown> = {}) =>
+    ({ ok: false as const, message: 'no', ...extra });
+
+  it('calls a request that landed accepted', () => {
+    expect(serverVerdict({ ok: true, data: 1 })).toBe('accepted');
+  });
+
+  it('calls an unreached server undecided — nothing was decided', () => {
+    expect(serverVerdict(failed())).toBe('undecided');
+  });
+
+  // The whole point: these used to count as the server's answer, and the
+  // hours behind them were deleted on the strength of it.
+  it.each([500, 502, 503, 504, 429, 408])(
+    'calls %i undecided, so the queue keeps its place',
+    (status) => {
+      expect(serverVerdict(failed({ status }))).toBe('undecided');
+    },
+  );
+
+  it.each([400, 403, 404, 409, 410, 422])(
+    'calls %i a rejection the server would repeat',
+    (status) => {
+      expect(serverVerdict(failed({ status }))).toBe('rejected');
+    },
+  );
+
+  // A self-hoster's proxy, WAF or captive portal can answer anything on
+  // the way to the backend, and a stray 4xx must not cost somebody a day.
+  it.each([418, 451, 499])('retries the unrecognised %i rather than dropping it', (status) => {
+    expect(serverVerdict(failed({ status }))).toBe('undecided');
+  });
+
+  it('separates a dead session from both', () => {
+    expect(serverVerdict(failed({ status: 401, unauthorized: true }))).toBe('signedOut');
   });
 });

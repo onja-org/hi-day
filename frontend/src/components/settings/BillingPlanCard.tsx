@@ -6,6 +6,8 @@ import { MinusIcon, PlusIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { CLOUD_PRICING_URL } from "@/lib/cloudSiteUrl";
+import { formatShortDate } from "@/lib/formatShortDate";
 import { useBilledSeats, billedSeatsQueryKey } from "@/hooks/useBilledSeats";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { setBilledSeats } from "@/lib/setBilledSeats";
@@ -38,6 +40,12 @@ type BillingPlanCardProps = {
    * confirm.
    */
   paidPlan?: "annual" | "monthly" | null;
+  /**
+   * Set while a paid subscription is set to end: the count can't change,
+   * because adding seats would charge the card now for a subscription that
+   * is ending. Resuming it unlocks the counter. See `seatsMode`.
+   */
+  seatsLock?: { endsOn: string | null } | null;
 };
 
 /** Long enough to cover a run of stepper clicks, short enough to feel saved. */
@@ -55,7 +63,9 @@ export function BillingPlanCard({
   organisationId,
   showPurchase,
   paidPlan = null,
+  seatsLock = null,
 }: BillingPlanCardProps) {
+  const locked = seatsLock !== null;
   const seatsQuery = useBilledSeats(organisationId);
   const queryClient = useQueryClient();
   const [payingOpen, setPayingOpen] = useState(false);
@@ -102,6 +112,7 @@ export function BillingPlanCard({
   }, SAVE_DELAY_MS);
 
   function setSeats(next: string): void {
+    if (locked) return;
     setEdited(next);
     if (paidPlan) return;
     const value = parseSeatInput(next);
@@ -166,7 +177,7 @@ export function BillingPlanCard({
               type="button"
               aria-label="One seat fewer"
               onClick={() => nudge(-1)}
-              disabled={(parsed ?? MIN_PURCHASABLE_SEATS) <= MIN_PURCHASABLE_SEATS}
+              disabled={locked || (parsed ?? MIN_PURCHASABLE_SEATS) <= MIN_PURCHASABLE_SEATS}
               className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink text-slate-900 transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
             >
               <MinusIcon size={18} weight="bold" aria-hidden="true" />
@@ -181,15 +192,17 @@ export function BillingPlanCard({
               inputMode="numeric"
               value={draft}
               onChange={(event) => setSeats(event.target.value)}
+              disabled={locked}
               aria-invalid={parsed === null}
-              className="h-11 w-20 rounded-brand-sm border-2 border-ink bg-white px-3 text-center font-data text-lg font-bold text-primary-dark focus:border-primary focus:outline-none aria-invalid:border-error"
+              aria-describedby={locked ? "seats-locked" : undefined}
+              className="h-11 w-20 rounded-brand-sm border-2 border-ink bg-white px-3 text-center font-data text-lg font-bold text-primary-dark focus:border-primary focus:outline-none aria-invalid:border-error disabled:cursor-not-allowed disabled:opacity-60"
             />
 
             <button
               type="button"
               aria-label="One seat more"
               onClick={() => nudge(1)}
-              disabled={(parsed ?? 0) >= MAX_PURCHASABLE_SEATS}
+              disabled={locked || (parsed ?? 0) >= MAX_PURCHASABLE_SEATS}
               className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-brand-sm border-2 border-ink text-slate-900 transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
             >
               <PlusIcon size={18} weight="bold" aria-hidden="true" />
@@ -199,6 +212,14 @@ export function BillingPlanCard({
               <Spinner className="ml-1 text-primary-dark" />
             )}
           </div>
+
+          {seatsLock && (
+            <p id="seats-locked" className="mt-3 text-sm text-slate-900/70">
+              Seats can&apos;t be changed while your subscription is set to end
+              {seatsLock.endsOn ? ` on ${formatShortDate(seatsLock.endsOn)}` : ""}.
+              Resume your subscription to add seats.
+            </p>
+          )}
 
           {parsed === null && (
             <p role="alert" className="mt-3 text-sm font-semibold text-error">
@@ -253,7 +274,7 @@ export function BillingPlanCard({
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/pricing"
+                href={CLOUD_PRICING_URL}
                 className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-white px-4 text-sm font-bold text-ink transition-colors hover:bg-cream"
               >
                 See pricing
@@ -268,7 +289,7 @@ export function BillingPlanCard({
                 </button>
               ) : (
                 <Link
-                  href="/pricing"
+                  href={CLOUD_PRICING_URL}
                   className="flex h-11 cursor-pointer items-center rounded-brand-sm border-2 border-ink bg-primary px-4 text-sm font-bold text-white"
                 >
                   Add payment

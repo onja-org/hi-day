@@ -110,9 +110,10 @@ describe('TeamDashboardService', () => {
 
   function makeOrganisationsService(
     weekStartsOn: WeekStart = 'monday',
+    timezone = 'UTC',
   ): OrganisationsService {
     return {
-      getWeekStart: jest.fn().mockResolvedValue(weekStartsOn),
+      getWeekCalendar: jest.fn().mockResolvedValue({ weekStartsOn, timezone }),
     } as unknown as OrganisationsService;
   }
 
@@ -120,7 +121,7 @@ describe('TeamDashboardService', () => {
     byMembershipId: Record<string, unknown[]> = {},
   ): ScreenshotsService {
     return {
-      getScreenshotsForMembership: jest
+      getLatestScreenshotsForMembership: jest
         .fn()
         .mockImplementation(
           (_orgId: string, _callerId: string, membershipId: string) =>
@@ -196,6 +197,47 @@ describe('TeamDashboardService', () => {
     expect(summary.recentActivity).toEqual([]);
     expect(summary.appsAndSites).toEqual([]);
     expect(find).not.toHaveBeenCalled();
+  });
+
+  it("works out today and this week on the Organisation's own calendar", async () => {
+    // Monday 2 Nov 2026, 01:30 in Madagascar — still Sunday on the server.
+    jest.setSystemTime(new Date('2026-11-01T22:30:00Z'));
+    const members = [member({ id: 'm-1' })];
+    const justAfterMidnight = [
+      entry({
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date('2026-11-01T21:15:00Z'), // 00:15 Mon EAT
+        endedAt: new Date('2026-11-01T22:15:00Z'), // 1h
+      }),
+    ];
+    const timeEntries = makeTimeEntriesRepo(justAfterMidnight, [], []);
+    const service = new TeamDashboardService(
+      timeEntries,
+      makePausesRepo(),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService('monday', 'Indian/Antananarivo'),
+      makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    const [thisWeekQuery] = (timeEntries.find as jest.Mock).mock.calls[0] as [
+      { where: { startedAt: { value: Date[] } } },
+    ];
+    expect(
+      thisWeekQuery.where.startedAt.value.map((at) => at.toISOString()),
+    ).toEqual(['2026-11-01T21:00:00.000Z', '2026-11-08T21:00:00.000Z']);
+    expect(summary.members).toEqual([
+      expect.objectContaining({
+        membershipId: 'm-1',
+        workedTodaySeconds: 3600,
+      }),
+    ]);
   });
 
   it('aggregates seconds and projects worked across every scoped member', async () => {
@@ -297,6 +339,49 @@ describe('TeamDashboardService', () => {
     expect(summary.recentActivity).toHaveLength(1);
     expect(summary.recentActivity[0].membershipId).toBe('m-busy');
     expect(summary.recentActivity[0].screenshots).toHaveLength(2);
+  });
+
+  // Asking for the whole day and keeping three signed a URL for every
+  // screenshot the member took, only to throw nearly all of them away.
+  it('asks for only the newest few screenshots per member', async () => {
+    const members = [member({ id: 'm-busy' })];
+    const thisWeekEntries = [
+      entry({
+        membershipId: 'm-busy',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 11, 0, 0),
+      }),
+    ];
+    const getLatestScreenshotsForMembership = jest
+      .fn()
+      .mockResolvedValue([{ id: 's-newest' }, { id: 's-older' }]);
+    const screenshotsService = {
+      getLatestScreenshotsForMembership,
+    } as unknown as ScreenshotsService;
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makePausesRepo(),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      screenshotsService,
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(getLatestScreenshotsForMembership).toHaveBeenCalledWith(
+      'org-1',
+      'user-1',
+      'm-busy',
+      3,
+    );
+    expect(
+      summary.recentActivity[0].screenshots.map((screenshot) => screenshot.id),
+    ).toEqual(['s-newest', 's-older']);
   });
 
   it('combines already-grouped app and browser-domain totals into one ranked list', async () => {

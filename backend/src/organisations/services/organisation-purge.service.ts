@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { SubscriptionCancellationService } from '../../billing/services/subscription-cancellation.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -72,22 +73,31 @@ export class OrganisationPurgeService {
     private readonly storage: ScreenshotStorageService,
     private readonly auditLogService: AuditLogService,
     private readonly emailService: EmailService,
+    /** Absent with billing off — nothing is ever charged then. */
+    @Optional()
+    private readonly subscriptionCancellation?: SubscriptionCancellationService,
   ) {}
 
   /**
    * Irreversibly erases an organisation once its recovery window has closed.
    *
-   * Order matters. Screenshot objects go first: after `purgeAt` there is no
-   * restore to protect, and object deletion is idempotent, so a crash between
-   * the two steps just retries next run instead of orphaning objects whose DB
-   * rows (the only record of their keys) are already gone. The database work
-   * then runs in a single transaction — it either erases everything or
-   * nothing — and verifies inside that transaction that no org-scoped row
-   * survives before committing.
+   * Order matters. The Stripe subscription is cancelled first: our row holds
+   * the only record of its id, so once the row is gone nothing could stop it
+   * charging. If Stripe can't be reached this throws before anything is
+   * erased, and the hourly job retries the whole purge. Screenshot objects
+   * go next: after `purgeAt` there is no restore to protect, and object
+   * deletion is idempotent, so a crash between the two steps just retries
+   * next run instead of orphaning objects whose DB rows (the only record of
+   * their keys) are already gone. The database work then runs in a single
+   * transaction — it either erases everything or nothing — and verifies
+   * inside that transaction that no org-scoped row survives before
+   * committing.
    */
   async purge(organisation: Organisation): Promise<void> {
     const organisationId = organisation.id;
     const prefix = `screenshots/${organisationId}/`;
+
+    await this.subscriptionCancellation?.cancelNow(organisationId);
 
     const members = await this.memberships.find({
       where: { organisationId },
@@ -223,6 +233,10 @@ export class OrganisationPurgeService {
     await byOrg('teams');
     await byOrg('memberships');
     await byOrg('organisation_deletion_requests');
+    // Would cascade with the organisation row, but stated here like every
+    // other table, so the order is readable in one place. Safe to drop now:
+    // `purge` has already cancelled the Stripe subscription this records.
+    await byOrg('subscriptions');
     await this.rehomeSharedDevices(manager, 'd."organisationId" = $1', [
       organisationId,
     ]);

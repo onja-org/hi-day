@@ -12,7 +12,10 @@ import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
 import { readCookie } from '../../common/cookies.util';
-import { setSessionCookies } from '../../common/session-cookies.util';
+import {
+  clearSessionCookies,
+  setSessionCookies,
+} from '../../common/session-cookies.util';
 import { DeviceSessionService } from '../../devices/services/device-session.service';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -27,10 +30,14 @@ import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
+import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
 import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { PasswordService } from './password.service';
-import { RefreshTokenService } from './refresh-token.service';
+import {
+  RefreshTokenRotation,
+  RefreshTokenService,
+} from './refresh-token.service';
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
@@ -73,6 +80,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
+    private readonly accessTokenService: AccessTokenService,
     private readonly refreshTokenService: RefreshTokenService,
     private readonly emailService: EmailService,
     private readonly organisationsService: OrganisationsService,
@@ -216,7 +224,7 @@ export class AuthService {
       refreshToken = await this.refreshTokenService.issue(manager, user.id);
     });
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Password set. You are now signed in.' };
@@ -292,7 +300,7 @@ export class AuthService {
       return { message: 'Logged in.', deviceId, deviceToken };
     }
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     const refreshToken = await this.refreshTokenService.issue(
       this.dataSource.manager,
       user.id,
@@ -378,7 +386,11 @@ export class AuthService {
         passwordResetExpiresAt: null,
       });
 
+      // Ends every session, including access tokens that haven't expired.
+      // The new access token below is signed after this commits, so it
+      // carries the bumped version and this browser stays signed in.
       await this.refreshTokenService.revokeAll(manager, user.id);
+      await this.accessTokenService.endAllSessions(manager, user.id);
       refreshToken = await this.refreshTokenService.issue(manager, user.id);
 
       await this.auditLogService.record(manager, {
@@ -389,7 +401,7 @@ export class AuthService {
 
     await this.signOutAllDevices(user.id);
 
-    const accessToken = this.tokenService.signAccessToken(user.id);
+    const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
     recordAnalyticsEvent('password_reset_completed', { userId: user.id });
 
@@ -402,15 +414,37 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const presentedToken = readCookie(request, REFRESH_TOKEN_COOKIE);
 
+    // Clear on a failed refresh, or the browser retries the same doomed
+    // token on every page load. Only here: a request that never reaches the
+    // rotation says nothing about whether the token is still good.
     if (!presentedToken) {
+      clearSessionCookies(response);
       throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
     }
 
-    const { userId, token: refreshToken } = await this.dataSource.transaction(
-      (manager) => this.refreshTokenService.rotate(manager, presentedToken),
-    );
+    let rotation: RefreshTokenRotation;
+    try {
+      rotation = await this.dataSource.transaction((manager) =>
+        this.refreshTokenService.rotate(manager, presentedToken),
+      );
+    } catch (error) {
+      clearSessionCookies(response);
+      throw error;
+    }
 
-    const accessToken = this.tokenService.signAccessToken(userId);
+    if (rotation.outcome === 'reuse_detected') {
+      // A stolen token was replayed. End every web session — refresh and
+      // access tokens alike — in a transaction of its own: done inside the
+      // rotation's, the error below would roll it back and the thief would
+      // lose nothing.
+      await this.endAllWebSessions(rotation.userId);
+      clearSessionCookies(response);
+      throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
+    }
+
+    const { userId, token: refreshToken } = rotation;
+
+    const accessToken = await this.accessTokenService.sign(userId);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     return { message: 'Session refreshed.' };
@@ -444,32 +478,59 @@ export class AuthService {
   }
 
   /**
-   * The explicit "sign out everywhere" action: ends this web session *and*
-   * every paired device (desktop app, etc.), stopping whatever timer each
-   * revoked device had running. Use when the account may be compromised or
-   * a device needs to be cut off — ordinary `logout` no longer implies this
-   * (see ADR-0017).
+   * The explicit "sign out everywhere" action: ends every web session the
+   * user has — every refresh token, and every access token through the
+   * session version, so other browsers are cut off immediately rather than
+   * when their access token expires — plus every paired device (desktop
+   * app, etc.), stopping whatever timer each revoked device had running.
+   * Use when the account may be compromised or a device needs to be cut
+   * off — ordinary `logout` no longer implies this (see ADR-0017).
    */
   async logoutEverywhere(
     request: Request,
     response: Response,
   ): Promise<{ message: string }> {
-    const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
+    const userId = await this.resolveSessionOwner(request);
 
+    if (userId) {
+      await this.endAllWebSessions(userId);
+      await this.signOutAllDevices(userId);
+    }
+
+    clearSessionCookies(response);
+
+    return { message: 'Logged out everywhere.' };
+  }
+
+  /**
+   * Every refresh token revoked and every access token invalidated, so no
+   * browser stays signed in. Paired devices are separate: callers that
+   * mean to cut those off too call `signOutAllDevices`.
+   */
+  private async endAllWebSessions(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.refreshTokenService.revokeAll(manager, userId);
+      await this.accessTokenService.endAllSessions(manager, userId);
+    });
+  }
+
+  /**
+   * Whose sessions this browser may end: the owner of a still-usable
+   * refresh token, or failing that a still-valid access token. A revoked
+   * or expired cookie identifies nobody.
+   */
+  private async resolveSessionOwner(request: Request): Promise<string | null> {
+    const refreshToken = readCookie(request, REFRESH_TOKEN_COOKIE);
     if (refreshToken) {
-      const userId = await this.refreshTokenService.revokeByValue(
+      const owner = await this.refreshTokenService.findLiveOwner(
         this.dataSource.manager,
         refreshToken,
       );
-      if (userId) {
-        await this.signOutAllDevices(userId);
-      }
+      if (owner) return owner;
     }
 
-    response.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/' });
-    response.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/' });
-
-    return { message: 'Logged out everywhere.' };
+    const accessToken = readCookie(request, ACCESS_TOKEN_COOKIE);
+    return accessToken ? this.accessTokenService.verify(accessToken) : null;
   }
 
   async getProfile(userId: string): Promise<UserProfile> {

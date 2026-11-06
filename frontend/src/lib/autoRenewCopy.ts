@@ -6,9 +6,8 @@ import type { PaidSubscription } from "@/types/subscription";
  * page that states a commitment to charge somebody — worth being able to
  * test every branch of without rendering anything.
  *
- * A sentence only. Auto-renew cannot be changed from the page any more, so
- * there is no action beside it to describe — turning it off is Stripe's
- * Customer Portal.
+ * A sentence only. The button beside it — cancel, or keep — is decided by
+ * `renewalAction`.
  */
 export type AutoRenewCopy = {
   /** The sentence itself. */

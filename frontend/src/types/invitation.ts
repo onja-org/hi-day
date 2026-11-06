@@ -31,6 +31,15 @@ export type InviteEntryResult = {
   email: string;
   outcome: InviteOutcome;
   message?: string;
+  /**
+   * The join link, where the backend could not email it — a self-hosted
+   * install with no `RESEND_API_KEY`. Email is optional there, so the
+   * invitation has to reach its recipient some other way and the admin who
+   * created it is the one who can pass it on.
+   *
+   * Absent on any installation that sends mail, Hi Day Cloud included.
+   */
+  acceptUrl?: string;
 };
 
 export type InviteMembersResult = ApiResult<{ results: InviteEntryResult[] }>;

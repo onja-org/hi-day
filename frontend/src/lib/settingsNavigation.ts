@@ -9,7 +9,10 @@ export type SettingsGroup = {
   sections: SettingsSection[];
 };
 
-/** The Settings structure, as the epic's shell ticket spells it out. */
+/** The group that exists only where this installation bills somebody. */
+export const BILLING_GROUP_KEY = "billing";
+
+/** The full list. What an installation shows is `visibleSettingsGroups`. */
 export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     key: "organization",
@@ -49,6 +52,13 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
 ];
 
+/** One filter for the sidebar, the cards and the section header. The pages
+ * still 404 separately — omitting a link is not refusing a route. */
+export function visibleSettingsGroups(billingEnabled: boolean): SettingsGroup[] {
+  if (billingEnabled) return SETTINGS_GROUPS;
+  return SETTINGS_GROUPS.filter((group) => group.key !== BILLING_GROUP_KEY);
+}
+
 export function settingsHref(
   organisationId: string | number,
   groupKey: string,
@@ -58,17 +68,19 @@ export function settingsHref(
 }
 
 /**
- * The group and section a path is showing, or null when it is not a settings
- * section — so the nav can mark one entry active without string-matching at
- * each call site.
+ * The group and section a path is showing, or null when it is not one. Takes
+ * the billing flag because a billing path on a self-hosted install is not a
+ * settings section at all.
  */
 export function activeSettingsLocation(
   pathname: string,
+  billingEnabled: boolean,
 ): { groupKey: string; sectionKey: string } | null {
   const match = /\/settings\/([^/]+)\/([^/]+)/.exec(pathname);
   if (!match) return null;
 
-  const group = SETTINGS_GROUPS.find((candidate) => candidate.key === match[1]);
+  const groups = visibleSettingsGroups(billingEnabled);
+  const group = groups.find((candidate) => candidate.key === match[1]);
   const section = group?.sections.find((candidate) => candidate.key === match[2]);
   return group && section
     ? { groupKey: group.key, sectionKey: section.key }

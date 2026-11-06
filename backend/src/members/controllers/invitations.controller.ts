@@ -27,7 +27,7 @@ const INVITE_CREATE_THROTTLE_LIMIT = 20;
 
 @Controller('organisations/:id/invitations')
 @UseGuards(JwtAuthGuard, RoleGuard)
-@RequireRole(MembershipRole.ADMIN, MembershipRole.MANAGER)
+@RequireRole(MembershipRole.ADMIN)
 export class InvitationsController {
   constructor(private readonly invitationsService: InvitationsService) {}
 

@@ -6,6 +6,21 @@
 export {};
 
 declare global {
+  /** Which Hi Day server this agent talks to — see main/server-url.ts. */
+  interface ServerUrlState {
+    url: string;
+    /** Whether that is the built-in default rather than something chosen. */
+    isDefault: boolean;
+    /** False where DESKTOP_API_URL is set, which wins over anything typed. */
+    canEdit: boolean;
+  }
+
+  interface SaveServerUrlResult {
+    ok: boolean;
+    message?: string;
+    url: string;
+  }
+
   interface AuthStatus {
     loggedIn: boolean;
     email?: string;
@@ -164,6 +179,11 @@ declare global {
         startPairing: () => Promise<StartPairingResult>;
         pairingStatus: () => Promise<PairingPollResult>;
       };
+      server: {
+        get: () => Promise<ServerUrlState>;
+        set: (url: string) => Promise<SaveServerUrlResult>;
+        reset: () => Promise<ServerUrlState>;
+      };
       logout: () => Promise<AuthStatus>;
       tracking: {
         projectsSetting: () => Promise<TrackingResult<{ projectsEnabled: boolean }>>;
@@ -191,6 +211,7 @@ declare global {
         entriesBetween: (from: string, to: string) => Promise<TrackingResult<TrackedEntry[]>>;
         completedTotals: (from: string, to: string) => Promise<TrackingResult<CompletedTotals>>;
         idlePolicy: () => Promise<TrackingResult<IdlePolicy>>;
+        autoStartDue: () => Promise<boolean>;
         permissionStatus: () => Promise<TrackingResult<CapturePermissionStatus>>;
         requestScreenRecordingAccess: () => Promise<void>;
         openPrivacySettings: (

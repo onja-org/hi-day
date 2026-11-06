@@ -8,6 +8,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/modules/auth.module';
 import { BillingModule } from './billing/modules/billing.module';
+import { isBillingEnabled } from './entitlements/billing-enabled';
+import { EntitlementsModule } from './entitlements/entitlements.module';
 import { ContactModule } from './contact/modules/contact.module';
 import { DashboardModule } from './dashboard/modules/dashboard.module';
 import { ReportsModule } from './reports/modules/reports.module';
@@ -34,7 +36,14 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
-    BillingModule,
+    // Picks the Cloud or the self-hosted shape, and serves GET /config so
+    // the browser can find out which.
+    EntitlementsModule.register(),
+    // The Billing API — the admin-facing pages and the Stripe webhook —
+    // exists only where this installation bills somebody. Self-hosted
+    // installs do not merely hide it: the routes are never registered, so
+    // they 404, and no payment configuration is read to start up.
+    ...(isBillingEnabled() ? [BillingModule] : []),
     MembersModule,
     DevicesModule,
     ProjectsModule,

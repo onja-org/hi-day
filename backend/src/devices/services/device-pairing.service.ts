@@ -42,6 +42,13 @@ export type DevicePairingPollResult =
       status: 'approved';
       deviceId: string;
       deviceToken: string;
+      /**
+       * Who and where the device is now logged in. The desktop stamps
+       * everything it queues offline with these, so a backlog captured
+       * under one login is never uploaded under the next.
+       */
+      userId: string;
+      organisationId: string;
       email: string;
       name: string;
       organisationName: string;
@@ -193,6 +200,8 @@ export class DevicePairingService {
 
       return {
         ...result,
+        userId: fresh.approvedByUserId!,
+        organisationId: fresh.approvedOrganisationId!,
         email: approver.email,
         // A User can sign up with no name set.
         name:
@@ -210,6 +219,8 @@ export class DevicePairingService {
       status: 'approved',
       deviceId: issued.deviceId,
       deviceToken: issued.token,
+      userId: issued.userId,
+      organisationId: issued.organisationId,
       email: issued.email,
       name: issued.name,
       organisationName: issued.organisationName,

@@ -1,0 +1,20 @@
+# Everything a build should fetch or produce for itself.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/.turbo
+
+# Never copy real secrets into an image layer.
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Not needed to build or run the services.
+.git
+.github
+desktop
+docs
+**/*.md
+!README.md

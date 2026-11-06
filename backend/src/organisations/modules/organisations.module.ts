@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { JwtAuthModule } from '../../auth/modules/jwt-auth.module';
 import { BillingModule } from '../../billing/modules/billing.module';
+import { isBillingEnabled } from '../../entitlements/billing-enabled';
+import { EntitlementsModule } from '../../entitlements/entitlements.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -32,11 +34,16 @@ import { TimesheetReasonsService } from '../services/timesheet-reasons.service';
       User,
     ]),
     AuditLogModule,
-    BillingModule,
+    EntitlementsModule.register(),
     JwtAuthModule,
     EmailModule,
     ScreenshotStorageModule,
     TimeEntriesModule,
+    // Deletion stops the Stripe subscription. With billing off there is
+    // none, and BillingModule must not be imported (see EntitlementsModule),
+    // so the deletion services take SubscriptionCancellationService as
+    // @Optional().
+    ...(isBillingEnabled() ? [BillingModule] : []),
   ],
   controllers: [
     OrganisationsController,

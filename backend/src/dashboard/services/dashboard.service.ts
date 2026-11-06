@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
-import { localDateKey } from '../../common/local-date-key.util';
+import { calendarWeekAt, dateKeyInZone } from '../../common/calendar-week.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
   buildPauseStates,
@@ -17,15 +17,13 @@ import { MembershipStatus } from '../../database/entities/membership-status.enum
 import { ProjectColour } from '../../database/entities/project-colour.enum';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
-import type { WeekStart } from '../../organisations/company-profile';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_DAYS = 7;
 
 export interface DashboardWeekDay {
-  /** YYYY-MM-DD, in the server's local timezone — not the Organisation's,
-   * unlike the timesheet. A known divergence. */
+  /** YYYY-MM-DD, on the Organisation's own calendar (its timezone). */
   date: string;
   seconds: number;
 }
@@ -85,20 +83,16 @@ export class DashboardService {
   ): Promise<DashboardSummary> {
     const membership = await this.getActiveMembership(organisationId, userId);
     const now = new Date();
-    const weekStart = this.startOfWeek(
-      now,
-      await this.organisationsService.getWeekStart(organisationId),
-    );
+    const { weekStartsOn, timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    const week = calendarWeekAt(now, timezone, weekStartsOn);
 
     const [thisWeekEntries, yesterdaySameSpanEntries, lastWeekSameSpanEntries] =
       await Promise.all([
         this.timeEntries.find({
           where: {
             membershipId: membership.id,
-            startedAt: Between(
-              weekStart,
-              new Date(weekStart.getTime() + WEEK_DAYS * DAY_MS),
-            ),
+            startedAt: Between(week.weekStart, week.weekEnd),
           },
           relations: { project: true },
           order: { startedAt: 'ASC' },
@@ -107,7 +101,7 @@ export class DashboardService {
           where: {
             membershipId: membership.id,
             startedAt: Between(
-              new Date(this.startOfDay(now).getTime() - DAY_MS),
+              week.yesterdayStart,
               new Date(now.getTime() - DAY_MS),
             ),
           },
@@ -116,7 +110,7 @@ export class DashboardService {
           where: {
             membershipId: membership.id,
             startedAt: Between(
-              new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS),
+              week.lastWeekStart,
               new Date(now.getTime() - WEEK_DAYS * DAY_MS),
             ),
           },
@@ -129,8 +123,11 @@ export class DashboardService {
       ...lastWeekSameSpanEntries,
     ]);
 
-    const todayKey = localDateKey(now);
-    const byDay = this.zeroFilledWeek(weekStart);
+    const todayKey = week.todayKey;
+    const byDay: DashboardWeekDay[] = week.dayKeys.map((date) => ({
+      date,
+      seconds: 0,
+    }));
     let workedTodaySeconds = 0;
     let workedThisWeekSeconds = 0;
     const projectSeconds = new Map<string, DashboardProjectTime>();
@@ -155,7 +152,7 @@ export class DashboardService {
     for (const entry of thisWeekEntries) {
       const seconds = computeActiveSeconds(entry, pauseStates, now);
 
-      const key = localDateKey(entry.startedAt);
+      const key = dateKeyInZone(entry.startedAt, timezone);
       entriesByDay.set(key, [...(entriesByDay.get(key) ?? []), entry]);
       // A Project breakdown is only about entries that have one.
       if (entry.projectId === null || !entry.project) continue;
@@ -298,27 +295,5 @@ export class DashboardService {
         where: { timeEntryId: In(timeEntryIds) },
       }),
     );
-  }
-
-  private startOfDay(date: Date): Date {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    return start;
-  }
-
-  private startOfWeek(date: Date, weekStartsOn: WeekStart): Date {
-    const start = this.startOfDay(date);
-    // getDay() is 0 for Sunday, which is six days into a Monday-start week.
-    const offset =
-      weekStartsOn === 'monday' ? (start.getDay() + 6) % 7 : start.getDay();
-    start.setDate(start.getDate() - offset);
-    return start;
-  }
-
-  private zeroFilledWeek(weekStart: Date): DashboardWeekDay[] {
-    return Array.from({ length: WEEK_DAYS }, (_, index) => ({
-      date: localDateKey(new Date(weekStart.getTime() + index * DAY_MS)),
-      seconds: 0,
-    }));
   }
 }

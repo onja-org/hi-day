@@ -125,6 +125,30 @@ timer and start/stop, and one straight to the 68×68 square, so the
 smallest view costs one click rather than two. An idle prompt or a
 tracking error expands back to the full window automatically.
 
+**Starting the timer when a working day begins** (`docs/adr/0029-...`) is
+**on** unless somebody turns it off, under **Preferences → Start timer when
+the computer starts** in the tray. It fires once per day *and* once per
+power-on — either is an occasion — but never per launch, since a crash
+relaunch or an update restart is the same machine on the same day. Both
+matter: most people suspend rather than shut down, so the morning lid-open
+is a new day on yesterday's power-on, while a machine rebooted at lunchtime
+is a new power-on on the same day. The day is local midnight, the same
+boundary the timer display counts from.
+
+Because a suspended machine never relaunches anything, the renderer asks
+again **on wake** as well as at setup — that is the only moment a new day
+gets noticed there.
+
+Start the day signed out and it waits: the app launches regardless (login
+item registration happens before any auth check), and the timer starts at
+the sign-in instead — once, so signing out and back in later the same day
+does nothing. An unanswered idle question or a crash-recovered timer comes
+first and takes that occasion's start with it, rather than leaving it to be
+collected hours later. It tracks whatever the play button would, a dialog
+says it happened with **Stop timer** and **OK**, and a refusal (a day the
+organisation does not track, a spent work limit) goes to the notification
+shelf instead, since nobody clicked anything.
+
 **Start/Stop timer in the tray leaves the window where it is** — hidden
 stays hidden, since that item is for someone who did not want to come back
 to it. What it did arrives as a desktop notification instead ("Stopped timer
@@ -431,22 +455,108 @@ AppImage/`.deb` directly.
 
 ## Which backend the app talks to
 
-`resolveApiBaseUrl` (`desktop/src/main/api-base-url.ts`) picks the API
-base URL in this order:
+Hi Day is self-hostable, so most installs are not talking to hiday.io.
+There is a **Server** field on the login screen for exactly that, collapsed
+by default because the built-in address is right for everybody on Hi Day
+Cloud.
+
+`resolveApiBaseUrl` (`desktop/src/main/api-base-url.ts`) picks the API base
+URL in this order:
 
 1. `DESKTOP_API_URL`, if set — always wins. Point a local build or a
-   one-off CI build at staging with this.
-2. Otherwise, [`app.isPackaged`](https://www.electronjs.org/docs/latest/api/app#appispackaged):
+   one-off CI build at staging with this. The Server field goes read-only
+   and says why, rather than disappearing.
+2. The server typed on the login screen, remembered on this machine.
+3. Otherwise, [`app.isPackaged`](https://www.electronjs.org/docs/latest/api/app#appispackaged):
    an installed `.exe`/`.dmg`/`.AppImage` defaults to the production API
-   (`https://workfoce-monitoring-api.up.railway.app`); `electron .` (dev
-   mode) defaults to `http://localhost:3001`.
+   (`https://api.hiday.io`); `electron .` (dev mode) defaults to
+   `http://localhost:3001`.
 
-This matters because an _installed_ app has no way to inherit a
-developer's shell environment — an env-var-only default would leave every
-real user's copy silently trying (and failing) to reach `localhost`. If
-the production API URL ever changes, update `PRODUCTION_API_URL` in
-`api-base-url.ts` (and re-cut a release — there's no remote config or
-auto-update yet, see **Known limitations** below).
+The env var alone used to be the only way to change this, which an
+_installed_ app cannot see — so a self-hoster had to build their own
+desktop app to reach their own server. That is what the field fixes.
+The same reasoning keeps the packaged default off localhost: an installed
+app has no shell environment to inherit, and an env-var-only default would
+leave every real user's copy silently failing to reach `localhost`.
+
+### The Server field
+
+- Stored in `setup-state.json` (`rememberServerUrl`), **not** in the
+  session — signing out must not forget the address you need in order to
+  sign back in.
+- Validated before it is saved (`validateServerUrl`). HTTPS is required,
+  except for `localhost`, `127.0.0.1`, `*.local` and the private ranges
+  `10/8`, `192.168/16` and `172.16/12`: a device token travels on every
+  request, and a self-hosted server on an office LAN very often has no
+  certificate.
+- Normalised (`normaliseServerUrl`) so a trailing slash cannot produce
+  `https://host//path`, and the same server typed two ways is one string.
+- Checked for a reply before saving, with a `GET /config` — the backend's
+  one unguarded endpoint, so a 200 means a Hi Day server genuinely serving
+  rather than anything listening on the port. Nothing is written if it
+  fails, so a typo leaves the working address in place.
+- `ApiClient` reads the address per request rather than capturing it, so
+  changing servers does not require rebuilding the uploaders, queue and
+  tray that were handed the client at startup.
+
+If the Hi Day Cloud API URL ever changes, update `PRODUCTION_API_URL` in
+`api-base-url.ts` and re-cut a release.
+
+## Self-hosting the agent
+
+A company running their own Hi Day has two ways to get the desktop app to
+their staff.
+
+### Use the official build (recommended)
+
+Install from
+[`onja-org/hi-day-releases`](https://github.com/onja-org/hi-day-releases)
+as everybody else does, then on the login screen open **Self-hosted?
+Change server** and enter the backend's address — `https://api.example.com`.
+
+That address is kept in `setup-state.json` in the app's own data
+directory, so it survives logging out, re-pairing and an update installed
+over the top. Staff set it once.
+
+Auto-updates keep coming from `onja-org/hi-day-releases`, which is what
+you want: the same open-source agent, updated, pointed at your server.
+Nothing about using your own backend makes Onja's builds less
+appropriate.
+
+### Build your own
+
+The source is AGPL, so nothing stops you:
+
+```bash
+pnpm --filter desktop dist:linux    # or dist:win / dist:mac
+```
+
+Three things to know before you do.
+
+**Change the `publish` block, or your build will be replaced by ours.**
+`electron-builder.yml` writes it into the installed app as
+`app-update.yml`, and the updater runs with `autoDownload` and
+`autoInstallOnAppQuit` on:
+
+```yaml
+publish:
+  provider: github
+  owner: onja-org          # <- point this at your own releases
+  repo: hi-day-releases    #    or remove it to disable updates
+```
+
+Leave it as it is and your customised build quietly becomes Onja's on the
+next restart.
+
+**Signing is yours.** Unsigned builds trip Gatekeeper on macOS and
+SmartScreen on Windows. The certificates and their cost are your problem.
+
+**Two native sidecars need their own toolchains**: the .NET resolver on
+Windows and the Swift Firefox helper on macOS. See **Building
+installers** below.
+
+Unless you mean to change how the agent behaves, the first option is far
+less work and stays current on its own.
 
 ## Building installers
 

@@ -2,11 +2,14 @@
 
 import { useTrialStatus } from "@/hooks/useTrialStatus";
 import { useSubscription } from "@/hooks/useSubscription";
+import { canStartSubscription } from "@/lib/canStartSubscription";
+import { seatsMode } from "@/lib/seatsMode";
 import { TRIAL_DAYS } from "@/lib/pricing.generated";
+import { AutoRenewControl } from "./AutoRenewControl";
 import { BillingPlanCard } from "./BillingPlanCard";
 import { TrialCard } from "./TrialCard";
 import { SubscriptionCard } from "./SubscriptionCard";
-import { PricingLargeTeam } from "../pricing/PricingLargeTeam";
+import { PricingLargeTeam } from "../billing/PricingLargeTeam";
 import { ErrorMessage } from "../ErrorMessage";
 import { Spinner } from "../Spinner";
 
@@ -30,6 +33,7 @@ export function SubscriptionSettings({
   const subscriptionQuery = useSubscription(organisationId);
 
   const isFree = trialQuery.data?.isFree ?? false;
+  const mode = seatsMode(subscriptionQuery.data);
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,7 +74,18 @@ export function SubscriptionSettings({
         !isFree &&
         (trialQuery.data.trial.isPaid ? (
           subscriptionQuery.data ? (
-            <SubscriptionCard subscription={subscriptionQuery.data} />
+            <SubscriptionCard
+              subscription={subscriptionQuery.data}
+              accessEndsAt={trialQuery.data.trial.accessEndsAt}
+              hasAccess={trialQuery.data.trial.hasAccess}
+              renewalControl={
+                <AutoRenewControl
+                  organisationId={organisationId}
+                  subscription={subscriptionQuery.data}
+                  hasAccess={trialQuery.data.trial.hasAccess}
+                />
+              }
+            />
           ) : subscriptionQuery.isLoading ? null : (
             /* Paid here, but Stripe has nothing to show — a webhook that
                never landed, or a subscription since deleted. Says so rather
@@ -94,10 +109,15 @@ export function SubscriptionSettings({
       {trialQuery.isSuccess && !trialQuery.data?.trial && !isFree && (
         <section className="rounded-brand border-2 border-ink bg-white p-6 shadow-hard-sm">
           <h2 className="text-base font-bold text-primary-dark">Your plan</h2>
+          {/* Two causes land here and this card cannot tell them apart: an
+              organisation created before trials existed, and one created
+              while billing was switched off. It used to assert the first,
+              which read as plainly wrong to anybody in the second. */}
           <p className="mt-1 text-sm text-slate-900/60">
-            Your organisation isn&apos;t on a plan. It was created before the{" "}
-            {TRIAL_DAYS}-day free trial existed, so there&apos;s nothing
-            running out and nothing to pay.
+            Your organisation has no subscription, so there&apos;s nothing
+            running out and nothing to pay. That applies to organisations
+            created before the {TRIAL_DAYS}-day free trial existed, and to
+            any created while billing was switched off.
           </p>
         </section>
       )}
@@ -106,13 +126,19 @@ export function SubscriptionSettings({
           count and a price are both just wrong numbers. */}
       {!isFree && (
         <>
-          {/* Seats stay editable once paying; the price and "Add payment"
-              do not — the summary card above is their plan, and offering to
-              pay again is asking them to pay twice. */}
+          {/* The price and "Add payment" are hidden while the subscription
+              can still charge — offering to pay again then is asking them to
+              pay twice. Seats are confirmed changes while it renews, locked
+              while it is set to end, and a plain purchase otherwise. */}
           <BillingPlanCard
             organisationId={organisationId}
-            showPurchase={!trialQuery.data?.trial?.isPaid}
-            paidPlan={subscriptionQuery.data?.plan ?? null}
+            showPurchase={canStartSubscription(trialQuery.data?.trial)}
+            paidPlan={mode === "change" ? (subscriptionQuery.data?.plan ?? null) : null}
+            seatsLock={
+              mode === "locked"
+                ? { endsOn: subscriptionQuery.data?.currentPeriodEnd ?? null }
+                : null
+            }
           />
           <PricingLargeTeam />
         </>

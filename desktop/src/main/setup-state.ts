@@ -13,7 +13,11 @@ interface SetupState {
   waylandScreenshotGranted?: boolean;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
+  autoStartTimer?: boolean;
+  lastAutoStartedBoot?: string;
+  lastAutoStartedDay?: string;
   webAppUrl?: string;
+  serverUrl?: string;
 }
 
 /**
@@ -56,6 +60,32 @@ export function markWaylandScreenshotGranted(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
 }
 
+/**
+ * The Hi Day server this install talks to, as typed on the login screen.
+ *
+ * Kept here rather than on the session because signing out must not forget
+ * it — the address is exactly what you need in order to sign back in, and
+ * a self-hoster who had to retype their server every time would rightly
+ * consider the field broken. Null until somebody changes it, which leaves
+ * the built-in default in charge.
+ */
+export function rememberedServerUrl(userDataDir: string): string | null {
+  return read(userDataDir).serverUrl ?? null;
+}
+
+export function rememberServerUrl(
+  userDataDir: string,
+  serverUrl: string | null,
+): void {
+  const state = read(userDataDir);
+  if (serverUrl === null) {
+    delete state.serverUrl;
+    write(userDataDir, state);
+    return;
+  }
+  write(userDataDir, { ...state, serverUrl });
+}
+
 /** Kept so a signed-out agent can still nudge: settings arrive over an
  * authenticated poll, and silence is worst on exactly that morning. */
 export function cachedReminderSettings(
@@ -85,6 +115,54 @@ export function setCompactAlwaysOnTop(
   pinned: boolean,
 ): void {
   write(userDataDir, { ...read(userDataDir), compactAlwaysOnTop: pinned });
+}
+
+/**
+ * Whether turning the machine on starts the timer too — see
+ * `auto-start.ts`. A machine preference, not an account one: "this is the
+ * laptop I work on" is a property of the laptop.
+ *
+ * On unless turned off, hence `!== false` rather than `=== true`: a
+ * preference somebody has to find before the feature does anything is a
+ * feature nobody has, and the dialog it raises offers to stop the timer it
+ * started.
+ */
+export function autoStartTimer(userDataDir: string): boolean {
+  return read(userDataDir).autoStartTimer !== false;
+}
+
+export function setAutoStartTimer(userDataDir: string, on: boolean): void {
+  write(userDataDir, { ...read(userDataDir), autoStartTimer: on });
+}
+
+/**
+ * The power-on and the day this last answered for — started a timer, or
+ * deliberately declined to. Remembered so that a crash relaunch or an
+ * update restart on the same machine does not start a second timer, and so
+ * that a start something else displaced does not turn up hours later.
+ */
+export function lastAutoStartedBoot(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedBoot ?? null;
+}
+
+export function lastAutoStartedDay(userDataDir: string): string | null {
+  return read(userDataDir).lastAutoStartedDay ?? null;
+}
+
+/**
+ * Both at once, in one write: a day remembered without its power-on, or
+ * the reverse, reads as half an answer and starts a second timer. `boot`
+ * is null where the machine cannot tell its power-ons apart, and the day
+ * then carries the answer alone.
+ */
+export function rememberAutoStarted(
+  userDataDir: string,
+  boot: string | null,
+  day: string,
+): void {
+  const state: SetupState = { ...read(userDataDir), lastAutoStartedDay: day };
+  if (boot !== null) state.lastAutoStartedBoot = boot;
+  write(userDataDir, state);
 }
 
 function write(userDataDir: string, state: SetupState): void {

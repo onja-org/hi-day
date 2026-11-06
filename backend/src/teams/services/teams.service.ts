@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,12 +8,14 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { Membership } from '../../database/entities/membership.entity';
+import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Team } from '../../database/entities/team.entity';
 import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { AddTeamMemberDto } from '../dto/add-team-member.dto';
 import { CreateTeamDto } from '../dto/create-team.dto';
 import { UpdateTeamDto } from '../dto/update-team.dto';
+import { teamMemberActionRefusal } from '../../members/team-member-permissions';
 
 export interface TeamSummary {
   id: string;
@@ -25,6 +28,8 @@ export interface TeamMemberDetail {
   name: string | null;
   email: string;
   isManager: boolean;
+  /** Their org role, so a client knows which rows it may not act on. */
+  role: MembershipRole;
 }
 
 export interface TeamDetail {
@@ -149,6 +154,7 @@ export class TeamsService {
         name: teamMembership.membership.user.name,
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
+        role: teamMembership.membership.role,
       })),
     };
   }
@@ -177,6 +183,13 @@ export class TeamsService {
     if (!membership) {
       throw new NotFoundException('Membership not found.');
     }
+
+    await this.assertMayActOnTeamMember(
+      organisationId,
+      teamId,
+      actorUserId,
+      dto.membershipId,
+    );
 
     const existing = await this.teamMemberships.findOne({
       where: { teamId, membershipId: dto.membershipId },
@@ -210,6 +223,50 @@ export class TeamsService {
     });
   }
 
+  /**
+   * The caller's half of `teamMemberActionRefusal` — the same rule the row's
+   * disabled state is drawn from, so a button and a 403 never disagree.
+   */
+  private async assertMayActOnTeamMember(
+    organisationId: string,
+    teamId: string,
+    actorUserId: string,
+    targetMembershipId: string,
+  ): Promise<void> {
+    const [caller, target] = await Promise.all([
+      this.memberships.findOne({
+        where: {
+          userId: actorUserId,
+          organisationId,
+          status: MembershipStatus.ACTIVE,
+        },
+        relations: { teamMemberships: true },
+      }),
+      this.memberships.findOne({
+        where: { id: targetMembershipId, organisationId },
+      }),
+    ]);
+
+    if (!caller || !target) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    const refusal = teamMemberActionRefusal(
+      {
+        isOrgAdmin: caller.role === MembershipRole.ADMIN,
+        managesThisTeam: (caller.teamMemberships ?? []).some(
+          (teamMembership) =>
+            teamMembership.teamId === teamId && teamMembership.isManager,
+        ),
+      },
+      { isOrgAdmin: target.role === MembershipRole.ADMIN },
+    );
+
+    if (refusal) {
+      throw new ForbiddenException(refusal);
+    }
+  }
+
   async removeMember(
     organisationId: string,
     teamId: string,
@@ -217,6 +274,12 @@ export class TeamsService {
     actorUserId: string,
   ): Promise<void> {
     await this.findTeamOrFail(organisationId, teamId);
+    await this.assertMayActOnTeamMember(
+      organisationId,
+      teamId,
+      actorUserId,
+      membershipId,
+    );
 
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(TeamMembership, { teamId, membershipId });

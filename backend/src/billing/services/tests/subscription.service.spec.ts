@@ -223,3 +223,79 @@ describe('the read model', () => {
     });
   });
 });
+
+/**
+ * "Cancel subscription" on the Billing page: the next renewal is not
+ * charged, and the period already paid for runs out as normal.
+ */
+describe('turning auto-renew off and on', () => {
+  it('cancels at the period end, never on the spot', async () => {
+    const { service, update } = serviceFor();
+
+    await service.setAutoRenew('org-1', false);
+
+    expect(update).toHaveBeenCalledWith('sub_1', {
+      cancel_at_period_end: true,
+    });
+  });
+
+  it('puts the renewal back', async () => {
+    const { service, update } = serviceFor({ cancelAtPeriodEnd: true });
+
+    await service.setAutoRenew('org-1', true);
+
+    expect(update).toHaveBeenCalledWith('sub_1', {
+      cancel_at_period_end: false,
+    });
+  });
+
+  it('changes nothing when it is already that way', async () => {
+    const { service, update } = serviceFor({ cancelAtPeriodEnd: true });
+
+    await service.setAutoRenew('org-1', false);
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  // A failing renewal can still be told not to come back.
+  it('can be turned off while a renewal is failing', async () => {
+    const { service, update } = serviceFor({ status: 'past_due' });
+
+    await service.setAutoRenew('org-1', false);
+
+    expect(update).toHaveBeenCalled();
+  });
+
+  it.each(['canceled', 'incomplete_expired'])(
+    'refuses for a subscription that has %s',
+    async (status) => {
+      const { service, update } = serviceFor({ status });
+
+      await expect(service.setAutoRenew('org-1', false)).rejects.toThrow(
+        /already ended/,
+      );
+      expect(update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses for one whose first payment has not gone through', async () => {
+    const { service, update } = serviceFor({ status: 'incomplete' });
+
+    await expect(service.setAutoRenew('org-1', false)).rejects.toThrow(
+      /not been paid for yet/,
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refuses for an organisation with no subscription', async () => {
+    const service = new SubscriptionService(
+      { findOne: jest.fn().mockResolvedValue(null) } as never,
+      { isConfigured: true, stripe: {} } as never,
+      {} as never,
+    );
+
+    await expect(service.setAutoRenew('org-1', false)).rejects.toThrow(
+      /no subscription/,
+    );
+  });
+});

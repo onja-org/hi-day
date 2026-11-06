@@ -6,6 +6,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -15,10 +17,12 @@ import {
   EntityManager,
   IsNull,
   LessThanOrEqual,
+  MoreThan,
   Not,
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { SubscriptionCancellationService } from '../../billing/services/subscription-cancellation.service';
 import { hashToken } from '../../common/hash-token.util';
 import { DeviceSession } from '../../database/entities/device-session.entity';
 import { Membership } from '../../database/entities/membership.entity';
@@ -107,6 +111,9 @@ export class OrganisationDeletionService {
     private readonly emailService: EmailService,
     private readonly purgeService: OrganisationPurgeService,
     configService: ConfigService,
+    /** Absent with billing off — nothing is ever charged then. */
+    @Optional()
+    private readonly subscriptionCancellation?: SubscriptionCancellationService,
   ) {
     this.graceDays = Number(
       configService.get<string>(
@@ -296,6 +303,10 @@ export class OrganisationDeletionService {
       }
     });
 
+    if (request.mode === OrganisationDeletionMode.NOW) {
+      await this.stopRenewal(organisation);
+    }
+
     await this.notifyEveryone(
       organisationId,
       organisation.name,
@@ -385,6 +396,25 @@ export class OrganisationDeletionService {
       return { message: 'No deletion was in progress.' };
     }
 
+    // Billing first: restoring an Organisation whose subscription still
+    // ends at the period end would cut it off again weeks later, with
+    // nothing to say why. If Stripe can't be reached nothing has changed
+    // yet, and the owner can simply try again. Should the restore below
+    // then fail, the hourly job stops renewal again for the
+    // still-suspended Organisation.
+    if (wasSuspended && this.subscriptionCancellation) {
+      try {
+        await this.subscriptionCancellation.resumeRenewal(organisationId);
+      } catch (error) {
+        this.logger.error(
+          `Could not resume renewal for organisation ${organisation.publicId}: ${String(error)}`,
+        );
+        throw new ServiceUnavailableException(
+          'We could not reach the billing provider to resume your subscription, so nothing was changed. Please try again in a few minutes.',
+        );
+      }
+    }
+
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(OrganisationDeletionRequest, { organisationId });
       await manager.update(Organisation, organisationId, {
@@ -408,10 +438,11 @@ export class OrganisationDeletionService {
   }
 
   /**
-   * Hourly: suspend organisations whose scheduled date has arrived, then
-   * purge those whose recovery window has closed. Each organisation is
-   * handled independently so one failure never blocks the rest, and a failed
-   * purge simply retries next hour.
+   * Hourly: suspend organisations whose scheduled date has arrived, make
+   * sure no suspended organisation will renew, then purge those whose
+   * recovery window has closed. Each organisation is handled independently
+   * so one failure never blocks the rest, and a failed step simply retries
+   * next hour.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async processDueDeletions(): Promise<void> {
@@ -436,6 +467,19 @@ export class OrganisationDeletionService {
         this.logger.error(
           `Failed to suspend organisation ${organisation.publicId}: ${String(error)}`,
         );
+      }
+    }
+
+    // Covers both the suspensions just made and any whose renewal could not
+    // be stopped at the time (Stripe unreachable). Idempotent, so repeating
+    // it for an Organisation already stopped costs one read. Those already
+    // purging are left to the purge, which cancels outright.
+    if (this.subscriptionCancellation) {
+      const suspended = await this.organisations.find({
+        where: { suspendedAt: Not(IsNull()), purgeAt: MoreThan(now) },
+      });
+      for (const organisation of suspended) {
+        await this.stopRenewal(organisation);
       }
     }
 
@@ -477,7 +521,9 @@ export class OrganisationDeletionService {
    * timer (closing any open pause at the same instant) and revokes every
    * device session, which is what makes the desktop agents stop capturing and
    * sign out on their next call. Web access is refused by RoleGuard.
-   * Subscription cancellation is deliberately absent — no billing exists yet.
+   *
+   * Billing is stopped by the callers, after this commits — Stripe is not
+   * something to hold a database transaction open for. See `stopRenewal`.
    */
   private async suspend(
     manager: EntityManager,
@@ -512,6 +558,25 @@ export class OrganisationDeletionService {
       actorUserId,
       metadata: { purgeAt: purgeAt.toISOString() },
     });
+  }
+
+  /**
+   * Stops a suspended Organisation's subscription renewing. Never throws: the
+   * suspension has already happened and must stand, and the hourly job
+   * retries any Organisation this could not reach Stripe for — well inside
+   * the recovery window, and the purge cancels outright regardless.
+   * Admins can't do this themselves while suspended: RoleGuard refuses
+   * every Billing route.
+   */
+  private async stopRenewal(organisation: Organisation): Promise<void> {
+    if (!this.subscriptionCancellation) return;
+    try {
+      await this.subscriptionCancellation.stopRenewal(organisation.id);
+    } catch (error) {
+      this.logger.error(
+        `Could not stop renewal for suspended organisation ${organisation.publicId}, will retry hourly: ${String(error)}`,
+      );
+    }
   }
 
   /**

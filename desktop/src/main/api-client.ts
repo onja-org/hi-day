@@ -44,6 +44,9 @@ export type PairingPollResult =
       status: 'approved';
       deviceId: string;
       deviceToken: string;
+      /** Absent from a backend older than this field — see session-owner.ts's fallback. */
+      userId?: string;
+      organisationId?: string;
       email: string;
       name: string;
       organisationName: string;
@@ -61,6 +64,8 @@ interface PairingPollResponseBody {
   status?: 'pending' | 'approved' | 'expired';
   deviceId?: string;
   deviceToken?: string;
+  userId?: string;
+  organisationId?: string;
   email?: string;
   name?: string;
   organisationName?: string;
@@ -193,12 +198,52 @@ export type TrackingResult<T> =
 
 /**
  * Whether the request never reached the server — no HTTP status, so
- * nothing was decided. The one condition under which a cached answer may
- * stand in, or a queued operation is worth replaying: a refusal is an
- * answer, and repeating it changes nothing.
+ * nothing was decided. The condition under which a cached answer may
+ * stand in: there is nothing to serve from memory once the server has
+ * actually said something.
+ *
+ * Narrower than `serverVerdict` on purpose, and not the question to ask
+ * about a queued *write*. A 503 carries a status and still decides
+ * nothing; reading it as an answer is what used to delete the hours
+ * behind it.
  */
 export function isTransportFailure<T>(result: TrackingResult<T>): boolean {
   return !result.ok && result.status === undefined && !result.unauthorized;
+}
+
+/** What the server decided about a request. */
+export type ServerVerdict =
+  /** It landed. */
+  | 'accepted'
+  /** Refused, and refused identically however many times it is asked. */
+  | 'rejected'
+  /** Nothing was decided — unreachable, overloaded, or asked to wait. */
+  | 'undecided'
+  /** The session is gone; nothing can be decided until somebody logs in. */
+  | 'signedOut';
+
+/**
+ * The statuses that are a decision about the request itself: a malformed
+ * or too-old payload (400), a work-time limit or a disabled day (403), a
+ * Project or entry that is not there (404), a timer already running or an
+ * end before its start (409), and the two neighbours nothing throws today
+ * but a proxy might (410, 422).
+ *
+ * Deliberately an allowlist rather than "any 4xx". Hi Day is self-hosted
+ * more often than not, and a reverse proxy, a captive portal or a WAF can
+ * answer anything at all on the way to the backend. Mistaking one of
+ * those for a verdict costs somebody their afternoon; retrying one that
+ * really was final costs a queue that drains late and says so.
+ */
+const REJECTION_STATUSES = new Set([400, 403, 404, 409, 410, 422]);
+
+export function serverVerdict<T>(result: TrackingResult<T>): ServerVerdict {
+  if (result.ok) return 'accepted';
+  if (result.unauthorized) return 'signedOut';
+  if (result.status !== undefined && REJECTION_STATUSES.has(result.status)) {
+    return 'rejected';
+  }
+  return 'undecided';
 }
 
 interface ErrorResponseBody {
@@ -219,10 +264,25 @@ export class ApiClient {
    * caller, since that is the only place that reproduces the real shape:
    * a transport failure, no HTTP status, everywhere at once.
    */
+  private readonly resolveBaseUrl: () => string;
+
   constructor(
-    private readonly baseUrl: string,
+    /**
+     * A function where the server can change while the app is running — a
+     * self-hoster editing the Server URL on the login screen. Resolved per
+     * request rather than captured, because this client is handed to the
+     * uploaders, the queue and the tray at startup and rebuilding that
+     * whole graph to change one string would be absurd.
+     */
+    baseUrl: string | (() => string),
     private readonly isOffline: () => boolean = () => false,
-  ) {}
+  ) {
+    this.resolveBaseUrl = typeof baseUrl === 'function' ? baseUrl : () => baseUrl;
+  }
+
+  private get baseUrl(): string {
+    return this.resolveBaseUrl();
+  }
 
   /** The shape a request that never reached the server resolves to. */
   private unreachable<T>(): TrackingResult<T> {
@@ -289,6 +349,8 @@ export class ApiClient {
         status: 'approved',
         deviceId: body.deviceId,
         deviceToken: body.deviceToken,
+        userId: body.userId,
+        organisationId: body.organisationId,
         email: body.email,
         name: body.name,
         organisationName: body.organisationName,
@@ -422,14 +484,24 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Two ids because a switch writes two rows — it ends the running entry
+   * and starts the next. Offline the same action is queued as a stop and a
+   * start, and those carry these very ids, so a switch whose response was
+   * lost replays into the rows it already wrote instead of a 409.
+   */
   switchTimer(
     deviceToken: string,
     projectId: string | null,
     taskId: string | null,
+    stopOpId?: string,
+    startOpId?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest('POST', '/device/time-entries/switch', deviceToken, {
       ...(projectId ? { projectId } : {}),
       ...(taskId ? { taskId } : {}),
+      ...(stopOpId ? { stopOpId } : {}),
+      ...(startOpId ? { startOpId } : {}),
     });
   }
 
@@ -454,8 +526,14 @@ export class ApiClient {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
   }
 
-  pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
-    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {});
+  pauseTimer(deviceToken: string, opId?: string): Promise<TrackingResult<TimeEntry>> {
+    // A pause ends the entry, so it carries an operation id exactly as a
+    // stop does. Without one, a pause that landed with its response lost
+    // replayed into a 404 and was reported as hours that could not be
+    // saved — the one path that writes its record *before* asking.
+    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {
+      ...(opId ? { opId } : {}),
+    });
   }
 
   resumeTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
@@ -557,8 +635,18 @@ export class ApiClient {
         // its overloads even though Buffer *is* structurally a Uint8Array.
         body: new Uint8Array(buffer),
       });
+      if (!response.ok) {
+        // The body is the only thing that names the cause —
+        // SignatureDoesNotMatch, NoSuchBucket, "Request has expired".
+        // Without it a failed upload is silent retries and no explanation.
+        const detail = await response.text().catch(() => '');
+        console.error(
+          `[screenshot-upload] storage rejected the upload: ${response.status} ${detail.slice(0, 300)}`,
+        );
+      }
       return response.ok;
-    } catch {
+    } catch (error) {
+      console.error('[screenshot-upload] could not reach storage:', error);
       return false;
     }
   }

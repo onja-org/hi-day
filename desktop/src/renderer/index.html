@@ -137,6 +137,37 @@
           <p id="pairing-status" class="centred-message">Sign in from your browser to link this device.</p>
           <p id="pairing-error" class="error-text" role="alert" hidden></p>
           <button id="login-button" type="button" class="button button-sun">Log in</button>
+
+          <!-- Hi Day is self-hostable, so most installs are not talking to
+               hiday.io. Collapsed by default: the address is right for
+               nearly everybody, and an empty field is not a decision
+               anybody should be asked to make before logging in. -->
+          <details id="server-details" class="server-details">
+            <summary id="server-summary" class="server-summary">Self-hosted? Change server</summary>
+            <label class="server-label" for="server-input">
+              Only if your company runs its own Hi Day. Otherwise leave this
+              alone and just log in.
+            </label>
+            <input
+              id="server-input"
+              type="url"
+              class="server-input"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://hiday.example.com"
+            />
+            <p id="server-error" class="error-text" role="alert" hidden></p>
+            <p id="server-note" class="server-note" role="status" hidden></p>
+            <div class="server-actions">
+              <button id="server-save" type="button" class="button button-secondary button-small">
+                Save
+              </button>
+              <button id="server-reset" type="button" class="button button-ghost button-small" hidden>
+                Use the default
+              </button>
+            </div>
+          </details>
         </section>
 
         <section id="status-view" class="status-view" hidden>
@@ -174,8 +205,8 @@
                     </svg>
                   </button>
                 </div>
-                <div class="timer-stats">
-                  <div class="timer-stat">
+                <div id="timer-stats" class="timer-stats">
+                  <div id="today-stat" class="timer-stat">
                     <span class="stat-label">Today</span>
                     <span id="today-total" class="stat-value">00:00:00</span>
                   </div>
@@ -403,6 +434,38 @@
         <div class="close-prompt-actions">
           <button id="projects-change-ok-button" type="button" class="button button-sun">
             Got it
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="auto-start-notice" class="close-prompt" hidden>
+      <div
+        class="close-prompt-card timer-blocked-card auto-start-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="auto-start-title"
+        aria-describedby="auto-start-message"
+      >
+        <img
+          class="timer-blocked-mark"
+          src="hiday-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <h2 id="auto-start-title" class="close-prompt-title">
+          Your timer has automatically started
+        </h2>
+        <p id="auto-start-message" class="close-prompt-message"></p>
+        <p class="close-prompt-message">
+          Change this under Preferences in the Hi Day tray menu.
+        </p>
+        <div class="close-prompt-actions">
+          <button id="auto-start-stop" type="button" class="button button-secondary">
+            Stop timer
+          </button>
+          <button id="auto-start-ok" type="button" class="button button-sun">
+            OK
           </button>
         </div>
       </div>

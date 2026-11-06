@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getTrialStatus } from "@/lib/getTrialStatus";
+import { useBillingEnabled } from "./useBillingEnabled";
 import { useCurrentOrganisation } from "./useCurrentOrganisation";
 
 export const trialStatusQueryKey = (organisationId: number | string) => [
@@ -19,11 +20,12 @@ export const trialStatusQueryKey = (organisationId: number | string) => [
  */
 export function useTrialStatus(organisationId: number | string) {
   const organisationQuery = useCurrentOrganisation();
+  const billingEnabled = useBillingEnabled();
   const isAdmin = organisationQuery.data?.role === "admin";
 
   return useQuery({
     queryKey: trialStatusQueryKey(organisationId),
-    enabled: isAdmin,
+    enabled: billingEnabled && isAdmin,
     queryFn: async () => {
       const result = await getTrialStatus(organisationId);
       if (!result.ok) {

@@ -17,12 +17,14 @@ import { AppEventsService } from '../../app-events/services/app-events.service';
 import type { AppActivityDay } from '../../app-events/services/app-events.service';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { AllowTeamManagers } from '../../common/decorators/allow-team-managers.decorator';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import type { NoteEntry } from '../../notes/services/notes.service';
 import { NotesService } from '../../notes/services/notes.service';
-import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
+import { ListScreenshotsDto } from '../../screenshots/dto/list-screenshots.dto';
+import type { ScreenshotsPage } from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
@@ -53,8 +55,30 @@ export class MembershipsController {
     private readonly notesService: NotesService,
   ) {}
 
+  /**
+   * The Members page's own list — managing who is in the Organisation is
+   * admin work, so a manager is refused here even though they may still
+   * read the people they supervise through `visible` below.
+   */
   @Get()
+  @RequireRole(MembershipRole.ADMIN)
   list(@Req() request: AuthenticatedRequest): Promise<ActiveMemberListItem[]> {
+    return this.membershipsService.listActiveForOrganisation(
+      request.organisationId!,
+      request.userId,
+    );
+  }
+
+  /**
+   * The people this caller may see — an admin everyone, whoever manages a
+   * team that team's members. What the pickers, filters, dashboards and
+   * reports fan out over; the service scopes it per caller either way.
+   */
+  @Get('visible')
+  @AllowTeamManagers()
+  listVisible(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ActiveMemberListItem[]> {
     return this.membershipsService.listActiveForOrganisation(
       request.organisationId!,
       request.userId,
@@ -271,16 +295,20 @@ export class MembershipsController {
   )
   getScreenshots(
     @Param('membershipId') membershipId: string,
-    @Query('date') date: string | undefined,
-    @Query('projectId') projectId: string | undefined,
+    @Query() query: ListScreenshotsDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ScreenshotSummaryItem[]> {
+  ): Promise<ScreenshotsPage> {
     return this.screenshotsService.getScreenshotsForMembership(
       request.organisationId!,
       request.userId,
       membershipId,
-      date,
-      { projectId },
+      query.date,
+      { projectId: query.projectId },
+      {
+        page: query.page,
+        pageSize: query.pageSize,
+        newestFirst: query.order === 'newest',
+      },
     );
   }
 

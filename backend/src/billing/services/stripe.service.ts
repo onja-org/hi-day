@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import {
+  BILLING_ENABLED_VAR,
+  parseBillingEnabled,
+} from '../../entitlements/billing-enabled';
 import { parseFreeOrganisationIds } from '../free-organisations';
 import {
   CLOUD_PRICES,
@@ -9,12 +13,10 @@ import {
 } from '../pricing';
 
 /**
- * The Stripe client, and the one thing that must be true before it is used:
- * that the Prices it will charge against are the Prices this app advertises.
- *
- * Absent configuration is not an error. A self-hosted install has no Stripe
- * and must boot and work without it ("Billing switched off for self-hosted
- * installs"), so `isConfigured` is how every caller asks.
+ * `BILLING_ENABLED` decides whether there is a client at all, not whether a
+ * key happens to be set — so a stray key with the flag off bills nobody.
+ * Billing on with no key refuses to boot, rather than degrading into a
+ * deploy that looks healthy and cannot charge anybody.
  */
 @Injectable()
 export class StripeService implements OnModuleInit {
@@ -29,9 +31,23 @@ export class StripeService implements OnModuleInit {
   private resolvedProductId: string | null = null;
   private readonly freeOrganisationIds: Set<number>;
 
+  private readonly billingEnabled: boolean;
+
   constructor(configService: ConfigService) {
+    this.billingEnabled = parseBillingEnabled(
+      configService.get<string>(BILLING_ENABLED_VAR),
+    );
     const secretKey = configService.get<string>('STRIPE_SECRET_KEY');
-    this.client = secretKey ? new Stripe(secretKey) : null;
+
+    if (this.billingEnabled && !secretKey) {
+      throw new Error(
+        `${BILLING_ENABLED_VAR} is on but STRIPE_SECRET_KEY is not set. ` +
+          'Set the key, or turn billing off for a self-hosted install.',
+      );
+    }
+
+    this.client =
+      this.billingEnabled && secretKey ? new Stripe(secretKey) : null;
     this.configuredProductId = configService.get<string>('STRIPE_PRODUCT_ID');
     this.freeOrganisationIds = parseFreeOrganisationIds(
       configService.get<string>('BILLING_FREE_ORGANISATION_IDS'),
@@ -43,6 +59,7 @@ export class StripeService implements OnModuleInit {
     return this.freeOrganisationIds.has(publicId);
   }
 
+  /** Identical to `BILLING_ENABLED` by construction. */
   get isConfigured(): boolean {
     return this.client !== null;
   }
@@ -117,8 +134,8 @@ export class StripeService implements OnModuleInit {
   onModuleInit(): void {
     this.logger.log(
       this.client
-        ? 'Stripe is configured; prices come from billing/pricing.ts.'
-        : 'Stripe is not configured; billing is off.',
+        ? 'Billing is on; prices come from billing/pricing.ts.'
+        : `Billing is off (${BILLING_ENABLED_VAR} is not "true"); no trials, no charges, no seat sync.`,
     );
   }
 }

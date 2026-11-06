@@ -113,6 +113,46 @@ days — generous, and deliberately *not* the agent's own 7-day capture cutoff. 
 hand-typed timesheet corrections are a person deliberately entering a date, with a name attached, and
 are supposed to reach back.
 
+**The `opId` is generated before the first attempt, not when the operation is queued.** It was the
+latter, which left the first attempt anonymous — and the lost response that attempt can suffer is the
+single case the id exists for. A request the server had already applied, abandoned at the
+five-second `REQUEST_TIMEOUT_MS`, queued a *differently named* copy of itself; the replay then met a
+409 for a start or a 404 for a stop, and the person was told their hours could not be saved after
+they had been. `pause` was worse: it carried no id at all, on either attempt, because the endpoint
+had no field for one — and `pauseDurably`, which writes its record ahead of the network precisely
+because the machine is already shutting down, is the likeliest place of all for a reply not to
+arrive. `POST /device/time-entries/pause` now takes an optional `opId` (older agents simply keep the
+old at-least-once behaviour) and `TimeEntriesService.pause` passes it to `stop`.
+
+**The sweeper's guess yields to a real stop even when the Device has started something since.**
+`abandonedEntryToExtend` took the Device's newest entry and gave up if that one was not
+`closedAsAbandoned` — but the crash prompt's "I was still working" answer deliberately starts a
+fresh entry, so a queued stop arriving after it found the new entry, refused, and 404'd. Those hours
+were real and had already been truncated to the last heartbeat (`HEARTBEAT_INTERVAL_MS`, 60s), so up
+to a minute of genuinely worked time was reported to the person as lost. It now looks for the latest
+entry the sweeper closed regardless of what followed, and extends it only when doing so stays within
+the next entry's start — touching endpoints are fine, a real overlap still refuses and still says so.
+
+**A session ending deletes the captures and keeps the hours.** One Device serves everybody who signs
+in on a machine, so every queued item carries the owner who made it (`session-owner.ts`:
+`user:<userId>|org:<organisationId>`, falling back to email and Organisation name for a session
+stored before pairing returned ids). Logging in deletes whatever belongs to somebody else, which is
+what makes keeping anything safe. Screenshots, app events and URL sessions are deleted the moment a
+session ends anyway — they belong to the session that took them, and leaving them on a shared machine
+is a disclosure. Queued *timer* actions are not: they are hours somebody worked, the owner stamp
+means they can only ever reach their own timesheet, and the person replays them at their next login.
+Deleting them was how a remote sign-out in the middle of an offline stretch silently erased a day's
+tracking. The logout path still tries to send them first — the last moment the token works — so
+keeping them is the fallback, not the plan.
+
+**A switch carries two ids, because it writes two rows.** It ends the running entry and starts the
+next in one request, and offline the same action is recorded as a stop and a start — so one id cannot
+name it. `POST /device/time-entries/switch` takes `stopOpId` and `startOpId`, writes them to the two
+rows, and the queued pair replays under those very ids. Without them a switch the server applied but
+could not answer replayed as two anonymous operations: the stop met the entry the switch had just
+started and was refused for ending before its own start, and the start met a timer already running.
+Both were reported to the person as time that could not be saved, for work that had landed.
+
 **Replay is idempotent for time entries only.** Each queued operation carries an `opId` generated once
 and reused on every replay; `startOperationId`/`stopOperationId` on `time_entries` are unique
 (partial, so the web and every pre-existing row may stay null). The service checks for an existing row
@@ -143,6 +183,41 @@ open, and whenever the person does stop, that stop extends the closed one to the
 
 **Refused hours are reported, not dropped.** `PendingTimerOps.flush` returns what the server refused
 alongside whether it settled, and the renderer shows it in the dialog a refused start already uses.
+
+**"Refused" means the server decided, not merely that it answered.** The first cut of this read any
+HTTP status as the server's answer and took the operation out of the queue on it — which is right for
+a 403 from a work time limit and wrong for every 500, 502, 503, 429 and 408 there is. Reconnecting
+into a deploy or a busy minute therefore deleted hours somebody had really worked, and a start lost
+that way took its paired stop with it, leaving the entry open server-side as well. `serverVerdict`
+now splits four cases — *accepted*, *rejected*, *undecided*, *signedOut* — and only a rejection takes
+an operation out of the queue. The rejection statuses are an **allowlist** (400, 403, 404, 409, 410,
+422) rather than "any 4xx": this product is self-hosted more often than not, and a reverse proxy, WAF
+or captive portal between the agent and the backend can answer anything at all. Mistaking one of
+those for a verdict costs somebody their afternoon; retrying one that really was final costs a queue
+that drains late and says so out loud. An *undecided* answer also backs the replay off (the existing
+`computeRetryDelayMs`, in memory so a relaunch always retries at once), because every device that
+failed against a deploy is about to retry in the same second — a transport failure does **not**, since
+the fifteen-second tick is the only thing that notices a reconnection.
+
+**A revoked session keeps its queue, and says so.** A 401 is not a verdict on the work: it is the
+absence of anyone to decide. The hours stay, the agent signs out locally — the replay loop is the one
+caller that does not go through `callDeviceApi`, so it had been retrying a dead token every fifteen
+seconds in silence — and a login brings both back. Keeping them is only safe because the queue now
+carries an **owner**: a hash of the email that filled it, checked on every read. The email alone and
+not the Membership, because `organisationName` is stamped at pairing and never refreshed — folding it
+in would have an Organisation renamed between a sign-out and the next pairing silently discard a
+queue, which is the failure this exists to prevent. Somebody re-pairing the same machine into a
+second Organisation of their own replays against it instead, where every Project id belongs to the
+other one and comes back a 404 they are shown.
+
+**That owner is deliberately not the `deviceId`,** and the claim above that keying `offline-cache.json`
+to one means "re-pairing as somebody else reads as an empty cache" is **wrong**. Pairing goes through
+`DeviceSessionService.upsertOnLogin`, which upserts the Device row by machine fingerprint and keeps
+its id when the machine changes hands — reassigning `userId` and revoking the old sessions, but never
+issuing a new id. A device id says which laptop, never which person. The offline cache still has this
+gap (it leaks the previous person's projects, settings and totals to the next one on a shared
+machine); it is left for its own ticket rather than smuggled in here, and is only a disclosure, where
+the same mistake in the queue would write one person's hours to another's timesheet.
 
 `WM_SIMULATE_OFFLINE=1` makes `ApiClient` behave as though nothing can be reached, in front of every
 request — the only place that reproduces the real shape of being offline everywhere at once. The

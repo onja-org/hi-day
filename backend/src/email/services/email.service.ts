@@ -1,6 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import {
+  ConsoleTransport,
+  ResendTransport,
+  SmtpTransport,
+  type MailMessage,
+  type MailResult,
+  type MailTransport,
+} from './transports';
 
 const APP_NAME = 'Hi Day';
 function escapeHtml(text: string): string {
@@ -24,19 +31,98 @@ export interface ReportEmail {
 const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
 
+/** Only ever reached by the console transport, which sends nothing. */
+const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
+
+const DEFAULT_SMTP_PORT = 587;
+
+/** Three states: `undefined` must stay distinct from false, because
+ * `SMTP_SECURE` left blank means "infer from the port". */
+function readFlag(value: string | undefined): boolean | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) return undefined;
+  return trimmed === 'true';
+}
+
 @Injectable()
-export class EmailService {
+export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
-  private readonly resend: Resend;
+
+  private readonly transport: MailTransport;
   private readonly emailSender: string;
   private readonly frontendUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.resend = new Resend(
-      this.configService.getOrThrow<string>('RESEND_API_KEY'),
-    );
-    this.emailSender = this.configService.getOrThrow<string>('EMAIL_SENDER');
+    this.transport = this.chooseTransport();
+    this.emailSender =
+      this.configService.get<string>('EMAIL_SENDER')?.trim() || DEFAULT_SENDER;
     this.frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+  }
+
+  /**
+   * SMTP wins over Resend: somebody who filled in their own mail server
+   * means to use it, and a leftover key must not override that. Both
+   * optional, so the app starts with no mail account anywhere.
+   */
+  private chooseTransport(): MailTransport {
+    const host = this.configService.get<string>('SMTP_HOST')?.trim();
+    if (host) {
+      return new SmtpTransport({
+        host,
+        port:
+          Number(this.configService.get<string>('SMTP_PORT')) ||
+          DEFAULT_SMTP_PORT,
+        user: this.configService.get<string>('SMTP_USER')?.trim() || undefined,
+        password: this.configService.get<string>('SMTP_PASSWORD') || undefined,
+        secure: readFlag(this.configService.get<string>('SMTP_SECURE')),
+        allowSelfSigned:
+          readFlag(this.configService.get<string>('SMTP_ALLOW_SELF_SIGNED')) ===
+          true,
+      });
+    }
+
+    // The SDK throws on an empty key, which is what copying .env.example
+    // gives you — so this is checked, not passed.
+    const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
+    if (apiKey) {
+      return new ResendTransport(apiKey);
+    }
+
+    return new ConsoleTransport(this.logger);
+  }
+
+  onModuleInit(): void {
+    switch (this.transport.name) {
+      case 'smtp':
+        this.logger.log(
+          `Email goes out over SMTP (${this.configService.get<string>('SMTP_HOST')}).`,
+        );
+        break;
+      case 'resend':
+        this.logger.log('Email goes out through Resend.');
+        break;
+      case 'console':
+        this.logger.warn(
+          'No email provider configured (set SMTP_HOST or RESEND_API_KEY). ' +
+            'Invitation and password links will be written to this log ' +
+            'instead of sent. Everything else works.',
+        );
+        break;
+    }
+  }
+
+  get isDelivering(): boolean {
+    return this.transport.delivers;
+  }
+
+  get transportName(): MailTransport['name'] {
+    return this.transport.name;
+  }
+
+  /** A message that was only logged reports no error: from the caller's
+   * point of view nothing went wrong. */
+  private deliver(message: MailMessage): Promise<MailResult> {
+    return this.transport.send(message);
   }
 
   private button(url: string, label: string): string {
@@ -50,7 +136,7 @@ export class EmailService {
   ): Promise<void> {
     const setPasswordUrl = `${this.frontendUrl}/set-password?token=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Set your password for ${organisationName}`,
@@ -71,7 +157,7 @@ export class EmailService {
   ): Promise<void> {
     const resetUrl = `${this.frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Reset your ${APP_NAME} password`,
@@ -85,14 +171,19 @@ export class EmailService {
     }
   }
 
+  /** Built here so the copyable link and the emailed link cannot drift. */
+  invitationAcceptUrl(token: string): string {
+    return `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
+  }
+
   async sendInvitationEmail(
     to: string,
     token: string,
     organisationName: string,
   ): Promise<void> {
-    const acceptUrl = `${this.frontendUrl}/accept-invitation?token=${encodeURIComponent(token)}`;
+    const acceptUrl = this.invitationAcceptUrl(token);
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Join ${organisationName} on ${APP_NAME}`,
@@ -112,7 +203,7 @@ export class EmailService {
   ): Promise<void> {
     const loginUrl = `${this.frontendUrl}/login`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: 'Someone tried to register with your email',
@@ -135,7 +226,7 @@ export class EmailService {
   ): Promise<void> {
     const confirmUrl = `${this.frontendUrl}/organisations/${organisationPublicId}/settings?confirmDeletion=${encodeURIComponent(token)}`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Confirm deletion of ${organisationName}`,
@@ -154,7 +245,7 @@ export class EmailService {
     organisationName: string,
     details: string,
   ): Promise<void> {
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `${organisationName}: account deletion`,
@@ -193,7 +284,7 @@ export class EmailService {
     const name = escapeHtml(organisationName);
     const line = reference ? ` (invoice ${escapeHtml(reference)})` : '';
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Your ${APP_NAME} receipt — ${amount}`,
@@ -238,7 +329,7 @@ export class EmailService {
     const email = escapeHtml(message.email);
     const website = escapeHtml(message.website);
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       replyTo: message.email,
@@ -285,7 +376,7 @@ export class EmailService {
       ? `<p>The free trial of ${APP_NAME} for <strong>${name}</strong> has ended. Your team can carry on working until <strong>${escapeHtml(accessEndsOn)}</strong>; after that, tracking stops until a payment method is added.</p>`
       : `<p>Your free trial of ${APP_NAME} for <strong>${name}</strong> ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Take a look at what Hi Day Cloud costs to keep your team tracking without interruption.</p>`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject,
@@ -322,7 +413,7 @@ export class EmailService {
     const name = escapeHtml(organisationName);
     const billingUrl = `${this.frontendUrl}/settings/billing`;
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to,
       subject: `Action needed: a ${APP_NAME} seat payment failed`,
@@ -355,7 +446,7 @@ export class EmailService {
       ? `<p style="white-space:pre-wrap">${escapeHtml(report.message.trim())}</p>`
       : '';
 
-    const { error } = await this.resend.emails.send({
+    const { error } = await this.deliver({
       from: this.emailSender,
       to: report.to,
       replyTo: report.senderEmail,

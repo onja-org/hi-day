@@ -15,6 +15,7 @@ import { User } from '../../../database/entities/user.entity';
 import { EmailService } from '../../../email/services/email.service';
 import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
+import { AccessTokenService } from '../access-token.service';
 import { AuthService } from '../auth.service';
 import { CaptchaService } from '../captcha.service';
 import { LoginAttemptTracker } from '../login-attempt-tracker.service';
@@ -70,30 +71,49 @@ describe('AuthService', () => {
   function makeTokenService(overrides: Partial<TokenService> = {}) {
     return {
       generateToken: jest.fn().mockReturnValue('the-token'),
-      signAccessToken: jest.fn().mockReturnValue('signed.jwt.token'),
       ...overrides,
-    } as unknown as TokenService;
+    };
+  }
+
+  function makeAccessTokenService() {
+    const sign = jest.fn().mockResolvedValue('signed.jwt.token');
+    const verify = jest.fn().mockResolvedValue(null);
+    const endAllSessions = jest.fn().mockResolvedValue(undefined);
+    return {
+      accessTokenService: {
+        sign,
+        verify,
+        endAllSessions,
+      } as unknown as AccessTokenService,
+      sign,
+      verify,
+      endAllSessions,
+    };
   }
 
   function makeRefreshTokenService() {
     const issue = jest.fn().mockResolvedValue('the-refresh-token');
     const rotate = jest.fn().mockResolvedValue({
+      outcome: 'rotated',
       userId: 'user-1',
       token: 'rotated-refresh-token',
     });
     const revokeAll = jest.fn().mockResolvedValue(undefined);
     const revokeByValue = jest.fn().mockResolvedValue('user-1');
+    const findLiveOwner = jest.fn().mockResolvedValue('user-1');
     return {
       refreshTokenService: {
         issue,
         rotate,
         revokeAll,
         revokeByValue,
+        findLiveOwner,
       } as unknown as RefreshTokenService,
       issue,
       rotate,
       revokeAll,
       revokeByValue,
+      findLiveOwner,
     };
   }
 
@@ -205,6 +225,7 @@ describe('AuthService', () => {
       configService?: ConfigService;
       passwordService?: Partial<PasswordService>;
       tokenService?: TokenService;
+      accessTokenService?: AccessTokenService;
       refreshTokenService?: RefreshTokenService;
       emailService?: EmailService;
       organisationsService?: OrganisationsService;
@@ -222,6 +243,8 @@ describe('AuthService', () => {
       overrides.configService ?? makeConfigService(),
       (overrides.passwordService ?? makePasswordService()) as PasswordService,
       overrides.tokenService ?? makeTokenService(),
+      overrides.accessTokenService ??
+        makeAccessTokenService().accessTokenService,
       overrides.refreshTokenService ??
         makeRefreshTokenService().refreshTokenService,
       overrides.emailService ?? makeEmailService().emailService,
@@ -834,12 +857,14 @@ describe('AuthService', () => {
       });
       const { refreshTokenService, issue, revokeAll } =
         makeRefreshTokenService();
+      const { accessTokenService, endAllSessions } = makeAccessTokenService();
       const { auditLogService, record } = makeAuditLogService();
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       const service = makeService({
         usersRepo,
         refreshTokenService,
+        accessTokenService,
         auditLogService,
         deviceSessionService,
       });
@@ -851,6 +876,7 @@ describe('AuthService', () => {
       );
 
       expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(revokeAllForUser).toHaveBeenCalledWith('user-1');
       expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(record).toHaveBeenCalledWith(
@@ -866,6 +892,30 @@ describe('AuthService', () => {
         expect.objectContaining({ httpOnly: true }),
       );
       expect(result.message).toContain('signed in');
+    });
+
+    it('signs the new access token only after the session version is bumped and committed, so this browser stays signed in', async () => {
+      const user = {
+        id: 'user-1',
+        passwordResetToken: 'valid-token',
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const { accessTokenService, endAllSessions, sign } =
+        makeAccessTokenService();
+      const service = makeService({ usersRepo, accessTokenService });
+
+      await service.resetPassword(
+        { token: 'valid-token', password: 'correct-horse' },
+        makeResponse().response,
+      );
+
+      expect(endAllSessions.mock.invocationCallOrder[0]).toBeLessThan(
+        sign.mock.invocationCallOrder[0],
+      );
+      expect(sign).toHaveBeenCalledWith('user-1');
     });
 
     it('stops whatever is running in each organisation a revoked device session belonged to', async () => {
@@ -996,6 +1046,92 @@ describe('AuthService', () => {
         service.refresh(request, makeResponse().response),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
+
+    it('clears the session cookies when the presented token cannot be rotated', async () => {
+      const { refreshTokenService, rotate } = makeRefreshTokenService();
+      rotate.mockRejectedValue(new UnauthorizedException('nope'));
+      const service = makeService({ refreshTokenService });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest('refresh_token=spent-refresh-token');
+
+      await expect(service.refresh(request, response)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('ends every web session, in a transaction of its own, when a stolen refresh token is replayed', async () => {
+      const { refreshTokenService, rotate, revokeAll } =
+        makeRefreshTokenService();
+      rotate.mockResolvedValue({ outcome: 'reuse_detected', userId: 'user-1' });
+      const { accessTokenService, endAllSessions, sign } =
+        makeAccessTokenService();
+      const { dataSource, transaction } = makeDataSource();
+      const { deviceSessionService, revokeAllForUser } =
+        makeDeviceSessionService();
+      const service = makeService({
+        refreshTokenService,
+        accessTokenService,
+        dataSource,
+        deviceSessionService,
+      });
+      const { response, clearCookie, cookie } = makeResponse();
+      const request = makeRequest('refresh_token=stolen-refresh-token');
+
+      await expect(service.refresh(request, response)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      // One transaction for the lookup, a separate one for the revocation,
+      // so the error can't roll the revocation back.
+      expect(transaction).toHaveBeenCalledTimes(2);
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(rotate.mock.invocationCallOrder[0]).toBeLessThan(
+        revokeAll.mock.invocationCallOrder[0],
+      );
+      // Paired desktop apps aren't touched: a stolen browser cookie says
+      // nothing about them.
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(sign).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('clears the session cookies when there is no refresh-token cookie', async () => {
+      const service = makeService();
+      const { response, clearCookie } = makeResponse();
+
+      await expect(
+        service.refresh(makeRequest(undefined), response),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('leaves the session cookies alone when the refresh succeeds', async () => {
+      const { refreshTokenService } = makeRefreshTokenService();
+      const service = makeService({ refreshTokenService });
+      const { response, clearCookie } = makeResponse();
+
+      await service.refresh(makeRequest('refresh_token=good'), response);
+
+      expect(clearCookie).not.toHaveBeenCalled();
+    });
   });
 
   describe('logout', () => {
@@ -1051,12 +1187,15 @@ describe('AuthService', () => {
   });
 
   describe('logoutEverywhere', () => {
-    it('revokes the refresh token, signs out every device, and clears both session cookies', async () => {
-      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+    it('revokes every refresh token and access token the user has, signs out every device, and clears both session cookies', async () => {
+      const { refreshTokenService, findLiveOwner, revokeAll } =
+        makeRefreshTokenService();
+      const { accessTokenService, endAllSessions } = makeAccessTokenService();
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       const service = makeService({
         refreshTokenService,
+        accessTokenService,
         deviceSessionService,
       });
       const { response, clearCookie } = makeResponse();
@@ -1064,10 +1203,12 @@ describe('AuthService', () => {
 
       const result = await service.logoutEverywhere(request, response);
 
-      expect(revokeByValue).toHaveBeenCalledWith(
+      expect(findLiveOwner).toHaveBeenCalledWith(
         expect.anything(),
         'some-refresh-token',
       );
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(revokeAllForUser).toHaveBeenCalledWith('user-1');
       expect(clearCookie).toHaveBeenCalledWith(
         'access_token',
@@ -1078,6 +1219,49 @@ describe('AuthService', () => {
         expect.objectContaining({ path: '/' }),
       );
       expect(result.message).toContain('Logged out');
+    });
+
+    it('falls back to a still-valid access token when there is no usable refresh token', async () => {
+      const { refreshTokenService, revokeAll } = makeRefreshTokenService();
+      const { accessTokenService, verify, endAllSessions } =
+        makeAccessTokenService();
+      verify.mockResolvedValue('user-1');
+      const service = makeService({ refreshTokenService, accessTokenService });
+      const request = makeRequest('access_token=valid.jwt.token');
+
+      await service.logoutEverywhere(request, makeResponse().response);
+
+      expect(verify).toHaveBeenCalledWith('valid.jwt.token');
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
+    });
+
+    it('does nothing to the account when the cookies are already revoked or expired', async () => {
+      const { refreshTokenService, findLiveOwner, revokeAll } =
+        makeRefreshTokenService();
+      findLiveOwner.mockResolvedValue(null);
+      const { accessTokenService, endAllSessions } = makeAccessTokenService();
+      const { deviceSessionService, revokeAllForUser } =
+        makeDeviceSessionService();
+      const service = makeService({
+        refreshTokenService,
+        accessTokenService,
+        deviceSessionService,
+      });
+      const { response, clearCookie } = makeResponse();
+      const request = makeRequest(
+        'refresh_token=old-rotated-token; access_token=revoked.jwt.token',
+      );
+
+      await service.logoutEverywhere(request, response);
+
+      expect(revokeAll).not.toHaveBeenCalled();
+      expect(endAllSessions).not.toHaveBeenCalled();
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
     });
 
     it("stops whatever is running in each revoked device's organisation", async () => {
@@ -1122,8 +1306,9 @@ describe('AuthService', () => {
       );
     });
 
-    it('still clears cookies when there is no refresh-token cookie to revoke', async () => {
-      const { refreshTokenService, revokeByValue } = makeRefreshTokenService();
+    it('still clears cookies when there are no session cookies at all', async () => {
+      const { refreshTokenService, findLiveOwner, revokeAll } =
+        makeRefreshTokenService();
       const { deviceSessionService, revokeAllForUser } =
         makeDeviceSessionService();
       const service = makeService({
@@ -1135,7 +1320,8 @@ describe('AuthService', () => {
 
       await service.logoutEverywhere(request, response);
 
-      expect(revokeByValue).not.toHaveBeenCalled();
+      expect(findLiveOwner).not.toHaveBeenCalled();
+      expect(revokeAll).not.toHaveBeenCalled();
       expect(revokeAllForUser).not.toHaveBeenCalled();
       expect(clearCookie).toHaveBeenCalledWith(
         'access_token',

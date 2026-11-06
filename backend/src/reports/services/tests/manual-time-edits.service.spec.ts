@@ -40,6 +40,7 @@ describe('ManualTimeEditsService', () => {
       },
       {
         id: 'other',
+        role: MembershipRole.MEMBER,
         user: { name: 'Other', email: 'o@example.com' },
         teamMemberships: options.otherTeams ?? [],
       },
@@ -179,16 +180,16 @@ describe('ManualTimeEditsService', () => {
     expect(rows.map((row) => row.id)).toEqual([added.id]);
   });
 
-  it('shows a manager with no team nobody else on "all"', async () => {
+  it('refuses the organisation-wide view to a manager of no team', async () => {
     const { service } = setup({
       role: MembershipRole.MANAGER,
       otherTeams: [{ teamId: 'team-a', isManager: false }],
       logs: [added],
     });
 
-    const rows = await service.list('org', 'user', 'all', from, to);
-
-    expect(rows).toEqual([]);
+    await expect(
+      service.list('org', 'user', 'all', from, to),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('refuses a plain member the organisation-wide view', async () => {

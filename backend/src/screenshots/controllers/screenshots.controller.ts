@@ -13,7 +13,8 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
-import type { ScreenshotSummaryItem } from '../services/screenshots.service';
+import { ListScreenshotsDto } from '../dto/list-screenshots.dto';
+import type { ScreenshotsPage } from '../services/screenshots.service';
 import { ScreenshotsService } from '../services/screenshots.service';
 
 @Controller('organisations/:id/screenshots')
@@ -43,15 +44,19 @@ export class ScreenshotsController {
 
   @Get('mine')
   getMine(
-    @Query('date') date: string | undefined,
-    @Query('projectId') projectId: string | undefined,
+    @Query() query: ListScreenshotsDto,
     @Req() request: AuthenticatedRequest,
-  ): Promise<ScreenshotSummaryItem[]> {
+  ): Promise<ScreenshotsPage> {
     return this.screenshotsService.getMyScreenshots(
       request.organisationId!,
       request.userId,
-      date,
-      { projectId },
+      query.date,
+      { projectId: query.projectId },
+      {
+        page: query.page,
+        pageSize: query.pageSize,
+        newestFirst: query.order === 'newest',
+      },
     );
   }
 }

@@ -6,9 +6,11 @@ import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useOrganisationTeams } from "@/hooks/useOrganisationTeams";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { matchesSearch } from "@/lib/matchesSearch";
+import { paginateRows } from "@/lib/paginateRows";
 import { ErrorMessage } from "./ErrorMessage";
 import { MemberRow } from "./MemberRow";
 import { MembersToolbar } from "./MembersToolbar";
+import { ReportsTableFooter } from "./reports/ReportsTableFooter";
 import { Spinner } from "./Spinner";
 
 type MembersTabProps = {
@@ -18,6 +20,9 @@ type MembersTabProps = {
 export function MembersTab({ organisationId }: MembersTabProps) {
   const projectsEnabled = useProjectsEnabled();
   const [search, setSearch] = useState("");
+  const [perPage, setPerPage] = useState(25);
+  const [requestedPage, setRequestedPage] = useState(1);
+  // The visible list: everyone for an admin, a manager only their teams' members.
   const membersQuery = useActiveMembers(organisationId);
   const organisationQuery = useCurrentOrganisation();
   const teamsQuery = useOrganisationTeams(organisationId);
@@ -59,6 +64,10 @@ export function MembersTab({ organisationId }: MembersTabProps) {
   const members = membersQuery.data.filter((member) =>
     matchesSearch([member.name, member.email], search),
   );
+  const pageCount = Math.max(1, Math.ceil(members.length / perPage));
+  // Clamp, so removing the last member on the last page falls back a page.
+  const page = Math.min(requestedPage, pageCount);
+  const pageMembers = paginateRows(members, page, perPage);
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,7 +77,10 @@ export function MembersTab({ organisationId }: MembersTabProps) {
         teamNames={teamNames}
         callerUserId={organisationQuery.data.userId}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setRequestedPage(1);
+        }}
       />
 
       <table className="w-full text-left text-sm">
@@ -88,7 +100,7 @@ export function MembersTab({ organisationId }: MembersTabProps) {
           </tr>
         </thead>
         <tbody>
-          {members.map((member) => (
+          {pageMembers.map((member) => (
             <MemberRow
               key={member.id}
               organisationId={organisationId}
@@ -107,6 +119,22 @@ export function MembersTab({ organisationId }: MembersTabProps) {
           )}
         </tbody>
       </table>
+
+      {members.length > 0 && (
+        <ReportsTableFooter
+          totalRows={members.length}
+          perPage={perPage}
+          onPerPageChange={(value) => {
+            setPerPage(value);
+            setRequestedPage(1);
+          }}
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setRequestedPage}
+          showPrevNext
+          condensePages={membersQuery.data.length > 200}
+        />
+      )}
     </div>
   );
 }

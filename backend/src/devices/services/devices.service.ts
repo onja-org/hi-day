@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
@@ -107,9 +103,8 @@ export class DevicesService {
   }
 
   /**
-   * An admin can sign out any Device in the Organisation. A manager only
-   * those they can see in the list, and never an admin's — admin access is
-   * off-limits to managers (see CONTEXT.md's Role entry).
+   * An admin can sign out any Device in the Organisation, a manager only
+   * those they can see — never an admin's, which canViewMembership hides.
    */
   async signOutAsAdmin(
     organisationId: string,
@@ -134,12 +129,6 @@ export class DevicesService {
 
       if (!owner || !canViewMembership(caller, owner)) {
         throw new NotFoundException('Device not found.');
-      }
-
-      if (owner.role === MembershipRole.ADMIN) {
-        throw new ForbiddenException(
-          "Only an admin can sign out an admin's device.",
-        );
       }
     }
 

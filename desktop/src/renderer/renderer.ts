@@ -426,6 +426,103 @@ async function pollPairing(): Promise<void> {
   // status === 'pending' — keep waiting.
 }
 
+/* --- Which Hi Day server this agent talks to -------------------------- */
+
+const serverDetails = document.getElementById(
+  "server-details",
+) as HTMLDetailsElement;
+const serverSummary = document.getElementById("server-summary")!;
+const serverInput = document.getElementById("server-input") as HTMLInputElement;
+const serverErrorEl = document.getElementById("server-error")!;
+const serverNoteEl = document.getElementById("server-note")!;
+const serverSaveButton = document.getElementById(
+  "server-save",
+) as HTMLButtonElement;
+const serverResetButton = document.getElementById(
+  "server-reset",
+) as HTMLButtonElement;
+
+function renderServerState(state: ServerUrlState): void {
+  serverInput.value = state.url;
+  serverInput.disabled = !state.canEdit;
+  serverSaveButton.disabled = !state.canEdit;
+  // Nothing to reset to when already on the default.
+  serverResetButton.hidden = state.isDefault || !state.canEdit;
+
+  // The summary carries the host, so somebody pointed at the wrong server
+  // can see it without opening the section.
+  // Named for the only people it is for. On Hi Day Cloud this is the one
+  // control on the screen nobody should touch, so it says so rather than
+  // reading as a setting somebody might be missing.
+  serverSummary.textContent = state.isDefault
+    ? "Self-hosted? Change server"
+    : `Server: ${hostOf(state.url)}`;
+
+  if (!state.canEdit) {
+    serverNoteEl.textContent =
+      "Set by DESKTOP_API_URL in this environment, so it cannot be changed here.";
+    serverNoteEl.hidden = false;
+  } else {
+    serverNoteEl.hidden = true;
+  }
+}
+
+/** Just the host, for the collapsed summary. Falls back to the whole URL. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+async function loadServerState(): Promise<void> {
+  renderServerState(await window.api.server.get());
+}
+
+serverSaveButton.addEventListener("click", () => {
+  void (async () => {
+    serverSaveButton.disabled = true;
+    serverErrorEl.hidden = true;
+    serverNoteEl.textContent = "Checking that server…";
+    serverNoteEl.hidden = false;
+
+    const result = await window.api.server.set(serverInput.value);
+
+    serverNoteEl.hidden = true;
+    if (!result.ok) {
+      serverErrorEl.textContent = result.message ?? "Could not save that address.";
+      serverErrorEl.hidden = false;
+      serverSaveButton.disabled = false;
+      return;
+    }
+
+    await loadServerState();
+    serverNoteEl.textContent = "Saved. You can log in now.";
+    serverNoteEl.hidden = false;
+    // Any existing pairing attempt was against the old server.
+    stopPairingPoll();
+    showLoginView();
+  })();
+});
+
+serverResetButton.addEventListener("click", () => {
+  void (async () => {
+    serverErrorEl.hidden = true;
+    renderServerState(await window.api.server.reset());
+    stopPairingPoll();
+    showLoginView();
+  })();
+});
+
+// Opened on its own where this install is pointed somewhere custom, so a
+// person who has changed it sees what it is without hunting.
+void (async () => {
+  const state = await window.api.server.get();
+  renderServerState(state);
+  if (!state.isDefault) serverDetails.open = true;
+})();
+
 loginButton.addEventListener("click", () => {
   void (async () => {
     loginButton.disabled = true;
@@ -533,6 +630,8 @@ const idleAssignList = document.getElementById(
 ) as HTMLUListElement;
 const idleNotice = document.getElementById("idle-notice")!;
 const todayTotalEl = document.getElementById("today-total")!;
+const todayStat = document.getElementById("today-stat")!;
+const timerStats = document.getElementById("timer-stats")!;
 const trackingProjectNameEl = document.getElementById("tracking-project-name")!;
 const taskTrigger = document.getElementById(
   "task-trigger",
@@ -726,6 +825,67 @@ function handleTrackingFailure(
     return;
   }
   showTrackingError(result.message);
+}
+
+const autoStartNotice = document.getElementById("auto-start-notice")!;
+const autoStartMessage = document.getElementById("auto-start-message")!;
+const autoStartStop = document.getElementById(
+  "auto-start-stop",
+) as HTMLButtonElement;
+const autoStartOk = document.getElementById("auto-start-ok") as HTMLButtonElement;
+
+/**
+ * Says the timer started by itself, with one click to undo it. Not raised:
+ * the window is already on screen when the machine has just come on, and
+ * nothing here is worth taking the foreground for.
+ */
+function showAutoStartNotice(): void {
+  const name = trackedProjectName();
+  // A question already on screen keeps the screen; the notification shelf
+  // carries this instead, so the start is never silent either way.
+  if (aDialogIsOpen()) {
+    void window.api.windowControls.timerNotice(
+      `Started timer${name ? ` for ${name}` : ""}`,
+    );
+    return;
+  }
+  autoStartMessage.textContent = name
+    ? `You're now tracking time to ${name}.`
+    : "You're now tracking time.";
+  setMode("full", true);
+  autoStartNotice.hidden = false;
+  autoStartOk.focus();
+}
+
+autoStartOk.addEventListener("click", () => {
+  autoStartNotice.hidden = true;
+});
+
+autoStartStop.addEventListener("click", () => {
+  autoStartNotice.hidden = true;
+  // The stop button's own path, which says what it did like any other.
+  if (!timerToggle.disabled) void toggleTimer();
+});
+
+/**
+ * Starts the timer when the machine has just been turned on, for someone
+ * who asked for that in Preferences. Through the play button's own path,
+ * so it can only ever start what play itself would.
+ */
+async function autoStartTimerIfDue(): Promise<void> {
+  // Asked before the checks below, never after: main spends the power-on
+  // as it answers, and a start declined here must not be offered again
+  // later in the same one.
+  if (!(await window.api.tracking.autoStartDue())) return;
+  // Main checked these too; a question can go up in between.
+  if (runningEntry || idleHold || aDialogIsOpen()) return;
+
+  await startTracking((message) => {
+    void window.api.windowControls.timerNotice(
+      `Your timer did not start automatically. ${message}`,
+    );
+  });
+  if (isTracking()) showAutoStartNotice();
 }
 
 const timerBlocked = document.getElementById("timer-blocked")!;
@@ -1645,6 +1805,12 @@ function applyProjectsMode(): void {
   projectsSection.hidden = !projectsEnabled;
   taskTrigger.hidden = !projectsEnabled;
   idleAssignToggle.hidden = !projectsEnabled;
+  // The day's total belongs to the Project picture too: with Projects off
+  // there is one bucket, and the figure says nothing the running clock
+  // above it does not already say.
+  todayStat.hidden = !projectsEnabled;
+  // Both of its cells are gone, and an empty grid still occupies its row.
+  timerStats.hidden = todayStat.hidden && taskTrigger.hidden;
 }
 
 /** Tells the person an admin just switched Projects on or off under them. */
@@ -2029,7 +2195,14 @@ async function resolveProjectToTrack(): Promise<{
 }
 
 /** Starts a new entry against the resolved Project, when play is pressed. */
-async function startTracking(): Promise<void> {
+async function startTracking(
+  /**
+   * Where a refusal goes instead of the dialog or the red line — the
+   * automatic start reports it to the notification shelf, since nobody
+   * clicked anything and so nothing needs dismissing.
+   */
+  reportRefusal?: (message: string) => void,
+): Promise<void> {
   if (!projectsLoaded) {
     // Setup is still waiting on its retry. Retrying now reaches the server,
     // so an ended session lands on the login screen instead of "No projects".
@@ -2043,7 +2216,9 @@ async function startTracking(): Promise<void> {
       ? await resolveProjectToTrack()
       : { projectId: null, taskId: null };
   if (!resolved) {
-    showTrackingError("No projects are available to track time against.");
+    const message = "No projects are available to track time against.";
+    if (reportRefusal) reportRefusal(message);
+    else showTrackingError(message);
     return;
   }
   const target =
@@ -2071,7 +2246,14 @@ async function startTracking(): Promise<void> {
     return;
   }
 
-  handleTrackingFailure(result);
+  // Only a refusal reaches the shelf. An unreached request is not one: the
+  // start was queued and will be replayed with its real time
+  // (docs/adr/0025-...), so the sync line owns it — and that path's wording
+  // is about idle time being safe, which this is not.
+  handleTrackingFailure(
+    result,
+    result.status === undefined ? undefined : reportRefusal,
+  );
   if (result.runningEntry && !result.unauthorized) {
     pendingSwitch = { projectId: target.projectId, taskId: target.taskId };
     switchButton.hidden = false;
@@ -2081,19 +2263,34 @@ async function startTracking(): Promise<void> {
 /** Set while the organisation tracks from another client. */
 let trackingToggleBlocked = false;
 
-async function toggleTimer(): Promise<void> {
-  {
-    timerToggle.disabled = true;
-    try {
-      if (!runningEntry) {
-        await startTracking();
-        return;
-      }
+/** Whether time is accruing right now — a paused entry is not. */
+function isTracking(): boolean {
+  return runningEntry !== null && runningEntry.pausedAt === null;
+}
 
+/** The Project a notice should name, where there is one to name. */
+function trackedProjectName(): string | null {
+  if (!projectsEnabled || !runningEntry?.projectId) return null;
+  return projectNameFor(runningEntry.projectId);
+}
+
+/**
+ * Start or stop, for the play button, both small bars and the tray's own
+ * menu item. Each confirms itself with a desktop notification, which is
+ * the only sign of it at all when the window is not on screen.
+ */
+async function toggleTimer(): Promise<void> {
+  const wasTracking = isTracking();
+  const stopping = wasTracking ? trackedProjectName() : null;
+  timerToggle.disabled = true;
+  try {
+    if (!runningEntry) {
+      await startTracking();
+    } else {
       clearTrackingError();
       // `pausedAt` is never set any more — pausing ends the entry — so this
-      // always pauses, and starting again goes through the `!runningEntry`
-      // branch above. `resume` stays reachable for an older agent.
+      // always pauses, and starting again goes through the branch above.
+      // `resume` stays reachable for an older agent.
       const result = runningEntry.pausedAt
         ? await window.api.tracking.resume()
         : await window.api.tracking.pause();
@@ -2105,10 +2302,18 @@ async function toggleTimer(): Promise<void> {
       } else {
         handleTrackingFailure(result);
       }
-    } finally {
-      timerToggle.disabled = trackingToggleBlocked;
     }
+  } finally {
+    timerToggle.disabled = trackingToggleBlocked;
   }
+  // Unchanged means it was refused, and the refusal brings the window
+  // forward by itself — claiming a start that did not happen would be
+  // worse than saying nothing.
+  if (isTracking() === wasTracking) return;
+  const name = isTracking() ? trackedProjectName() : stopping;
+  void window.api.windowControls.timerNotice(
+    `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
+  );
 }
 
 timerToggle.addEventListener("click", () => void toggleTimer());
@@ -2230,6 +2435,10 @@ async function runInitTracking(): Promise<void> {
   // refresh above, never behind it: a failed read must not swallow a
   // question nobody has answered.
   await settleIdleHold();
+
+  // Turning the machine on starts the timer, for someone who asked for
+  // that in Preferences. After the question above, which comes first.
+  await autoStartTimerIfDue();
 
   // Never starts the timer: quitting stopped it, and only the person
   // pressing play starts it again. Shows what play would resume instead,
@@ -2450,6 +2659,7 @@ window.api.idle.onWake(() => {
       console.error("[idle] status refresh on wake failed:", error);
     }
     await settleIdleHold();
+    await autoStartTimerIfDue();
   })();
 });
 
@@ -2526,36 +2736,12 @@ window.api.windowControls.onRefusedTime((refused) => {
 /**
  * The tray's Start/Stop item, taking the same click the play button does
  * rather than a second path into starting: that one already resolves the
- * Project, handles a timer running elsewhere, and honours a refusal.
+ * Project, handles a timer running elsewhere, honours a refusal, and says
+ * what it did.
  */
-/** Whether time is accruing right now — a paused entry is not. */
-function isTracking(): boolean {
-  return runningEntry !== null && runningEntry.pausedAt === null;
-}
-
-/** The Project a tray notice should name, where there is one to name. */
-function trackedProjectName(): string | null {
-  if (!projectsEnabled || !runningEntry?.projectId) return null;
-  return projectNameFor(runningEntry.projectId);
-}
-
 window.api.windowControls.onTrayToggleTimer(() => {
-  // The button's own path, including its disabled guard: the tray must
-  // never be a second way to start a timer the window would refuse.
   if (timerToggle.disabled) return;
-  void (async () => {
-    const wasTracking = isTracking();
-    const stopping = wasTracking ? trackedProjectName() : null;
-    await toggleTimer();
-    // Unchanged means it was refused, and the refusal brings the window
-    // forward by itself — claiming a start that did not happen would be
-    // worse than saying nothing.
-    if (isTracking() === wasTracking) return;
-    const name = isTracking() ? trackedProjectName() : stopping;
-    void window.api.windowControls.timerNotice(
-      `${isTracking() ? "Started" : "Stopped"} timer${name ? ` for ${name}` : ""}`,
-    );
-  })();
+  void toggleTimer();
 });
 
 /**

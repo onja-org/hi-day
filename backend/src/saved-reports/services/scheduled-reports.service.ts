@@ -30,6 +30,8 @@ import { isScheduleDue } from '../../common/report-schedule.util';
 import { isValidTimezone } from '../../common/timezone.util';
 import { addDaysToKey, zonedParts } from '../../common/zoned-time.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { Membership } from '../../database/entities/membership.entity';
+import { actsAsManager } from '../../common/manager-scope.util';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { resolveProjectsEnabled } from '../../organisations/projects-setting';
 import { Project } from '../../database/entities/project.entity';
@@ -45,7 +47,11 @@ import { TimeEntriesService } from '../../time-entries/services/time-entries.ser
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 
 const DEFAULT_TIMEZONE = 'UTC';
-const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
+/** Whose report may widen past themselves — an admin, or whoever manages
+ * a team. */
+function canSeeAnyone(membership: Membership): boolean {
+  return membership.role === MembershipRole.ADMIN || actsAsManager(membership);
+}
 // The activity API answers one day at a time, so a range is capped.
 const APPS_URLS_MAX_DAYS = 31;
 // Member-days, so an "all" report can't fan out into thousands of queries.
@@ -277,7 +283,7 @@ export class ScheduledReportsService {
     let members: { id: string | undefined; name: string }[] = [
       { id: undefined, name: ownName },
     ];
-    if (scope === 'all' && ORG_WIDE_ROLES.includes(membership.role)) {
+    if (scope === 'all' && canSeeAnyone(membership)) {
       const listed = await this.membershipsService.listActiveForOrganisation(
         organisationId,
         userId,
@@ -391,9 +397,7 @@ export class ScheduledReportsService {
     const edits = await this.manualTimeEditsService.list(
       organisationId,
       membership.userId,
-      scope === 'all' && ORG_WIDE_ROLES.includes(membership.role)
-        ? 'all'
-        : 'me',
+      scope === 'all' && canSeeAnyone(membership) ? 'all' : 'me',
       range.from,
       range.to,
     );
@@ -452,7 +456,7 @@ export class ScheduledReportsService {
     const userId = membership.userId;
     let entries: TimeEntryListItem[] = [];
 
-    if (scope === 'all' && ORG_WIDE_ROLES.includes(membership.role)) {
+    if (scope === 'all' && canSeeAnyone(membership)) {
       const members = await this.membershipsService.listActiveForOrganisation(
         organisationId,
         userId,

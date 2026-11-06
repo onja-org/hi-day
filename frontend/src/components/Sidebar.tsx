@@ -20,7 +20,9 @@ import {
 } from "@phosphor-icons/react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { settingsHref, SETTINGS_GROUPS } from "@/lib/settingsNavigation";
+import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
+import { useBillingEnabled } from "@/hooks/useBillingEnabled";
+import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
@@ -60,9 +62,11 @@ export function Sidebar({
   const organisationName = organisationQuery.data?.name ?? "Hi Day";
   const isAdmin = organisationQuery.data?.role === "admin";
   const projectsEnabled = organisationQuery.data?.projectsEnabled ?? false;
+  const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
-  const canSeeMembers = isAdmin || organisationQuery.data?.role === "manager";
+  // Whoever runs a team sees its members; Devices stays admin-only here.
+  const canSeeMembers = useCanViewOthers();
 
   const teamsLink: NavLink = {
     kind: "link",
@@ -170,7 +174,7 @@ export function Sidebar({
       ],
     },
     peopleEntry,
-    ...(canSeeMembers
+    ...(isAdmin
       ? [
           {
             kind: "link" as const,
@@ -199,7 +203,7 @@ export function Sidebar({
                 icon: SquaresFour,
                 exact: true,
               },
-              ...SETTINGS_GROUPS.map((group) => ({
+              ...settingsGroups.map((group) => ({
                 kind: "link" as const,
                 label: group.label,
                 href: settingsHref(

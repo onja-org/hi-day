@@ -188,6 +188,18 @@ interface IdleHold {
   reason: "timeout" | "sleep";
 }
 
+interface ServerUrlState {
+  url: string;
+  isDefault: boolean;
+  canEdit: boolean;
+}
+
+interface SaveServerUrlResult {
+  ok: boolean;
+  message?: string;
+  url: string;
+}
+
 interface TrackingReminder {
   untrackedMinutes: number;
   signedOut: boolean;
@@ -202,6 +214,18 @@ const api = {
       ipcRenderer.invoke("auth:startPairing") as Promise<StartPairingResult>,
     pairingStatus: (): Promise<PairingPollResult> =>
       ipcRenderer.invoke("auth:pairingStatus") as Promise<PairingPollResult>,
+  },
+  /**
+   * Which Hi Day server this agent talks to. Pre-login, because it is the
+   * address the pairing flow will use.
+   */
+  server: {
+    get: (): Promise<ServerUrlState> =>
+      ipcRenderer.invoke("server:get") as Promise<ServerUrlState>,
+    set: (url: string): Promise<SaveServerUrlResult> =>
+      ipcRenderer.invoke("server:set", url) as Promise<SaveServerUrlResult>,
+    reset: (): Promise<ServerUrlState> =>
+      ipcRenderer.invoke("server:reset") as Promise<ServerUrlState>,
   },
   logout: (): Promise<AuthStatus> =>
     ipcRenderer.invoke("auth:logout") as Promise<AuthStatus>,
@@ -282,6 +306,9 @@ const api = {
       ipcRenderer.invoke("tracking:completedTotals", from, to) as Promise<
         TrackingResult<CompletedTotals>
       >,
+    /** Whether turning the machine on should start the timer — see auto-start.ts. */
+    autoStartDue: (): Promise<boolean> =>
+      ipcRenderer.invoke("tracking:autoStartDue") as Promise<boolean>,
     idlePolicy: (): Promise<TrackingResult<IdlePolicy>> =>
       ipcRenderer.invoke("tracking:idlePolicy") as Promise<
         TrackingResult<IdlePolicy>

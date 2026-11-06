@@ -7,8 +7,8 @@ import { CheckoutService } from '../checkout.service';
  * showing the new one is the outcome worth failing a request over.
  */
 function serviceFor(authoritativeSeats: number) {
+  const subscriptions = { findOne: jest.fn().mockResolvedValue(null) };
   const service = new CheckoutService(
-    { findOne: jest.fn().mockResolvedValue(null) } as never,
     {
       findOne: jest.fn().mockResolvedValue({ id: 'org-1', publicId: 100001 }),
     } as never,
@@ -24,6 +24,10 @@ function serviceFor(authoritativeSeats: number) {
         .mockResolvedValue({ count: authoritativeSeats }),
     } as never,
     { getOrThrow: () => 'https://app.example.com' } as never,
+    {
+      transaction: (work: (manager: unknown) => unknown) =>
+        work({ query: jest.fn(), getRepository: () => subscriptions }),
+    } as never,
   );
   return service;
 }

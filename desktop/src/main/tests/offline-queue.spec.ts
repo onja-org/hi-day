@@ -96,6 +96,22 @@ describe('OfflineQueue', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('sends an item still inside its retry backoff when told to ignore backoff', async () => {
+    // What logout relies on: a backlog built up offline is all waiting out
+    // a retry, and anything it doesn't send is deleted straight after.
+    const send = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const { sender } = makeSender({ send });
+    const queue = new OfflineQueue(store, undefined, () => 1);
+    queue.registerSender(sender);
+
+    queue.enqueue('test-kind', { n: 1 });
+    await queue.flushKind('test-kind'); // fails, schedules a far-future retry
+    await queue.flushAll({ ignoreBackoff: true });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(queue.pendingCount()).toBe(0);
+  });
+
   it('treats a thrown send as a failure and keeps the item queued', async () => {
     const { sender } = makeSender({ send: vi.fn().mockRejectedValue(new Error('boom')) });
     const queue = new OfflineQueue(store);

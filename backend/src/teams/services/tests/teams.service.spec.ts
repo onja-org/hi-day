@@ -2,6 +2,8 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Membership } from '../../../database/entities/membership.entity';
+import { ForbiddenException } from '@nestjs/common';
+import { MembershipRole } from '../../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { Team } from '../../../database/entities/team.entity';
 import { TeamMembership } from '../../../database/entities/team-membership.entity';
@@ -143,6 +145,32 @@ describe('TeamsService', () => {
       expect(update).toHaveBeenCalledWith(Team, 'team-1', { name: 'New Name' });
     });
 
+    it('refuses a team manager removing an admin from their own team', async () => {
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'team-1', name: 'Sales' }),
+      });
+      const service = makeService({
+        teamsRepo,
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'manager-membership',
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-1', isManager: true }],
+            })
+            .mockResolvedValueOnce({
+              id: 'admin-membership',
+              role: MembershipRole.ADMIN,
+            }),
+        }),
+      });
+
+      await expect(
+        service.removeMember('org-1', 'team-1', 'admin-membership', 'mgr-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it('throws when the team does not belong to the organisation', async () => {
       const teamsRepo = makeTeamsRepo({
         findOne: jest.fn().mockResolvedValue(null),
@@ -262,6 +290,42 @@ describe('TeamsService', () => {
   });
 
   describe('addOrUpdateMember', () => {
+    it("refuses a team manager changing an admin's role on their team", async () => {
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue({ id: 'team-1', name: 'Sales' }),
+      });
+      const service = makeService({
+        teamsRepo,
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            // The target is looked up first (it must exist), then the caller.
+            .mockResolvedValueOnce({
+              id: 'admin-membership',
+              organisationId: 'org-1',
+              status: MembershipStatus.ACTIVE,
+              role: MembershipRole.ADMIN,
+            })
+            .mockResolvedValueOnce({
+              id: 'manager-membership',
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-1', isManager: true }],
+            })
+            .mockResolvedValueOnce({
+              id: 'admin-membership',
+              role: MembershipRole.ADMIN,
+            }),
+        }),
+      });
+
+      await expect(
+        service.addOrUpdateMember('org-1', 'team-1', 'mgr-1', {
+          membershipId: 'admin-membership',
+          isManager: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it('adds a new member to the team', async () => {
       const teamsRepo = makeTeamsRepo({
         findOne: jest.fn().mockResolvedValue({ id: 'team-1', name: 'Sales' }),
@@ -271,6 +335,9 @@ describe('TeamsService', () => {
           id: 'membership-1',
           organisationId: 'org-1',
           status: MembershipStatus.ACTIVE,
+          // Acting as 'admin-1': the caller lookup and the target lookup
+          // share this mock, and an admin may act on anyone.
+          role: MembershipRole.ADMIN,
         }),
       });
       const teamMembershipsRepo = makeTeamMembershipsRepo({
@@ -315,6 +382,9 @@ describe('TeamsService', () => {
           id: 'membership-1',
           organisationId: 'org-1',
           status: MembershipStatus.ACTIVE,
+          // Acting as 'admin-1': the caller lookup and the target lookup
+          // share this mock, and an admin may act on anyone.
+          role: MembershipRole.ADMIN,
         }),
       });
       const teamMembershipsRepo = makeTeamMembershipsRepo({
@@ -384,7 +454,17 @@ describe('TeamsService', () => {
       });
       const { dataSource, delete: del } = makeDataSource();
       const { auditLogService, record } = makeAuditLogService();
-      const service = makeService({ teamsRepo, dataSource, auditLogService });
+      const service = makeService({
+        teamsRepo,
+        dataSource,
+        auditLogService,
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'membership-1',
+            role: MembershipRole.ADMIN,
+          }),
+        }),
+      });
 
       await service.removeMember('org-1', 'team-1', 'membership-1', 'admin-1');
 

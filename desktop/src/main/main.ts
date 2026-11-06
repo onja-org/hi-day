@@ -26,11 +26,13 @@ import type {
 } from "./api-client";
 import { ApiClient, isTransportFailure } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
+import { ServerUrlSetting } from "./server-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore, recentProjectIds } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { sessionOwner } from "./session-owner";
 import { OfflineCache } from "./offline-cache";
 import { keepActionFor, recoveryActionFor } from "./recovered-timer";
 import { BACKLOG_MESSAGE, shouldWarnAboutBacklog } from "./sync-backlog";
@@ -97,7 +99,13 @@ import {
   setCompactAlwaysOnTop,
   cachedReminderSettings,
   rememberedCloseAction,
+  autoStartTimer as autoStartTimerEnabled,
+  setAutoStartTimer,
+  lastAutoStartedBoot,
+  lastAutoStartedDay,
+  rememberAutoStarted,
 } from "./setup-state";
+import { bootIdentity, decideAutoStart, localDay } from "./auto-start";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -110,7 +118,11 @@ import {
   NullDebugHarness,
   type DebugSink,
 } from "./url-capture/debug-harness";
-import { intervalFromEnv, offlineSimulated } from "./tuning";
+import {
+  intervalFromEnv,
+  offlineSimulated,
+  startupWindowDelayMs,
+} from "./tuning";
 import { resolveWebAppUrl } from "./web-app-url";
 import { pinLevel, shouldPin } from "./window-pinning";
 import type { WindowMode } from "./window-pinning";
@@ -125,6 +137,7 @@ import { ResolverOrchestrator } from "./url-capture/resolver-orchestrator";
 import { syncWithOlderBackendFallback } from "./url-capture/older-backend-fallback";
 import type { SyncResponseBody, UploadFn } from "./url-capture/sync-contract";
 import { UrlCaptureService } from "./url-capture/url-capture-service";
+import { UrlSessionStore } from "./url-capture/store";
 
 /**
  * All three platforms now have a resolver. Returns null only on a platform
@@ -199,7 +212,21 @@ const NOT_LOGGED_IN: TrackingResult<never> = {
   unauthorized: true,
 };
 
-const API_BASE_URL = resolveApiBaseUrl(app.isPackaged);
+/**
+ * Which Hi Day server this agent talks to. Built once the app knows its
+ * userData path — see `serverUrlSetting` inside `main()`.
+ *
+ * Hi Day is self-hostable, so most installs are not talking to hiday.io.
+ * The address is read per request rather than captured, because somebody
+ * can change it on the login screen while the app is running.
+ */
+let serverUrlSetting: ServerUrlSetting | null = null;
+
+function apiBaseUrl(): string {
+  return serverUrlSetting
+    ? serverUrlSetting.current()
+    : resolveApiBaseUrl(app.isPackaged);
+}
 
 interface AuthStatus {
   loggedIn: boolean;
@@ -254,7 +281,10 @@ app.setName("Hi Day");
 // build for the single-instance lock. Without this, `pnpm dev` loses the
 // lock to the packaged app autostarted at login and merely raises that
 // window — which looks exactly like the dev build failing to start.
-if (!app.isPackaged) {
+// `--user-data-dir` is Chromium's own switch and `getPath` already honours
+// it; overriding unconditionally meant a dev run could not be pointed
+// anywhere else, which is what an isolated test needs.
+if (!app.isPackaged && !app.commandLine.hasSwitch("user-data-dir")) {
   app.setPath("userData", join(app.getPath("appData"), "Hi Day (dev)"));
 }
 
@@ -278,6 +308,7 @@ const QUIT_PROGRESS_MIN_VISIBLE_MS = 450;
  * queued records go up on the next launch.
  */
 const QUIT_DRAIN_LIMIT_MS = intervalFromEnv('WM_QUIT_DRAIN_LIMIT_MS', 5_000);
+
 /** The gate's copy lives in `registerIpcHandlers`; the menu needs its own. */
 let trayTimerRunning = false;
 /** Asks the renderer to do what pressing its own play/stop button does. */
@@ -329,6 +360,12 @@ let pauseRunningTimer: (() => Promise<void>) | null = null;
 /** Set once IPC handlers are registered, like `pauseRunningTimer`: what suspend and wake do with a running timer. */
 let holdRunningTimerForSleep: (() => void) | null = null;
 let markIdleReturnedOnWake: (() => void) | null = null;
+/**
+ * Set once IPC handlers are registered: deletes every queued capture and
+ * timer action. For a session that has ended for good, whose data can no
+ * longer be sent and must not wait on disk for whoever logs in next.
+ */
+let discardQueuedData: (() => void) | null = null;
 /** The latest idle reading, for working out when input stopped as the machine sleeps. */
 const IDLE_SAMPLE_INTERVAL_MS = 10_000;
 let lastIdleReading: { seconds: number; atMs: number } | null = null;
@@ -454,6 +491,9 @@ function buildUrlSessionUploadFn(
       stopUrlCapture();
       stopHeartbeat();
       stopSync();
+      // Signed out remotely: the token is dead, so nothing queued can be
+      // sent any more.
+      discardQueuedData?.();
       return { acked: [] };
     }
 
@@ -501,12 +541,17 @@ function stopSync(): void {
 // events in; anywhere else resolverSpawnConfigForPlatform returns null and
 // this degrades to timer/idle-only tracking rather than throwing. Started
 // only by `syncUrlCapture`, which owns the lifecycle.
-function startUrlCapture(deviceId: string, upload: UploadFn): UrlCaptureService {
+function startUrlCapture(
+  deviceId: string,
+  owner: string,
+  upload: UploadFn,
+): UrlCaptureService {
   urlCaptureService?.stop();
   resolverOrchestrator?.stop();
 
   urlCaptureService = new UrlCaptureService({
     deviceId,
+    owner,
     userDataDir: app.getPath("userData"),
     powerMonitor,
     logger: (line) => console.log(line),
@@ -592,8 +637,34 @@ function stopUrlCapture(): void {
   urlCaptureService = null;
 }
 
+/** False until startup has built the first window — see `reopenMainWindow`. */
+let startupComplete = false;
+
+/**
+ * Startup is not the only thing that reaches here: `second-instance` fires
+ * the moment a second launch happens, which can be *while* startup is still
+ * awaiting `registerIpcHandlers` (it opens the SQLite queue and runs its
+ * migrations — seconds on a slow disk). This used to assign straight over
+ * `mainWindow`, so the window startup made a moment later orphaned the one
+ * already on screen: two Hi Days, two clocks, seconds apart.
+ *
+ * The orphan was not inert — `ipcMain` handlers are process-wide, so its
+ * renderer kept polling and showing live figures — but every push the main
+ * process makes goes to `mainWindow` alone, so the idle prompt only ever
+ * reached the other one. Closing the orphan ran the close prompt against
+ * the tracked window and took both down.
+ *
+ * There is exactly one window, and everything here depends on that: raise
+ * the one that exists rather than build a second.
+ */
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    console.log("[window] raised the existing window");
+    showMainWindow();
+    return;
+  }
+
+  const window = new BrowserWindow({
     ...FULL_WINDOW_SIZE,
     useContentSize: true,
     resizable: false,
@@ -619,19 +690,32 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  mainWindow.on("close", (event) => {
+  mainWindow = window;
+  console.log("[window] opened");
+  void window.loadFile(join(__dirname, "../renderer/index.html"));
+  window.on("close", (event) => {
+    // `handleCloseRequest` acts on the tracked window. For any other one
+    // that is the wrong window entirely: pressing its close button ran the
+    // *tracked* window's close prompt and left this one open — "I tried to
+    // close the other app but it is not actually closed". Nothing above can
+    // produce a second window any more; this is here so that if anything
+    // ever does, the person can still get rid of it.
+    if (mainWindow !== window) return;
     if (isQuitting) return;
     event.preventDefault();
     handleCloseRequest();
   });
   // Windows logoff/shutdown closes windows without a before-quit first;
   // hiding there would hold the session open.
-  mainWindow.on("session-end", () => {
+  window.on("session-end", () => {
     isQuitting = true;
   });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    // Only while it is still the tracked one. Clearing it unconditionally
+    // is what turned a single duplicate into a run of them: a stale window
+    // closing left `mainWindow` null with a live window still on screen,
+    // and the next reopen built another beside it.
+    if (mainWindow === window) mainWindow = null;
   });
 }
 
@@ -651,7 +735,9 @@ function forceToFront(): void {
 }
 
 function showMainWindow(): void {
-  if (!mainWindow) {
+  // `isDestroyed` as well as null: every method below throws on a destroyed
+  // window, and `createWindow` treats the two the same.
+  if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
     return;
   }
@@ -666,6 +752,11 @@ function showMainWindow(): void {
  * this tells it to re-read the day's time from the server instead.
  */
 function reopenMainWindow(): void {
+  // A second launch (or a deep link) arriving while this instance is still
+  // starting: the window it is asking for is already on its way, and
+  // building one here would race startup's own. `app.isReady()` is not the
+  // question — the app is ready well before the first window exists.
+  if (!startupComplete) return;
   const wasHidden = mainWindow !== null && !mainWindow.isVisible();
   showMainWindow();
   if (wasHidden) mainWindow?.webContents.send("window:reopened");
@@ -852,6 +943,7 @@ function refreshTrayMenu(): void {
     recentProjects: account.recentProjects,
     webAppUrl: resolveWebAppUrl(app.isPackaged, cachedWebAppUrl(userDataDir)),
     compactAlwaysOnTop: pinned,
+    autoStartTimer: autoStartTimerEnabled(userDataDir),
     closeChoiceRemembered: rememberedCloseAction(userDataDir) !== null,
   };
   const key = JSON.stringify(state);
@@ -868,6 +960,10 @@ function refreshTrayMenu(): void {
         toggleCompactAlwaysOnTop: () => {
           setCompactAlwaysOnTop(userDataDir, !pinned);
           applyPinning();
+          refreshTrayMenu();
+        },
+        toggleAutoStartTimer: () => {
+          setAutoStartTimer(userDataDir, !autoStartTimerEnabled(userDataDir));
           refreshTrayMenu();
         },
         forgetCloseChoice: () => {
@@ -977,7 +1073,11 @@ async function registerIpcHandlers(): Promise<void> {
     read: () => offlineCache.read().runningEntry,
     write: (entry) => offlineCache.rememberRunning(entry),
   });
-  const apiClient = new ApiClient(API_BASE_URL, offlineSimulated);
+  serverUrlSetting = new ServerUrlSetting(
+    app.getPath("userData"),
+    app.isPackaged,
+  );
+  const apiClient = new ApiClient(apiBaseUrl, offlineSimulated);
 
   // The offline queue (docs/TECH_DESIGN.md §4): every app-event and
   // screenshot is persisted to SQLite before it's sent, and drained in
@@ -988,6 +1088,112 @@ async function registerIpcHandlers(): Promise<void> {
     join(app.getPath("userData"), "offline-queue.db"),
   );
   const offlineQueue = new OfflineQueue(offlineQueueStore);
+
+  // Everything queued is stamped with who was logged in, and only ever
+  // sent for that same person: the backend keeps one Device for whoever
+  // logs in on this machine, so a token alone would upload A's offline
+  // backlog under B's login (pre-launch audit, 2026-11-02).
+  const currentOwner = (): string | null => {
+    const session = authStore.load();
+    return session ? sessionOwner(session) : null;
+  };
+  offlineQueue.setOwnerSource(currentOwner);
+  pendingOps.setOwnerSource(currentOwner);
+  // Rows queued by a version that did not record owners. If somebody is
+  // still logged in from then, they were that person's; if nobody is,
+  // they stay unowned and are deleted at the next login.
+  const ownerAtLaunch = currentOwner();
+  if (ownerAtLaunch) {
+    offlineQueue.adoptUnowned(ownerAtLaunch);
+    pendingOps.adoptUnowned(ownerAtLaunch);
+  }
+  const urlSessionsPath = join(app.getPath("userData"), "url-sessions.sqlite");
+
+  /** Deletes every queued capture and timer action not belonging to `owner`. */
+  function discardOtherOwnersData(owner: string): void {
+    const captures = offlineQueue.discardOtherOwners(owner);
+    const timerOps = pendingOps.discardOtherOwners(owner);
+    // URL capture is stopped while logged out, so no store is open here.
+    const store = new UrlSessionStore(urlSessionsPath, owner);
+    let urls = 0;
+    try {
+      urls = store.discardOtherOwners();
+    } finally {
+      store.close();
+    }
+    if (captures + timerOps + urls > 0) {
+      // Counts only — never what was in them.
+      console.warn(
+        `[auth] discarded data from an earlier login: ${captures} capture(s), ${timerOps} timer action(s), ${urls} URL session(s)`,
+      );
+    }
+  }
+
+  /**
+   * Deletes every queued screenshot, window sample, activity sample and URL
+   * of a session that has ended, once nothing more can be sent for it.
+   *
+   * **Queued timer actions are deliberately kept.** They are the hours
+   * somebody worked, and a session ending is not a reason to delete them —
+   * a remote sign-out in the middle of an offline stretch used to do
+   * exactly that, with nothing said. They survive because they cannot
+   * reach the wrong timesheet: each one carries its owner, the person it
+   * belongs to replays it when they log back in, and anybody else logging
+   * in deletes it (`discardOtherOwnersData`).
+   *
+   * Captures do not follow them, and the difference is the point: a
+   * screenshot and a browsing history belong to the session that took
+   * them, and leaving those on a shared machine is a disclosure. Hours are
+   * pay.
+   */
+  function discardEndedSessionCaptures(): void {
+    const captures = offlineQueue.discardAll();
+    const urls = UrlSessionStore.discardAllAt(urlSessionsPath);
+    if (captures + urls > 0) {
+      // Counts only — never what was in them.
+      console.warn(
+        `[auth] discarded unsent captures from the ended session: ${captures} capture(s), ${urls} URL session(s)`,
+      );
+    }
+  }
+  discardQueuedData = discardEndedSessionCaptures;
+
+  /**
+   * Uploads the logged-in person's whole backlog, rows waiting out a retry
+   * included, for as long as it keeps going up. Stops at the first attempt
+   * that makes no progress — offline, or the server refusing — and what is
+   * left is deleted by the caller. No time limit: online, a large backlog
+   * is this person's tracked work, and deleting it to save a wait would
+   * lose it. Each request is still bounded by the API client's timeout.
+   */
+  async function sendBacklogBeforeLogout(): Promise<void> {
+    // The part-finished activity period is otherwise only emitted once
+    // the timer-stop reaches the sampler — after the session is cleared,
+    // when the queue no longer accepts it, so the last minutes of
+    // activity were lost. Closing it now queues it with everything else.
+    await activitySampler.flush();
+    // Timer actions count too. They are kept rather than deleted when the
+    // session ends, but this is the last moment the token still works —
+    // sending them now means the person does not wait for their next login
+    // to see the hours land. `retryNow` because a replay the server asked
+    // us to back off from would otherwise sit out this whole loop.
+    pendingOps.retryNow();
+    const unsent = (): number =>
+      offlineQueue.pendingCount() +
+      pendingOps.load().length +
+      (urlCaptureService?.unsentCount() ?? 0);
+    let before = unsent();
+    while (before > 0) {
+      await Promise.all([
+        offlineQueue.flushAll({ ignoreBackoff: true }).catch(() => {}),
+        flushPendingOps().catch(() => {}),
+        urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
+      ]);
+      const after = unsent();
+      if (after >= before) return;
+      before = after;
+    }
+  }
 
   const appEventUploader = new AppEventUploader(
     authStore,
@@ -1211,6 +1417,7 @@ async function registerIpcHandlers(): Promise<void> {
 
     const service = startUrlCapture(
       session.deviceId,
+      sessionOwner(session),
       buildUrlSessionUploadFn(
         apiClient,
         authStore,
@@ -1694,13 +1901,21 @@ async function registerIpcHandlers(): Promise<void> {
 
     if (result.status === "approved") {
       pendingPairingCode = null;
-      authStore.save({
+      const newSession = {
         email: result.email,
         name: result.name,
         organisationName: result.organisationName,
+        userId: result.userId,
+        organisationId: result.organisationId,
         deviceId: result.deviceId,
         deviceToken: result.deviceToken,
-      });
+      };
+      authStore.save(newSession);
+      // Anything still queued from an earlier login on this machine — left
+      // by a remote sign-out, or by a logout that could not reach the
+      // server — belongs to somebody else unless it is this person's own.
+      // It would never be sent now, and is not this login's to keep.
+      discardOtherOwnersData(sessionOwner(newSession));
       // Approval is the new "just logged in" moment — the password
       // handler these hung off no longer exists.
       startHeartbeat(apiClient, result.deviceToken);
@@ -1721,6 +1936,21 @@ async function registerIpcHandlers(): Promise<void> {
     return result;
   });
 
+  /**
+   * The Server URL field on the login screen.
+   *
+   * Pre-login on purpose: it is the address the pairing flow will use, so
+   * it has to be settable before anybody can sign in — which was the whole
+   * problem with `DESKTOP_API_URL`, a variable a packaged app cannot see.
+   */
+  ipcMain.handle("server:get", () => serverUrlSetting!.state());
+
+  ipcMain.handle("server:set", async (_event, url: unknown) =>
+    serverUrlSetting!.save(typeof url === "string" ? url : ""),
+  );
+
+  ipcMain.handle("server:reset", () => serverUrlSetting!.reset());
+
   ipcMain.handle("auth:logout", async (): Promise<AuthStatus> => {
     const session = authStore.load();
     if (session) {
@@ -1728,6 +1958,9 @@ async function registerIpcHandlers(): Promise<void> {
       // and the running entry could never be paused, leaving it to run
       // unattended until the next login noticed it.
       await pendingOps.pause(session.deviceToken, apiClient);
+      // The last moment this person's token works, so the last chance to
+      // send what they captured. Whatever doesn't make it is deleted below.
+      await sendBacklogBeforeLogout();
       await apiClient.logout(session.deviceToken);
       authStore.clear();
       // Projects, settings and totals all belong to the session that just
@@ -1740,6 +1973,10 @@ async function registerIpcHandlers(): Promise<void> {
     stopUrlCapture();
     stopHeartbeat();
     stopSync();
+    // Whatever did not upload — offline, or a send that failed. On a
+    // shared machine none of it may sit on disk for whoever logs in next.
+    // The timer actions stay: see `discardEndedSessionCaptures`.
+    discardEndedSessionCaptures();
     // No session left to poll against — both gates resolve to "off",
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
@@ -1778,18 +2015,29 @@ async function registerIpcHandlers(): Promise<void> {
         pendingOps.remember(data as TimeEntry);
       }
     }
-    if (!result.ok && result.unauthorized) {
-      authStore.clear();
-      // That session is over, and the signed-out reminder is about logging
-      // back in rather than about any stop.
-      timerStoppedByAgent = false;
-      // None of it is this machine's to keep once the session is gone.
-      offlineCache.clear();
-      stopUrlCapture();
-      stopHeartbeat();
-      stopSync();
-    }
+    if (!result.ok && result.unauthorized) signOutLocally();
     return result;
+  }
+
+  /**
+   * Drops the session this machine holds, without asking the server
+   * anything — it has already said the session is gone. The renderer finds
+   * out on its next poll, which is how a remote sign-out has always
+   * surfaced.
+   */
+  function signOutLocally(): void {
+    authStore.clear();
+    // That session is over, and the signed-out reminder is about logging
+    // back in rather than about any stop.
+    timerStoppedByAgent = false;
+    // None of it is this machine's to keep once the session is gone.
+    offlineCache.clear();
+    stopUrlCapture();
+    stopHeartbeat();
+    stopSync();
+    // The token is dead, so no capture can be sent any more and none of it
+    // may sit on a shared machine. The hours stay — see the function.
+    discardEndedSessionCaptures();
   }
 
 /**
@@ -1931,6 +2179,9 @@ async function registerIpcHandlers(): Promise<void> {
     // watching has to keep moving even when nothing else is.
     let lastKnown = unsentRecordCount();
     const ticker = setInterval(() => sendQuitProgress(lastKnown), 1000);
+    // Pressing Quit is asking for one last try, whatever wait a struggling
+    // server set on the replay queue.
+    pendingOps.retryNow();
 
     try {
       while (!closed && Date.now() < quitDeadline) {
@@ -1946,6 +2197,10 @@ async function registerIpcHandlers(): Promise<void> {
         lastKnown = remaining;
         sendQuitProgress(remaining);
         if (remaining === 0) break;
+        // Nothing left but a replay the server asked us to wait before
+        // retrying. Spinning on it to the deadline holds the quit open for
+        // no reason, and the ops go up on the next launch regardless.
+        if (remaining === pendingOps.load().length && !pendingOps.isDue()) break;
         // Short, so the deadline buys as many real attempts as it can.
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
@@ -1999,7 +2254,7 @@ async function registerIpcHandlers(): Promise<void> {
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    const { settled, refused } = await pendingOps.flush(
+    const { settled, refused, signedOut } = await pendingOps.flush(
       session.deviceToken,
       apiClient,
     );
@@ -2009,6 +2264,13 @@ async function registerIpcHandlers(): Promise<void> {
     // remember what they were doing.
     if (refused.length > 0) {
       mainWindow?.webContents.send("tracking:refused", refused);
+    }
+    // This loop is the one caller that does not go through
+    // `callDeviceApi`, so without this a remotely revoked session is
+    // retried here every fifteen seconds and nothing ever says so.
+    if (signedOut) {
+      signOutLocally();
+      refreshTrayMenu();
     }
     if (settled) void timerStatusGate.pollOnce();
     checkSyncBacklog();
@@ -2257,6 +2519,36 @@ async function registerIpcHandlers(): Promise<void> {
         () => offlineCache.todayTotals(),
       ),
   );
+
+  /**
+   * Whether this launch should start the timer by itself. Asked by the
+   * renderer once setup has settled and again when the machine wakes,
+   * because starting a timer is its job and there must not be a second way
+   * to do it. The occasion — this day, this power-on — is spent as the
+   * decision is taken rather than once a timer is running; see
+   * `decideAutoStart`.
+   */
+  ipcMain.handle("tracking:autoStartDue", (): boolean => {
+    const userDataDir = app.getPath("userData");
+    const boot = bootIdentity();
+    const today = localDay();
+    const decision = decideAutoStart({
+      enabled: autoStartTimerEnabled(userDataDir),
+      boot,
+      lastAutoStartedBoot: lastAutoStartedBoot(userDataDir),
+      today,
+      lastAutoStartedDay: lastAutoStartedDay(userDataDir),
+      signedIn: authStore.load() !== null,
+      // The remembered entry as well as the gate's answer: with no
+      // connection the gate has nothing to report, and a machine still
+      // finding its network must not start a second timer.
+      timerRunning: timerRunning || pendingOps.current() !== null,
+      awaitingIdleAnswer: idleHoldStore.load() !== null,
+      awaitingRecoveredAnswer: recoveredTimer !== null,
+    });
+    if (decision !== "wait") rememberAutoStarted(userDataDir, boot, today);
+    return decision === "start";
+  });
 
   // Cached like the rest, and for a sharper reason: with no policy the
   // renderer's idle check gives up entirely, so an offline machine left
@@ -2616,7 +2908,7 @@ if (!gotSingleInstanceLock) {
   // macOS delivers it to the running instance, possibly before ready.
   app.on("open-url", (event) => {
     event.preventDefault();
-    if (app.isReady()) reopenMainWindow();
+    reopenMainWindow();
   });
 
   // Windows groups a running window with the taskbar shortcut that shares
@@ -2629,7 +2921,14 @@ if (!gotSingleInstanceLock) {
     activateBrowsersOnLinux();
     syncAutoLaunch();
     await registerIpcHandlers();
+    const delayMs = startupWindowDelayMs();
+    if (delayMs > 0 && !app.isPackaged) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     createWindow();
+    // Only now may a second launch act on the window; before this there is
+    // nothing to raise and anything that built one would be duplicating it.
+    startupComplete = true;
     createTray();
     startAutoUpdater((line) => console.log(line));
     // Last, and never awaited: claiming a URL scheme is the least

@@ -1,10 +1,10 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { PasswordService } from '../../../auth/services/password.service';
+import { AccessTokenService } from '../../../auth/services/access-token.service';
 import { RefreshTokenService } from '../../../auth/services/refresh-token.service';
 import { TokenService } from '../../../auth/services/token.service';
 import { hashToken } from '../../../common/hash-token.util';
@@ -138,14 +138,17 @@ describe('InvitationsService', () => {
     } as unknown as ConfigService;
   }
 
-  function makeJwtService(overrides: Partial<JwtService> = {}) {
-    return { verify: jest.fn(), ...overrides } as unknown as JwtService;
+  function makeAccessTokenService(overrides: Partial<AccessTokenService> = {}) {
+    return {
+      sign: jest.fn().mockResolvedValue('signed.jwt.token'),
+      verify: jest.fn().mockResolvedValue(null),
+      ...overrides,
+    } as unknown as AccessTokenService;
   }
 
   function makeTokenService() {
     return {
       generateToken: jest.fn().mockReturnValue('the-token'),
-      signAccessToken: jest.fn().mockReturnValue('signed.jwt.token'),
     } as unknown as TokenService;
   }
 
@@ -163,11 +166,21 @@ describe('InvitationsService', () => {
     };
   }
 
-  function makeEmailService() {
+  /** `isDelivering: false` is the self-hosted install with no provider. */
+  function makeEmailService(isDelivering = true) {
     const sendInvitationEmail = jest.fn().mockResolvedValue(undefined);
+    const invitationAcceptUrl = jest.fn(
+      (token: string) =>
+        `http://localhost:3000/accept-invitation?token=${token}`,
+    );
     return {
-      emailService: { sendInvitationEmail } as unknown as EmailService,
+      emailService: {
+        sendInvitationEmail,
+        invitationAcceptUrl,
+        isDelivering,
+      } as unknown as EmailService,
       sendInvitationEmail,
+      invitationAcceptUrl,
     };
   }
 
@@ -196,7 +209,7 @@ describe('InvitationsService', () => {
       organisationsRepo?: Repository<Organisation>;
       dataSource?: unknown;
       configService?: ConfigService;
-      jwtService?: JwtService;
+      accessTokenService?: AccessTokenService;
       passwordService?: PasswordService;
       tokenService?: TokenService;
       refreshTokenService?: RefreshTokenService;
@@ -214,7 +227,7 @@ describe('InvitationsService', () => {
       overrides.organisationsRepo ?? makeOrganisationsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.configService ?? makeConfigService(),
-      overrides.jwtService ?? makeJwtService(),
+      overrides.accessTokenService ?? makeAccessTokenService(),
       overrides.passwordService ?? makePasswordService(),
       overrides.tokenService ?? makeTokenService(),
       overrides.refreshTokenService ??
@@ -227,9 +240,69 @@ describe('InvitationsService', () => {
         ({
           findOne: jest.fn().mockResolvedValue(null),
         } as unknown as Repository<InviteLink>),
-      { syncToProvider: jest.fn().mockResolvedValue(undefined) } as never,
+      // Entitlements: Cloud reaches Stripe here, self-hosted does nothing.
+      { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
+
+  /** With no provider the join link comes back to the admin, to pass on. */
+  describe('createMany where no email provider is configured', () => {
+    it('hands the join link back instead', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result.outcome).toBe('sent');
+      expect(result.acceptUrl).toMatch(
+        /^http:\/\/localhost:3000\/accept-invitation\?token=.+/,
+      );
+    });
+
+    /** A single-use credential belongs in as few places as possible. */
+    it('does not hand back a link where email works', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService } = makeEmailService(true);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      const [result] = await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(result).not.toHaveProperty('acceptUrl');
+    });
+
+    // The link is a fallback for delivery, not a replacement for trying.
+    it('still asks the email service to send', async () => {
+      const { repo: membershipsRepo } = makeMembershipsRepo(null);
+      const { dataSource } = makeDataSource();
+      const { emailService, sendInvitationEmail } = makeEmailService(false);
+      const service = makeService({
+        membershipsRepo,
+        dataSource,
+        emailService,
+      });
+
+      await service.createMany('org-1', 'admin-1', [
+        { email: 'new@acme.test', role: MembershipRole.MEMBER },
+      ]);
+
+      expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+  });
 
   describe('createMany', () => {
     it("rejects a manager's admin invite without creating a row or sending an email", async () => {
@@ -913,15 +986,15 @@ describe('InvitationsService', () => {
           passwordHash: 'already-set',
         }),
       });
-      const jwtService = makeJwtService({
-        verify: jest.fn().mockReturnValue({ sub: 'existing-user' }),
+      const accessTokenService = makeAccessTokenService({
+        verify: jest.fn().mockResolvedValue('existing-user'),
       });
       const { dataSource, create } = makeDataSource();
       const { refreshTokenService, issue } = makeRefreshTokenService();
       const service = makeService({
         invitationsRepo,
         usersRepo,
-        jwtService,
+        accessTokenService,
         dataSource,
         refreshTokenService,
       });
@@ -956,6 +1029,37 @@ describe('InvitationsService', () => {
 
       await expect(
         service.accept('the-token', {}, makeRequest(), makeResponse().response),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'ACCOUNT_EXISTS',
+        }) as unknown,
+      });
+    });
+    it('rejects with ACCOUNT_EXISTS when the access token has been revoked by signing out everywhere', async () => {
+      const invitationsRepo = makeInvitationsRepo({
+        findOne: jest.fn().mockResolvedValue(pendingInvitation()),
+      });
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'existing-user',
+          passwordHash: 'already-set',
+        }),
+      });
+      const service = makeService({
+        invitationsRepo,
+        usersRepo,
+        accessTokenService: makeAccessTokenService({
+          verify: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      await expect(
+        service.accept(
+          'the-token',
+          {},
+          makeRequest('access_token=revoked.jwt.token'),
+          makeResponse().response,
+        ),
       ).rejects.toMatchObject({
         response: expect.objectContaining({
           code: 'ACCOUNT_EXISTS',

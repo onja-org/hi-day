@@ -3,6 +3,7 @@ import {
   activeSettingsLocation,
   settingsHref,
   SETTINGS_GROUPS,
+  visibleSettingsGroups,
 } from "@/lib/settingsNavigation";
 
 const ORG = "org-1";
@@ -17,6 +18,37 @@ describe("SETTINGS_GROUPS", () => {
       "tracking",
     ]);
   });
+});
+
+/** One filter for the sidebar, the cards and the section header. */
+describe("visibleSettingsGroups", () => {
+  it("keeps every group, in card order, where billing is on", () => {
+    expect(visibleSettingsGroups(true).map((group) => group.key)).toEqual([
+      "organization",
+      "members",
+      "projects",
+      "billing",
+      "tracking",
+    ]);
+  });
+
+  it("drops only Billing where billing is off", () => {
+    expect(visibleSettingsGroups(false).map((group) => group.key)).toEqual([
+      "organization",
+      "members",
+      "projects",
+      "tracking",
+    ]);
+  });
+
+  it("leaves the full list untouched", () => {
+    visibleSettingsGroups(false);
+
+    expect(SETTINGS_GROUPS.map((group) => group.key)).toContain("billing");
+  });
+});
+
+describe("SETTINGS_GROUPS shape", () => {
 
   it("has no duplicate section keys within a group", () => {
     for (const group of SETTINGS_GROUPS) {
@@ -37,28 +69,46 @@ describe("settingsHref", () => {
 describe("activeSettingsLocation", () => {
   it("reads the group and section from a settings path", () => {
     expect(
-      activeSettingsLocation("/organisations/org-1/settings/tracking/time"),
+      activeSettingsLocation("/organisations/org-1/settings/tracking/time", true),
     ).toEqual({ groupKey: "tracking", sectionKey: "time" });
   });
 
   it("ignores anything after the section", () => {
     expect(
-      activeSettingsLocation("/organisations/org-1/settings/tracking/time/extra"),
+      activeSettingsLocation(
+        "/organisations/org-1/settings/tracking/time/extra",
+        true,
+      ),
     ).toEqual({ groupKey: "tracking", sectionKey: "time" });
   });
 
   // An unknown segment must not light up a tab that is not showing.
   it("is null for a group or section that does not exist", () => {
     expect(
-      activeSettingsLocation("/organisations/org-1/settings/nope/time"),
+      activeSettingsLocation("/organisations/org-1/settings/nope/time", true),
     ).toBeNull();
     expect(
-      activeSettingsLocation("/organisations/org-1/settings/tracking/nope"),
+      activeSettingsLocation("/organisations/org-1/settings/tracking/nope", true),
     ).toBeNull();
   });
 
+  /** A billing path is not a settings section when billing is off. */
+  it("resolves a billing path only where billing is on", () => {
+    const path = "/organisations/org-1/settings/billing/subscription";
+
+    expect(activeSettingsLocation(path, true)).toEqual({
+      groupKey: "billing",
+      sectionKey: "subscription",
+    });
+    expect(activeSettingsLocation(path, false)).toBeNull();
+  });
+
   it("is null away from settings", () => {
-    expect(activeSettingsLocation("/organisations/org-1/members")).toBeNull();
-    expect(activeSettingsLocation("/organisations/org-1/settings")).toBeNull();
+    expect(
+      activeSettingsLocation("/organisations/org-1/members", true),
+    ).toBeNull();
+    expect(
+      activeSettingsLocation("/organisations/org-1/settings", true),
+    ).toBeNull();
   });
 });

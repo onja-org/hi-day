@@ -38,6 +38,36 @@ Already have Postgres running elsewhere (a different port, a cloud dev instance,
 
 ### 3. Billing, if you are touching it
 
+**Billing is off unless you turn it on.** `BILLING_ENABLED` defaults to
+`false`, which is the self-hosted product: no trial, no banner, no Billing
+settings, no seat sync, no Stripe keys needed to boot. Everything in this
+section applies only once you set it to `true` — and when you do,
+`STRIPE_SECRET_KEY` is required and the app refuses to start without it.
+
+```bash
+# backend/.env
+BILLING_ENABLED=true
+```
+
+There is nothing to set on the frontend: it asks `GET /config` at runtime
+and hides every billing surface when the answer is false.
+
+Only the exact string `true` enables it. Anything else reads as off, on
+purpose: switching billing on by accident shows a self-hoster a paywall we
+promised them they would never see, and nothing in their install would flag
+it as wrong.
+
+> **Upgrading an environment that already bills.** Before this flag existed,
+> billing was on wherever `STRIPE_SECRET_KEY` was set. Any `.env` written
+> earlier therefore has the key but no flag, which now reads as billing
+> **off** — so a deploy that does not add `BILLING_ENABLED=true` stops
+> starting trials, hides the Billing pages and stops syncing seats, while
+> looking perfectly healthy. Add it to Hi Day Cloud's environment and to
+> your own `backend/.env` when you pull this.
+>
+> `GET /config` is the quickest check: it answers `{"billingEnabled":true}`
+> on a deployment that bills.
+
 Stripe cannot reach `localhost`, so a local CLI forwards its webhooks to you.
 Without it you can take a payment and never hear that it succeeded — the
 organisation stays on a trial, and the banner keeps asking somebody who has
@@ -66,7 +96,8 @@ Then set in `.env`:
 
 | Variable | |
 | --- | --- |
-| `STRIPE_SECRET_KEY` | From the sandbox. Unset means billing is simply off |
+| `BILLING_ENABLED` | `true` to switch billing on at all. Defaults to `false` |
+| `STRIPE_SECRET_KEY` | From the sandbox. **Required** once `BILLING_ENABLED` is on — the app will not boot without it |
 | `STRIPE_WEBHOOK_SECRET` | The `whsec_…` above |
 | `STRIPE_PRODUCT_ID` | Optional — found or created by name if blank |
 

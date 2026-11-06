@@ -5,15 +5,14 @@ import clsx from "clsx";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
-import { useProjects } from "@/hooks/useProjects";
 import { useDeleteScreenshots } from "@/hooks/useDeleteScreenshots";
 import { canDeleteShownScreenshots } from "@/lib/canDeleteShownScreenshots";
-import { describeScreenshotDeletion } from "@/lib/describeScreenshotDeletion";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ScreenshotDeleteDialog } from "./ScreenshotDeleteDialog";
+import { ScreenshotGrid } from "./ScreenshotGrid";
 import { ScreenshotSelectionBar } from "./ScreenshotSelectionBar";
-import { ScreenshotTile } from "./ScreenshotTile";
+import { Pagination } from "./Pagination";
 
 type ScreenshotsPageContentProps = {
   organisationId: string;
@@ -25,11 +24,17 @@ export function ScreenshotsPageContent({
   const { date, membershipId, projectId, canViewOthers } =
     useActivityDayFilters();
 
-  const screenshotsQuery = useActivityScreenshots(organisationId, {
-    date,
-    membershipId,
-    projectId,
-  });
+  // Back to page 1 whenever the gallery itself changes — derived rather
+  // than reset in an effect, the same way the selection is below.
+  const galleryKey = [date, membershipId, projectId].join("|");
+  const [paging, setPaging] = useState({ galleryKey, page: 1 });
+  const requestedPage = paging.galleryKey === galleryKey ? paging.page : 1;
+
+  const screenshotsQuery = useActivityScreenshots(
+    organisationId,
+    { date, membershipId, projectId },
+    { page: requestedPage },
+  );
   const [tickedIds, setTickedIds] = useState<string[]>([]);
   /** What the open confirmation would delete — one id from a tile's
    * button, or the whole selection. */
@@ -49,7 +54,8 @@ export function ScreenshotsPageContent({
     setTickedIds([]);
   });
 
-  const screenshots = screenshotsQuery.data ?? [];
+  const screenshotsPage = screenshotsQuery.data;
+  const screenshots = screenshotsPage?.items ?? [];
   // Derived, not reset in an effect: a tick left over from another day
   // or filter would delete something the user can no longer see.
   const visibleIds = new Set(screenshots.map((screenshot) => screenshot.id));
@@ -58,18 +64,15 @@ export function ScreenshotsPageContent({
     ? new Set(deleteMutation.variables)
     : new Set<string>();
 
-  const pendingCount = pendingIds?.length ?? 0;
-  const pendingNoun = pendingCount === 1 ? "screenshot" : "screenshots";
-  // "all" so a since-archived project still resolves to its name.
-  const projects = useProjects(organisationId, { status: "all" }).data;
-  const pendingMessage = describeScreenshotDeletion(
-    screenshots.filter((screenshot) => pendingIds?.includes(screenshot.id)),
-    (projectId) =>
-      projects?.find((project) => project.id === projectId)?.name,
-  );
-
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className={clsx(
+        "flex flex-col gap-4",
+        // Room for the floating bar, so it never covers the last row or
+        // the pager under it.
+        selectedIds.length > 0 && "pb-20",
+      )}
+    >
       <ActivityFilterToolbar
         organisationId={organisationId}
         canViewOthers={canViewOthers}
@@ -83,7 +86,7 @@ export function ScreenshotsPageContent({
         errorFallback="Could not load screenshots."
       />
 
-      {screenshotsQuery.data && screenshots.length === 0 && (
+      {screenshotsPage && screenshots.length === 0 && (
         <p className="text-slate-900">
           {projectId
             ? "No screenshots match this filter for this day."
@@ -92,35 +95,34 @@ export function ScreenshotsPageContent({
       )}
 
       {screenshots.length > 0 && (
-        <div
-          className={clsx(
-            "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
-            // Room for the floating bar, so it never covers the last row.
-            selectedIds.length > 0 && "pb-20",
-          )}
-        >
-          {screenshots.map((screenshot, index) => (
-            <ScreenshotTile
-              key={screenshot.id}
-              organisationId={organisationId}
-              screenshot={screenshot}
-              priority={index < 3}
-              onDelete={
-                canDelete ? (id) => setPendingIds([id]) : undefined
-              }
-              isDeleting={deletingIds.has(screenshot.id)}
-              isSelected={selectedIds.includes(screenshot.id)}
-              isSelecting={selectedIds.length > 0}
-              onSelectedChange={(selected) =>
-                setTickedIds((ticked) =>
-                  selected
-                    ? [...ticked, screenshot.id]
-                    : ticked.filter((id) => id !== screenshot.id),
-                )
-              }
-            />
-          ))}
-        </div>
+        <ScreenshotGrid
+          organisationId={organisationId}
+          screenshots={screenshots}
+          isStale={screenshotsQuery.isPlaceholderData}
+          onDelete={canDelete ? (id) => setPendingIds([id]) : undefined}
+          deletingIds={deletingIds}
+          selectedIds={selectedIds}
+          onSelectedChange={(id, selected) =>
+            setTickedIds((ticked) =>
+              selected ? [...ticked, id] : ticked.filter((tick) => tick !== id),
+            )
+          }
+        />
+      )}
+
+      {screenshotsPage && (
+        <Pagination
+          label="Screenshot pages"
+          page={screenshotsPage.page}
+          pageSize={screenshotsPage.pageSize}
+          total={screenshotsPage.total}
+          isFetching={screenshotsQuery.isPlaceholderData}
+          onPageChange={(page) => {
+            // A selection is per page: nothing ticked out of sight.
+            setTickedIds([]);
+            setPaging({ galleryKey, page });
+          }}
+        />
       )}
 
       {canDelete && selectedIds.length > 0 && (
@@ -134,11 +136,11 @@ export function ScreenshotsPageContent({
       )}
 
       {pendingIds && (
-        <ConfirmDialog
-          title={`Delete ${pendingCount} ${pendingNoun}?`}
-          message={pendingMessage}
-          confirmLabel={`Delete ${pendingCount} ${pendingNoun}`}
-          isDangerous
+        <ScreenshotDeleteDialog
+          organisationId={organisationId}
+          screenshots={screenshots.filter((screenshot) =>
+            pendingIds.includes(screenshot.id),
+          )}
           isPending={deleteMutation.isPending}
           onConfirm={() => deleteMutation.mutate(pendingIds)}
           onClose={() => setPendingIds(null)}

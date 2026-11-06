@@ -1,12 +1,16 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Not, Repository } from 'typeorm';
-import { BilledSeatsService } from '../../billing/services/billed-seats.service';
+import {
+  ENTITLEMENTS,
+  type Entitlements,
+} from '../../entitlements/entitlements';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { AuthService } from '../../auth/services/auth.service';
 import { DevicesService } from '../../devices/services/devices.service';
@@ -20,6 +24,28 @@ import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
+
+/**
+ * The only fields a manager may change on someone else's Membership.
+ * Everything else is a per-member override of an organisation setting, which
+ * the admin-only Settings screens own. An allow-list rather than a blocked
+ * list: the blocked list went stale every time an override was added.
+ */
+const MANAGER_EDITABLE_FIELDS: ReadonlySet<keyof UpdateMembershipDto> = new Set(
+  ['role', 'deactivate', 'disclosureRegion', 'firstName', 'lastName'],
+);
+
+/** The overrides a request names — for the manager check and the audit row. */
+function overridesIn(
+  dto: UpdateMembershipDto,
+): Partial<Record<keyof UpdateMembershipDto, unknown>> {
+  return Object.fromEntries(
+    (Object.entries(dto) as [keyof UpdateMembershipDto, unknown][]).filter(
+      ([field, value]) =>
+        value !== undefined && !MANAGER_EDITABLE_FIELDS.has(field),
+    ),
+  );
+}
 
 export interface ActiveMemberSummary {
   id: string;
@@ -91,7 +117,8 @@ export class MembershipsService {
     private readonly devicesService: DevicesService,
     private readonly authService: AuthService,
     private readonly timeEntriesService: TimeEntriesService,
-    private readonly billedSeatsService: BilledSeatsService,
+    @Inject(ENTITLEMENTS)
+    private readonly entitlements: Entitlements,
   ) {}
 
   /**
@@ -118,7 +145,7 @@ export class MembershipsService {
 
     let memberships: Membership[];
 
-    if (caller.role === MembershipRole.MANAGER) {
+    if (caller.role !== MembershipRole.ADMIN) {
       const scopeTeamIds = getManagerScopeTeamIds(caller);
       if (scopeTeamIds.length === 0) {
         // A teamless (or non-managing) manager manages no team, so they see
@@ -144,6 +171,16 @@ export class MembershipsService {
         .andWhere('membership.status = :status', {
           status: MembershipStatus.ACTIVE,
         })
+        // canViewMembership in SQL: no admin, nobody who manages a team of
+        // their own, themselves excepted — this list is also how a manager
+        // reaches their own row.
+        .andWhere(
+          `(membership.id = :callerId OR (membership.role = :memberRole AND NOT EXISTS (
+             SELECT 1 FROM team_memberships mgr
+             WHERE mgr."membershipId" = membership.id AND mgr."isManager"
+           )))`,
+          { memberRole: MembershipRole.MEMBER, callerId: caller.id },
+        )
         .orderBy('membership.createdAt', 'ASC')
         .getMany();
     } else {
@@ -218,14 +255,14 @@ export class MembershipsService {
       // (currently just disclosureRegion), not just role/deactivate. An
       // admin editing their own disclosureRegion is fine: there's no
       // self-demotion-style footgun in it, unlike role/deactivate.
-      if (caller.role === MembershipRole.MANAGER) {
+      if (caller.role !== MembershipRole.ADMIN) {
         throw new ForbiddenException(
           'Managers cannot modify their own membership.',
         );
       }
     }
 
-    if (caller.role === MembershipRole.MANAGER) {
+    if (caller.role !== MembershipRole.ADMIN) {
       this.assertManagerCanModify(caller, membership, dto);
     }
 
@@ -285,6 +322,7 @@ export class MembershipsService {
       membership.timesheetRequireApproval = dto.timesheetRequireApproval;
     }
 
+    const overrides = overridesIn(dto);
     const renames = dto.firstName !== undefined || dto.lastName !== undefined;
     if (renames) {
       const user = membership.user;
@@ -315,6 +353,8 @@ export class MembershipsService {
           disclosureRegion: dto.disclosureRegion,
           renamed: renames,
           deactivated: dto.deactivate ?? false,
+          // Omitted when empty, so an ordinary rename keeps its old shape.
+          ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
         },
       });
 
@@ -338,7 +378,7 @@ export class MembershipsService {
     // Deactivating takes someone off the bill. After the transaction, so a
     // failed sync can never roll back the deactivation itself.
     if (dto.deactivate) {
-      await this.billedSeatsService.syncToProvider(organisationId);
+      await this.entitlements.syncSeats(organisationId);
     }
 
     // Re-read rather than echo the object we just built: the hour columns
@@ -410,7 +450,7 @@ export class MembershipsService {
         continue;
       }
       if (
-        caller.role === MembershipRole.MANAGER &&
+        caller.role !== MembershipRole.ADMIN &&
         !this.managerCanModify(caller, target, undefined)
       ) {
         skip('You can only reset passwords for members of your own team.');
@@ -471,18 +511,9 @@ export class MembershipsService {
       );
     }
 
-    // The per-member overrides of organisation settings are the admin-only
-    // Settings screens' to change — a manager granting one would undo what
-    // the admin chose for the whole organisation.
-    if (
-      dto.appUrlTracking !== undefined ||
-      dto.projectsEnabled !== undefined ||
-      dto.allowedApps !== undefined ||
-      dto.timesheetModifyTime !== undefined ||
-      dto.timesheetRequireApproval !== undefined
-    ) {
+    if (Object.keys(overridesIn(dto)).length > 0) {
       throw new ForbiddenException(
-        "Only an admin can change a member's tracking or timesheet settings.",
+        "Only an admin can change a member's organisation settings. A manager can change their role, status, name and disclosure region.",
       );
     }
 

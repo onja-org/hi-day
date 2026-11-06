@@ -4,6 +4,7 @@ import { Organisation } from '../../../database/entities/organisation.entity';
 import { Subscription } from '../../../database/entities/subscription.entity';
 import { SubscriptionStatus } from '../../../database/entities/subscription-status.enum';
 import { EmailService } from '../../../email/services/email.service';
+import { BILLING_ENABLED_VAR } from '../../../entitlements/billing-enabled';
 import { TRIAL_DAYS } from '../../trial';
 import { TrialService } from '../trial.service';
 
@@ -35,10 +36,27 @@ function makeEmailService() {
   };
 }
 
-/** Config with the given organisations listed as never paying. */
-function makeConfig(freeIds: number[] = []): ConfigService {
+/**
+ * Config with the given organisations listed as never paying.
+ *
+ * Billing is **on** by default here: every test below this point is about
+ * what a paying installation does, and `BILLING_ENABLED` off is covered on
+ * its own further down. Answers per key rather than returning one value for
+ * everything, which would otherwise feed the free-organisation list to the
+ * billing flag and quietly switch billing off for the whole file.
+ */
+function makeConfig(
+  freeIds: number[] = [],
+  billingEnabled = true,
+): ConfigService {
   return {
-    get: () => (freeIds.length > 0 ? freeIds.join(',') : undefined),
+    get: (key: string) => {
+      if (key === BILLING_ENABLED_VAR) return billingEnabled ? 'true' : 'false';
+      if (key === 'BILLING_FREE_ORGANISATION_IDS') {
+        return freeIds.length > 0 ? freeIds.join(',') : undefined;
+      }
+      return undefined;
+    },
   } as unknown as ConfigService;
 }
 
@@ -121,6 +139,78 @@ describe('TrialService', () => {
       await expect(service.findStatus('org-1', NOW)).resolves.toMatchObject({
         daysLeft: 3,
         isExpired: false,
+      });
+    });
+
+    /**
+     * A paying organisation that cancelled: access runs to the end of the
+     * period it paid for, then seven grace days on top (`docs/adr/0030-...`)
+     * — measured from the period end, never from the day they cancelled.
+     */
+    describe('a cancelled paid subscription', () => {
+      function cancelledEndingIn(daysFromNow: number): Subscription {
+        return {
+          ...subscriptionEndingIn(-300),
+          status: SubscriptionStatus.ACTIVE,
+          stripeStatus: daysFromNow > 0 ? 'active' : 'canceled',
+          currentPeriodEnd: new Date(NOW.getTime() + daysFromNow * MS_PER_DAY),
+        };
+      }
+
+      async function statusFor(daysFromNow: number) {
+        const service = new TrialService(
+          makeSubscriptionsRepo({
+            findOne: jest
+              .fn()
+              .mockResolvedValue(cancelledEndingIn(daysFromNow)),
+          }),
+          makeOrganisationsRepo(null),
+          makeEmailService().emailService,
+          makeConfig(),
+        );
+        return service.findStatus('org-1', NOW);
+      }
+
+      it('keeps the paid period, not yet in grace, before it ends', async () => {
+        const status = await statusFor(10);
+
+        expect(status).toMatchObject({
+          isPaid: true,
+          isInPaidGrace: false,
+          hasAccess: true,
+        });
+        expect(status!.accessEndsAt).toBe(
+          new Date(NOW.getTime() + 17 * MS_PER_DAY).toISOString(),
+        );
+      });
+
+      it('is in grace for seven days after the period ends', async () => {
+        for (const daysAgo of [0, 1, 3, 6.9]) {
+          await expect(statusFor(-daysAgo)).resolves.toMatchObject({
+            isPaid: true,
+            isInPaidGrace: true,
+            hasAccess: true,
+          });
+        }
+      });
+
+      it('names the day access stops: the period end plus seven days', async () => {
+        const status = await statusFor(-3);
+
+        expect(status!.accessEndsAt).toBe(
+          new Date(NOW.getTime() + 4 * MS_PER_DAY).toISOString(),
+        );
+      });
+
+      it('is out of grace once the seven days are over', async () => {
+        await expect(statusFor(-7)).resolves.toMatchObject({
+          isInPaidGrace: false,
+          hasAccess: false,
+        });
+        await expect(statusFor(-30)).resolves.toMatchObject({
+          isInPaidGrace: false,
+          hasAccess: false,
+        });
       });
     });
   });

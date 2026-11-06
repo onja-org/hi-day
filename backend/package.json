@@ -4,7 +4,7 @@
   "description": "",
   "author": "",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:run": "pnpm typeorm migration:run",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
     "migration:revert": "pnpm typeorm migration:revert",
     "prune:orphaned-captures": "ts-node -r tsconfig-paths/register src/scripts/prune-orphaned-captures.ts",
     "remove:organisation-projects": "ts-node -r tsconfig-paths/register src/scripts/remove-organisation-projects.ts",
@@ -40,9 +41,11 @@
     "argon2": "^0.45.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "nodemailer": "^10.3.1",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.22.0",
@@ -59,8 +62,8 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
-    "dotenv": "^17.4.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -90,6 +93,7 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "globalSetup": "<rootDir>/../jest.global-setup.js"
   }
 }

@@ -1,6 +1,9 @@
 .vercel
 .env*
 !.env.example
+# The Docker quick-start template. Holds no secrets — the two values that
+# matter are blank and the reader fills them in.
+!.env.docker.example
 
 # dependencies (yarn workspaces hoist to the root)
 node_modules/

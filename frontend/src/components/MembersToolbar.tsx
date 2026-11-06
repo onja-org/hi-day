@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { membersToCsv } from "@/lib/membersToCsv";
 import { membersToPdf } from "@/lib/membersToPdf";
 import type { ActiveMemberListItem } from "@/types/membership";
@@ -13,7 +14,7 @@ import { SendPasswordResetDialog } from "./SendPasswordResetDialog";
 
 type MembersToolbarProps = {
   organisationId: string;
-  /** The members currently shown (after search) — what Export and batch actions act on. */
+  /** Every member matching the search, across all pages — what Export and batch actions act on. */
   members: ActiveMemberListItem[];
   teamNames: Map<string, string>;
   callerUserId: string;
@@ -30,6 +31,9 @@ export function MembersToolbar({
   onSearchChange,
 }: MembersToolbarProps) {
   const [openModal, setOpenModal] = useState<"invite" | "import" | "reset" | null>(null);
+  // Bringing someone into the organisation is admin-only; a manager works
+  // with the people an admin already put on their team.
+  const isAdmin = useIsAdmin();
   const close = () => setOpenModal(null);
   // Your own reset goes through "Forgot password", not this batch.
   const resettable = members.filter((member) => member.userId !== callerUserId);
@@ -45,20 +49,24 @@ export function MembersToolbar({
             filenameBase={`members-${new Date().toISOString().slice(0, 10)}`}
             disabled={members.length === 0}
           />
-          <button
-            type="button"
-            onClick={() => setOpenModal("import")}
-            className="cursor-pointer rounded-brand-sm border-2 border-primary px-4 h-11 text-sm font-semibold text-primary transition-colors duration-150 hover:bg-primary/10"
-          >
-            Import members
-          </button>
-          <button
-            type="button"
-            onClick={() => setOpenModal("invite")}
-            className="cursor-pointer rounded-brand-sm bg-primary px-5 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink"
-          >
-            Add members
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => setOpenModal("import")}
+                className="cursor-pointer rounded-brand-sm border-2 border-primary px-4 h-11 text-sm font-semibold text-primary transition-colors duration-150 hover:bg-primary/10"
+              >
+                Import members
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpenModal("invite")}
+                className="cursor-pointer rounded-brand-sm bg-primary px-5 h-11 text-sm font-bold text-white transition-colors duration-150 hover:bg-primary/90 border-2 border-ink"
+              >
+                Add members
+              </button>
+            </>
+          )}
         </div>
       </div>
 

@@ -30,7 +30,14 @@ import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
-import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
+import { canViewMembership } from '../../common/membership-visibility.util';
+import { actsAsManager } from '../../common/manager-scope.util';
+import type { WeekStart } from '../../organisations/company-profile';
+import {
+  startOfDayInZone as startOfDateKeyInZone,
+  weekStartOfKey,
+  zonedParts,
+} from '../../common/zoned-time.util';
 import {
   DEFAULT_ALLOWED_APPS,
   isTimerSourceAllowed,
@@ -72,6 +79,13 @@ import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
 
 const ORG_WIDE_ROLES = [MembershipRole.ADMIN, MembershipRole.MANAGER];
+
+/** Whether this caller can reach anybody else's timesheet at all — the
+ * cheap check before looking a target up, so a 404 never says whether an
+ * id exists. */
+function canSeeAnyone(membership: Membership): boolean {
+  return membership.role === MembershipRole.ADMIN || actsAsManager(membership);
+}
 
 // A personal timesheet listing, not a report — plenty for one person's own
 // history at a glance. Revisit with real pagination if/when this becomes a
@@ -798,7 +812,23 @@ export class TimeEntriesService {
     taskId: string | undefined,
     source: TimeEntrySource,
     deviceId: string | null,
+    /**
+     * One id per row this writes — see `SwitchTimeEntryDto`. A switch whose
+     * response was lost replays as the queued stop/start pair the agent
+     * records offline, and those carry the same two ids, so each half finds
+     * the row the switch already wrote instead of colliding with it.
+     */
+    options: { stopOperationId?: string; startOperationId?: string } = {},
   ): Promise<TimeEntrySummary> {
+    // Before anything else, exactly as `start` and `stop` do: a switch that
+    // already happened must answer with what it wrote, not start a second
+    // entry beside it.
+    const replayed = await this.entryForOperation(
+      'startOperationId',
+      options.startOperationId,
+    );
+    if (replayed) return await this.toSummary(replayed);
+
     const { membership, task } = await this.validateStart(
       organisationId,
       userId,
@@ -823,6 +853,7 @@ export class TimeEntriesService {
       if (running) {
         const stoppedAt = new Date();
         running.endedAt = stoppedAt;
+        running.stopOperationId = options.stopOperationId ?? null;
         await manager.save(running);
         await this.closeOpenPause(
           manager.getRepository(TimeEntryPause),
@@ -847,6 +878,7 @@ export class TimeEntriesService {
         source,
         deviceId,
         lastSeenAt: deviceId === null ? new Date() : null,
+        startOperationId: options.startOperationId ?? null,
       });
       const savedEntry = await manager.save(entry);
 
@@ -936,7 +968,7 @@ export class TimeEntriesService {
       // Role first, existence second: a member who can never read anyone
       // else's timesheet shouldn't learn from a 404-vs-403 whether a given
       // membership id exists.
-      if (!ORG_WIDE_ROLES.includes(membership.role)) {
+      if (!canSeeAnyone(membership)) {
         throw new ForbiddenException(
           "Only an admin or manager can view another member's timesheet.",
         );
@@ -1411,15 +1443,19 @@ export class TimeEntriesService {
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
-    const weekStartsOn =
+    const weekStartsOn: WeekStart =
       (organisation?.settings as { weekStartsOn?: string } | undefined)
         ?.weekStartsOn === 'sunday'
-        ? 0
-        : 1;
-    const start = this.startOfDayInZone(now, zone);
-    const day = start.getDay();
-    const offset = (day - weekStartsOn + 7) % 7;
-    return new Date(start.getTime() - offset * 24 * 60 * 60 * 1000);
+        ? 'sunday'
+        : 'monday';
+    // Weekday and week start are worked out on the zone's own calendar
+    // date. Reading the weekday off the zone's midnight with getDay() reads
+    // it in the server's timezone instead, which put the week start on a
+    // Tuesday for every organisation east of a UTC server. Stepping back by
+    // calendar days rather than 24-hour blocks also survives a DST change
+    // inside the week.
+    const today = zonedParts(now, zone).dateKey;
+    return startOfDateKeyInZone(weekStartOfKey(today, weekStartsOn), zone);
   }
 
   /**
@@ -2197,9 +2233,12 @@ export class TimeEntriesService {
     organisationId: string,
     userId: string,
     deviceId: string | null,
+    /** See `PauseTimeEntryDto.opId` — a pause is a stop, and replays alike. */
+    options: { operationId?: string } = {},
   ): Promise<TimeEntrySummary> {
     return await this.stop(organisationId, userId, deviceId, undefined, {
       action: 'time_entry.paused',
+      operationId: options.operationId,
     });
   }
 
@@ -2472,9 +2511,7 @@ export class TimeEntriesService {
 
   /**
    * Whose timesheet this caller may read, and so — with `canModifyTime` —
-   * whose they may write. Their own always, an admin everyone's, a manager
-   * only members sharing a team they manage: the same rule the Members
-   * list and Activity use, so a manager of no team sees only themselves.
+   * whose they may write. The same `canViewMembership` every other read uses.
    */
   private async canSeeMembership(
     caller: Membership,
@@ -2482,19 +2519,12 @@ export class TimeEntriesService {
     targetMembershipId: string,
   ): Promise<boolean> {
     if (targetMembershipId === caller.id) return true;
-    if (caller.role === MembershipRole.ADMIN) return true;
-    if (caller.role !== MembershipRole.MANAGER) return false;
-
-    const scopeTeamIds = getManagerScopeTeamIds(caller);
-    if (scopeTeamIds.length === 0) return false;
 
     const target = await this.memberships.findOne({
       where: { id: targetMembershipId, organisationId },
       relations: { teamMemberships: true },
     });
-    return (target?.teamMemberships ?? []).some((teamMembership) =>
-      scopeTeamIds.includes(teamMembership.teamId),
-    );
+    return !!target && canViewMembership(caller, target);
   }
 
   private async getActiveMembership(
@@ -2592,16 +2622,40 @@ export class TimeEntriesService {
     // and its entry ending at the last poll is the whole truth.
     if (deviceId === null) return null;
 
-    const latest = await this.timeEntries.findOne({
-      where: { membershipId, deviceId: Equal(deviceId) },
+    const abandoned = await this.timeEntries.findOne({
+      where: {
+        membershipId,
+        deviceId: Equal(deviceId),
+        closedAsAbandoned: true,
+      },
       order: { startedAt: 'DESC' },
     });
-    if (!latest?.closedAsAbandoned || !latest.endedAt) return null;
-    if (endedAt.getTime() <= latest.endedAt.getTime()) return null;
-    if (Date.now() - latest.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
+    if (!abandoned?.endedAt) return null;
+    if (endedAt.getTime() <= abandoned.endedAt.getTime()) return null;
+    if (Date.now() - abandoned.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
       return null;
     }
-    return latest;
+
+    // Anything this Device started after it. Usually nothing — the agent
+    // replays its queue before it starts anything — but the crash prompt's
+    // "I was still working" answer deliberately starts a fresh entry, and a
+    // queued stop arriving afterwards would otherwise find the newest entry
+    // not abandoned, give up, and 404. The hours are real and were being
+    // reported to the person as lost.
+    const next = await this.timeEntries.findOne({
+      where: {
+        membershipId,
+        deviceId: Equal(deviceId),
+        startedAt: MoreThan(abandoned.startedAt),
+      },
+      order: { startedAt: 'ASC' },
+    });
+    // Touching endpoints are fine — that is what `switch` produces — but a
+    // genuine overlap is not, so the sweeper's guess stands and the person
+    // is told rather than having two entries claim the same minutes.
+    if (next && endedAt.getTime() > next.startedAt.getTime()) return null;
+
+    return abandoned;
   }
 
   /**

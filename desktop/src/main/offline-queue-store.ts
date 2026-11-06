@@ -20,6 +20,13 @@ export interface RetryEntry {
 
 const IN_MEMORY = ':memory:';
 
+function hasColumn(db: SqlJsDatabase, table: string, column: string): boolean {
+  const result = db.exec(`PRAGMA table_info(${table})`);
+  const rows = result[0]?.values ?? [];
+  // PRAGMA table_info's second column is the column name.
+  return rows.some((row) => row[1] === column);
+}
+
 /**
  * The offline queue's persistence — one SQLite table (via `sql.js`, a WASM
  * build of SQLite) shared by every capture kind (app-events, screenshots,
@@ -82,6 +89,12 @@ export class OfflineQueueStore {
       CREATE INDEX IF NOT EXISTS idx_queued_items_kind_next
         ON queued_items (kind, nextAttemptAt, id);
     `);
+    // Who captured each row (session-owner.ts). Added after the table
+    // shipped, so an existing database gets the column here; its rows stay
+    // NULL, which no logged-in owner matches.
+    if (!hasColumn(db, 'queued_items', 'owner')) {
+      db.run('ALTER TABLE queued_items ADD COLUMN owner TEXT');
+    }
 
     const store = new OfflineQueueStore(db, dbPath);
     if (store.persistent) {
@@ -103,12 +116,13 @@ export class OfflineQueueStore {
     blob: Buffer | null,
     now: Date,
     maxQueuedItems: number,
+    owner: string | null = null,
   ): void {
     const nowIso = now.toISOString();
     this.db.run(
-      `INSERT INTO queued_items (kind, payload, hasBlob, attempts, createdAt, nextAttemptAt)
-       VALUES (?, ?, ?, 0, ?, ?)`,
-      [kind, payload, blob ? 1 : 0, nowIso, nowIso],
+      `INSERT INTO queued_items (kind, payload, hasBlob, attempts, createdAt, nextAttemptAt, owner)
+       VALUES (?, ?, ?, 0, ?, ?, ?)`,
+      [kind, payload, blob ? 1 : 0, nowIso, nowIso, owner],
     );
     if (blob) this.writeBlob(this.lastInsertRowId(), blob);
 
@@ -118,14 +132,18 @@ export class OfflineQueueStore {
     this.persist();
   }
 
-  /** Up to `limit` items of `kind` that are due (`nextAttemptAt <= now`), oldest first. */
-  takeBatch(kind: string, limit: number, now: Date): QueuedRow[] {
+  /**
+   * Up to `limit` items of `kind` that are due (`nextAttemptAt <= now`) and
+   * belong to `owner`, oldest first. Another owner's rows are never
+   * returned, however long they have been waiting.
+   */
+  takeBatch(kind: string, limit: number, now: Date, owner: string | null = null): QueuedRow[] {
     const stmt = this.db.prepare(
       `SELECT id, kind, payload, hasBlob, attempts, createdAt, nextAttemptAt
-       FROM queued_items WHERE kind = :kind AND nextAttemptAt <= :now
+       FROM queued_items WHERE kind = :kind AND nextAttemptAt <= :now AND owner IS :owner
        ORDER BY id ASC LIMIT :limit`,
     );
-    stmt.bind({ ':kind': kind, ':now': now.toISOString(), ':limit': limit });
+    stmt.bind({ ':kind': kind, ':now': now.toISOString(), ':limit': limit, ':owner': owner });
     const rows: QueuedRow[] = [];
     while (stmt.step()) {
       const row = stmt.getAsObject() as unknown as {
@@ -170,14 +188,53 @@ export class OfflineQueueStore {
     this.persist();
   }
 
-  /** Total rows currently queued for `kind` — diagnostics/tests, not used on the send path. */
-  countPending(kind: string): number {
-    const stmt = this.db.prepare(`SELECT COUNT(*) as count FROM queued_items WHERE kind = ?`);
-    stmt.bind([kind]);
+  /**
+   * Rows currently queued for `kind` — every owner's when `owner` is left
+   * out, or only that owner's (including `null`) when given.
+   */
+  countPending(kind: string, owner?: string | null): number {
+    const stmt =
+      owner === undefined
+        ? this.db.prepare(`SELECT COUNT(*) as count FROM queued_items WHERE kind = ?`)
+        : this.db.prepare(
+            `SELECT COUNT(*) as count FROM queued_items WHERE kind = ? AND owner IS ?`,
+          );
+    stmt.bind(owner === undefined ? [kind] : [kind, owner]);
     stmt.step();
     const count = stmt.get()[0] as number;
     stmt.free();
     return count;
+  }
+
+  /**
+   * Deletes every row, and its image, not belonging to `owner` — rows from
+   * before owners were recorded (NULL) included. Returns how many went.
+   */
+  discardOtherOwners(owner: string): number {
+    return this.discardWhere('owner IS NOT ?', [owner]);
+  }
+
+  /** Deletes every row, and its image, of every owner. */
+  discardAll(): number {
+    return this.discardWhere('1 = 1', []);
+  }
+
+  /** Gives rows recorded before owners existed (NULL) to `owner`. */
+  adoptUnowned(owner: string): void {
+    this.db.run('UPDATE queued_items SET owner = ? WHERE owner IS NULL', [owner]);
+    this.persist();
+  }
+
+  private discardWhere(condition: string, params: (string | number)[]): number {
+    const stmt = this.db.prepare(`SELECT id FROM queued_items WHERE ${condition}`);
+    stmt.bind(params);
+    const ids: number[] = [];
+    while (stmt.step()) ids.push(stmt.get()[0] as number);
+    stmt.free();
+    if (ids.length === 0) return 0;
+    this.deleteRows(ids);
+    this.persist();
+    return ids.length;
   }
 
   close(): void {

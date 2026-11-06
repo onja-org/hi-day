@@ -18,7 +18,14 @@ function procWithOpenFiles(paths: string[]): string {
   return root;
 }
 
-describe('readOpenProfiles', () => {
+/**
+ * Builds a fake `/proc/<pid>/fd` out of symlinks, which needs both a
+ * platform that has `/proc` semantics and one where an unprivileged process
+ * may create a symlink — Linux, and nowhere else this ships. Two of these
+ * three happened to pass on Windows anyway, which is worse than failing:
+ * they would have passed with the code entirely broken there.
+ */
+describe.skipIf(process.platform !== 'linux')('readOpenProfiles', () => {
   it('names every profile the browser has open, and where they live', () => {
     const root = procWithOpenFiles([
       'home/.config/google-chrome/Default/History',

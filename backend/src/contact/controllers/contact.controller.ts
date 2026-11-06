@@ -11,9 +11,11 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ContactMessageDto } from '../dto/contact-message.dto';
 import { ContactService } from '../services/contact.service';
 
-/** Five messages per ten minutes, per IP — see the module for the tracker. */
+/** Five messages per ten minutes, per sender — see the module's tracker. */
 export const CONTACT_THROTTLE_LIMIT = 5;
 export const CONTACT_THROTTLE_TTL_MS = 10 * 60 * 1000;
+/** Volume across every sender at once — all a per-IP key can mean here. */
+export const GLOBAL_CONTACT_THROTTLE_LIMIT = 100;
 
 /**
  * Deliberately outside every auth guard: somebody asking whether the product
@@ -28,6 +30,10 @@ export class ContactController {
   @HttpCode(200)
   @UseGuards(ThrottlerGuard)
   @Throttle({
+    default: {
+      limit: GLOBAL_CONTACT_THROTTLE_LIMIT,
+      ttl: CONTACT_THROTTLE_TTL_MS,
+    },
     contact: { limit: CONTACT_THROTTLE_LIMIT, ttl: CONTACT_THROTTLE_TTL_MS },
   })
   async send(@Body() dto: ContactMessageDto): Promise<{ sent: true }> {

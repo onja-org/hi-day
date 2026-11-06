@@ -1,37 +1,35 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
-import type { Request } from 'express';
+import { emailTracker } from '../../common/throttler-trackers.util';
 import { EmailModule } from '../../email/modules/email.module';
 import {
   CONTACT_THROTTLE_LIMIT,
   CONTACT_THROTTLE_TTL_MS,
+  GLOBAL_CONTACT_THROTTLE_LIMIT,
   ContactController,
 } from '../controllers/contact.controller';
 import { ContactService } from '../services/contact.service';
 
 /**
- * By IP, because there is no session to key on — the whole point of this
- * form is that the sender has no account. `ips[0]` first so a proxy's own
- * address does not become one bucket for every visitor behind it.
- *
- * Takes the **request**, not the execution context: `getTracker` is
- * `(req, context)`, and reaching for `switchToHttp()` on the first argument
- * throws on every submission. The report tracker beside this one has the
- * signature right — this one did not.
+ * Keyed by email: the sender has no account, and a per-IP key would be one
+ * bucket for every visitor behind the proxy. (An earlier attempt read
+ * `req.ips[0]`, which Express only fills in when `trust proxy` is set.)
+ * `default` stays per-IP as the global ceiling behind it.
  */
-function contactTracker(req: Request): string {
-  return req.ips?.[0] ?? req.ip ?? 'unknown';
-}
-
 @Module({
   imports: [
     EmailModule,
     ThrottlerModule.forRoot([
       {
+        name: 'default',
+        ttl: CONTACT_THROTTLE_TTL_MS,
+        limit: GLOBAL_CONTACT_THROTTLE_LIMIT,
+      },
+      {
         name: 'contact',
         ttl: CONTACT_THROTTLE_TTL_MS,
         limit: CONTACT_THROTTLE_LIMIT,
-        getTracker: contactTracker,
+        getTracker: emailTracker,
       },
     ]),
   ],

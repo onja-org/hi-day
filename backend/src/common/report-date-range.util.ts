@@ -2,9 +2,8 @@ import type { WeekStart } from '../organisations/company-profile';
 import {
   addDaysToKey,
   endOfDayInZone,
-  mondayOfKey,
   startOfDayInZone,
-  weekdayOfKey,
+  weekStartOfKey,
   zonedParts,
 } from './zoned-time.util';
 
@@ -23,13 +22,6 @@ export type ReportDatePreset = (typeof REPORT_DATE_PRESETS)[number];
 
 function firstOfMonth(dateKey: string): string {
   return `${dateKey.slice(0, 8)}01`;
-}
-
-/** The first day of the week `dateKey` falls in. */
-function weekStartOfKey(dateKey: string, weekStartsOn: WeekStart): string {
-  return weekStartsOn === 'sunday'
-    ? addDaysToKey(dateKey, -weekdayOfKey(dateKey))
-    : mondayOfKey(dateKey);
 }
 
 /**

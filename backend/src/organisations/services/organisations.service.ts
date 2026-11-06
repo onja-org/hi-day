@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
-import { TrialService } from '../../billing/services/trial.service';
+import {
+  ENTITLEMENTS,
+  type Entitlements,
+} from '../../entitlements/entitlements';
 import { Membership } from '../../database/entities/membership.entity';
+import { actsAsManager } from '../../common/manager-scope.util';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -73,6 +77,10 @@ export interface OrganisationProfile {
    */
   ownerEmail: string | null;
   role: MembershipRole;
+  /** Whether this caller may see anyone else's data — an admin, or whoever
+   * manages a team. The resolved answer, since `role` alone no longer
+   * settles it (see CONTEXT.md's Team-scoping). */
+  canViewOthers: boolean;
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
@@ -158,6 +166,7 @@ export interface TeamOverviewMember {
   name: string | null;
   email: string;
   isManager: boolean;
+  role: MembershipRole;
 }
 
 export interface TeamOverview {
@@ -178,7 +187,8 @@ export class OrganisationsService {
     private readonly teams: Repository<Team>,
     private readonly auditLogService: AuditLogService,
     private readonly timeEntriesService: TimeEntriesService,
-    private readonly trialService: TrialService,
+    @Inject(ENTITLEMENTS)
+    private readonly entitlements: Entitlements,
   ) {}
 
   async createForUser(
@@ -229,10 +239,12 @@ export class OrganisationsService {
       }),
     );
 
-    // Signup asks for no card, so every new Organisation starts its 14-day
-    // trial here rather than anyone choosing to — same transaction, so an
-    // Organisation never exists without one (see CONTEXT.md's Trial entry).
-    await this.trialService.startTrial(manager, organisation.id);
+    // Signup asks for no card, so every new Organisation on Hi Day Cloud
+    // starts its 14-day trial here rather than anyone choosing to — same
+    // transaction, so an Organisation never exists without one (see
+    // CONTEXT.md's Trial entry). A self-hosted install starts none: this is
+    // the no-op half of Entitlements, not a branch in this service.
+    await this.entitlements.startTrial(manager, organisation.id);
 
     await this.auditLogService.record(manager, {
       action: 'organisation.created',
@@ -250,7 +262,7 @@ export class OrganisationsService {
       where: { userId, status: MembershipStatus.ACTIVE },
       // `owner` for the billing email's fallback — the Billing page says
       // which of the two addresses receipts actually reach.
-      relations: { organisation: { owner: true } },
+      relations: { organisation: { owner: true }, teamMemberships: true },
       order: {
         organisation: { suspendedAt: { direction: 'ASC', nulls: 'FIRST' } },
       },
@@ -264,6 +276,7 @@ export class OrganisationsService {
       membership.organisation,
       membership.role,
       userId,
+      membership.role === MembershipRole.ADMIN || actsAsManager(membership),
       membership.timesheetModifyTime,
       membership.canDeleteScreenshots,
       await this.projectsContext(
@@ -352,6 +365,7 @@ export class OrganisationsService {
         name: teamMembership.membership.user.name,
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
+        role: teamMembership.membership.role,
       })),
       projectCount: (team.projectTeams ?? []).length,
     }));
@@ -484,6 +498,7 @@ export class OrganisationsService {
       organisation,
       MembershipRole.ADMIN,
       userId,
+      true,
       adminMembership?.timesheetModifyTime ?? null,
       adminMembership?.canDeleteScreenshots ?? null,
       await this.projectsContext(
@@ -593,17 +608,23 @@ export class OrganisationsService {
   }
 
   /** Narrow, like `getIdlePolicy`: the dashboard services bucket time by
-   * week and need this without the whole `OrganisationProfile`. */
-  async getWeekStart(organisationId: string): Promise<WeekStart> {
+   * week, on the organisation's own calendar, and need this without the
+   * whole `OrganisationProfile`. */
+  async getWeekCalendar(
+    organisationId: string,
+  ): Promise<{ weekStartsOn: WeekStart; timezone: string }> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
     });
     const settings = organisation.settings as OrganisationSettings;
 
-    return settings.weekStartsOn ?? DEFAULT_WEEK_START;
+    return {
+      weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
+      timezone: settings.timezone ?? DEFAULT_TIMEZONE,
+    };
   }
 
-  /** Narrow, like `getWeekStart`: time-entry and project routes gate on it
+  /** Narrow, like `getWeekCalendar`: time-entry and project routes gate on it
    * without needing the whole `OrganisationProfile`. Per person: their own
    * override, else the organisation default. */
   async getProjectsEnabled(
@@ -711,6 +732,7 @@ export class OrganisationsService {
     organisation: Organisation,
     role: MembershipRole,
     userId: string,
+    canViewOthers: boolean,
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
     membershipCanDeleteScreenshots: boolean | null = null,
@@ -733,6 +755,7 @@ export class OrganisationsService {
       billingEmail: organisation.billingEmail ?? null,
       ownerEmail: organisation.owner?.email ?? null,
       role,
+      canViewOthers,
       idleHandling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       idleThresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,

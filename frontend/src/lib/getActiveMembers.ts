@@ -3,13 +3,21 @@ import type { GetActiveMembersResult } from "@/types/membership";
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
+/**
+ * `scope: "visible"` (the default) is everyone the caller may see — an admin
+ * the organisation, a team manager their team's members. `"organisation"` is
+ * the Members page's own admin-only list.
+ */
 export async function getActiveMembers(
   organisationId: string,
+  scope: "visible" | "organisation" = "visible",
 ): Promise<GetActiveMembersResult> {
   let response: Response;
   try {
     response = await fetch(
-      `${API_URL}/organisations/${organisationId}/memberships`,
+      `${API_URL}/organisations/${organisationId}/memberships${
+        scope === "visible" ? "/visible" : ""
+      }`,
       { method: "GET", credentials: "include" },
     );
   } catch {
