@@ -4,9 +4,9 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { readCookie } from '../common/cookies.util';
+import { AccessTokenService } from './services/access-token.service';
 import { ACCESS_TOKEN_COOKIE } from './services/token.service';
 
 export interface AuthenticatedRequest extends Request {
@@ -21,9 +21,9 @@ export interface AuthenticatedRequest extends Request {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(private readonly accessTokenService: AccessTokenService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = readCookie(request, ACCESS_TOKEN_COOKIE);
 
@@ -31,12 +31,12 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Not authenticated.');
     }
 
-    try {
-      const payload = this.jwtService.verify<{ sub: string }>(token);
-      request.userId = payload.sub;
-      return true;
-    } catch {
+    const userId = await this.accessTokenService.verify(token);
+    if (!userId) {
       throw new UnauthorizedException('Not authenticated.');
     }
+
+    request.userId = userId;
+    return true;
   }
 }

@@ -64,6 +64,16 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   pendingOrganisationWebsite: string | null;
 
+  /**
+   * Carried in every access token as `sv`; `JwtAuthGuard` rejects a token
+   * whose `sv` no longer matches. Bumping it is the only way to end web
+   * sessions whose access token hasn't expired yet ("sign out everywhere",
+   * password reset). Tokens issued before this column existed carry no `sv`
+   * and count as 0, so adding it signed nobody out.
+   */
+  @Column({ type: 'integer', default: 0 })
+  sessionVersion: number;
+
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
 

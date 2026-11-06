@@ -131,6 +131,27 @@ export class RefreshTokenService {
   }
 
   /**
+   * The user a refresh token belongs to, but only while it could still be
+   * used: unrevoked and unexpired. Anything that acts on the whole account
+   * because of a presented token must use this, or an old rotated-away
+   * cookie would be enough to do it.
+   */
+  async findLiveOwner(
+    manager: EntityManager,
+    presentedToken: string,
+  ): Promise<string | null> {
+    const existing = await manager.findOne(RefreshToken, {
+      where: { tokenHash: hashToken(presentedToken) },
+    });
+
+    if (!existing || existing.revokedAt || existing.expiresAt < new Date()) {
+      return null;
+    }
+
+    return existing.userId;
+  }
+
+  /**
    * Returns the userId the revoked token belonged to (or null if it didn't
    * match anything), so callers that need to cascade the sign-out further
    * (e.g. AuthService.logout revoking device sessions too) don't have to
