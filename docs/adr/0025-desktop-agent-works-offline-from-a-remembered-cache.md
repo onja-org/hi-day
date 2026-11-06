@@ -133,6 +133,18 @@ to a minute of genuinely worked time was reported to the person as lost. It now 
 entry the sweeper closed regardless of what followed, and extends it only when doing so stays within
 the next entry's start — touching endpoints are fine, a real overlap still refuses and still says so.
 
+**A session ending deletes the captures and keeps the hours.** One Device serves everybody who signs
+in on a machine, so every queued item carries the owner who made it (`session-owner.ts`:
+`user:<userId>|org:<organisationId>`, falling back to email and Organisation name for a session
+stored before pairing returned ids). Logging in deletes whatever belongs to somebody else, which is
+what makes keeping anything safe. Screenshots, app events and URL sessions are deleted the moment a
+session ends anyway — they belong to the session that took them, and leaving them on a shared machine
+is a disclosure. Queued *timer* actions are not: they are hours somebody worked, the owner stamp
+means they can only ever reach their own timesheet, and the person replays them at their next login.
+Deleting them was how a remote sign-out in the middle of an offline stretch silently erased a day's
+tracking. The logout path still tries to send them first — the last moment the token works — so
+keeping them is the fallback, not the plan.
+
 **A switch carries two ids, because it writes two rows.** It ends the running entry and starts the
 next in one request, and offline the same action is recorded as a stop and a start — so one id cannot
 name it. `POST /device/time-entries/switch` takes `stopOpId` and `startOpId`, writes them to the two

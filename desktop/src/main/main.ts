@@ -1130,22 +1130,33 @@ async function registerIpcHandlers(): Promise<void> {
   }
 
   /**
-   * Deletes every queued screenshot, window sample, activity sample, URL
-   * and timer action — for a session that has ended, once nothing more
-   * can be sent for it.
+   * Deletes every queued screenshot, window sample, activity sample and URL
+   * of a session that has ended, once nothing more can be sent for it.
+   *
+   * **Queued timer actions are deliberately kept.** They are the hours
+   * somebody worked, and a session ending is not a reason to delete them —
+   * a remote sign-out in the middle of an offline stretch used to do
+   * exactly that, with nothing said. They survive because they cannot
+   * reach the wrong timesheet: each one carries its owner, the person it
+   * belongs to replays it when they log back in, and anybody else logging
+   * in deletes it (`discardOtherOwnersData`).
+   *
+   * Captures do not follow them, and the difference is the point: a
+   * screenshot and a browsing history belong to the session that took
+   * them, and leaving those on a shared machine is a disclosure. Hours are
+   * pay.
    */
-  function discardAllQueuedData(): void {
+  function discardEndedSessionCaptures(): void {
     const captures = offlineQueue.discardAll();
-    const timerOps = pendingOps.discardAll();
     const urls = UrlSessionStore.discardAllAt(urlSessionsPath);
-    if (captures + timerOps + urls > 0) {
+    if (captures + urls > 0) {
       // Counts only — never what was in them.
       console.warn(
-        `[auth] discarded unsent data from the ended session: ${captures} capture(s), ${timerOps} timer action(s), ${urls} URL session(s)`,
+        `[auth] discarded unsent captures from the ended session: ${captures} capture(s), ${urls} URL session(s)`,
       );
     }
   }
-  discardQueuedData = discardAllQueuedData;
+  discardQueuedData = discardEndedSessionCaptures;
 
   /**
    * Uploads the logged-in person's whole backlog, rows waiting out a retry
@@ -1161,12 +1172,21 @@ async function registerIpcHandlers(): Promise<void> {
     // when the queue no longer accepts it, so the last minutes of
     // activity were lost. Closing it now queues it with everything else.
     await activitySampler.flush();
+    // Timer actions count too. They are kept rather than deleted when the
+    // session ends, but this is the last moment the token still works —
+    // sending them now means the person does not wait for their next login
+    // to see the hours land. `retryNow` because a replay the server asked
+    // us to back off from would otherwise sit out this whole loop.
+    pendingOps.retryNow();
     const unsent = (): number =>
-      offlineQueue.pendingCount() + (urlCaptureService?.unsentCount() ?? 0);
+      offlineQueue.pendingCount() +
+      pendingOps.load().length +
+      (urlCaptureService?.unsentCount() ?? 0);
     let before = unsent();
     while (before > 0) {
       await Promise.all([
         offlineQueue.flushAll({ ignoreBackoff: true }).catch(() => {}),
+        flushPendingOps().catch(() => {}),
         urlCaptureService?.drainOnce().catch(() => {}) ?? Promise.resolve(),
       ]);
       const after = unsent();
@@ -1955,7 +1975,8 @@ async function registerIpcHandlers(): Promise<void> {
     stopSync();
     // Whatever did not upload — offline, or a send that failed. On a
     // shared machine none of it may sit on disk for whoever logs in next.
-    discardAllQueuedData();
+    // The timer actions stay: see `discardEndedSessionCaptures`.
+    discardEndedSessionCaptures();
     // No session left to poll against — both gates resolve to "off",
     // which stops the sampler if it was running.
     void captureSettingsGate.pollOnce();
@@ -2014,6 +2035,9 @@ async function registerIpcHandlers(): Promise<void> {
     stopUrlCapture();
     stopHeartbeat();
     stopSync();
+    // The token is dead, so no capture can be sent any more and none of it
+    // may sit on a shared machine. The hours stay — see the function.
+    discardEndedSessionCaptures();
   }
 
 /**
