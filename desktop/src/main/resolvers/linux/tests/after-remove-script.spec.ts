@@ -64,7 +64,14 @@ describe('afterRemove.sh', () => {
  * so a test can never reach a real home. Everything else — the guard, the
  * marker matching, the deletion — is the shipped code.
  */
-describe('afterRemove.sh, run for real', () => {
+/**
+ * Runs the shipped bash script, so it only means anything where that script
+ * ever runs: a Debian uninstall. On Windows there is no shell to run it,
+ * the deletion silently does not happen, and the assertions fail for a
+ * reason that says nothing about the code — see `browser-activation.spec.ts`,
+ * guarded the same way after it blocked the desktop-v0.2.0 release.
+ */
+describe.skipIf(process.platform !== 'linux')('afterRemove.sh, run for real', () => {
   let root: string;
   let apps: string;
   let runnable: string;
