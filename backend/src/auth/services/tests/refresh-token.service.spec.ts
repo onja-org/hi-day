@@ -65,7 +65,7 @@ describe('RefreshTokenService', () => {
     );
   });
 
-  it('rejects rotate() and revokes all sessions when a revoked token is reused with no successor on record', async () => {
+  it('reports reuse, without revoking anything itself, when a revoked token is reused with no successor on record', async () => {
     const existing = {
       id: 'rt-1',
       userId: 'user-1',
@@ -81,17 +81,16 @@ describe('RefreshTokenService', () => {
       makeTokenService(),
     );
 
-    await expect(service.rotate(manager, 'stolen')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-    expect(update).toHaveBeenCalledWith(
-      RefreshToken,
-      expect.objectContaining({ userId: 'user-1' }),
-      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
-    );
+    await expect(service.rotate(manager, 'stolen')).resolves.toEqual({
+      outcome: 'reuse_detected',
+      userId: 'user-1',
+    });
+    // Revoking is the caller's job, in its own transaction: done here, the
+    // caller's rollback on error would undo it.
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it('rejects rotate() and revokes all sessions when a revoked token is reused long after its successor was issued (grace window elapsed)', async () => {
+  it('reports reuse when a revoked token is reused long after its successor was issued (grace window elapsed)', async () => {
     const successorHash = 'successor-hash';
     const existing = {
       id: 'rt-1',
@@ -117,17 +116,16 @@ describe('RefreshTokenService', () => {
       makeTokenService(),
     );
 
-    await expect(service.rotate(manager, 'stale')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-    expect(update).toHaveBeenCalledWith(
-      RefreshToken,
-      expect.objectContaining({ userId: 'user-1' }),
-      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
-    );
+    await expect(service.rotate(manager, 'stale')).resolves.toEqual({
+      outcome: 'reuse_detected',
+      userId: 'user-1',
+    });
+    // Revoking is the caller's job, in its own transaction: done here, the
+    // caller's rollback on error would undo it.
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it('rejects rotate() and revokes all sessions when a revoked token is reused after its successor was itself already rotated', async () => {
+  it('reports reuse when a revoked token is reused after its successor was itself already rotated', async () => {
     const successorHash = 'successor-hash';
     const existing = {
       id: 'rt-1',
@@ -153,14 +151,13 @@ describe('RefreshTokenService', () => {
       makeTokenService(),
     );
 
-    await expect(service.rotate(manager, 'stale')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-    expect(update).toHaveBeenCalledWith(
-      RefreshToken,
-      expect.objectContaining({ userId: 'user-1' }),
-      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
-    );
+    await expect(service.rotate(manager, 'stale')).resolves.toEqual({
+      outcome: 'reuse_detected',
+      userId: 'user-1',
+    });
+    // Revoking is the caller's job, in its own transaction: done here, the
+    // caller's rollback on error would undo it.
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('rotates the still-unused successor instead of revoking everything when a just-rotated token is reused within the grace window', async () => {
@@ -202,7 +199,11 @@ describe('RefreshTokenService', () => {
       expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
     );
     expect(save).toHaveBeenCalled();
-    expect(result).toEqual({ userId: 'user-1', token: 'token-1' });
+    expect(result).toEqual({
+      outcome: 'rotated',
+      userId: 'user-1',
+      token: 'token-1',
+    });
   });
 
   it('rejects rotate() when the token has expired', async () => {
@@ -247,7 +248,11 @@ describe('RefreshTokenService', () => {
       'rt-1',
       expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
     );
-    expect(result).toEqual({ userId: 'user-1', token: 'token-1' });
+    expect(result).toEqual({
+      outcome: 'rotated',
+      userId: 'user-1',
+      token: 'token-1',
+    });
   });
 
   it('revokeByValue revokes the matching row and returns its userId', async () => {

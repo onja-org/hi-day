@@ -94,6 +94,7 @@ describe('AuthService', () => {
   function makeRefreshTokenService() {
     const issue = jest.fn().mockResolvedValue('the-refresh-token');
     const rotate = jest.fn().mockResolvedValue({
+      outcome: 'rotated',
       userId: 'user-1',
       token: 'rotated-refresh-token',
     });
@@ -1063,6 +1064,47 @@ describe('AuthService', () => {
       );
       expect(clearCookie).toHaveBeenCalledWith(
         'access_token',
+        expect.objectContaining({ path: '/' }),
+      );
+    });
+
+    it('ends every web session, in a transaction of its own, when a stolen refresh token is replayed', async () => {
+      const { refreshTokenService, rotate, revokeAll } =
+        makeRefreshTokenService();
+      rotate.mockResolvedValue({ outcome: 'reuse_detected', userId: 'user-1' });
+      const { accessTokenService, endAllSessions, sign } =
+        makeAccessTokenService();
+      const { dataSource, transaction } = makeDataSource();
+      const { deviceSessionService, revokeAllForUser } =
+        makeDeviceSessionService();
+      const service = makeService({
+        refreshTokenService,
+        accessTokenService,
+        dataSource,
+        deviceSessionService,
+      });
+      const { response, clearCookie, cookie } = makeResponse();
+      const request = makeRequest('refresh_token=stolen-refresh-token');
+
+      await expect(service.refresh(request, response)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+
+      // One transaction for the lookup, a separate one for the revocation,
+      // so the error can't roll the revocation back.
+      expect(transaction).toHaveBeenCalledTimes(2);
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(rotate.mock.invocationCallOrder[0]).toBeLessThan(
+        revokeAll.mock.invocationCallOrder[0],
+      );
+      // Paired desktop apps aren't touched: a stolen browser cookie says
+      // nothing about them.
+      expect(revokeAllForUser).not.toHaveBeenCalled();
+      expect(sign).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
+      expect(clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
         expect.objectContaining({ path: '/' }),
       );
     });
