@@ -23,6 +23,7 @@ import { ProjectsService } from '../../projects/services/projects.service';
 import { ProjectsEnabledGuard } from '../../projects/guards/projects-enabled.guard';
 import { StartTimeEntryDto } from '../../time-entries/dto/start-time-entry.dto';
 import { StopTimeEntryDto } from '../../time-entries/dto/stop-time-entry.dto';
+import { PauseTimeEntryDto } from '../../time-entries/dto/pause-time-entry.dto';
 import { SwitchTimeEntryDto } from '../../time-entries/dto/switch-time-entry.dto';
 import type {
   CurrentTimeEntry,
@@ -353,11 +354,15 @@ export class DeviceTrackingController {
   }
 
   @Post('time-entries/pause')
-  pause(@Req() request: DeviceAuthenticatedRequest): Promise<TimeEntrySummary> {
+  pause(
+    @Body() dto: PauseTimeEntryDto,
+    @Req() request: DeviceAuthenticatedRequest,
+  ): Promise<TimeEntrySummary> {
     return this.timeEntriesService.pause(
       request.organisationId,
       request.userId,
       request.deviceId,
+      { operationId: dto.opId },
     );
   }
 
