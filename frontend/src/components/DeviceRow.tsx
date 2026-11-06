@@ -41,20 +41,20 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
       <td className="px-3 py-2 text-slate-900">
         {device.userName ?? device.userEmail}
         {device.userName && (
-          <span className="block text-xs text-slate-900/70">{device.userEmail}</span>
+          <span className="block text-xs break-all text-slate-900/70">{device.userEmail}</span>
         )}
       </td>
       <td className="px-3 py-2">
         <DeviceStatusBadge status={device.status} />
       </td>
-      <td className="px-3 py-2 text-slate-900">
+      <td className="hidden px-3 py-2 text-slate-900 sm:table-cell">
         {devicePlatformLabel(device.platform)}
         {device.osVersion ? ` (${device.osVersion})` : ""}
         {device.displaySession && (
           <span className="block text-xs text-slate-900/70">{device.displaySession}</span>
         )}
       </td>
-      <td className="px-3 py-2 text-slate-900">
+      <td className="hidden px-3 py-2 text-slate-900 lg:table-cell">
         {isMobile(device.platform) ? (
           "—"
         ) : (
@@ -72,8 +72,8 @@ export function DeviceRow({ organisationId, device }: DeviceRowProps) {
           </div>
         )}
       </td>
-      <td className="px-3 py-2 text-slate-900">{device.appVersion ?? "—"}</td>
-      <td className="px-3 py-2 text-slate-900">{formatLastSeen(device.lastSeenAt)}</td>
+      <td className="hidden px-3 py-2 text-slate-900 lg:table-cell">{device.appVersion ?? "—"}</td>
+      <td className="hidden px-3 py-2 text-slate-900 md:table-cell">{formatLastSeen(device.lastSeenAt)}</td>
       <td className="px-3 py-2 text-right whitespace-nowrap">
         {device.status !== "signed_out" && (
           <button
