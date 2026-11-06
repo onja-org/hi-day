@@ -34,7 +34,10 @@ import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
 import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { PasswordService } from './password.service';
-import { RefreshTokenService } from './refresh-token.service';
+import {
+  RefreshTokenRotation,
+  RefreshTokenService,
+} from './refresh-token.service';
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
@@ -419,9 +422,9 @@ export class AuthService {
       throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
     }
 
-    let rotated: { userId: string; token: string };
+    let rotation: RefreshTokenRotation;
     try {
-      rotated = await this.dataSource.transaction((manager) =>
+      rotation = await this.dataSource.transaction((manager) =>
         this.refreshTokenService.rotate(manager, presentedToken),
       );
     } catch (error) {
@@ -429,7 +432,17 @@ export class AuthService {
       throw error;
     }
 
-    const { userId, token: refreshToken } = rotated;
+    if (rotation.outcome === 'reuse_detected') {
+      // A stolen token was replayed. End every web session — refresh and
+      // access tokens alike — in a transaction of its own: done inside the
+      // rotation's, the error below would roll it back and the thief would
+      // lose nothing.
+      await this.endAllWebSessions(rotation.userId);
+      clearSessionCookies(response);
+      throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
+    }
+
+    const { userId, token: refreshToken } = rotation;
 
     const accessToken = await this.accessTokenService.sign(userId);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
@@ -480,16 +493,25 @@ export class AuthService {
     const userId = await this.resolveSessionOwner(request);
 
     if (userId) {
-      await this.dataSource.transaction(async (manager) => {
-        await this.refreshTokenService.revokeAll(manager, userId);
-        await this.accessTokenService.endAllSessions(manager, userId);
-      });
+      await this.endAllWebSessions(userId);
       await this.signOutAllDevices(userId);
     }
 
     clearSessionCookies(response);
 
     return { message: 'Logged out everywhere.' };
+  }
+
+  /**
+   * Every refresh token revoked and every access token invalidated, so no
+   * browser stays signed in. Paired devices are separate: callers that
+   * mean to cut those off too call `signOutAllDevices`.
+   */
+  private async endAllWebSessions(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.refreshTokenService.revokeAll(manager, userId);
+      await this.accessTokenService.endAllSessions(manager, userId);
+    });
   }
 
   /**

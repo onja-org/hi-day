@@ -18,10 +18,14 @@ const INVALID_REFRESH_TOKEN_MESSAGE = 'Session expired. Please log in again.';
 // user — that's the actual theft signal.
 const REUSE_GRACE_MS = 5_000;
 
-export interface RotatedRefreshToken {
-  userId: string;
-  token: string;
-}
+export type RefreshTokenRotation =
+  | { outcome: 'rotated'; userId: string; token: string }
+  /**
+   * An already-rotated token came back outside the race window: the
+   * theft signal. Nothing is revoked here — the caller ends the user's
+   * sessions in a transaction of its own (see `AuthService.refresh`).
+   */
+  | { outcome: 'reuse_detected'; userId: string };
 
 @Injectable()
 export class RefreshTokenService {
@@ -54,7 +58,7 @@ export class RefreshTokenService {
   async rotate(
     manager: EntityManager,
     presentedToken: string,
-  ): Promise<RotatedRefreshToken> {
+  ): Promise<RefreshTokenRotation> {
     const existing = await manager.findOne(RefreshToken, {
       where: { tokenHash: hashToken(presentedToken) },
     });
@@ -69,8 +73,9 @@ export class RefreshTokenService {
         return this.rotateRow(manager, successor);
       }
 
-      await this.revokeAll(manager, existing.userId);
-      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
+      // Reported, not acted on: revoking here and then throwing would roll
+      // the revocation back with the rest of the caller's transaction.
+      return { outcome: 'reuse_detected', userId: existing.userId };
     }
 
     if (existing.expiresAt < new Date()) {
@@ -112,14 +117,14 @@ export class RefreshTokenService {
   private async rotateRow(
     manager: EntityManager,
     row: RefreshToken,
-  ): Promise<RotatedRefreshToken> {
+  ): Promise<RefreshTokenRotation> {
     const token = await this.issue(manager, row.userId);
     await manager.update(RefreshToken, row.id, {
       revokedAt: new Date(),
       replacedByTokenHash: hashToken(token),
     });
 
-    return { userId: row.userId, token };
+    return { outcome: 'rotated', userId: row.userId, token };
   }
 
   async revokeAll(manager: EntityManager, userId: string): Promise<void> {
