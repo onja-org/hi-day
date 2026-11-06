@@ -1994,21 +1994,26 @@ async function registerIpcHandlers(): Promise<void> {
         pendingOps.remember(data as TimeEntry);
       }
     }
-    if (!result.ok && result.unauthorized) {
-      authStore.clear();
-      // That session is over, and the signed-out reminder is about logging
-      // back in rather than about any stop.
-      timerStoppedByAgent = false;
-      // None of it is this machine's to keep once the session is gone.
-      offlineCache.clear();
-      stopUrlCapture();
-      stopHeartbeat();
-      stopSync();
-      // Signed out remotely: the token is dead, so nothing queued can be
-      // sent any more, and it must not wait for whoever logs in next.
-      discardAllQueuedData();
-    }
+    if (!result.ok && result.unauthorized) signOutLocally();
     return result;
+  }
+
+  /**
+   * Drops the session this machine holds, without asking the server
+   * anything — it has already said the session is gone. The renderer finds
+   * out on its next poll, which is how a remote sign-out has always
+   * surfaced.
+   */
+  function signOutLocally(): void {
+    authStore.clear();
+    // That session is over, and the signed-out reminder is about logging
+    // back in rather than about any stop.
+    timerStoppedByAgent = false;
+    // None of it is this machine's to keep once the session is gone.
+    offlineCache.clear();
+    stopUrlCapture();
+    stopHeartbeat();
+    stopSync();
   }
 
 /**
@@ -2150,6 +2155,9 @@ async function registerIpcHandlers(): Promise<void> {
     // watching has to keep moving even when nothing else is.
     let lastKnown = unsentRecordCount();
     const ticker = setInterval(() => sendQuitProgress(lastKnown), 1000);
+    // Pressing Quit is asking for one last try, whatever wait a struggling
+    // server set on the replay queue.
+    pendingOps.retryNow();
 
     try {
       while (!closed && Date.now() < quitDeadline) {
@@ -2165,6 +2173,10 @@ async function registerIpcHandlers(): Promise<void> {
         lastKnown = remaining;
         sendQuitProgress(remaining);
         if (remaining === 0) break;
+        // Nothing left but a replay the server asked us to wait before
+        // retrying. Spinning on it to the deadline holds the quit open for
+        // no reason, and the ops go up on the next launch regardless.
+        if (remaining === pendingOps.load().length && !pendingOps.isDue()) break;
         // Short, so the deadline buys as many real attempts as it can.
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
@@ -2218,7 +2230,7 @@ async function registerIpcHandlers(): Promise<void> {
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    const { settled, refused } = await pendingOps.flush(
+    const { settled, refused, signedOut } = await pendingOps.flush(
       session.deviceToken,
       apiClient,
     );
@@ -2228,6 +2240,13 @@ async function registerIpcHandlers(): Promise<void> {
     // remember what they were doing.
     if (refused.length > 0) {
       mainWindow?.webContents.send("tracking:refused", refused);
+    }
+    // This loop is the one caller that does not go through
+    // `callDeviceApi`, so without this a remotely revoked session is
+    // retried here every fifteen seconds and nothing ever says so.
+    if (signedOut) {
+      signOutLocally();
+      refreshTrayMenu();
     }
     if (settled) void timerStatusGate.pollOnce();
     checkSyncBacklog();
