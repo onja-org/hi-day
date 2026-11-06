@@ -13,7 +13,7 @@ import { SendPasswordResetDialog } from "./SendPasswordResetDialog";
 
 type MembersToolbarProps = {
   organisationId: string;
-  /** The members currently shown (after search) — what Export and batch actions act on. */
+  /** Every member matching the search, across all pages — what Export and batch actions act on. */
   members: ActiveMemberListItem[];
   teamNames: Map<string, string>;
   callerUserId: string;
