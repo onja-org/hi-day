@@ -966,6 +966,26 @@ describe('TimeEntriesService', () => {
     /** The sweeper gave up four hours ago; the person worked on regardless. */
     const SWEPT_AGO_MS = 4 * 60 * 60 * 1000;
 
+    /**
+     * `stop` asks three separate questions of this repository — is anything
+     * running on this device, is there an entry the sweeper closed, and did
+     * the device start anything after that one — so route on the query
+     * rather than on call order, which silently answered the wrong one.
+     */
+    function sweptRepoFindOne(
+      swept: TimeEntry | null,
+      next: TimeEntry | null = null,
+    ) {
+      return jest
+        .fn()
+        .mockImplementation((options?: { where?: Record<string, unknown> }) => {
+          const where = options?.where ?? {};
+          if ('closedAsAbandoned' in where) return Promise.resolve(swept);
+          if ('startedAt' in where) return Promise.resolve(next);
+          return Promise.resolve(null);
+        });
+    }
+
     describe('replayed operations', () => {
       it('returns the entry a replayed start already created, rather than a conflict', async () => {
         const existing = {
@@ -1086,6 +1106,66 @@ describe('TimeEntriesService', () => {
       });
     });
 
+    describe('a pause is a stop, and replays like one', () => {
+      it('records the operation id it was given', async () => {
+        const running = { ...runningEntry, deviceId: 'device-1' } as TimeEntry;
+        const save = jest
+          .fn()
+          .mockImplementation((input: Partial<TimeEntry>) =>
+            Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
+          );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            // Nothing already written under that id; the entry it ends.
+            findOne: jest
+              .fn()
+              .mockImplementation(
+                (options?: { where?: Record<string, unknown> }) =>
+                  Promise.resolve(
+                    options?.where && 'stopOperationId' in options.where
+                      ? null
+                      : running,
+                  ),
+              ),
+            save,
+          }),
+        });
+
+        await service.pause('org-1', 'user-1', 'device-1', {
+          operationId: 'op-pause',
+        });
+
+        // Without this the agent's write-ahead record has no name on the
+        // server, and the replay that follows a lost response 404s.
+        expect(save).toHaveBeenCalledWith(
+          expect.objectContaining({ stopOperationId: 'op-pause' }),
+        );
+      });
+
+      it('returns the entry a replayed pause already ended, rather than a 404', async () => {
+        const existing = {
+          ...runningEntry,
+          id: 'entry-already-paused',
+          endedAt: new Date('2026-01-01T10:00:00Z'),
+          stopOperationId: 'op-pause',
+        } as TimeEntry;
+        const save = jest.fn();
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(existing),
+            save,
+          }),
+        });
+
+        const result = await service.pause('org-1', 'user-1', 'device-1', {
+          operationId: 'op-pause',
+        });
+
+        expect(result.id).toBe('entry-already-paused');
+        expect(save).not.toHaveBeenCalled();
+      });
+    });
+
     describe('backdating limits', () => {
       it('refuses a start dated further back than a device may reach', async () => {
         const service = makeService();
@@ -1125,10 +1205,7 @@ describe('TimeEntriesService', () => {
       it('extends it to the stop the device actually made', async () => {
         const swept = sweptEntry(SWEPT_AGO_MS);
         // Nothing running; the device's latest entry is the swept one.
-        const findOne = jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValue(swept);
+        const findOne = sweptRepoFindOne(swept);
         const save = jest.fn((input: Partial<TimeEntry>) =>
           Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
         );
@@ -1153,14 +1230,9 @@ describe('TimeEntriesService', () => {
       });
 
       it('leaves an entry a person stopped alone', async () => {
-        const stoppedByHand = {
-          ...sweptEntry(SWEPT_AGO_MS),
-          closedAsAbandoned: false,
-        } as TimeEntry;
-        const findOne = jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValue(stoppedByHand);
+        // Nothing the sweeper closed: every entry on this device was ended
+        // by somebody, and none of those may be reopened.
+        const findOne = sweptRepoFindOne(null);
         const service = makeService({
           timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
         });
@@ -1177,10 +1249,7 @@ describe('TimeEntriesService', () => {
 
       it('leaves the web alone - a closed browser has no offline stretch to report', async () => {
         const swept = sweptEntry(SWEPT_AGO_MS);
-        const findOne = jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValue(swept);
+        const findOne = sweptRepoFindOne(swept);
         const service = makeService({
           timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
         });
@@ -1192,10 +1261,7 @@ describe('TimeEntriesService', () => {
 
       it('will not reach back past the backdating limit to revive something ancient', async () => {
         const swept = sweptEntry(31 * DAY_MS);
-        const findOne = jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValue(swept);
+        const findOne = sweptRepoFindOne(swept);
         const service = makeService({
           timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
         });
@@ -1205,12 +1271,95 @@ describe('TimeEntriesService', () => {
         ).rejects.toBeInstanceOf(NotFoundException);
       });
 
+      /**
+       * The crash prompt's "I was still working" answer starts a fresh
+       * entry on this device, so the newest entry is no longer the swept
+       * one. The queued stop arriving afterwards used to give up there and
+       * 404 — reported to the person as hours that could not be saved,
+       * which is exactly what they were, since the sweeper had already
+       * truncated them to the last heartbeat.
+       */
+      it('extends it even when the device has started something since', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const reallyStoppedAt = new Date(swept.endedAt!.getTime() + 60_000);
+        const next = {
+          ...runningEntry,
+          id: 'entry-after-the-crash',
+          deviceId: 'device-1',
+          startedAt: new Date(reallyStoppedAt.getTime() + 60_000),
+        } as TimeEntry;
+        const save = jest
+          .fn()
+          .mockImplementation((input: Partial<TimeEntry>) =>
+            Promise.resolve({ id: 'entry-1', ...input } as TimeEntry),
+          );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: sweptRepoFindOne(swept, next),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          reallyStoppedAt,
+        );
+
+        expect(result.endedAt).toEqual(reallyStoppedAt);
+      });
+
+      it('stops short of an entry it would overlap, rather than claiming the same minutes twice', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const reallyStoppedAt = new Date(swept.endedAt!.getTime() + 120_000);
+        const next = {
+          ...runningEntry,
+          id: 'entry-started-sooner',
+          deviceId: 'device-1',
+          // Begins before the stop being replayed: extending to it would
+          // have two entries covering the same minute.
+          startedAt: new Date(reallyStoppedAt.getTime() - 60_000),
+        } as TimeEntry;
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: sweptRepoFindOne(swept, next),
+          }),
+        });
+
+        await expect(
+          service.stop('org-1', 'user-1', 'device-1', reallyStoppedAt),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('allows a stop that just touches the next entry, which is what switch produces', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const reallyStoppedAt = new Date(swept.endedAt!.getTime() + 60_000);
+        const next = {
+          ...runningEntry,
+          id: 'entry-touching',
+          deviceId: 'device-1',
+          startedAt: reallyStoppedAt,
+        } as TimeEntry;
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: sweptRepoFindOne(swept, next),
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          reallyStoppedAt,
+        );
+
+        expect(result.endedAt).toEqual(reallyStoppedAt);
+      });
+
       it('ignores a stop no later than where the sweeper already ended it', async () => {
         const swept = sweptEntry(SWEPT_AGO_MS);
-        const findOne = jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValue(swept);
+        const findOne = sweptRepoFindOne(swept);
         const service = makeService({
           timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
         });
