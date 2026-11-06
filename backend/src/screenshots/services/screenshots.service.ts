@@ -166,6 +166,90 @@ export class ScreenshotsService {
     filter: ScreenshotsFilter = {},
     pagination: ScreenshotsPagination = {},
   ): Promise<ScreenshotsPage> {
+    const target = await this.getViewableMembership(
+      organisationId,
+      callerUserId,
+      targetMembershipId,
+    );
+    return this.listForMembershipId(
+      organisationId,
+      target.id,
+      this.resolveDate(date),
+      filter,
+      pagination,
+    );
+  }
+
+  /**
+   * A member's newest `limit` screenshots today, newest first — for
+   * previews, which need neither a total nor the rest of the day. Unlike
+   * a page, this never reads the whole day: rows come newest first in
+   * small batches and reading stops once `limit` covered ones are found.
+   * Same visibility rule as getScreenshotsForMembership.
+   */
+  async getLatestScreenshotsForMembership(
+    organisationId: string,
+    callerUserId: string,
+    targetMembershipId: string,
+    limit: number,
+  ): Promise<ScreenshotSummaryItem[]> {
+    const target = await this.getViewableMembership(
+      organisationId,
+      callerUserId,
+      targetMembershipId,
+    );
+    const start = new Date(`${this.resolveDate()}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + MS_PER_DAY);
+    const coveringEntries = await this.timeEntriesService.listCoveringWindow(
+      organisationId,
+      target.id,
+      start,
+      end,
+    );
+
+    // Nearly every capture is covered (the agent only captures while a
+    // timer runs), so one batch almost always suffices.
+    const batchSize = limit * 2;
+    const latest: { row: Screenshot; projectId: string | null }[] = [];
+    for (let skip = 0; latest.length < limit; skip += batchSize) {
+      const rows = await this.screenshots.find({
+        select: { id: true, capturedAt: true, storageKey: true },
+        where: {
+          organisationId,
+          membershipId: target.id,
+          capturedAt: Between(start, end),
+        },
+        order: { capturedAt: 'DESC' },
+        skip,
+        take: batchSize,
+      });
+      for (const row of rows) {
+        const entry = findEntryCovering(coveringEntries, row.capturedAt);
+        if (entry) latest.push({ row, projectId: entry.projectId ?? null });
+        if (latest.length === limit) break;
+      }
+      if (rows.length < batchSize) break;
+    }
+
+    return Promise.all(
+      latest.map(async ({ row, projectId }) => ({
+        id: row.id,
+        capturedAt: row.capturedAt.toISOString(),
+        url: await this.storage.createViewUrl(row.storageKey),
+        projectId,
+      })),
+    );
+  }
+
+  /**
+   * Visible to: the member themselves, an admin (anyone), or a manager for
+   * their own team — see canViewMembership.
+   */
+  private async getViewableMembership(
+    organisationId: string,
+    callerUserId: string,
+    targetMembershipId: string,
+  ): Promise<Membership> {
     const [caller, target] = await Promise.all([
       this.memberships.findOne({
         where: {
@@ -190,14 +274,7 @@ export class ScreenshotsService {
         "You cannot view this member's screenshots.",
       );
     }
-
-    return this.listForMembershipId(
-      organisationId,
-      target.id,
-      this.resolveDate(date),
-      filter,
-      pagination,
-    );
+    return target;
   }
 
   /**

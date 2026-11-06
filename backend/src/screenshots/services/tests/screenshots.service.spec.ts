@@ -617,6 +617,170 @@ describe('ScreenshotsService', () => {
     });
   });
 
+  describe('getLatestScreenshotsForMembership', () => {
+    const TODAY = new Date().toISOString().slice(0, 10);
+    const ALL_TODAY: FakeCoveringEntry = {
+      id: 'entry-today',
+      projectId: 'project-today',
+      startedAt: new Date(`${TODAY}T00:00:00.000Z`),
+      endedAt: new Date(`${TODAY}T23:59:59.999Z`),
+    };
+
+    /** Newest first, as the query returns them: `count` rows a minute
+     * apart going back from 12:00 today. */
+    function newestRows(count: number, from = 0): Screenshot[] {
+      return Array.from(
+        { length: count },
+        (_, i) =>
+          ({
+            id: `screenshot-${from + i + 1}`,
+            capturedAt: new Date(
+              Date.parse(`${TODAY}T12:00:00.000Z`) - (from + i) * 60_000,
+            ),
+            storageKey: `screenshots/org-1/device-1/${from + i + 1}.jpg`,
+          }) as Screenshot,
+      );
+    }
+
+    function makeService(
+      batches: Screenshot[][],
+      coveringEntries: FakeCoveringEntry[] = [ALL_TODAY],
+      caller: Partial<Membership> = {
+        id: 'caller-1',
+        role: MembershipRole.ADMIN,
+        teamMemberships: [],
+      },
+    ) {
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce({
+          id: 'target-1',
+          role: MembershipRole.MEMBER,
+          teamMemberships: [{ teamId: 'team-1', isManager: false }],
+        });
+      const screenshotsRepo = makeScreenshotsRepo();
+      for (const batch of batches) {
+        screenshotsRepo.find.mockResolvedValueOnce(batch);
+      }
+      screenshotsRepo.find.mockResolvedValue([]);
+      const storageMocks = makeStorage();
+      const service = new ScreenshotsService(
+        screenshotsRepo.repo,
+        makeMembershipsRepo({ findOne }),
+        makeOrganisationsService(),
+        storageMocks.storage,
+        makeTimeEntriesService(coveringEntries),
+      );
+      return { service, find: screenshotsRepo.find, ...storageMocks };
+    }
+
+    it('returns the newest few, newest first, signing only those', async () => {
+      const { service, createViewUrl } = makeService([newestRows(6)]);
+
+      const result = await service.getLatestScreenshotsForMembership(
+        'org-1',
+        'admin-user',
+        'target-1',
+        3,
+      );
+
+      expect(result.map((item) => item.id)).toEqual([
+        'screenshot-1',
+        'screenshot-2',
+        'screenshot-3',
+      ]);
+      expect(result[0].projectId).toBe('project-today');
+      expect(createViewUrl).toHaveBeenCalledTimes(3);
+    });
+
+    // The point of it: a preview of three never loads the whole day.
+    it('reads one small newest-first batch, not the whole day', async () => {
+      const { service, find } = makeService([newestRows(6)]);
+
+      await service.getLatestScreenshotsForMembership(
+        'org-1',
+        'admin-user',
+        'target-1',
+        3,
+      );
+
+      expect(find).toHaveBeenCalledTimes(1);
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: { capturedAt: 'DESC' },
+          skip: 0,
+          take: 6,
+          select: { id: true, capturedAt: true, storageKey: true },
+        }),
+      );
+    });
+
+    it('reads further back when the newest ones are not covered by an entry', async () => {
+      // Only 11:54 and earlier are covered, so the first batch (12:00 to
+      // 11:55) yields nothing and the second supplies all three.
+      const coveredEarlier: FakeCoveringEntry = {
+        id: 'te-1',
+        projectId: 'project-1',
+        startedAt: new Date(`${TODAY}T00:00:00.000Z`),
+        endedAt: new Date(`${TODAY}T11:54:30.000Z`),
+      };
+      const { service, find } = makeService(
+        [newestRows(6), newestRows(6, 6)],
+        [coveredEarlier],
+      );
+
+      const result = await service.getLatestScreenshotsForMembership(
+        'org-1',
+        'admin-user',
+        'target-1',
+        3,
+      );
+
+      expect(result.map((item) => item.id)).toEqual([
+        'screenshot-7',
+        'screenshot-8',
+        'screenshot-9',
+      ]);
+      expect(find).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ skip: 6, take: 6 }),
+      );
+    });
+
+    it('stops once the day runs out, returning what it found', async () => {
+      const { service, find } = makeService([newestRows(2)]);
+
+      const result = await service.getLatestScreenshotsForMembership(
+        'org-1',
+        'admin-user',
+        'target-1',
+        3,
+      );
+
+      expect(result).toHaveLength(2);
+      expect(find).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the same visibility rule as the full listing', async () => {
+      const { service, find } = makeService([newestRows(3)], [ALL_TODAY], {
+        id: 'caller-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [],
+      });
+
+      await expect(
+        service.getLatestScreenshotsForMembership(
+          'org-1',
+          'manager-user',
+          'target-1',
+          3,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(find).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getScreenshotsForMembership', () => {
     it('allows an admin to view any membership', async () => {
       const findOne = jest

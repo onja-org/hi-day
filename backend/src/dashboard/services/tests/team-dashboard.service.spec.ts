@@ -120,18 +120,11 @@ describe('TeamDashboardService', () => {
     byMembershipId: Record<string, unknown[]> = {},
   ): ScreenshotsService {
     return {
-      getScreenshotsForMembership: jest
+      getLatestScreenshotsForMembership: jest
         .fn()
         .mockImplementation(
-          (_orgId: string, _callerId: string, membershipId: string) => {
-            const items = byMembershipId[membershipId] ?? [];
-            return Promise.resolve({
-              items,
-              total: items.length,
-              page: 1,
-              pageSize: 3,
-            });
-          },
+          (_orgId: string, _callerId: string, membershipId: string) =>
+            Promise.resolve(byMembershipId[membershipId] ?? []),
         ),
     } as unknown as ScreenshotsService;
   }
@@ -318,14 +311,11 @@ describe('TeamDashboardService', () => {
         endedAt: new Date(2026, 0, 7, 11, 0, 0),
       }),
     ];
-    const getScreenshotsForMembership = jest.fn().mockResolvedValue({
-      items: [{ id: 's-newest' }, { id: 's-older' }],
-      total: 2,
-      page: 1,
-      pageSize: 3,
-    });
+    const getLatestScreenshotsForMembership = jest
+      .fn()
+      .mockResolvedValue([{ id: 's-newest' }, { id: 's-older' }]);
     const screenshotsService = {
-      getScreenshotsForMembership,
+      getLatestScreenshotsForMembership,
     } as unknown as ScreenshotsService;
     const service = new TeamDashboardService(
       makeTimeEntriesRepo(thisWeekEntries, [], []),
@@ -341,13 +331,11 @@ describe('TeamDashboardService', () => {
 
     const summary = await service.getSummary('org-1', 'user-1');
 
-    expect(getScreenshotsForMembership).toHaveBeenCalledWith(
+    expect(getLatestScreenshotsForMembership).toHaveBeenCalledWith(
       'org-1',
       'user-1',
       'm-busy',
-      undefined,
-      {},
-      { pageSize: 3, newestFirst: true },
+      3,
     );
     expect(
       summary.recentActivity[0].screenshots.map((screenshot) => screenshot.id),
