@@ -339,6 +339,7 @@ export class DeviceTrackingController {
       dto.taskId,
       TimeEntrySource.AGENT,
       request.deviceId,
+      { stopOperationId: dto.stopOpId, startOperationId: dto.startOpId },
     );
   }
 

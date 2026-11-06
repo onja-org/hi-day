@@ -119,13 +119,18 @@ describe('TimeEntriesService', () => {
     const remove = jest.fn().mockResolvedValue({ affected: 1 });
     const find = jest.fn().mockResolvedValue([]);
     const update = jest.fn().mockResolvedValue({ affected: 1 });
+    const managerSave = jest.fn((input: Partial<TimeEntry>) =>
+      Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
+    );
+    const managerCreate = jest.fn(
+      (_entity: unknown, input: Partial<TimeEntry>) => input,
+    );
+    const managerFindOne = jest.fn().mockResolvedValue(null);
     const manager = {
       update,
-      save: jest.fn((input: Partial<TimeEntry>) =>
-        Promise.resolve({ id: 'entry-2', ...input } as TimeEntry),
-      ),
-      create: jest.fn((_entity: unknown, input: Partial<TimeEntry>) => input),
-      findOne: jest.fn().mockResolvedValue(null),
+      save: managerSave,
+      create: managerCreate,
+      findOne: managerFindOne,
       find: find,
       delete: remove,
       getRepository: jest.fn().mockReturnValue(pausesRepo),
@@ -141,6 +146,9 @@ describe('TimeEntriesService', () => {
       find,
       update,
       manager,
+      managerSave,
+      managerCreate,
+      managerFindOne,
     };
   }
 
@@ -1103,6 +1111,70 @@ describe('TimeEntriesService', () => {
         );
 
         expect(result.id).toBe('entry-winner');
+      });
+    });
+
+    describe('a switch writes two rows, and replays like both', () => {
+      it('records an id on each row it writes', async () => {
+        const running = { ...runningEntry, deviceId: 'device-1' } as TimeEntry;
+        // Both rows are written inside the transaction, so the assertions
+        // belong on its manager rather than on the repository.
+        const { dataSource, managerSave, managerCreate, managerFindOne } =
+          makeDataSource();
+        managerFindOne.mockResolvedValue(running);
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(null),
+          }),
+        });
+
+        await service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          { stopOperationId: 'op-stop', startOperationId: 'op-start' },
+        );
+
+        // The queued stop and start replay under these very ids.
+        expect(managerSave).toHaveBeenCalledWith(
+          expect.objectContaining({ stopOperationId: 'op-stop' }),
+        );
+        expect(managerCreate).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ startOperationId: 'op-start' }),
+        );
+      });
+
+      it('returns what a replayed switch already started, rather than starting a second', async () => {
+        const existing = {
+          ...runningEntry,
+          id: 'entry-already-switched',
+          startOperationId: 'op-start',
+        } as TimeEntry;
+        const save = jest.fn();
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(existing),
+            save,
+          }),
+        });
+
+        const result = await service.switchTo(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          { startOperationId: 'op-start' },
+        );
+
+        expect(result.id).toBe('entry-already-switched');
+        expect(save).not.toHaveBeenCalled();
       });
     });
 

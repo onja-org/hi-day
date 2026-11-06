@@ -484,14 +484,24 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Two ids because a switch writes two rows — it ends the running entry
+   * and starts the next. Offline the same action is queued as a stop and a
+   * start, and those carry these very ids, so a switch whose response was
+   * lost replays into the rows it already wrote instead of a 409.
+   */
   switchTimer(
     deviceToken: string,
     projectId: string | null,
     taskId: string | null,
+    stopOpId?: string,
+    startOpId?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest('POST', '/device/time-entries/switch', deviceToken, {
       ...(projectId ? { projectId } : {}),
       ...(taskId ? { taskId } : {}),
+      ...(stopOpId ? { stopOpId } : {}),
+      ...(startOpId ? { startOpId } : {}),
     });
   }
 

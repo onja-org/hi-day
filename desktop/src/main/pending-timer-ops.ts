@@ -74,6 +74,8 @@ export interface PendingTimerClient {
     deviceToken: string,
     projectId: string | null,
     taskId: string | null,
+    stopOpId?: string,
+    startOpId?: string,
   ): Promise<TrackingResult<TimeEntry>>;
 }
 
@@ -514,24 +516,44 @@ export class PendingTimerOps {
     client: PendingTimerClient,
   ): Promise<TrackingResult<TimeEntry>> {
     const at = new Date().toISOString();
+    // One id per row the switch writes, minted here so the queued stop and
+    // start reuse them. Without that, a switch the server applied but could
+    // not answer replayed as two anonymous operations: the stop met the
+    // entry the switch had just started and was refused for ending before
+    // its own start, and the start met a timer already running. Both were
+    // reported to the person as time that could not be saved.
+    const stopOpId = randomUUID();
+    const startOpId = randomUUID();
     const answer = await this.settleFirst(deviceToken, client, () =>
-      this.queueSwitch(projectId, taskId, at),
+      this.queueSwitch(projectId, taskId, at, stopOpId, startOpId),
     );
     if (answer) return answer;
-    const result = await client.switchTimer(deviceToken, projectId, taskId);
+    const result = await client.switchTimer(
+      deviceToken,
+      projectId,
+      taskId,
+      stopOpId,
+      startOpId,
+    );
     if (result.ok) this.running.write(result.data);
     return serverVerdict(result) === 'undecided'
-      ? this.queueSwitch(projectId, taskId, at)
+      ? this.queueSwitch(projectId, taskId, at, stopOpId, startOpId)
       : result;
   }
 
   /** An offline switch is a stop and a start at the same instant. */
-  private queueSwitch(projectId: string | null, taskId: string | null, at: string): TrackingResult<TimeEntry> {
-    if (!this.running.read()) return this.queueStart(projectId, taskId, at);
+  private queueSwitch(
+    projectId: string | null,
+    taskId: string | null,
+    at: string,
+    stopOpId = randomUUID(),
+    startOpId = randomUUID(),
+  ): TrackingResult<TimeEntry> {
+    if (!this.running.read()) return this.queueStart(projectId, taskId, at, startOpId);
     this.save([
       ...this.load(),
-      this.stamp({ type: 'stop', at, opId: randomUUID() }),
-      this.stamp({ type: 'start', at, projectId, taskId, opId: randomUUID() }),
+      this.stamp({ type: 'stop', at, opId: stopOpId }),
+      this.stamp({ type: 'start', at, projectId, taskId, opId: startOpId }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
