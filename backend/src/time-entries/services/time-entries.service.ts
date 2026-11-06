@@ -32,6 +32,12 @@ import { unionActiveSeconds } from '../../common/time-entry-union.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { actsAsManager } from '../../common/manager-scope.util';
+import type { WeekStart } from '../../organisations/company-profile';
+import {
+  startOfDayInZone as startOfDateKeyInZone,
+  weekStartOfKey,
+  zonedParts,
+} from '../../common/zoned-time.util';
 import {
   DEFAULT_ALLOWED_APPS,
   isTimerSourceAllowed,
@@ -1419,15 +1425,19 @@ export class TimeEntriesService {
     const organisation = await this.organisations.findOne({
       where: { id: organisationId },
     });
-    const weekStartsOn =
+    const weekStartsOn: WeekStart =
       (organisation?.settings as { weekStartsOn?: string } | undefined)
         ?.weekStartsOn === 'sunday'
-        ? 0
-        : 1;
-    const start = this.startOfDayInZone(now, zone);
-    const day = start.getDay();
-    const offset = (day - weekStartsOn + 7) % 7;
-    return new Date(start.getTime() - offset * 24 * 60 * 60 * 1000);
+        ? 'sunday'
+        : 'monday';
+    // Weekday and week start are worked out on the zone's own calendar
+    // date. Reading the weekday off the zone's midnight with getDay() reads
+    // it in the server's timezone instead, which put the week start on a
+    // Tuesday for every organisation east of a UTC server. Stepping back by
+    // calendar days rather than 24-hour blocks also survives a DST change
+    // inside the week.
+    const today = zonedParts(now, zone).dateKey;
+    return startOfDateKeyInZone(weekStartOfKey(today, weekStartsOn), zone);
   }
 
   /**

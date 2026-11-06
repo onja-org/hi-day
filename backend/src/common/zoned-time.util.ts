@@ -1,3 +1,5 @@
+import type { WeekStart } from '../organisations/company-profile';
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -90,4 +92,14 @@ export function weekdayOfKey(dateKey: string): number {
 /** The Monday of the week `dateKey` falls in. */
 export function mondayOfKey(dateKey: string): string {
   return addDaysToKey(dateKey, -((weekdayOfKey(dateKey) + 6) % 7));
+}
+
+/** The first day of the week `dateKey` falls in, for either week start. */
+export function weekStartOfKey(
+  dateKey: string,
+  weekStartsOn: WeekStart,
+): string {
+  return weekStartsOn === 'sunday'
+    ? addDaysToKey(dateKey, -weekdayOfKey(dateKey))
+    : mondayOfKey(dateKey);
 }
