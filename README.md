@@ -230,7 +230,35 @@ hiday.example.com     { reverse_proxy localhost:3000 }   # web console
 api.hiday.example.com { reverse_proxy localhost:3001 }   # desktop agent
 ```
 
-People then enter `https://api.hiday.example.com` in the **Server** field on the desktop login screen. Its default does not point at your install, so somebody has to change it there.
+Staff then open **Self-hosted? Change server** on the desktop login screen
+and enter `https://api.hiday.example.com`. The default is Hi Day Cloud's own
+address, so the agent will not find your server until somebody changes it
+there — once per install; it survives logging out and updates.
+
+Install the official build from
+[`onja-org/hi-day-releases`](https://github.com/onja-org/hi-day-releases)
+and point it at your server. Updates then keep arriving from there, which
+is what you want. Only fork the agent if you mean to change how it
+behaves — and read
+[desktop/README.md](desktop/README.md#self-hosting-the-agent) first, because
+a fork that does not repoint its `publish` block gets replaced by ours on
+the next restart.
+
+#### Running the app on a subdomain
+
+Common arrangement, and a sound one:
+
+| Hostname | Serves |
+| --- | --- |
+| `hiday.example.com` | your marketing or company site, if you have one |
+| `app.hiday.example.com` | the Hi Day web console |
+| `api.hiday.example.com` | the backend, for the desktop agent |
+
+Point `APP_URL` at the console's hostname (`https://app.hiday.example.com`).
+Session cookies are set without an explicit domain, so they belong to that
+host alone and are never sent to the other two — which is what you want, and
+also means a page on the parent domain cannot tell whether a visitor is
+signed in.
 
 #### Two things to know
 
