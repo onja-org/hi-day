@@ -1,8 +1,11 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { ImagesSquareIcon } from "@phosphor-icons/react";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import { useTeamDashboardSummary } from "@/hooks/useTeamDashboardSummary";
+import { buildMemberScreenshotsHref } from "@/lib/buildMemberScreenshotsHref";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
@@ -12,6 +15,7 @@ type TeamRecentActivityProps = {
 
 export function TeamRecentActivity({ organisationId }: TeamRecentActivityProps) {
   const summaryQuery = useTeamDashboardSummary(organisationId);
+  const profile = useMyProfile().data;
 
   if (summaryQuery.isLoading) {
     return (
@@ -27,6 +31,10 @@ export function TeamRecentActivity({ organisationId }: TeamRecentActivityProps) 
   }
 
   const recentActivity = summaryQuery.data.recentActivity;
+  // Matched by email, the same way the Activity member filter spots "You".
+  const ownMembershipId = summaryQuery.data.members.find(
+    (member) => member.email === profile?.email,
+  )?.membershipId;
 
   if (recentActivity.length === 0) {
     return (
@@ -50,9 +58,21 @@ export function TeamRecentActivity({ organisationId }: TeamRecentActivityProps) 
           key={member.membershipId}
           className="flex flex-col gap-2 rounded-lg border border-input-border p-4"
         >
-          <p className="text-sm font-medium text-slate-900">
-            {member.name ?? "Unnamed member"}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-900">
+              {member.name ?? "Unnamed member"}
+            </p>
+            <Link
+              href={buildMemberScreenshotsHref(
+                organisationId,
+                member.membershipId,
+                ownMembershipId,
+              )}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              View screenshots →
+            </Link>
+          </div>
           {member.screenshots.length === 0 ? (
             <p className="text-sm text-slate-900/60">
               No screenshots captured yet today.

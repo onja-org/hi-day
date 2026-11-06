@@ -120,7 +120,7 @@ describe('TeamDashboardService', () => {
     byMembershipId: Record<string, unknown[]> = {},
   ): ScreenshotsService {
     return {
-      getScreenshotsForMembership: jest
+      getLatestScreenshotsForMembership: jest
         .fn()
         .mockImplementation(
           (_orgId: string, _callerId: string, membershipId: string) =>
@@ -297,6 +297,49 @@ describe('TeamDashboardService', () => {
     expect(summary.recentActivity).toHaveLength(1);
     expect(summary.recentActivity[0].membershipId).toBe('m-busy');
     expect(summary.recentActivity[0].screenshots).toHaveLength(2);
+  });
+
+  // Asking for the whole day and keeping three signed a URL for every
+  // screenshot the member took, only to throw nearly all of them away.
+  it('asks for only the newest few screenshots per member', async () => {
+    const members = [member({ id: 'm-busy' })];
+    const thisWeekEntries = [
+      entry({
+        membershipId: 'm-busy',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 11, 0, 0),
+      }),
+    ];
+    const getLatestScreenshotsForMembership = jest
+      .fn()
+      .mockResolvedValue([{ id: 's-newest' }, { id: 's-older' }]);
+    const screenshotsService = {
+      getLatestScreenshotsForMembership,
+    } as unknown as ScreenshotsService;
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makePausesRepo(),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      screenshotsService,
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(getLatestScreenshotsForMembership).toHaveBeenCalledWith(
+      'org-1',
+      'user-1',
+      'm-busy',
+      3,
+    );
+    expect(
+      summary.recentActivity[0].screenshots.map((screenshot) => screenshot.id),
+    ).toEqual(['s-newest', 's-older']);
   });
 
   it('combines already-grouped app and browser-domain totals into one ranked list', async () => {

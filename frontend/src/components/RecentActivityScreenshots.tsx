@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { ImagesSquareIcon } from "@phosphor-icons/react";
-import { useMyScreenshots } from "@/hooks/useMyScreenshots";
+import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 
@@ -15,7 +15,12 @@ const GRID_SIZE = 6;
 export function RecentActivityScreenshots({
   organisationId,
 }: RecentActivityScreenshotsProps) {
-  const screenshotsQuery = useMyScreenshots(organisationId);
+  // Only the six shown are fetched (and signed), newest first.
+  const screenshotsQuery = useActivityScreenshots(
+    organisationId,
+    {},
+    { pageSize: GRID_SIZE, newestFirst: true },
+  );
 
   if (screenshotsQuery.isLoading) {
     return (
@@ -30,7 +35,7 @@ export function RecentActivityScreenshots({
     return <ErrorMessage message="Could not load your recent activity." />;
   }
 
-  const screenshots = screenshotsQuery.data.slice(0, GRID_SIZE);
+  const screenshots = screenshotsQuery.data.items;
 
   if (screenshots.length === 0) {
     return (
