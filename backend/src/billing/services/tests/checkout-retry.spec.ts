@@ -59,6 +59,7 @@ function makeService({
       cancel: jest.fn().mockResolvedValue(undefined),
       create: jest.fn().mockResolvedValue({
         id: 'sub_new',
+        status: 'incomplete',
         latest_invoice: {
           confirmation_secret: { client_secret: 'secret_new' },
         },
@@ -75,11 +76,22 @@ function makeService({
         create: jest
           .fn()
           .mockResolvedValue({ url: 'https://checkout.stripe.test/s' }),
+        list: jest.fn().mockResolvedValue({ data: [] }),
+        expire: jest.fn().mockResolvedValue(undefined),
       },
     },
   };
+  const subscriptions = {
+    findOne: jest.fn().mockResolvedValue(row),
+    update: jest.fn().mockResolvedValue(undefined),
+  };
+  const query = jest.fn().mockResolvedValue(undefined);
+  const dataSource = {
+    transaction: jest.fn((work: (manager: unknown) => unknown) =>
+      work({ query, getRepository: () => subscriptions }),
+    ),
+  };
   const service = new CheckoutService(
-    { findOne: jest.fn().mockResolvedValue(row) } as never,
     {
       findOne: jest.fn().mockResolvedValue({
         id: 'org-1',
@@ -96,8 +108,9 @@ function makeService({
     } as never,
     { forOrganisation: jest.fn().mockResolvedValue({ count: seats }) } as never,
     { getOrThrow: () => 'https://app.example.com' } as never,
+    dataSource as never,
   );
-  return { service, stripe };
+  return { service, stripe, subscriptions, query };
 }
 
 describe('paying again after an earlier attempt', () => {
@@ -246,6 +259,103 @@ describe('paying again after an earlier attempt', () => {
 
     expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
     expect(stripe.customers.create).toHaveBeenCalled();
+  });
+
+  /**
+   * Two tabs, two admins, or a retry after a dropped response used to each
+   * create a customer and a subscription, both payable. The second caller
+   * now waits for the first and finds what it stored.
+   */
+  describe('more than one checkout at once', () => {
+    it('runs as the only checkout for this organisation', async () => {
+      const { service, query } = makeService({ row: null });
+
+      await service.createSubscriptionIntent('org-1', 'monthly');
+
+      expect(query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['billing:org-1'],
+      );
+    });
+
+    it('locks the hosted checkout the same way', async () => {
+      const { service, query } = makeService({ row: null });
+
+      await service.createSessionUrl('org-1', 'monthly');
+
+      expect(query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['billing:org-1'],
+      );
+    });
+
+    // Not left to the webhook, which lands seconds later — the next caller
+    // through the lock has to see them.
+    it('stores the new customer and subscription the moment they exist', async () => {
+      const { service, subscriptions } = makeService({ row: null });
+
+      await service.createSubscriptionIntent('org-1', 'monthly');
+
+      expect(subscriptions.update).toHaveBeenCalledWith(
+        { organisationId: 'org-1' },
+        { stripeCustomerId: 'cus_created' },
+      );
+      expect(subscriptions.update).toHaveBeenCalledWith(
+        { organisationId: 'org-1' },
+        { stripeSubscriptionId: 'sub_new', stripeStatus: 'incomplete' },
+      );
+    });
+
+    it('writes nothing when it hands back the open payment already stored', async () => {
+      const { service, subscriptions } = makeService({
+        stored: { id: 'sub_old', status: 'incomplete' },
+      });
+
+      await service.createSubscriptionIntent('org-1', 'monthly');
+
+      expect(subscriptions.update).not.toHaveBeenCalled();
+    });
+
+    // Another tab's hosted page, left open, is another subscription
+    // waiting to be paid for.
+    it.each([
+      ['the payment modal', 'createSubscriptionIntent'],
+      ['hosted checkout', 'createSessionUrl'],
+    ] as const)(
+      'expires checkout pages still open for the customer (%s)',
+      async (_, method) => {
+        const { service, stripe } = makeService({
+          stored: { id: 'sub_old', status: 'canceled' },
+        });
+        stripe.checkout.sessions.list.mockResolvedValue({
+          data: [{ id: 'cs_other_tab' }],
+        });
+
+        await service[method]('org-1', 'monthly');
+
+        expect(stripe.checkout.sessions.list).toHaveBeenCalledWith({
+          customer: 'cus_1',
+          status: 'open',
+        });
+        expect(stripe.checkout.sessions.expire).toHaveBeenCalledWith(
+          'cs_other_tab',
+        );
+      },
+    );
+
+    it('gives a first-ever hosted checkout a customer of its own, stored at once', async () => {
+      const { service, stripe, subscriptions } = makeService({ row: null });
+
+      await service.createSessionUrl('org-1', 'monthly');
+
+      expect(stripe.checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({ customer: 'cus_created' }),
+      );
+      expect(subscriptions.update).toHaveBeenCalledWith(
+        { organisationId: 'org-1' },
+        { stripeCustomerId: 'cus_created' },
+      );
+    });
   });
 
   describe("Stripe's hosted checkout (the fallback)", () => {

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import type Stripe from 'stripe';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
@@ -52,8 +52,8 @@ export interface SubscriptionIntent {
 interface ReadyToCharge {
   organisation: Organisation;
   seats: number;
-  /** The Stripe customer from an earlier attempt, still usable; else null. */
-  customerId: string | null;
+  /** The stored Stripe customer id, not yet checked against Stripe. */
+  storedCustomerId: string | null;
   /**
    * A subscription still awaiting its first payment — a declined card, a
    * failed 3-D Secure check, a modal closed mid-way — whose open invoice can
@@ -68,15 +68,41 @@ export class CheckoutService {
   private readonly frontendUrl: string;
 
   constructor(
-    @InjectRepository(Subscription)
-    private readonly subscriptions: Repository<Subscription>,
     @InjectRepository(Organisation)
     private readonly organisations: Repository<Organisation>,
     private readonly stripeService: StripeService,
     private readonly billedSeatsService: BilledSeatsService,
     configService: ConfigService,
+    private readonly dataSource: DataSource,
   ) {
     this.frontendUrl = configService.getOrThrow<string>('FRONTEND_URL');
+  }
+
+  /**
+   * Runs `work` as the only checkout in progress for this Organisation.
+   *
+   * Two tabs, two admins, or a retry after a dropped response used to each
+   * create a customer and a subscription — and both could be paid. The only
+   * guard was an id the webhook wrote seconds later. Now a second caller
+   * waits here until the first has stored what it created, then finds it:
+   * the same open invoice for the same order (which Stripe will not take
+   * payment for twice), or a live subscription it must not add to.
+   *
+   * A Postgres advisory lock, held for the transaction: it spans every
+   * backend instance, needs no row to exist, and is released by the commit
+   * or rollback however `work` ends. The transaction stays open across the
+   * Stripe calls — a second or two, on a request this rare.
+   */
+  private underBillingLock<T>(
+    organisationId: string,
+    work: (subscriptions: Repository<Subscription>) => Promise<T>,
+  ): Promise<T> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `billing:${organisationId}`,
+      ]);
+      return work(manager.getRepository(Subscription));
+    });
   }
 
   /**
@@ -110,8 +136,24 @@ export class CheckoutService {
      */
     expectedSeats?: number,
   ): Promise<SubscriptionIntent> {
-    const { organisation, seats, customerId, awaitingFirstPayment } =
-      await this.readyToCharge(organisationId, period);
+    return this.underBillingLock(organisationId, (subscriptions) =>
+      this.subscriptionIntent(
+        subscriptions,
+        organisationId,
+        period,
+        expectedSeats,
+      ),
+    );
+  }
+
+  private async subscriptionIntent(
+    subscriptions: Repository<Subscription>,
+    organisationId: string,
+    period: BillingPeriod,
+    expectedSeats: number | undefined,
+  ): Promise<SubscriptionIntent> {
+    const { organisation, seats, storedCustomerId, awaitingFirstPayment } =
+      await this.readyToCharge(subscriptions, organisationId, period);
 
     if (expectedSeats !== undefined && expectedSeats !== seats) {
       throw new BadRequestException(
@@ -119,24 +161,44 @@ export class CheckoutService {
       );
     }
 
-    // A retry after a declined card: pay the invoice already raised rather
-    // than raising another. Its payment can be confirmed again with a new
-    // card, and one open invoice is what Stripe's fraud checks and the
-    // customer's statement both expect.
+    // Only once every check has passed, so a refusal leaves nothing behind
+    // in Stripe.
+    const customerId = await this.customerFor(
+      subscriptions,
+      organisation,
+      storedCustomerId,
+    );
+
+    // A hosted checkout opened earlier, in another tab, would otherwise stay
+    // payable beside this.
+    await this.expireOpenCheckouts(customerId);
+
+    // A retry after a declined card, or a second tab: pay the invoice
+    // already raised rather than raising another. Its payment can be
+    // confirmed again with a new card, and Stripe won't take it twice.
     const reusable = await this.reuseOrDiscard(
       awaitingFirstPayment,
       seats,
       period,
     );
-    const subscription =
-      reusable ??
-      (await this.createIncompleteSubscription(
+    let subscription = reusable;
+    if (!subscription) {
+      subscription = await this.createIncompleteSubscription(
         organisationId,
-        organisation,
         customerId,
         seats,
         period,
-      ));
+      );
+      // Stored now rather than left to the webhook, which lands seconds
+      // later: the next caller through the lock has to see it.
+      await subscriptions.update(
+        { organisationId },
+        {
+          stripeSubscriptionId: subscription.id,
+          stripeStatus: subscription.status,
+        },
+      );
+    }
 
     const invoice = subscription.latest_invoice;
     const clientSecret =
@@ -201,27 +263,27 @@ export class CheckoutService {
     return null;
   }
 
+  /**
+   * Expires every hosted checkout page still open for this customer. Two
+   * open pages are two subscriptions waiting to be paid for; only the
+   * attempt being made now should be able to complete.
+   */
+  private async expireOpenCheckouts(customerId: string): Promise<void> {
+    const open = await this.stripeService.stripe.checkout.sessions.list({
+      customer: customerId,
+      status: 'open',
+    });
+    for (const session of open.data) {
+      await this.stripeService.stripe.checkout.sessions.expire(session.id);
+    }
+  }
+
   private async createIncompleteSubscription(
     organisationId: string,
-    organisation: Organisation,
-    customerId: string | null,
+    customer: string,
     seats: number,
     period: BillingPeriod,
   ): Promise<Stripe.Subscription> {
-    // One customer per Organisation across attempts and resubscriptions, so
-    // its invoices, card and history stay together in Stripe.
-    const customer =
-      customerId ??
-      (
-        await this.stripeService.stripe.customers.create({
-          // The billing address when set, else the owner's — the same rule
-          // the billing mail follows (see `billingRecipients`).
-          email: organisation.billingEmail ?? undefined,
-          name: organisation.name,
-          metadata: { [ORGANISATION_METADATA_KEY]: organisationId },
-        })
-      ).id;
-
     return this.stripeService.stripe.subscriptions.create({
       customer,
       items: [
@@ -261,8 +323,11 @@ export class CheckoutService {
    * refuse, which locked out everybody whose first card was declined (the
    * webhook stores the id of the still-incomplete subscription within
    * seconds) and every customer who cancelled and came back.
+   *
+   * Runs under `underBillingLock`, reading through its transaction.
    */
   private async readyToCharge(
+    subscriptions: Repository<Subscription>,
     organisationId: string,
     period: BillingPeriod,
   ): Promise<ReadyToCharge> {
@@ -287,7 +352,7 @@ export class CheckoutService {
       );
     }
 
-    const row = await this.subscriptions.findOne({
+    const row = await subscriptions.findOne({
       where: { organisationId },
     });
     const stored = await this.storedSubscription(row?.stripeSubscriptionId);
@@ -311,9 +376,39 @@ export class CheckoutService {
     return {
       organisation,
       seats: count,
-      customerId: await this.usableCustomer(row?.stripeCustomerId),
+      storedCustomerId: row?.stripeCustomerId ?? null,
       awaitingFirstPayment: stored?.status === 'incomplete' ? stored : null,
     };
+  }
+
+  /**
+   * The Organisation's one Stripe customer: the stored one while Stripe
+   * still has it, else a new one — stored at once, so a caller waiting on
+   * the lock reuses it rather than making a second. One customer keeps the
+   * invoices, card and history of every attempt and resubscription
+   * together, and is what lets open checkouts be found and expired.
+   */
+  private async customerFor(
+    subscriptions: Repository<Subscription>,
+    organisation: Organisation,
+    storedId: string | null | undefined,
+  ): Promise<string> {
+    const existing = await this.usableCustomer(storedId);
+    if (existing) return existing;
+
+    const customer = await this.stripeService.stripe.customers.create({
+      // The billing address when set, else the owner's — the same rule the
+      // billing mail follows (see `billingRecipients`). Hosted checkout
+      // collects one onto the customer where this is empty.
+      email: organisation.billingEmail ?? undefined,
+      name: organisation.name,
+      metadata: { [ORGANISATION_METADATA_KEY]: organisation.id },
+    });
+    await subscriptions.update(
+      { organisationId: organisation.id },
+      { stripeCustomerId: customer.id },
+    );
+    return customer.id;
   }
 
   /** Null for no id, or one Stripe no longer has. Other errors throw. */
@@ -358,12 +453,31 @@ export class CheckoutService {
     organisationId: string,
     period: BillingPeriod,
   ): Promise<string> {
+    return this.underBillingLock(organisationId, (subscriptions) =>
+      this.sessionUrl(subscriptions, organisationId, period),
+    );
+  }
+
+  private async sessionUrl(
+    subscriptions: Repository<Subscription>,
+    organisationId: string,
+    period: BillingPeriod,
+  ): Promise<string> {
     const {
       organisation,
       seats: count,
-      customerId,
+      storedCustomerId,
       awaitingFirstPayment,
-    } = await this.readyToCharge(organisationId, period);
+    } = await this.readyToCharge(subscriptions, organisationId, period);
+    const customerId = await this.customerFor(
+      subscriptions,
+      organisation,
+      storedCustomerId,
+    );
+
+    // Only the newest page may complete: a second tab's page, left open,
+    // would be a second subscription waiting to be paid for.
+    await this.expireOpenCheckouts(customerId);
 
     // Checkout raises its own subscription, so one left awaiting its first
     // payment from the modal is cancelled rather than left payable beside it.
@@ -393,13 +507,10 @@ export class CheckoutService {
       subscription_data: {
         metadata: { [ORGANISATION_METADATA_KEY]: organisationId, period },
       },
-      // The customer from an earlier attempt or subscription, so its
-      // history stays in one place. Otherwise, where invoices and Stripe's
-      // own dunning mail go: undefined lets Checkout collect it, which is
-      // what happened before an Organisation could say.
-      ...(customerId
-        ? { customer: customerId }
-        : { customer_email: organisation.billingEmail ?? undefined }),
+      // The Organisation's one customer. Where it has no email yet, Checkout
+      // collects one and sets it on the customer — where invoices and
+      // Stripe's own dunning mail go.
+      customer: customerId,
       success_url: `${billingHref}?checkout=done`,
       cancel_url: `${billingHref}?checkout=cancelled`,
     });

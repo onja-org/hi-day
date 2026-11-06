@@ -78,9 +78,12 @@ export const HANDLED_STRIPE_EVENTS = [
 ] as const satisfies readonly Stripe.WebhookEndpointCreateParams.EnabledEvent[];
 
 /**
- * The only writer of Stripe state. Never the browser returning from
- * checkout: that redirect is lost to a closed tab or a flaky network, and a
- * payment that succeeded must still be recorded.
+ * The writer of Stripe state. Never the browser returning from checkout:
+ * that redirect is lost to a closed tab or a flaky network, and a payment
+ * that succeeded must still be recorded. The one exception is checkout
+ * itself, which stores the customer and subscription ids it has just
+ * created so that a second checkout cannot start beside them — the events
+ * for those then confirm what is already there.
  *
  * A 2xx tells Stripe never to send an event again, so the difference
  * between "ignored on purpose" and "could not do it" has to reach the HTTP
@@ -201,17 +204,18 @@ export class StripeWebhookService {
 
     // An Organisation can go through more than one subscription — a retry
     // after a declined card, a customer coming back after cancelling — and
-    // Stripe does not deliver events in order. A late event about the one
-    // that was replaced must not point our row back at it, or the live
-    // subscription is lost and paying again would bill twice.
+    // Stripe does not deliver events in order. An event about a subscription
+    // other than the stored one must not point our row at it unless it is
+    // the one that should win, or the live subscription is lost: seats stop
+    // syncing, the portal and deletion act on the wrong one, and paying
+    // again would bill twice.
     const current =
       existing ??
       (await this.subscriptions.findOne({ where: { organisationId: target } }));
     if (
       current?.stripeSubscriptionId &&
       current.stripeSubscriptionId !== subscription.id &&
-      (hasEnded(subscription.status) ||
-        (await this.isOlderThan(subscription, current.stripeSubscriptionId)))
+      !(await this.replaces(subscription, current.stripeSubscriptionId))
     ) {
       this.logger.log(
         `Subscription ${subscription.id} (${subscription.status}) was replaced by ${current.stripeSubscriptionId}; event acknowledged without action.`,
@@ -450,22 +454,32 @@ export class StripeWebhookService {
   }
 
   /**
-   * Whether `subscription` was created before the one our row points at.
-   * A stored id Stripe no longer has is never newer, so it is replaced; any
-   * other failure throws, and Stripe retries the event.
+   * Whether `incoming` should take over from the subscription our row points
+   * at. Never one that has ended or is older. And never an attempt still
+   * awaiting its first payment over one that can still charge: an unpaid
+   * second tab must not displace the subscription actually being paid.
+   *
+   * A stored id Stripe no longer has is replaced; any other failure throws,
+   * and Stripe retries the event.
    */
-  private async isOlderThan(
-    subscription: Stripe.Subscription,
+  private async replaces(
+    incoming: Stripe.Subscription,
     storedId: string,
   ): Promise<boolean> {
+    if (hasEnded(incoming.status)) return false;
+
+    let stored: Stripe.Subscription;
     try {
-      const stored =
-        await this.stripeService.stripe.subscriptions.retrieve(storedId);
-      return subscription.created < stored.created;
+      stored = await this.stripeService.stripe.subscriptions.retrieve(storedId);
     } catch (error) {
-      if (isStripeMissing(error)) return false;
+      if (isStripeMissing(error)) return true;
       throw error;
     }
+
+    if (incoming.created < stored.created) return false;
+    const storedCanCharge =
+      stored.status !== 'incomplete' && !hasEnded(stored.status);
+    return !(incoming.status === 'incomplete' && storedCanCharge);
   }
 
   private async isGone(organisationId: string): Promise<boolean> {

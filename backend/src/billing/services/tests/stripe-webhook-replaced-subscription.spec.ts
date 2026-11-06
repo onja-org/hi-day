@@ -11,11 +11,12 @@ import { ORGANISATION_METADATA_KEY } from '../checkout.service';
 
 const STORED_CREATED = 2_000;
 
-function serviceFor(storedId: string | null) {
+function serviceFor(storedId: string | null, storedStatus = 'active') {
   const update = jest.fn();
   const retrieve = jest.fn().mockResolvedValue({
     id: storedId,
     created: STORED_CREATED,
+    status: storedStatus,
   });
   const service = new StripeWebhookService(
     {
@@ -84,8 +85,12 @@ describe('a subscription replaced by a newer one', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('switches to a newer subscription — the retry or the comeback', async () => {
-    const { service, update } = serviceFor('sub_old');
+  it.each([
+    ['a customer coming back after cancelling', 'canceled'],
+    ['a retry after the stored attempt expired', 'incomplete_expired'],
+    ['a new attempt replacing an unpaid one', 'incomplete'],
+  ])('switches to a newer subscription: %s', async (_, storedStatus) => {
+    const { service, update } = serviceFor('sub_old', storedStatus);
 
     await service.handle(
       subscriptionEvent('sub_new', 'incomplete', STORED_CREATED + 100),
@@ -97,6 +102,32 @@ describe('a subscription replaced by a newer one', () => {
         stripeSubscriptionId: 'sub_new',
         stripeStatus: 'incomplete',
       }),
+    );
+  });
+
+  // The two-tab hole: tab A pays, tab B's unpaid attempt was created a
+  // moment later. Letting B win would orphan the paid subscription the
+  // moment B expired.
+  it('keeps a live stored one over a newer attempt still awaiting payment', async () => {
+    const { service, update } = serviceFor('sub_paid', 'active');
+
+    await service.handle(
+      subscriptionEvent('sub_unpaid', 'incomplete', STORED_CREATED + 100),
+    );
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('switches to a newer one that is live over a stored one that is live', async () => {
+    const { service, update } = serviceFor('sub_old', 'active');
+
+    await service.handle(
+      subscriptionEvent('sub_new', 'active', STORED_CREATED + 100),
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      'row-1',
+      expect.objectContaining({ stripeSubscriptionId: 'sub_new' }),
     );
   });
 
