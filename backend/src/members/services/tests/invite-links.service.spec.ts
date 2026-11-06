@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EntityManager, Repository } from 'typeorm';
-import { TokenService } from '../../../auth/services/token.service';
 import { InviteLink } from '../../../database/entities/invite-link.entity';
 import { Invitation } from '../../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../../database/entities/invitation-status.enum';
@@ -97,7 +96,7 @@ describe('InviteLinksService', () => {
       } as never,
       {
         generateToken: jest.fn().mockReturnValue('link-token'),
-      } as unknown as TokenService,
+      },
       { record },
       { requestViaInviteLink } as unknown as InvitationsService,
     );
