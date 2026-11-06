@@ -608,17 +608,23 @@ export class OrganisationsService {
   }
 
   /** Narrow, like `getIdlePolicy`: the dashboard services bucket time by
-   * week and need this without the whole `OrganisationProfile`. */
-  async getWeekStart(organisationId: string): Promise<WeekStart> {
+   * week, on the organisation's own calendar, and need this without the
+   * whole `OrganisationProfile`. */
+  async getWeekCalendar(
+    organisationId: string,
+  ): Promise<{ weekStartsOn: WeekStart; timezone: string }> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
     });
     const settings = organisation.settings as OrganisationSettings;
 
-    return settings.weekStartsOn ?? DEFAULT_WEEK_START;
+    return {
+      weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
+      timezone: settings.timezone ?? DEFAULT_TIMEZONE,
+    };
   }
 
-  /** Narrow, like `getWeekStart`: time-entry and project routes gate on it
+  /** Narrow, like `getWeekCalendar`: time-entry and project routes gate on it
    * without needing the whole `OrganisationProfile`. Per person: their own
    * override, else the organisation default. */
   async getProjectsEnabled(

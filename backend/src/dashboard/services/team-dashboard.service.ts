@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, IsNull, Repository } from 'typeorm';
 import { SAMPLE_INTERVAL_SECONDS } from '../../app-events/services/app-events.service';
-import { localDateKey } from '../../common/local-date-key.util';
+import { calendarWeekAt, dateKeyInZone } from '../../common/calendar-week.util';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import {
   buildPauseStates,
@@ -18,7 +18,6 @@ import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
 import { MembershipsService } from '../../members/services/memberships.service';
-import type { WeekStart } from '../../organisations/company-profile';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import type { ScreenshotSummaryItem } from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
@@ -161,12 +160,15 @@ export class TeamDashboardService {
 
     const membershipIds = scopedMembers.map((member) => member.id);
     const now = new Date();
-    const weekStart = this.startOfWeek(
+    // Same calendar as DashboardService, or a member's own week and their
+    // team's week would start at different moments.
+    const { weekStartsOn, timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    const { weekStart, weekEnd, lastWeekStart, todayKey } = calendarWeekAt(
       now,
-      await this.organisationsService.getWeekStart(organisationId),
+      timezone,
+      weekStartsOn,
     );
-    const weekEnd = new Date(weekStart.getTime() + WEEK_DAYS * DAY_MS);
-    const lastWeekStart = new Date(weekStart.getTime() - WEEK_DAYS * DAY_MS);
     const lastWeekSameSpanEnd = new Date(now.getTime() - WEEK_DAYS * DAY_MS);
 
     const [thisWeekEntries, lastWeekSameSpanEntries, runningEntries] =
@@ -196,7 +198,6 @@ export class TeamDashboardService {
       ...lastWeekSameSpanEntries,
     ]);
 
-    const todayKey = localDateKey(now);
     const projectSeconds = new Map<string, DashboardProjectTime>();
     const memberTodaySeconds = new Map<string, number>();
     const memberWeekSeconds = new Map<string, number>();
@@ -209,7 +210,7 @@ export class TeamDashboardService {
         entry.membershipId,
         (memberWeekSeconds.get(entry.membershipId) ?? 0) + seconds,
       );
-      if (localDateKey(entry.startedAt) === todayKey) {
+      if (dateKeyInZone(entry.startedAt, timezone) === todayKey) {
         memberTodaySeconds.set(
           entry.membershipId,
           (memberTodaySeconds.get(entry.membershipId) ?? 0) + seconds,
@@ -432,21 +433,5 @@ export class TeamDashboardService {
       where: { timeEntryId: In(timeEntryIds) },
     });
     return buildPauseStates(pauses);
-  }
-
-  private startOfDay(date: Date): Date {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    return start;
-  }
-
-  /** Same rule as DashboardService, or a member's own week and their
-   * team's week would start on different days. */
-  private startOfWeek(date: Date, weekStartsOn: WeekStart): Date {
-    const start = this.startOfDay(date);
-    const offset =
-      weekStartsOn === 'monday' ? (start.getDay() + 6) % 7 : start.getDay();
-    start.setDate(start.getDate() - offset);
-    return start;
   }
 }
