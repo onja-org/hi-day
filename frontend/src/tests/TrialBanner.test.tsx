@@ -12,11 +12,6 @@ vi.mock("@/hooks/useTrialStatus", () => ({
     String(organisationId),
   ],
 }));
-vi.mock("@/lib/stripeClient", () => ({ hasStripeKey: () => false }));
-vi.mock("@/components/billing/PaymentModal", () => ({
-  PaymentModal: () => null,
-}));
-
 const { TrialBanner } = await import("@/components/TrialBanner");
 
 function trial(overrides: Partial<TrialStatus> = {}): TrialStatus {
@@ -49,6 +44,16 @@ describe("TrialBanner", () => {
 
     expect(screen.getByRole("complementary")).toHaveTextContent(
       /6 days left in your free trial/,
+    );
+  });
+
+  // The Billing page shows the plan, cycle and seats before the card form.
+  it("sends Add payment to the Billing page", () => {
+    renderWith({ trial: trial(), isFree: false });
+
+    expect(screen.getByRole("link", { name: "Add payment" })).toHaveAttribute(
+      "href",
+      "/organisations/100000/settings/billing/subscription",
     );
   });
 
