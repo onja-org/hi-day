@@ -198,12 +198,52 @@ export type TrackingResult<T> =
 
 /**
  * Whether the request never reached the server — no HTTP status, so
- * nothing was decided. The one condition under which a cached answer may
- * stand in, or a queued operation is worth replaying: a refusal is an
- * answer, and repeating it changes nothing.
+ * nothing was decided. The condition under which a cached answer may
+ * stand in: there is nothing to serve from memory once the server has
+ * actually said something.
+ *
+ * Narrower than `serverVerdict` on purpose, and not the question to ask
+ * about a queued *write*. A 503 carries a status and still decides
+ * nothing; reading it as an answer is what used to delete the hours
+ * behind it.
  */
 export function isTransportFailure<T>(result: TrackingResult<T>): boolean {
   return !result.ok && result.status === undefined && !result.unauthorized;
+}
+
+/** What the server decided about a request. */
+export type ServerVerdict =
+  /** It landed. */
+  | 'accepted'
+  /** Refused, and refused identically however many times it is asked. */
+  | 'rejected'
+  /** Nothing was decided — unreachable, overloaded, or asked to wait. */
+  | 'undecided'
+  /** The session is gone; nothing can be decided until somebody logs in. */
+  | 'signedOut';
+
+/**
+ * The statuses that are a decision about the request itself: a malformed
+ * or too-old payload (400), a work-time limit or a disabled day (403), a
+ * Project or entry that is not there (404), a timer already running or an
+ * end before its start (409), and the two neighbours nothing throws today
+ * but a proxy might (410, 422).
+ *
+ * Deliberately an allowlist rather than "any 4xx". Hi Day is self-hosted
+ * more often than not, and a reverse proxy, a captive portal or a WAF can
+ * answer anything at all on the way to the backend. Mistaking one of
+ * those for a verdict costs somebody their afternoon; retrying one that
+ * really was final costs a queue that drains late and says so.
+ */
+const REJECTION_STATUSES = new Set([400, 403, 404, 409, 410, 422]);
+
+export function serverVerdict<T>(result: TrackingResult<T>): ServerVerdict {
+  if (result.ok) return 'accepted';
+  if (result.unauthorized) return 'signedOut';
+  if (result.status !== undefined && REJECTION_STATUSES.has(result.status)) {
+    return 'rejected';
+  }
+  return 'undecided';
 }
 
 interface ErrorResponseBody {
@@ -476,8 +516,14 @@ export class ApiClient {
     return this.deviceRequest('GET', '/device/time-entries/current', deviceToken);
   }
 
-  pauseTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
-    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {});
+  pauseTimer(deviceToken: string, opId?: string): Promise<TrackingResult<TimeEntry>> {
+    // A pause ends the entry, so it carries an operation id exactly as a
+    // stop does. Without one, a pause that landed with its response lost
+    // replayed into a 404 and was reported as hours that could not be
+    // saved — the one path that writes its record *before* asking.
+    return this.deviceRequest('POST', '/device/time-entries/pause', deviceToken, {
+      ...(opId ? { opId } : {}),
+    });
   }
 
   resumeTimer(deviceToken: string): Promise<TrackingResult<TimeEntry>> {
