@@ -292,7 +292,7 @@ export class DeviceTrackingController {
       TimeEntrySource.AGENT,
       request.deviceId,
       dto.startedAt ? new Date(dto.startedAt) : undefined,
-      { operationId: dto.opId },
+      { operationId: dto.opId, idleSeconds: dto.idleSeconds },
     );
   }
 
@@ -309,7 +309,7 @@ export class DeviceTrackingController {
       TimeEntrySource.AGENT,
       request.deviceId,
       dto.startedAt ? new Date(dto.startedAt) : undefined,
-      { operationId: dto.opId },
+      { operationId: dto.opId, idleSeconds: dto.idleSeconds },
     );
   }
 

@@ -28,11 +28,16 @@ export function useActivityScreenshots(
   organisationId: string,
   filter: GetActivityScreenshotsFilter = {},
   paging: ScreenshotsPaging = {},
+  /** `enabled: false` leaves the gallery unfetched — the Screenshots page's
+   * 10-minute view is on screen, and a page of presigned URLs and full-size
+   * downloads is not worth paying for unseen. */
+  options: { enabled?: boolean } = {},
 ) {
   const queryKey = ACTIVITY_SCREENSHOTS_QUERY_KEY(organisationId, filter, paging);
 
   return useQuery({
     queryKey,
+    enabled: options.enabled ?? true,
     queryFn: async () => {
       const result = await getActivityScreenshots(organisationId, filter, paging);
       if (!result.ok) {

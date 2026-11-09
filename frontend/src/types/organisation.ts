@@ -74,6 +74,9 @@ export type OrganisationProfile = {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  /** The organisation-wide "Record activity" default, whatever the caller's
+   * own override is — what the Record activity toggle shows. */
+  activityTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   /** The organisation default: may members delete their own screenshots. */
@@ -159,6 +162,7 @@ export type UpdateOrganisationInput = {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  activityTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;

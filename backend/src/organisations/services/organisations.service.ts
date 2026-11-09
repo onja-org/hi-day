@@ -20,7 +20,11 @@ import { AllowedApps, DEFAULT_ALLOWED_APPS } from '../allowed-apps';
 import { DEFAULT_WORK_TIME_LIMITS } from '../work-time-limits';
 import type { WorkTimeLimits } from '../work-time-limits';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
-import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
+import {
+  CaptureSettings,
+  DEFAULT_CAPTURE_SETTINGS,
+  resolveActivityTrackingEnabled,
+} from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
 import { DEFAULT_WORKING_HOURS_PER_DAY } from '../working-hours-policy';
 import {
@@ -84,6 +88,9 @@ export interface OrganisationProfile {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  /** The organisation-wide "Record activity" default, whatever the caller's
+   * own override is — what the Record activity settings toggle shows. */
+  activityTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   /** The Organisation's default: may members delete their own screenshots. */
@@ -139,6 +146,7 @@ interface OrganisationSettings {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  activityTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;
@@ -426,6 +434,9 @@ export class OrganisationsService {
       ...(dto.windowTrackingEnabled !== undefined
         ? { windowTrackingEnabled: dto.windowTrackingEnabled }
         : {}),
+      ...(dto.activityTrackingEnabled !== undefined
+        ? { activityTrackingEnabled: dto.activityTrackingEnabled }
+        : {}),
       ...(dto.appUrlTracking !== undefined
         ? { appUrlTracking: dto.appUrlTracking }
         : {}),
@@ -707,6 +718,10 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      activityTrackingEnabled: resolveActivityTrackingEnabled(
+        settings.activityTrackingEnabled,
+        membership?.activityTrackingEnabled,
+      ),
       appUrlTracking:
         membership?.appUrlTracking ??
         settings.appUrlTracking ??
@@ -762,6 +777,12 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      // The org default alone — the settings page edits that, not the
+      // caller's own override.
+      activityTrackingEnabled: resolveActivityTrackingEnabled(
+        settings.activityTrackingEnabled,
+        null,
+      ),
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
       allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
       membersCanDeleteScreenshots:

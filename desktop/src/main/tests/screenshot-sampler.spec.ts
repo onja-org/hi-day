@@ -17,6 +17,94 @@ describe('ScreenshotSampler', () => {
   // session actually running the test suite — see the dedicated Wayland
   // tests below for the guard itself.
 
+  /**
+   * "N per 10 minutes" is a promise about a clock period, not a cadence:
+   * `start()` captures immediately, so without a quota every stop and
+   * start adds one more than the organisation asked for.
+   */
+  describe('the per-10-minute quota', () => {
+    function quotaSampler(intervalMs: number, nowMs: () => number) {
+      const { sink, captures } = makeSink();
+      const sampler = new ScreenshotSampler({
+        sink,
+        intervalMs,
+        now: nowMs,
+        capture: () => Promise.resolve(Buffer.from('jpeg')),
+        isWayland: () => false,
+      });
+      return { sampler, captures };
+    }
+
+    it('allows exactly three at "3 per 10 minutes", however often it ticks', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(200_000, () => now);
+
+      // Ten ticks inside one period — what a morning of stopping and
+      // starting the timer produces.
+      for (let i = 0; i < 10; i += 1) {
+        now = i * 30_000;
+        await sampler.tick();
+      }
+
+      expect(captures).toHaveLength(3);
+    });
+
+    it('allows one at "1 per 10 minutes"', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(600_000, () => now);
+
+      for (let i = 0; i < 5; i += 1) {
+        now = i * 60_000;
+        await sampler.tick();
+      }
+
+      expect(captures).toHaveLength(1);
+    });
+
+    it('starts the allowance again in the next clock period', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(200_000, () => now);
+
+      for (let i = 0; i < 5; i += 1) {
+        now = i * 30_000;
+        await sampler.tick();
+      }
+      expect(captures).toHaveLength(3);
+
+      // Over the 10-minute boundary.
+      now = 600_000;
+      await sampler.tick();
+
+      expect(captures).toHaveLength(4);
+    });
+
+    // A tick that produced no image never got the person a screenshot, so
+    // it must not spend one of their three.
+    it('does not spend an allowance on a capture that produced nothing', async () => {
+      const { sink, captures } = makeSink();
+      let now = 0;
+      let buffer: Buffer | null = null;
+      const sampler = new ScreenshotSampler({
+        sink,
+        intervalMs: 600_000,
+        now: () => now,
+        capture: () => Promise.resolve(buffer),
+        isWayland: () => false,
+      });
+
+      // Permission not granted yet.
+      await sampler.tick();
+      expect(captures).toHaveLength(0);
+
+      // Granted, still the same period.
+      buffer = Buffer.from('jpeg');
+      now = 60_000;
+      await sampler.tick();
+
+      expect(captures).toHaveLength(1);
+    });
+  });
+
   it('emits a capture with the buffer and an ISO timestamp', async () => {
     const { sink, captures } = makeSink();
     const buffer = Buffer.from('fake-jpeg-bytes');

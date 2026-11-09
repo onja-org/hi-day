@@ -12,6 +12,7 @@ describe('CaptureSettingsGate', () => {
   ): CaptureSettingsValue {
     return {
       windowTrackingEnabled: false,
+      activityTrackingEnabled: false,
       appUrlTracking: 'off',
       allowedApps: 'all',
       screenshotsEnabled: false,
@@ -360,5 +361,38 @@ describe('CaptureSettingsGate', () => {
       delivery: 'alert',
       workingHoursPerDay: 8,
     });
+  });
+
+  // Activity has been recorded for everyone since it shipped, so a backend
+  // that predates the setting must not read as "switched off".
+  it('treats a server too old to send activityTrackingEnabled as on', async () => {
+    const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
+    const withoutActivity = settings({ windowTrackingEnabled: true });
+    delete (withoutActivity as Partial<CaptureSettingsValue>)
+      .activityTrackingEnabled;
+    const gate = new CaptureSettingsGate(
+      makeSession('token'),
+      makeClient({ ok: true, data: withoutActivity }),
+      onChange,
+    );
+
+    await gate.pollOnce();
+
+    expect(onChange.mock.calls[0][0].activityTrackingEnabled).toBe(true);
+  });
+
+  it('calls onChange again when only activityTrackingEnabled changes', async () => {
+    const onChange = vi.fn<(settings: CaptureSettingsValue) => void>();
+    const gate = new CaptureSettingsGate(
+      makeSession('token'),
+      makeClient({ ok: true, data: settings({ activityTrackingEnabled: true }) }),
+      onChange,
+    );
+    gate.prime(settings({ activityTrackingEnabled: false }));
+    onChange.mockClear();
+
+    await gate.pollOnce();
+
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

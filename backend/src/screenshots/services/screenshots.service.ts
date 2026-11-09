@@ -13,12 +13,20 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Screenshot } from '../../database/entities/screenshot.entity';
+import {
+  activityIn,
+  dominantProjectIn,
+  slotsBetween,
+  weightedAverage,
+  workedSecondsIn,
+} from '../screenshot-slots.util';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { ScreenshotStorageService } from './screenshot-storage.service';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
  * Caps how many expired rows one retention sweep processes — keeps a
@@ -28,6 +36,20 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  */
 const RETENTION_CLEANUP_BATCH_SIZE = 500;
 
+/**
+ * The agent caps captures per ten minutes, but per **Device** — a person
+ * signed in on two machines contributes both. Nine covers three Devices at
+ * the fastest cadence the settings offer; the bound only stops an API-set
+ * 30-second frequency filling a cell.
+ */
+export const MAX_SLOT_SCREENSHOTS = 9;
+
+/** Four hours is twenty-four slots — the same order of images as a few
+ * pages of the gallery beside it. */
+export const DEFAULT_SLOT_HOURS_PAGE_SIZE = 4;
+/** Every hour on a page costs its slots' presigned URLs and image loads. */
+export const MAX_SLOT_HOURS_PAGE_SIZE = 12;
+
 export interface ScreenshotSummaryItem {
   id: string;
   capturedAt: string;
@@ -36,6 +58,64 @@ export interface ScreenshotSummaryItem {
   /** The project whose TimeEntry covered `capturedAt` — null if no timer
    * was running (the common case; see time-entry-coverage.util.ts). */
   projectId: string | null;
+}
+
+/** One 10-minute slot of a day, in the Screenshots page's 10-minute view. */
+export interface ScreenshotSlot {
+  /** Half-open [start, end) — the last slot of a DST-shortened day is shorter. */
+  start: string;
+  end: string;
+  /** The Project most of the slot's tracked time went to; null when none was. */
+  projectId: string | null;
+  /** Seconds worked inside the slot, shared stretches counted once. */
+  workedSeconds: number;
+  /** 0-100, or null when nothing was measured — never 0 for "no data". */
+  activePercentage: number | null;
+  /** How much of the slot an activity sample covers, for the day's average. */
+  activityMeasuredSeconds: number;
+  /** Every screenshot in the slot, up to `MAX_SLOT_SCREENSHOTS`. */
+  screenshots: ScreenshotSummaryItem[];
+  /** Anything past the bound. A count, not an expander. */
+  extraCount: number;
+}
+
+export interface ScreenshotSlotHour {
+  /** The hour's own start, on the organisation's calendar. */
+  start: string;
+  /** Seconds worked across the hour — the union, not the slots summed. */
+  workedSeconds: number;
+  slots: ScreenshotSlot[];
+}
+
+export interface ScreenshotSlotsDay {
+  /** This page's hours only — see `totalHours`. */
+  hours: ScreenshotSlotHour[];
+  /** 1-based. Past the last page serves the last page instead, like the gallery. */
+  page: number;
+  pageSize: number;
+  /** Hours with tracked time across the day. Empty ones are dropped before
+   * paging, so no page is ever blank. */
+  totalHours: number;
+  /** The **whole day's** worked seconds, not this page's — a day summary
+   * that changed as you paged would be no summary at all. */
+  workedSeconds: number;
+  /** Likewise the whole day, weighted by measured time. */
+  activePercentage: number | null;
+  /** Whether activity is recorded for this member at all right now. */
+  activityRecorded: boolean;
+  /** Whether screenshots are captured for this member at all, so a slot
+   * with no image can say why. */
+  screenshotsEnabled: boolean;
+}
+
+/** Every instant here is UTC; the client renders them on the viewer's own
+ * clock, like the Apps and URLs hour headers. */
+
+/** Which page of the 10-minute view's hours to serve, and how many. */
+export interface ScreenshotSlotsPagination {
+  /** 1-based. Past the last page serves the last page instead. */
+  page?: number;
+  pageSize?: number;
 }
 
 export interface ScreenshotsFilter {
@@ -65,6 +145,29 @@ export interface ScreenshotsPage {
    * ran past the end, e.g. after deleting the last page's screenshots. */
   page: number;
   pageSize: number;
+}
+
+/**
+ * Indexes rather than built slots: the grouping runs *before* anything is
+ * presigned, so only the served page costs its images. Keyed on each slot's
+ * hour rather than counted off in sixes.
+ */
+function groupIndexesByHour(
+  slots: { bounds: { start: number; end: number } }[],
+): { slotIndexes: number[] }[] {
+  const hours: { slotIndexes: number[] }[] = [];
+  let currentKey: number | null = null;
+
+  slots.forEach((slot, index) => {
+    const key = Math.floor(slot.bounds.start / MS_PER_HOUR);
+    if (key !== currentKey) {
+      currentKey = key;
+      hours.push({ slotIndexes: [] });
+    }
+    hours[hours.length - 1].slotIndexes.push(index);
+  });
+
+  return hours;
 }
 
 @Injectable()
@@ -147,7 +250,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDate(date),
+      this.resolveDayKey(date),
       filter,
       pagination,
     );
@@ -174,7 +277,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       target.id,
-      this.resolveDate(date),
+      this.resolveDayKey(date),
       filter,
       pagination,
     );
@@ -198,8 +301,7 @@ export class ScreenshotsService {
       callerUserId,
       targetMembershipId,
     );
-    const start = new Date(`${this.resolveDate()}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + MS_PER_DAY);
+    const { start, end } = this.dayBounds(this.todayUtc());
     const coveringEntries = await this.timeEntriesService.listCoveringWindow(
       organisationId,
       target.id,
@@ -285,6 +387,226 @@ export class ScreenshotsService {
    * Signing a URL is the expensive part, so only the served page is
    * signed.
    */
+  async getMySlots(
+    organisationId: string,
+    userId: string,
+    date?: string,
+    filter: ScreenshotsFilter = {},
+    pagination: ScreenshotSlotsPagination = {},
+  ): Promise<ScreenshotSlotsDay> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    return this.listSlotsForMembershipId(
+      organisationId,
+      membership.id,
+      this.resolveDayKey(date),
+      filter,
+      pagination,
+    );
+  }
+
+  /** Same visibility rule as `getScreenshotsForMembership`. */
+  async getSlotsForMembership(
+    organisationId: string,
+    callerUserId: string,
+    targetMembershipId: string,
+    date?: string,
+    filter: ScreenshotsFilter = {},
+    pagination: ScreenshotSlotsPagination = {},
+  ): Promise<ScreenshotSlotsDay> {
+    const target = await this.getViewableMembership(
+      organisationId,
+      callerUserId,
+      targetMembershipId,
+    );
+    return this.listSlotsForMembershipId(
+      organisationId,
+      target.id,
+      this.resolveDayKey(date),
+      filter,
+      pagination,
+    );
+  }
+
+  /**
+   * The day as 10-minute slots: what was captured, worked and measured in
+   * each, grouped by hour, with the day's own totals on top.
+   *
+   * Two steps, cheapest first: the day's tracked time and samples decide
+   * which page is served, and only then are that page's screenshots read.
+   * The day's totals come from the first step, so they cost nothing extra.
+   */
+  private async listSlotsForMembershipId(
+    organisationId: string,
+    membershipId: string,
+    date: string,
+    filter: ScreenshotsFilter,
+    pagination: ScreenshotSlotsPagination,
+  ): Promise<ScreenshotSlotsDay> {
+    const { start, end } = this.dayBounds(date);
+
+    // Day-wide but small: a handful of entries and at most one sample per
+    // ten minutes. The screenshots wait until the page is known..
+    const [tracked, captureState] = await Promise.all([
+      this.timeEntriesService.trackedDay(
+        organisationId,
+        membershipId,
+        start,
+        end,
+      ),
+      this.captureStateFor(organisationId, membershipId),
+    ]);
+
+    const window = { start: start.getTime(), end: end.getTime() };
+    const projectIntervals =
+      filter.projectId === undefined
+        ? tracked.intervals
+        : tracked.intervals.filter(
+            (interval) => interval.projectId === filter.projectId,
+          );
+
+    const slots = slotsBetween(start, end).map((bounds) => {
+      const workedSeconds = workedSecondsIn(projectIntervals, bounds);
+      // Samples outlive the entry that produced them (capture pruning
+      // covers screenshots, app events and URL sessions, not these), and
+      // activity against untracked time is the "Untracked" noise the
+      // Activity views refuse.
+      const activity =
+        workedSeconds > 0
+          ? activityIn(tracked.samples, bounds)
+          : { activePercentage: null, measuredSeconds: 0 };
+      return {
+        bounds,
+        projectId: dominantProjectIn(projectIntervals, bounds),
+        workedSeconds,
+        activePercentage: activity.activePercentage,
+        activityMeasuredSeconds: activity.measuredSeconds,
+      };
+    });
+
+    // Newest hour first, the order the timesheet lists entries in; slots
+    // stay chronological within an hour. Empty hours go before paging, so
+    // no page is ever blank.
+    const withWork = groupIndexesByHour(slots)
+      .filter((hour) =>
+        hour.slotIndexes.some((index) => slots[index].workedSeconds > 0),
+      )
+      .reverse();
+    const pageSize = pagination.pageSize ?? DEFAULT_SLOT_HOURS_PAGE_SIZE;
+    const lastPage = Math.max(1, Math.ceil(withWork.length / pageSize));
+    const page = Math.min(pagination.page ?? 1, lastPage);
+    const onPage = withWork.slice((page - 1) * pageSize, page * pageSize);
+
+    // Only now, and only across the served hours.
+    const pageIndexes = onPage.flatMap((hour) => hour.slotIndexes);
+    const rows = await this.screenshotsIn(
+      organisationId,
+      membershipId,
+      pageIndexes.map((index) => slots[index].bounds),
+    );
+
+    // Attributed by the slot they fall in, then filtered the same way the
+    // gallery filters: a screenshot no Time entry covers is never shown.
+    const bySlot = new Map<number, Screenshot[]>();
+    for (const row of rows) {
+      const capturedMs = row.capturedAt.getTime();
+      if (capturedMs < window.start || capturedMs >= window.end) continue;
+      const index = pageIndexes.find(
+        (candidate) =>
+          capturedMs >= slots[candidate].bounds.start &&
+          capturedMs < slots[candidate].bounds.end,
+      );
+      if (index === undefined) continue;
+      if (slots[index].workedSeconds === 0) continue;
+      if (
+        filter.projectId !== undefined &&
+        slots[index].projectId !== filter.projectId
+      ) {
+        continue;
+      }
+      bySlot.set(index, [...(bySlot.get(index) ?? []), row]);
+    }
+
+    const hours: ScreenshotSlotHour[] = await Promise.all(
+      onPage.map(async (hour) => {
+        const builtSlots = await Promise.all(
+          hour.slotIndexes.map(async (index) => {
+            const slot = slots[index];
+            const inSlot = bySlot.get(index) ?? [];
+            const shown = inSlot.slice(0, MAX_SLOT_SCREENSHOTS);
+            return {
+              start: new Date(slot.bounds.start).toISOString(),
+              end: new Date(slot.bounds.end).toISOString(),
+              projectId: slot.projectId,
+              workedSeconds: slot.workedSeconds,
+              activePercentage: slot.activePercentage,
+              activityMeasuredSeconds: slot.activityMeasuredSeconds,
+              screenshots: await Promise.all(
+                shown.map(async (row) => ({
+                  id: row.id,
+                  capturedAt: row.capturedAt.toISOString(),
+                  url: await this.storage.createViewUrl(row.storageKey),
+                  projectId: slot.projectId,
+                })),
+              ),
+              extraCount: Math.max(0, inSlot.length - shown.length),
+            };
+          }),
+        );
+        const last = slots[hour.slotIndexes[hour.slotIndexes.length - 1]];
+        return {
+          start: builtSlots[0].start,
+          // The union across the whole hour, not its slots added up.
+          workedSeconds: workedSecondsIn(projectIntervals, {
+            start: slots[hour.slotIndexes[0]].bounds.start,
+            end: last.bounds.end,
+          }),
+          slots: builtSlots,
+        };
+      }),
+    );
+
+    return {
+      hours,
+      page,
+      pageSize,
+      totalHours: withWork.length,
+      // The union across the day, not the slots added up (docs/adr/0022),
+      // and never just this page's — a summary that moved as you paged
+      // would be no summary.
+      workedSeconds: workedSecondsIn(projectIntervals, window),
+      activePercentage: weightedAverage(
+        slots.map((slot) => ({
+          activePercentage: slot.activePercentage,
+          measuredSeconds: slot.activityMeasuredSeconds,
+        })),
+      ),
+      activityRecorded: captureState.activityRecorded,
+      screenshotsEnabled: captureState.screenshotsEnabled,
+    };
+  }
+
+  /** One query spanning the windows rather than one each: a page's hours
+   * are contiguous, so the span is barely wider than their union. */
+  private async screenshotsIn(
+    organisationId: string,
+    membershipId: string,
+    windows: { start: number; end: number }[],
+  ): Promise<Screenshot[]> {
+    if (windows.length === 0) return [];
+
+    const from = new Date(Math.min(...windows.map((w) => w.start)));
+    const to = new Date(Math.max(...windows.map((w) => w.end)));
+    return await this.screenshots.find({
+      select: { id: true, capturedAt: true, storageKey: true },
+      where: {
+        organisationId,
+        membershipId,
+        capturedAt: Between(from, to),
+      },
+      order: { capturedAt: 'ASC' },
+    });
+  }
+
   private async listForMembershipId(
     organisationId: string,
     membershipId: string,
@@ -292,8 +614,7 @@ export class ScreenshotsService {
     filter: ScreenshotsFilter,
     pagination: ScreenshotsPagination,
   ): Promise<ScreenshotsPage> {
-    const start = new Date(`${date}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + MS_PER_DAY);
+    const { start, end } = this.dayBounds(date);
 
     const [rows, coveringEntries] = await Promise.all([
       this.screenshots.find({
@@ -366,9 +687,47 @@ export class ScreenshotsService {
     });
   }
 
-  private resolveDate(date?: string): string {
+  /**
+   * UTC midnight to UTC midnight, matching the Apps, URLs and Notes tabs
+   * beside it (see `getDayRange.ts`). Known consequence: Timesheets groups
+   * its days on the organisation's calendar, so outside UTC the two
+   * describe different windows and their totals will not agree — fixing
+   * that means moving the whole Activities section, not this page alone.
+   */
+  private dayBounds(date: string): { start: Date; end: Date } {
+    const start = new Date(`${date}T00:00:00.000Z`);
+    return { start, end: new Date(start.getTime() + MS_PER_DAY) };
+  }
+
+  /** For explaining an empty slot, never for gating one. */
+  private async captureStateFor(
+    organisationId: string,
+    membershipId: string,
+  ): Promise<{ activityRecorded: boolean; screenshotsEnabled: boolean }> {
+    const membership = await this.memberships.findOne({
+      where: { id: membershipId, organisationId },
+    });
+    const { activityTrackingEnabled, screenshotsEnabled } =
+      await this.organisationsService.getCaptureSettings(
+        organisationId,
+        membership?.userId,
+      );
+    return { activityRecorded: activityTrackingEnabled, screenshotsEnabled };
+  }
+
+  /** Today's UTC calendar date, for the callers that mean "now" rather than
+   * a date somebody picked — the same day the client computes and sends. */
+  private todayUtc(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  /**
+   * The caller's `?date=`, or today — both the UTC calendar `dayBounds`
+   * resolves against and the client sends.
+   */
+  private resolveDayKey(date?: string): string {
     if (date === undefined) {
-      return new Date().toISOString().slice(0, 10);
+      return this.todayUtc();
     }
     if (!DATE_PATTERN.test(date)) {
       throw new BadRequestException('date must be formatted as YYYY-MM-DD.');

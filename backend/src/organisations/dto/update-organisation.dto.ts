@@ -91,6 +91,11 @@ export class UpdateOrganisationDto {
   @IsBoolean()
   windowTrackingEnabled?: boolean;
 
+  /** The organisation-wide "Record activity" default. */
+  @IsOptional()
+  @IsBoolean()
+  activityTrackingEnabled?: boolean;
+
   @IsOptional()
   @IsIn(APP_URL_TRACKING_VALUES)
   appUrlTracking?: AppUrlTracking;

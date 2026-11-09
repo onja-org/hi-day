@@ -58,6 +58,14 @@ export class Membership {
   appUrlTracking: AppUrlTracking | null;
 
   /**
+   * Per-member override of the Organisation's "Record activity" default.
+   * `null` means inherit the org default (see
+   * `Organisation.settings.activityTrackingEnabled`).
+   */
+  @Column({ type: 'boolean', nullable: true })
+  activityTrackingEnabled: boolean | null;
+
+  /**
    * Per-member override of the Organisation's "Track time against Projects"
    * default, in either direction. `null` inherits (see
    * `Organisation.settings.projectsEnabled`).

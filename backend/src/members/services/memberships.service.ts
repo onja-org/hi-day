@@ -61,6 +61,8 @@ export interface ActiveMemberSummary {
   timezone: string | null;
   /** `null` means inherit the Organisation's default. */
   appUrlTracking: AppUrlTracking | null;
+  /** `null` means inherit the Organisation's Record activity default. */
+  activityTrackingEnabled: boolean | null;
   /** `null` inherits the Organisation's Projects default; `true`/`false`
    * override it either way. */
   projectsEnabled: boolean | null;
@@ -285,6 +287,9 @@ export class MembershipsService {
 
     if (dto.appUrlTracking !== undefined) {
       membership.appUrlTracking = dto.appUrlTracking;
+    }
+    if (dto.activityTrackingEnabled !== undefined) {
+      membership.activityTrackingEnabled = dto.activityTrackingEnabled;
     }
     if (dto.projectsEnabled !== undefined) {
       membership.projectsEnabled = dto.projectsEnabled;
@@ -568,6 +573,7 @@ export class MembershipsService {
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
       // `?? null`: a partially-selected row leaves this undefined.
+      activityTrackingEnabled: membership.activityTrackingEnabled ?? null,
       projectsEnabled: membership.projectsEnabled ?? null,
       allowedApps: membership.allowedApps,
       // `?? null`, because a partially-selected row leaves these
@@ -692,6 +698,38 @@ export class MembershipsService {
       );
       await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);
     }
+    return { cleared };
+  }
+
+  /**
+   * Admin-only bulk-reset of every Membership's `activityTrackingEnabled`
+   * override. Backs "Apply to all" on the Record activity setting — see
+   * `resetAllAppUrlTrackingOverrides` for the shape this copies.
+   */
+  async resetAllActivityTrackingOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ activityTrackingEnabled: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"activityTrackingEnabled" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.activity_tracking_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { cleared },
+        }),
+      );
+    }
+
     return { cleared };
   }
 

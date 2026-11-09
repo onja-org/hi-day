@@ -304,8 +304,10 @@ export class DisclosureService {
     const captureSettings =
       knownCaptureSettings ??
       (await this.organisationsService.getCaptureSettings(organisationId));
+    // Activity recording is monitoring too.
     const anyCaptureEnabled =
       captureSettings.windowTrackingEnabled ||
+      captureSettings.activityTrackingEnabled ||
       captureSettings.screenshotsEnabled;
 
     const version = await this.resolveCurrentVersion(

@@ -248,10 +248,16 @@ const api = {
       projectId: string | null,
       taskId: string | null,
       startedAt?: string,
+      /** Idle time this start folds back in; the idle prompt's Keep only. */
+      idleSeconds?: number,
     ): Promise<TrackingResult<TimeEntry>> =>
-      ipcRenderer.invoke("tracking:start", projectId, taskId, startedAt) as Promise<
-        TrackingResult<TimeEntry>
-      >,
+      ipcRenderer.invoke(
+        "tracking:start",
+        projectId,
+        taskId,
+        startedAt,
+        idleSeconds,
+      ) as Promise<TrackingResult<TimeEntry>>,
     switchTo: (
       projectId: string | null,
       taskId: string | null,

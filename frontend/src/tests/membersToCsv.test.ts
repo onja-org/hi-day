@@ -15,6 +15,7 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
     disclosureRegion: null,
     timezone: null,
     appUrlTracking: null,
+    activityTrackingEnabled: null,
   expectedWorkDays: null,
   trackingDisabledDays: null,
   expectedWeeklyHours: null,

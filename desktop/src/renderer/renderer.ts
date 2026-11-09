@@ -1394,8 +1394,18 @@ async function settleIdleHold(): Promise<void> {
  * Starts tracking again after a hold — from `startedAt` on the held
  * Project and Task, or on `assignTo` with no Task, since a Task belongs to
  * one Project and can't follow the time elsewhere.
+ *
+ * `idleSeconds` records how much of the new entry is idle time the person
+ * chose to keep, and is passed by **Keep alone**. Discard starts from when
+ * they came back, so its entry contains none; a short sleep resumed without
+ * asking never reached the organisation's own idle threshold, so by that
+ * definition it is not idle time to flag.
  */
-async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<void> {
+async function restartAfterIdle(
+  startedAt: string,
+  assignTo?: string,
+  idleSeconds?: number,
+): Promise<void> {
   const hold = idleHold;
   if (!hold || idleRestartInFlight) return;
   const projectId = assignTo ?? hold.projectId;
@@ -1406,7 +1416,7 @@ async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<v
   idleRestartInFlight = true;
   try {
     const startResult = await callTracking(() =>
-      window.api.tracking.start(projectId, taskId, startedAt),
+      window.api.tracking.start(projectId, taskId, startedAt, idleSeconds),
     );
     if (!startResult.ok) {
       // Still unanswered — a work limit, say, refused it — so the hold
@@ -2346,7 +2356,13 @@ switchButton.addEventListener("click", () => {
 });
 
 idleKeepButton.addEventListener("click", () => {
-  if (idleHold) void restartAfterIdle(keepStartedAt(idleHold));
+  if (idleHold) {
+    void restartAfterIdle(
+      keepStartedAt(idleHold),
+      undefined,
+      awaySeconds(idleHold, Date.now() + serverOffsetMs),
+    );
+  }
 });
 
 idleDiscardButton.addEventListener("click", () => {
@@ -2372,7 +2388,13 @@ idleAssignToggle.addEventListener("click", () => {
     button.addEventListener(
       "click",
       () => {
-        if (idleHold) void restartAfterIdle(keepStartedAt(idleHold), project.id);
+        if (idleHold) {
+          void restartAfterIdle(
+            keepStartedAt(idleHold),
+            project.id,
+            awaySeconds(idleHold, Date.now() + serverOffsetMs),
+          );
+        }
       },
     );
 

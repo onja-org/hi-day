@@ -20,6 +20,7 @@ import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
+import { TimeEntryType } from '../../../database/entities/time-entry-type.enum';
 import { TimeEntriesService } from '../time-entries.service';
 
 describe('TimeEntriesService', () => {
@@ -405,6 +406,104 @@ describe('TimeEntriesService', () => {
         expect.anything(),
         expect.objectContaining({ action: 'time_entry.started' }),
       );
+    });
+
+    describe('kept idle time', () => {
+      /** Returns the row handed to `create`, which is what gets persisted. */
+      async function startWith(
+        options: { idleSeconds?: number },
+        requestedStartedAt?: Date,
+        lastEndedAt?: Date,
+      ) {
+        const create = jest.fn(
+          (input: Partial<TimeEntry>) => input as TimeEntry,
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            create,
+            findOne: jest
+              .fn()
+              .mockResolvedValue(
+                lastEndedAt ? ({ endedAt: lastEndedAt } as TimeEntry) : null,
+              ),
+          }),
+        });
+        await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          requestedStartedAt,
+          options,
+        );
+        return create.mock.calls[0][0];
+      }
+
+      it('leaves a normal start with no idle time and no resumed type', async () => {
+        const row = await startWith({});
+
+        expect(row.idleSeconds).toBeNull();
+        expect(row.type).toBeUndefined();
+      });
+
+      it('stores the kept stretch and marks the entry resumed', async () => {
+        const startedAt = new Date(Date.now() - 20 * 60_000);
+        const row = await startWith({ idleSeconds: 1200 }, startedAt);
+
+        expect(row.idleSeconds).toBe(1200);
+        expect(row.type).toBe(TimeEntryType.RESUMED);
+      });
+
+      // resolveStartedAt moves a start forward to the previous entry's end;
+      // whatever it moved past is not inside this entry, so the idle stretch
+      // loses the same amount off its front.
+      it('takes clamped-away time off the front of the stretch', async () => {
+        const requested = new Date(Date.now() - 20 * 60_000);
+        const lastEndedAt = new Date(Date.now() - 15 * 60_000);
+        const row = await startWith(
+          { idleSeconds: 1200 },
+          requested,
+          lastEndedAt,
+        );
+
+        // 20 min reported, 5 min clamped away, 15 min actually inside.
+        expect(row.idleSeconds).toBe(900);
+      });
+
+      // A wrong or hostile agent must not be able to call an entry more idle
+      // than it is long.
+      it('caps the stretch at the recorded span', async () => {
+        const row = await startWith(
+          { idleSeconds: 86_400 },
+          new Date(Date.now() - 10 * 60_000),
+        );
+
+        expect(row.idleSeconds).toBeLessThanOrEqual(600);
+        expect(row.idleSeconds).toBeGreaterThan(595);
+      });
+
+      // An entry starting now contains no past, so there is nothing for a
+      // reported stretch to sit inside.
+      it('ignores idle time reported against a start that was not backdated', async () => {
+        const row = await startWith({ idleSeconds: 600 });
+
+        expect(row.idleSeconds).toBeNull();
+      });
+
+      it('treats a stretch clamped away entirely as no idle time', async () => {
+        const requested = new Date(Date.now() - 20 * 60_000);
+        const lastEndedAt = new Date(Date.now());
+        const row = await startWith(
+          { idleSeconds: 600 },
+          requested,
+          lastEndedAt,
+        );
+
+        expect(row.idleSeconds).toBeNull();
+        expect(row.type).toBeUndefined();
+      });
     });
 
     it('starts at the time an offline device pressed start, never in the future', async () => {
@@ -4064,7 +4163,13 @@ describe('TimeEntriesService', () => {
       } as ActivitySample;
     }
 
-    function listWith(samples: ActivitySample[], entry: Partial<TimeEntry>) {
+    function listWith(
+      samples: ActivitySample[],
+      entry: Partial<TimeEntry>,
+      /** The organisation's Record activity default; undefined leaves it
+       * unset, which resolves to on. */
+      activityTrackingEnabled?: boolean,
+    ) {
       const listed = {
         id: 'entry-1',
         membershipId: 'm-1',
@@ -4083,6 +4188,15 @@ describe('TimeEntriesService', () => {
           find: jest.fn().mockResolvedValue([listed]),
         }),
         activitySamplesRepo: makeActivitySamplesRepo(samples),
+        ...(activityTrackingEnabled === undefined
+          ? {}
+          : {
+              organisationsRepo: {
+                findOne: jest.fn().mockResolvedValue({
+                  settings: { timezone: 'UTC', activityTrackingEnabled },
+                }),
+              } as unknown as Repository<Organisation>,
+            }),
       });
       return service.list('org-1', 'user-1');
     }
@@ -4125,13 +4239,111 @@ describe('TimeEntriesService', () => {
       expect(result[0].activePercentage).toBeNull();
     });
 
-    it('reports null for an entry that has not stopped', async () => {
+    // A running timer uploads a closed period every ten minutes, so the
+    // measurements exist well before the entry stops — dashing the row out
+    // until then hid real data.
+    it('reports what a running entry has measured so far', async () => {
       const result = await listWith(
         [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 90)],
         { endedAt: null },
       );
 
+      expect(result[0].activePercentage).toBe(90);
+    });
+
+    // The un-sampled remainder of a running entry must not drag the average
+    // down: only measured time is averaged, never the whole span.
+    it('does not dilute a running entry with its not-yet-sampled tail', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 80)],
+        { startedAt: new Date('2026-01-05T09:00:00Z'), endedAt: null },
+      );
+
+      // 80, not 80 scaled down by the hours since 09:10.
+      expect(result[0].activePercentage).toBe(80);
+    });
+
+    it('still reports null for a timer whose first period has not closed', async () => {
+      const result = await listWith([], { endedAt: null });
+
       expect(result[0].activePercentage).toBeNull();
+      expect(result[0].activityCoveredSeconds).toBeNull();
+      expect(result[0].activityMeasurableSeconds).toBeNull();
+    });
+
+    // Record activity switched on part-way through a completed entry: the
+    // 90% is true of the ten minutes measured, and says nothing about the
+    // fifty minutes tracked. Coverage is what keeps it from reading as a
+    // claim about the whole entry.
+    it('reports coverage well short of the span when recording started part-way through', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:40:00Z', '2026-01-05T09:50:00Z', 90)],
+        {
+          startedAt: new Date('2026-01-05T09:00:00Z'),
+          endedAt: new Date('2026-01-05T09:50:00Z'),
+        },
+      );
+
+      expect(result[0].activePercentage).toBe(90);
+      expect(result[0].activityCoveredSeconds).toBe(600);
+      expect(result[0].activityMeasurableSeconds).toBe(3000);
+    });
+
+    it('reports coverage matching the span when the whole entry was measured', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+      );
+
+      expect(result[0].activityCoveredSeconds).toBe(3600);
+      expect(result[0].activityMeasurableSeconds).toBe(3600);
+    });
+
+    // So the timesheet can say *why* the cell is blank rather than showing
+    // an unexplained dash.
+    it('marks entries as not recorded when Record activity is off', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T14:00:00Z', '2026-01-05T14:10:00Z', 90)],
+        {},
+        false,
+      );
+
+      expect(result[0].activePercentage).toBeNull();
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    // Switching it off must not blank out what was already measured.
+    it('keeps a measured percentage visible after Record activity goes off', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+        false,
+      );
+
+      expect(result[0].activePercentage).toBe(70);
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    // A new Organisation starts with Record activity off; the ones that
+    // predate the setting were backfilled with an explicit `true`.
+    it('reports activity as not recorded when an organisation has never set it', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+      );
+
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    it('reports activity as recorded for an organisation that has it on', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+        true,
+      );
+
+      expect(result[0].activityRecorded).toBe(true);
+      expect(result[0].activePercentage).toBe(70);
     });
   });
 

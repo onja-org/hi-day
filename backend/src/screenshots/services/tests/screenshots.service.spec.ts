@@ -50,10 +50,17 @@ describe('ScreenshotsService', () => {
     return {
       getCaptureSettings: jest.fn().mockResolvedValue({
         windowTrackingEnabled: false,
+        activityTrackingEnabled: true,
         screenshotsEnabled: true,
         screenshotFrequencySeconds: 600,
         screenshotRetentionDays: 30,
       }),
+      // UTC, so these tests' fixed timestamps still describe the day they
+      // always did — the day bounds are the organisation's now, not the
+      // server's (see `dayBounds`).
+      getWeekCalendar: jest
+        .fn()
+        .mockResolvedValue({ weekStartsOn: 'monday', timezone: 'UTC' }),
       membersCanDeleteScreenshots: jest.fn().mockResolvedValue(false),
       ...overrides,
     } as unknown as OrganisationsService;
@@ -101,6 +108,155 @@ describe('ScreenshotsService', () => {
       listCoveringWindow: jest.fn().mockResolvedValue(coveringEntries),
     } as unknown as TimeEntriesService;
   }
+
+  describe('getSlotsForMembership — the 10-minute view', () => {
+    const DAY = '2026-03-10';
+    /** Tracked 06:00–12:00 UTC, so six hours have work in them. */
+    const SIX_HOURS = {
+      start: Date.parse('2026-03-10T06:00:00.000Z'),
+      end: Date.parse('2026-03-10T12:00:00.000Z'),
+      projectId: 'project-1',
+    };
+
+    function makeSlotsService(find = jest.fn().mockResolvedValue([])) {
+      const timeEntriesService = {
+        listCoveringWindow: jest.fn().mockResolvedValue([]),
+        trackedDay: jest
+          .fn()
+          .mockResolvedValue({ intervals: [SIX_HOURS], samples: [] }),
+      } as unknown as TimeEntriesService;
+
+      const service = new ScreenshotsService(
+        {
+          ...makeScreenshotsRepo().repo,
+          find,
+        } as unknown as Repository<Screenshot>,
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ id: 'membership-1', userId: 'user-1' }),
+        }),
+        makeOrganisationsService(),
+        makeStorage().storage,
+        timeEntriesService,
+      );
+      return { service, find };
+    }
+
+    // Page one should be the work somebody just did, not their breakfast.
+    it('serves the newest hours first', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 1, pageSize: 2 },
+      );
+
+      expect(day.totalHours).toBe(6);
+      expect(day.hours.map((hour) => hour.start)).toEqual([
+        '2026-03-10T11:00:00.000Z',
+        '2026-03-10T10:00:00.000Z',
+      ]);
+    });
+
+    it('serves the oldest hours on the last page', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 3, pageSize: 2 },
+      );
+
+      expect(day.hours.map((hour) => hour.start)).toEqual([
+        '2026-03-10T07:00:00.000Z',
+        '2026-03-10T06:00:00.000Z',
+      ]);
+    });
+
+    // Slots stay chronological inside an hour — six cells reading right to
+    // left would help nobody.
+    it('keeps slots chronological within an hour', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 1, pageSize: 1 },
+      );
+
+      expect(day.hours[0].slots.map((slot) => slot.start)).toEqual([
+        '2026-03-10T11:00:00.000Z',
+        '2026-03-10T11:10:00.000Z',
+        '2026-03-10T11:20:00.000Z',
+        '2026-03-10T11:30:00.000Z',
+        '2026-03-10T11:40:00.000Z',
+        '2026-03-10T11:50:00.000Z',
+      ]);
+    });
+
+    // The whole point of paging: a day can hold several hundred
+    // screenshots, and reading every one to show an hour's worth was the
+    // cost this exists to avoid.
+    it('reads screenshots for the served hours only, not the whole day', async () => {
+      const { service, find } = makeSlotsService();
+
+      await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 1, pageSize: 1 },
+      );
+
+      expect(find).toHaveBeenCalledTimes(1);
+      const calls = find.mock.calls as { where: { capturedAt: unknown } }[][];
+      const where = calls[0][0].where;
+      // FindOperator for Between(11:00, 12:00) — the served hour, not the day.
+      expect(JSON.stringify(where.capturedAt)).toContain(
+        '2026-03-10T11:00:00.000Z',
+      );
+      expect(JSON.stringify(where.capturedAt)).not.toContain(
+        '2026-03-10T00:00:00.000Z',
+      );
+    });
+
+    // The summary describes the day; paging must not move it.
+    it('reports the whole day worked time whatever page is served', async () => {
+      const { service } = makeSlotsService();
+
+      const first = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 1, pageSize: 1 },
+      );
+      const last = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 6, pageSize: 1 },
+      );
+
+      expect(first.workedSeconds).toBe(6 * 3600);
+      expect(last.workedSeconds).toBe(first.workedSeconds);
+    });
+  });
 
   describe('requestUploadUrl', () => {
     it('builds a storage key namespaced by org and device, and returns a presigned PUT URL', async () => {
