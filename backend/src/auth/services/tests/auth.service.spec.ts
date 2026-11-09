@@ -1331,9 +1331,10 @@ describe('AuthService', () => {
   });
 
   describe('getProfile', () => {
-    it("returns the user's profile fields", async () => {
+    it("returns the user's id and profile fields", async () => {
       const usersRepo = makeUsersRepo({
         findOneOrFail: jest.fn().mockResolvedValue({
+          id: 'user-1',
           email: 'jane@acme.test',
           name: 'Jane Doe',
           firstName: 'Jane',
@@ -1344,6 +1345,7 @@ describe('AuthService', () => {
       const service = makeService({ usersRepo });
 
       await expect(service.getProfile('user-1')).resolves.toEqual({
+        id: 'user-1',
         email: 'jane@acme.test',
         name: 'Jane Doe',
         firstName: 'Jane',

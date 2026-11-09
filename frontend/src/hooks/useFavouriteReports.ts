@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useMyProfile } from "@/hooks/useMyProfile";
 import {
+  favouriteReportsStorageKey,
   parseFavouriteReportIds,
   toggleFavouriteReportId,
 } from "@/lib/favouriteReports";
@@ -15,7 +17,8 @@ function subscribe(onStoreChange: () => void): () => void {
   };
 }
 
-function readRaw(key: string): string | null {
+function readRaw(key: string | null): string | null {
+  if (key === null) return null;
   try {
     return window.localStorage.getItem(key);
   } catch {
@@ -27,12 +30,16 @@ function readRaw(key: string): string | null {
  * The reports this user starred in one organisation, kept in localStorage so
  * the "All reports" page and the sidebar's Reports group stay in sync (same
  * tab via a custom event, other tabs via `storage`). Empty during server
- * rendering and hydration. The snapshot is the raw string — a primitive —
- * so `useSyncExternalStore` compares it by value instead of re-rendering on a
- * freshly parsed array every read.
+ * rendering and hydration, and until we know who is signed in — nothing is
+ * read or written under a key that isn't theirs. The snapshot is the raw
+ * string — a primitive — so `useSyncExternalStore` compares it by value
+ * instead of re-rendering on a freshly parsed array every read.
  */
 export function useFavouriteReports(organisationId: number) {
-  const key = `favourite-reports:${organisationId}`;
+  const userId = useMyProfile().data?.id;
+  const key = userId
+    ? favouriteReportsStorageKey(organisationId, userId)
+    : null;
   const raw = useSyncExternalStore(
     subscribe,
     () => readRaw(key),
@@ -42,6 +49,7 @@ export function useFavouriteReports(organisationId: number) {
 
   const toggleFavourite = useCallback(
     (reportId: string) => {
+      if (key === null) return;
       const next = toggleFavouriteReportId(
         parseFavouriteReportIds(readRaw(key)),
         reportId,

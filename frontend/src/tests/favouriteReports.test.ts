@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
+  favouriteReportsStorageKey,
   parseFavouriteReportIds,
   toggleFavouriteReportId,
 } from "@/lib/favouriteReports";
+
+describe("favouriteReportsStorageKey", () => {
+  it("is different for two people in the same organisation", () => {
+    expect(favouriteReportsStorageKey(100001, "user-a")).not.toBe(
+      favouriteReportsStorageKey(100001, "user-b"),
+    );
+  });
+
+  it("is different for one person in two organisations", () => {
+    expect(favouriteReportsStorageKey(100001, "user-a")).not.toBe(
+      favouriteReportsStorageKey(100002, "user-a"),
+    );
+  });
+
+  it("never reuses the old organisation-only key, whose owner is unknown", () => {
+    expect(favouriteReportsStorageKey(100001, "user-a")).not.toBe(
+      "favourite-reports:100001",
+    );
+  });
+});
 
 describe("parseFavouriteReportIds", () => {
   it("returns an empty list when nothing is stored", () => {
