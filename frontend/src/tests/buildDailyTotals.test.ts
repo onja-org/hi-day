@@ -59,6 +59,25 @@ describe("buildDailyTotals", () => {
     ]);
   });
 
+  it("counts time tracked on two devices at once only once", () => {
+    const nine = new Date(2026, 0, 5, 9, 0, 0);
+    const ten = new Date(2026, 0, 5, 10, 0, 0);
+    const half = new Date(2026, 0, 5, 9, 30, 0);
+    const entries = [
+      entry({ startedAt: nine.toISOString(), endedAt: ten.toISOString(), durationSeconds: 3600 }),
+      entry({
+        startedAt: half.toISOString(),
+        endedAt: new Date(2026, 0, 5, 10, 30, 0).toISOString(),
+        durationSeconds: 3600,
+        deviceId: "laptop",
+      }),
+    ];
+
+    const totals = buildDailyTotals(entries, new Date(2026, 0, 5), new Date(2026, 0, 5));
+
+    expect(totals).toEqual([{ dateKey: "2026-01-05", seconds: 5400 }]);
+  });
+
   it("excludes still-running entries (null durationSeconds) from the sum", () => {
     const entries = [
       entry({

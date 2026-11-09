@@ -1,6 +1,10 @@
 import { TimeEntry } from '../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../database/entities/time-entry-pause.entity';
 
+/** Only the fields a pause's span is read from — a `TimeEntryPause` row,
+ * or the `PauseSpan` a listed entry carries. */
+export type PauseLike = Pick<TimeEntryPause, 'pausedAt' | 'resumedAt'>;
+
 /** Half-open [start, end) in epoch milliseconds. */
 export interface Interval {
   start: number;
@@ -17,17 +21,24 @@ export interface Interval {
  * one hour or two depending entirely on whether they overlap.
  */
 export function activeIntervals(
-  entry: TimeEntry,
-  pauses: TimeEntryPause[],
+  entry: Pick<TimeEntry, 'startedAt' | 'endedAt'>,
+  pauses: PauseLike[],
   now: Date,
 ): Interval[] {
   const end = (entry.endedAt ?? now).getTime();
   let remaining: Interval[] = [{ start: entry.startedAt.getTime(), end }];
 
   for (const pause of pauses) {
-    // An open pause runs to the entry's end: it never resumed.
+    // An open pause runs to the entry's end: it never resumed. Never
+    // backwards: a span that resumes before it was paused (rows exist, see
+    // `closeOpenPause`) would otherwise carve two overlapping pieces out of
+    // the entry, so it removes no time at all, as the frontend's
+    // `activeIntervals` does.
     const pauseStart = pause.pausedAt.getTime();
-    const pauseEnd = (pause.resumedAt ?? entry.endedAt ?? now).getTime();
+    const pauseEnd = Math.max(
+      pauseStart,
+      (pause.resumedAt ?? entry.endedAt ?? now).getTime(),
+    );
     remaining = remaining.flatMap((interval) =>
       subtract(interval, { start: pauseStart, end: pauseEnd }),
     );
