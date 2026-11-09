@@ -2,12 +2,12 @@
 
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { LoginInput } from "@/types/login";
 import { login } from "@/lib/login";
 import { consumeResetEmailSent } from "@/lib/resetEmailSentNotice";
+import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { TextField } from "@/components/ui/form/TextField";
 import { RobotCheckScreen } from "@/components/RobotCheckScreen";
@@ -22,7 +22,6 @@ type LoginFormProps = {
 };
 
 export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
-  const router = useRouter();
   const [resetEmailSent, setResetEmailSent] = useState(() =>
     consumeResetEmailSent(),
   );
@@ -37,9 +36,12 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
   useEffect(() => {
     if (!mutation.data?.ok) return;
 
-    const timeout = setTimeout(() => router.push(next), REDIRECT_DELAY_MS);
+    const timeout = setTimeout(
+      () => navigateAfterSessionChange(next),
+      REDIRECT_DELAY_MS,
+    );
     return () => clearTimeout(timeout);
-  }, [mutation.data, next, router]);
+  }, [mutation.data, next]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

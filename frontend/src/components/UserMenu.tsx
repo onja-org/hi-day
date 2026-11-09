@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { DownloadSimple, SignOut, UserCircle } from "@phosphor-icons/react";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { logout } from "@/lib/logout";
+import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { Spinner } from "./Spinner";
 
 export function UserMenu() {
-  const router = useRouter();
   const profileQuery = useMyProfile();
   const avatarUrl = profileQuery.data?.avatarUrl ?? null;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -33,7 +32,7 @@ export function UserMenu() {
     setMenuOpen(false);
     setLoggingOut(true);
     await logout();
-    router.push("/");
+    navigateAfterSessionChange("/");
   }
 
   return (

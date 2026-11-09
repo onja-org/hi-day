@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { logoutEverywhere } from "@/lib/logoutEverywhere";
+import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 export function SignOutEverywhereButton() {
-  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleConfirm() {
     setSigningOut(true);
     await logoutEverywhere();
-    router.push("/");
+    navigateAfterSessionChange("/");
   }
 
   return (
