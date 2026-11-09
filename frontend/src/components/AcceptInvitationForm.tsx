@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { acceptInvitation } from "@/lib/acceptInvitation";
 import { getInvitationPreview } from "@/lib/getInvitationPreview";
+import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import type { AcceptInvitationInput } from "@/types/invitation";
 import { ErrorMessage } from "./ErrorMessage";
 import { JoinExistingAccountView } from "./JoinExistingAccountView";
@@ -34,8 +34,6 @@ function invalidLinkMessage(
 }
 
 export function AcceptInvitationForm({ token }: AcceptInvitationFormProps) {
-  const router = useRouter();
-
   const previewQuery = useQuery({
     queryKey: ["invitation-preview", token],
     queryFn: async () => {
@@ -56,11 +54,11 @@ export function AcceptInvitationForm({ token }: AcceptInvitationFormProps) {
     if (!acceptMutation.data?.ok) return;
 
     const timeout = setTimeout(
-      () => router.push("/dashboard"),
+      () => navigateAfterSessionChange("/dashboard"),
       REDIRECT_DELAY_MS,
     );
     return () => clearTimeout(timeout);
-  }, [acceptMutation.data, router]);
+  }, [acceptMutation.data]);
 
   if (previewQuery.isLoading) {
     return (

@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
+import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { Spinner } from "@/components/Spinner";
 
@@ -15,18 +15,17 @@ type SetPasswordFormProps = {
 };
 
 export function SetPasswordForm({ token }: SetPasswordFormProps) {
-  const router = useRouter();
   const mutation = useMutation({ mutationFn: setPassword });
 
   useEffect(() => {
     if (!mutation.data?.ok) return;
 
     const timeout = setTimeout(
-      () => router.push("/dashboard"),
+      () => navigateAfterSessionChange("/dashboard"),
       REDIRECT_DELAY_MS,
     );
     return () => clearTimeout(timeout);
-  }, [mutation.data, router]);
+  }, [mutation.data]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
