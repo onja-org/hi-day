@@ -1,29 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useDevices } from "@/hooks/useDevices";
+import { matchesSearch } from "@/lib/matchesSearch";
+import { paginateRows } from "@/lib/paginateRows";
 import type { DeviceStatus } from "@/types/device";
 import { DeviceRow } from "@/components/DeviceRow";
+import { DevicesFilters } from "@/components/DevicesFilters";
 import { ErrorMessage } from "@/components/ErrorMessage";
-import { Label } from "@/components/ui/form/Label";
-import { SelectField } from "@/components/ui/form/SelectField";
+import { ReportsTableFooter } from "@/components/reports/ReportsTableFooter";
 import { Spinner } from "@/components/Spinner";
 
 type DevicesTableProps = {
   organisationId: string;
 };
 
-const STATUS_FILTERS: (DeviceStatus | "all")[] = [
-  "all",
-  "active",
-  "offline",
-  "signed_out",
-];
-
 export function DevicesTable({ organisationId }: DevicesTableProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceStatus | "all">("all");
+  const [perPage, setPerPage] = useState(25);
+  const [requestedPage, setRequestedPage] = useState(1);
   const devicesQuery = useDevices(organisationId);
 
   if (devicesQuery.isLoading) {
@@ -47,70 +43,51 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
     );
   }
 
-  const search_ = search.trim().toLowerCase();
-  const devices = devicesQuery.data.filter((device) => {
-    if (statusFilter !== "all" && device.status !== statusFilter) {
-      return false;
-    }
-    if (!search_) {
-      return true;
-    }
-    return [device.userName, device.userEmail, device.platform]
-      .filter(Boolean)
-      .some((value) => value!.toLowerCase().includes(search_));
-  });
+  const devices = devicesQuery.data.filter(
+    (device) =>
+      (statusFilter === "all" || device.status === statusFilter) &&
+      matchesSearch([device.userName, device.userEmail, device.platform], search),
+  );
+  const pageCount = Math.max(1, Math.ceil(devices.length / perPage));
+  // Clamp rather than store, so a page emptied by the 30s refresh (a device
+  // signed out, or gone offline under the "active" filter) falls back to the
+  // last page that still has devices — while a refresh that leaves the page
+  // populated keeps the user where they were.
+  const page = Math.min(requestedPage, pageCount);
+  const pageDevices = paginateRows(devices, page, perPage);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex flex-col gap-1.5 sm:w-64">
-          <Label>Search devices</Label>
-          <div className="relative flex items-center">
-            <MagnifyingGlass
-              size={16}
-              aria-hidden="true"
-              className="pointer-events-none absolute left-4 text-icon"
-            />
-            <input
-              type="search"
-              placeholder="Search by name, email, or platform"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="h-11 w-full rounded-brand-sm border-2 border-ink bg-white pr-4 pl-10 text-sm text-slate-900 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-        </label>
-        <SelectField
-          label="Filter by status"
-          compact
-          value={statusFilter}
-          onChange={(event) =>
-            setStatusFilter(event.target.value as DeviceStatus | "all")
-          }
-        >
-          {STATUS_FILTERS.map((status) => (
-            <option key={status} value={status}>
-              {status === "all" ? "All statuses" : status.replace("_", " ")}
-            </option>
-          ))}
-        </SelectField>
-      </div>
+      <DevicesFilters
+        search={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setRequestedPage(1);
+        }}
+        statusFilter={statusFilter}
+        onStatusFilterChange={(value) => {
+          setStatusFilter(value);
+          setRequestedPage(1);
+        }}
+      />
 
       <div className="overflow-x-auto rounded-md border border-input-border">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-input-border text-slate-900">
               <th className="px-3 py-2 font-medium">User</th>
               <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Platform</th>
-              <th className="px-3 py-2 font-medium">Tracking</th>
-              <th className="px-3 py-2 font-medium">App version</th>
-              <th className="px-3 py-2 font-medium">Last seen</th>
-              <th className="px-3 py-2 font-medium" />
+              <th className="hidden px-3 py-2 font-medium sm:table-cell">Platform</th>
+              <th className="hidden px-3 py-2 font-medium lg:table-cell">Tracking</th>
+              <th className="hidden px-3 py-2 font-medium lg:table-cell">App version</th>
+              <th className="hidden px-3 py-2 font-medium md:table-cell">Last seen</th>
+              <th className="px-3 py-2 font-medium">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {devices.map((device) => (
+            {pageDevices.map((device) => (
               <DeviceRow
                 key={device.id}
                 organisationId={organisationId}
@@ -132,6 +109,22 @@ export function DevicesTable({ organisationId }: DevicesTableProps) {
           </tbody>
         </table>
       </div>
+
+      {devices.length > 0 && (
+        <ReportsTableFooter
+          totalRows={devices.length}
+          perPage={perPage}
+          onPerPageChange={(value) => {
+            setPerPage(value);
+            setRequestedPage(1);
+          }}
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setRequestedPage}
+          showPrevNext
+          condensePages={devicesQuery.data.length > 200}
+        />
+      )}
     </div>
   );
 }
