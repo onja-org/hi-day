@@ -61,6 +61,8 @@ const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$EdLgXk5ViQoSXTFItKblvQ$/dRGHQlCkWNFJX/M1z2MfiETG+HUWqdGGuZBfni0RRk';
 
 export interface UserProfile {
+  /** Lets the web app keep per-person browser data (e.g. favourite reports) apart on a shared computer. */
+  id: string;
   email: string;
   name: string | null;
   firstName: string | null;
@@ -536,6 +538,7 @@ export class AuthService {
   async getProfile(userId: string): Promise<UserProfile> {
     const user = await this.users.findOneOrFail({ where: { id: userId } });
     return {
+      id: user.id,
       email: user.email,
       name: user.name,
       firstName: user.firstName,

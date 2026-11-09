@@ -1,6 +1,7 @@
 import type { ApiResult } from "./api";
 
 export type MyProfile = {
+  id: string;
   email: string;
   name: string | null;
   firstName: string | null;
