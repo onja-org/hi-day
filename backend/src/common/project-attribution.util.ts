@@ -1,9 +1,9 @@
 import { TimeEntry } from '../database/entities/time-entry.entity';
-import { TimeEntryPause } from '../database/entities/time-entry-pause.entity';
 import {
   activeIntervals,
   mergeIntervals,
   Interval,
+  PauseLike,
 } from './time-entry-union.util';
 
 interface ProjectInterval extends Interval {
@@ -29,8 +29,8 @@ interface ProjectInterval extends Interval {
  * the dashboard and the timesheet quote different hours for the same day.
  */
 export function attributeProjectSeconds(
-  entries: TimeEntry[],
-  pausesByEntry: Map<string, TimeEntryPause[]>,
+  entries: Pick<TimeEntry, 'id' | 'projectId' | 'startedAt' | 'endedAt'>[],
+  pausesByEntry: Map<string, PauseLike[]>,
   now: Date,
 ): Map<string, number> {
   // An entry with no Project has none to credit, and claiming a stretch for

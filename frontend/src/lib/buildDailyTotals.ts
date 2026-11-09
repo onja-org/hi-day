@@ -1,4 +1,4 @@
-import { entrySeconds } from "./entrySeconds";
+import { unionActiveSeconds } from "./unionActiveSeconds";
 import { addDaysToKey, dateKeyInZone, keyAsLocalDate, localDateToKey } from "./timezone";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 
@@ -14,10 +14,14 @@ export type WeeklyBucket = {
 
 /**
  * Zero-filled per-local-calendar-day totals across `[from, to]` (inclusive),
- * summing only completed entries — same convention as
- * `groupTimeEntriesByDay`, so a chart total and the table's day subtotals
- * never disagree. Never parses `dateKey` back with `new Date(dateKeyString)`
- * — that parses as UTC and can land on the wrong local day.
+ * each day unioned the way `groupTimeEntriesByDay` does it, so a chart total
+ * and the table's day subtotals never disagree. Never parses `dateKey` back
+ * with `new Date(dateKeyString)` — that parses as UTC and can land on the
+ * wrong local day.
+ *
+ * One person's entries only: time shared by two of their Devices counts
+ * once (ADR-0022), but two people working the same hour is two hours, so a
+ * multi-person total must add up each person's days instead.
  */
 export function buildDailyTotals(
   entries: TimeEntryListItem[],
@@ -28,20 +32,20 @@ export function buildDailyTotals(
   zone?: string,
 ): DailyTotal[] {
   const keyOf = (at: Date) => (zone ? dateKeyInZone(at, zone) : localDateToKey(at));
-  const totals = new Map<string, number>();
+  const byDay = new Map<string, TimeEntryListItem[]>();
   const lastKey = keyOf(to);
   for (let key = keyOf(from); key <= lastKey; key = addDaysToKey(key, 1)) {
-    totals.set(key, 0);
+    byDay.set(key, []);
   }
 
   for (const entry of entries) {
-    const key = keyOf(new Date(entry.startedAt));
-    if (totals.has(key)) {
-      totals.set(key, totals.get(key)! + entrySeconds(entry, elapsedNow));
-    }
+    byDay.get(keyOf(new Date(entry.startedAt)))?.push(entry);
   }
 
-  return [...totals.entries()].map(([dateKey, seconds]) => ({ dateKey, seconds }));
+  return [...byDay.entries()].map(([dateKey, dayEntries]) => ({
+    dateKey,
+    seconds: unionActiveSeconds(dayEntries, elapsedNow),
+  }));
 }
 
 const WEEK_CHUNK_SIZE = 7;
