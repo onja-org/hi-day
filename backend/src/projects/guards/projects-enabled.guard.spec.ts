@@ -46,6 +46,17 @@ describe('ProjectsEnabledGuard', () => {
     }
   });
 
+  it('refuses a suspended organisation even with projects on', async () => {
+    const { guard } = makeGuard(
+      { settings: { projectsEnabled: true }, suspendedAt: new Date() },
+      { role: 'admin', projectsEnabled: true },
+    );
+
+    await expect(
+      guard.canActivate(makeContext({ params: { id: '100000' } })),
+    ).rejects.toThrow('This organisation has been suspended');
+  });
+
   it('finds a web organisation by its public id', async () => {
     const { guard, findOne } = makeGuard({
       settings: { projectsEnabled: true },
