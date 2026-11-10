@@ -214,6 +214,22 @@ export class MembershipsController {
     };
   }
 
+  @Post('can-view-own-activity/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetCanViewOwnActivityOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllCanViewOwnActivityOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Post('app-url-tracking/reset-overrides')
   @RequireRole(MembershipRole.ADMIN)
   async resetAppUrlTrackingOverrides(

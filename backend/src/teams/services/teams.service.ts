@@ -30,6 +30,10 @@ export interface TeamMemberDetail {
   isManager: boolean;
   /** Their org role, so a client knows which rows it may not act on. */
   role: MembershipRole;
+  /** Per-member override of the org's "Members can see their own activity"
+   * default; `null` inherits. Lets a team manager set it from the Teams
+   * page, where they can't reach the admin-only Settings area. */
+  canViewOwnActivity: boolean | null;
 }
 
 export interface TeamDetail {
@@ -155,6 +159,8 @@ export class TeamsService {
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
         role: teamMembership.membership.role,
+        canViewOwnActivity:
+          teamMembership.membership.canViewOwnActivity ?? null,
       })),
     };
   }

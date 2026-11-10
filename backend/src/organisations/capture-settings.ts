@@ -57,3 +57,27 @@ export function resolveActivityTrackingEnabled(
     DEFAULT_CAPTURE_SETTINGS.activityTrackingEnabled
   );
 }
+
+/**
+ * Whether a member may see their *own* tracked activity — the Activity page
+ * (apps, URLs, screenshots) and the activity widgets on their own
+ * dashboard. Defaults on: every organisation that predates this setting
+ * keeps showing members their own data until an admin turns it off. When
+ * off, those surfaces are hidden entirely, so a member cannot tell the data
+ * is being collected (see the member-visibility toggle in the settings UI).
+ *
+ * This gates only the viewer seeing *their own* data; it never affects what
+ * an admin or team manager may see about the people they oversee.
+ */
+export const DEFAULT_MEMBERS_CAN_VIEW_OWN_ACTIVITY = true;
+
+export function resolveCanViewOwnActivity(
+  organisationDefault: boolean | undefined,
+  membershipOverride: boolean | null | undefined,
+): boolean {
+  return (
+    membershipOverride ??
+    organisationDefault ??
+    DEFAULT_MEMBERS_CAN_VIEW_OWN_ACTIVITY
+  );
+}

@@ -26,6 +26,9 @@ export type TeamMember = {
   isManager: boolean;
   /** Their org role — an admin's row is read-only to a team manager. */
   role: MembershipRole;
+  /** Per-member override of "Members can see their own activity"; `null`
+   * inherits the org default. Settable here by a team manager. */
+  canViewOwnActivity: boolean | null;
 };
 
 export type TeamDetail = {

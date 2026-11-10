@@ -24,6 +24,7 @@ function renderRow(role: Role, { isOrgAdmin = false, canManage = true } = {}) {
         email: "ada@example.test",
         isManager: false,
         role,
+        canViewOwnActivity: null,
       }}
       canManage={canManage}
       isOrgAdmin={isOrgAdmin}

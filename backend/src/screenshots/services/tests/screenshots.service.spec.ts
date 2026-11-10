@@ -62,6 +62,7 @@ describe('ScreenshotsService', () => {
         .fn()
         .mockResolvedValue({ weekStartsOn: 'monday', timezone: 'UTC' }),
       membersCanDeleteScreenshots: jest.fn().mockResolvedValue(false),
+      mayViewOwnActivity: jest.fn().mockResolvedValue(true),
       ...overrides,
     } as unknown as OrganisationsService;
   }

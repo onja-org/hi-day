@@ -24,6 +24,7 @@ import {
   CaptureSettings,
   DEFAULT_CAPTURE_SETTINGS,
   resolveActivityTrackingEnabled,
+  resolveCanViewOwnActivity,
 } from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
 import { DEFAULT_WORKING_HOURS_PER_DAY } from '../working-hours-policy';
@@ -98,6 +99,14 @@ export interface OrganisationProfile {
   /** Resolved for *the caller* — their override, else the default. Admins
    * may always delete, so this is true for them regardless. */
   canDeleteOwnScreenshots: boolean;
+  /** The Organisation's default: may members see their own tracked activity
+   * (Activity page + dashboard activity widgets) — what the settings toggle
+   * shows. */
+  membersCanViewOwnActivity: boolean;
+  /** Resolved for *the caller* — their override, else the org default.
+   * Admins and team managers always see their own, so this is true for them
+   * regardless. When false, the caller's own Activity surfaces are hidden. */
+  canViewOwnActivity: boolean;
   workTimeLimits: WorkTimeLimits;
   trackingReminders: {
     intervalMinutes: number;
@@ -150,6 +159,7 @@ interface OrganisationSettings {
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;
+  membersCanViewOwnActivity?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;
@@ -175,6 +185,9 @@ export interface TeamOverviewMember {
   email: string;
   isManager: boolean;
   role: MembershipRole;
+  /** Per-member override of "Members can see their own activity"; `null`
+   * inherits. Mirrors the team detail endpoint so both feed the same row. */
+  canViewOwnActivity: boolean | null;
 }
 
 export interface TeamOverview {
@@ -287,6 +300,7 @@ export class OrganisationsService {
       membership.role === MembershipRole.ADMIN || actsAsManager(membership),
       membership.timesheetModifyTime,
       membership.canDeleteScreenshots,
+      membership.canViewOwnActivity,
       await this.projectsContext(
         membership.organisationId,
         membership.projectsEnabled,
@@ -374,6 +388,8 @@ export class OrganisationsService {
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
         role: teamMembership.membership.role,
+        canViewOwnActivity:
+          teamMembership.membership.canViewOwnActivity ?? null,
       })),
       projectCount: (team.projectTeams ?? []).length,
     }));
@@ -446,6 +462,9 @@ export class OrganisationsService {
       ...(dto.membersCanDeleteScreenshots !== undefined
         ? { membersCanDeleteScreenshots: dto.membersCanDeleteScreenshots }
         : {}),
+      ...(dto.membersCanViewOwnActivity !== undefined
+        ? { membersCanViewOwnActivity: dto.membersCanViewOwnActivity }
+        : {}),
       ...(dto.expectedWorkDays !== undefined
         ? { expectedWorkDays: dto.expectedWorkDays }
         : {}),
@@ -512,6 +531,7 @@ export class OrganisationsService {
       true,
       adminMembership?.timesheetModifyTime ?? null,
       adminMembership?.canDeleteScreenshots ?? null,
+      adminMembership?.canViewOwnActivity ?? null,
       await this.projectsContext(
         organisationId,
         adminMembership?.projectsEnabled ?? null,
@@ -606,6 +626,44 @@ export class OrganisationsService {
         settings.dailyLimitHours ??
         null,
     };
+  }
+
+  /**
+   * Whether this user may see their *own* tracked activity (Activity page +
+   * dashboard activity widgets). Admins and team managers always may — they
+   * can already see everyone they oversee; everyone else gets their
+   * per-member override, else the organisation default. The self-view
+   * activity endpoints (screenshots, URLs, apps) call this and return empty
+   * results when it is false, so a member cannot tell — from the API any
+   * more than from the UI — that the data is being collected.
+   *
+   * Resolves from the database, never a JWT claim, like every other role
+   * check here (see docs/adr/0005).
+   */
+  async mayViewOwnActivity(
+    organisationId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const membership = await this.memberships.findOne({
+      where: {
+        userId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+    if (!membership) return false;
+    if (membership.role === MembershipRole.ADMIN || actsAsManager(membership)) {
+      return true;
+    }
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+    return resolveCanViewOwnActivity(
+      settings.membersCanViewOwnActivity,
+      membership.canViewOwnActivity,
+    );
   }
 
   /** Narrow, like `getIdlePolicy`: the screenshots service needs only
@@ -751,6 +809,7 @@ export class OrganisationsService {
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
     membershipCanDeleteScreenshots: boolean | null = null,
+    membershipCanViewOwnActivity: boolean | null = null,
     projects: { override: boolean | null; anySwitchedOn: boolean } = {
       override: null,
       anySwitchedOn: false,
@@ -795,6 +854,21 @@ export class OrganisationsService {
           (membershipCanDeleteScreenshots ??
             settings.membersCanDeleteScreenshots ??
             false)),
+      // The org default alone, for the settings toggle — not the caller's
+      // own override.
+      membersCanViewOwnActivity: resolveCanViewOwnActivity(
+        settings.membersCanViewOwnActivity,
+        null,
+      ),
+      // Admins and team managers always see their own activity (they can
+      // already see everyone they oversee); everyone else, their override
+      // else the org default.
+      canViewOwnActivity:
+        canViewOthers ||
+        resolveCanViewOwnActivity(
+          settings.membersCanViewOwnActivity,
+          membershipCanViewOwnActivity,
+        ),
       workTimeLimits: {
         expectedWorkDays:
           settings.expectedWorkDays ??

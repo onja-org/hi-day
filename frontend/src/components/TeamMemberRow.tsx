@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMember } from "@/lib/addTeamMember";
@@ -7,6 +8,7 @@ import { removeTeamMember } from "@/lib/removeTeamMember";
 import { teamMemberActionRefusal } from "@/lib/teamMemberPermissions.generated";
 import type { TeamMember } from "@/types/team";
 import { CheckboxField } from "@/components/ui/form/CheckboxField";
+import { EditMemberActivityVisibilityModal } from "./EditMemberActivityVisibilityModal";
 
 type TeamMemberRowProps = {
   organisationId: string;
@@ -25,6 +27,7 @@ export function TeamMemberRow({
   isOrgAdmin,
 }: TeamMemberRowProps) {
   const invalidate = useInvalidateTeams(organisationId);
+  const [isEditingVisibility, setIsEditingVisibility] = useState(false);
   // The same rule the API answers with, so the tooltip and the 403 agree.
   const refusal = teamMemberActionRefusal(
     { isOrgAdmin, managesThisTeam: canManage },
@@ -80,6 +83,20 @@ export function TeamMemberRow({
         {canManage && (
           <button
             type="button"
+            onClick={() => setIsEditingVisibility(true)}
+            disabled={refusal !== null}
+            title={
+              refusal ??
+              "Control whether this member can see their own activity"
+            }
+            className="cursor-pointer text-primary underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+          >
+            Activity visibility
+          </button>
+        )}
+        {canManage && (
+          <button
+            type="button"
             onClick={() => removeMutation.mutate()}
             disabled={refusal !== null || removeMutation.isPending}
             title={refusal ?? undefined}
@@ -89,6 +106,17 @@ export function TeamMemberRow({
           </button>
         )}
       </div>
+
+      {isEditingVisibility && (
+        <EditMemberActivityVisibilityModal
+          organisationId={organisationId}
+          membershipId={member.membershipId}
+          memberLabel={member.name ?? member.email}
+          currentOverride={member.canViewOwnActivity}
+          onSaved={() => invalidate()}
+          onClose={() => setIsEditingVisibility(false)}
+        />
+      )}
     </li>
   );
 }

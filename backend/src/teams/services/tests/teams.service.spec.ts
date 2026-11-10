@@ -272,6 +272,7 @@ describe('TeamsService', () => {
             name: 'A B',
             email: 'a@b.test',
             isManager: true,
+            canViewOwnActivity: null,
           },
         ],
       });
