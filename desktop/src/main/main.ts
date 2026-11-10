@@ -67,10 +67,17 @@ import { isWaylandSession, toDevicePlatform } from "./platform";
 import type { DesktopDevicePlatform } from "./platform";
 import { captureScreenViaPortal } from "./screenshot-portal";
 import {
-  canGrabScreenCastFrames,
   captureScreenViaScreenCast,
+  isSilentScreenCastAvailable,
 } from "./screencast-portal";
 import { WaylandSilentCapture } from "./wayland-silent-capture";
+import {
+  ScreenshotEnabledWatcher,
+  decideSurface,
+  installSurfaceHandler,
+  surfaceCopy,
+  surfaceWindow,
+} from "./window-surfacing";
 import {
   DEFAULT_SCREENSHOT_INTERVAL_MS,
   ScreenshotSampler,
@@ -261,6 +268,13 @@ interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
+  /**
+   * Linux/Wayland only: capture works, but through the Screenshot portal,
+   * which on GNOME plays the camera-shutter sound and flashes the screen
+   * every time — and the silent ScreenCast grant is available to be asked
+   * for. The renderer offers that upgrade; capture keeps running meanwhile.
+   */
+  waylandCaptureIsNoisy: boolean;
   waylandUnsupported: boolean;
   /**
    * macOS + Firefox only: the AX helper needs Accessibility, while every other
@@ -1073,7 +1087,7 @@ async function registerIpcHandlers(): Promise<void> {
     saveToken: (token) =>
       rememberWaylandScreenCastToken(app.getPath("userData"), token),
     screenCast: captureScreenViaScreenCast,
-    canGrabFrames: canGrabScreenCastFrames,
+    isAvailable: isSilentScreenCastAvailable,
   });
   /**
    * The last answers the server gave, so this app can still be used when
@@ -1300,6 +1314,53 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return powerMonitor.getSystemIdleTime();
   };
+  // The one place that knows how to put the window in front of someone;
+  // callers pass a reason and never touch a window themselves.
+  installSurfaceHandler(async (request) => {
+    const copy = surfaceCopy(request);
+    const action = decideSurface(
+      {
+        exists: mainWindow !== null && !mainWindow.isDestroyed(),
+        visible: mainWindow?.isVisible() ?? false,
+        focused: mainWindow?.isFocused() ?? false,
+        minimized: mainWindow?.isMinimized() ?? false,
+      },
+      await readIdleSeconds(),
+    );
+    if (action === "nothing") return;
+
+    // First and always: on Wayland a background app cannot raise itself,
+    // so a clickable notification is the only reliable mechanism.
+    if (Notification.isSupported()) {
+      surfaceNotification?.close();
+      surfaceNotification = new Notification({ title: copy.title, body: copy.body });
+      surfaceNotification.on("click", showMainWindow);
+      surfaceNotification.show();
+    }
+    if (action === "notify") return;
+
+    showMainWindow();
+    // The renderer owns which view is drawn, so asking it to go full keeps
+    // the two in step, and it renders the message in-window.
+    mainWindow?.webContents.send("window:surfaced", copy);
+
+    try {
+      if (process.platform === "darwin") {
+        // The one platform that lets a background app take the foreground.
+        // `dock` is null only in a tray-only build, which this is not.
+        app.focus({ steal: true });
+        app.dock?.bounce("informational");
+      } else {
+        // Windows refuses the focus steal and flashes the taskbar instead;
+        // on Linux this sets the urgency hint, which GNOME ignores.
+        mainWindow?.flashFrame(true);
+        mainWindow?.once("focus", () => mainWindow?.flashFrame(false));
+      }
+    } catch (error) {
+      console.log(`[surface-window] attention failed: ${String(error)}`);
+    }
+  }, (line) => console.log(line));
+
   const activitySampler = new ActivitySampler(activitySampleUploader.enqueue, {
     readIdleSeconds,
   });
@@ -1331,6 +1392,8 @@ async function registerIpcHandlers(): Promise<void> {
   let allowedApps: AllowedApps = "all";
   /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
   let trackingNotification: Notification | null = null;
+  /** Replaces rather than stacks: two of these say the same thing. */
+  let surfaceNotification: Notification | null = null;
   /** The tray's own start/stop confirmation, kept apart from the alert above. */
   let timerNotification: Notification | null = null;
   let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
@@ -1639,6 +1702,7 @@ async function registerIpcHandlers(): Promise<void> {
     );
   }
 
+  const screenshotsTurnedOn = new ScreenshotEnabledWatcher();
   const captureSettingsGate = new CaptureSettingsGate(
     authStore,
     apiClient,
@@ -1652,6 +1716,11 @@ async function registerIpcHandlers(): Promise<void> {
       appUrlTracking = settings.appUrlTracking;
       announceAllowedApps(settings.allowedApps);
       allowedApps = settings.allowedApps;
+      // Nothing else tells them: they granted screen capture once, so the
+      // OS never prompts again when an admin turns it back on.
+      if (screenshotsTurnedOn.observe(settings.screenshotsEnabled)) {
+        surfaceWindow({ reason: "screenshots-enabled" });
+      }
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       reminderSettings = settings.reminders;
@@ -2666,6 +2735,15 @@ async function registerIpcHandlers(): Promise<void> {
                 ? waylandSilentCapture.hasGrant() ||
                   isWaylandScreenshotGranted()
                 : true,
+          // Granted, but through the loud path — `screenRecordingGranted`
+          // alone cannot say so. Only reported where the silent grant can
+          // actually be obtained; otherwise there is nothing to offer.
+          waylandCaptureIsNoisy:
+            platform === "linux" &&
+            isWaylandSession() &&
+            !waylandSilentCapture.hasGrant() &&
+            isWaylandScreenshotGranted() &&
+            (await waylandSilentCapture.canBeGranted()),
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
           // "ask the user". Only Firefox needs Accessibility, so without it

@@ -219,6 +219,8 @@ function showLoginView(errorMessage?: string): void {
 
 const AUTO_UPDATE_POLL_INTERVAL_MS = 10_000;
 
+const surfaceBannerEl = document.getElementById("surface-banner")!;
+const surfaceMessageEl = document.getElementById("surface-message")!;
 const updateBannerEl = document.getElementById("update-banner")!;
 const updateMessageEl = document.getElementById("update-message")!;
 const updateButtonEl = document.getElementById(
@@ -300,6 +302,19 @@ updateButtonEl.addEventListener("click", () => {
     return;
   }
   void window.api.update.openReleasesPage();
+});
+
+// The window came forward on its own — say why, in the window itself, so
+// it never just appears. Full view because the compact bar and the 68px
+// square have nowhere to put a sentence.
+window.api.windowControls.onSurfaced((copy) => {
+  surfaceMessageEl.textContent = copy.body;
+  surfaceBannerEl.hidden = false;
+  setMode("full", true);
+});
+
+document.getElementById("surface-dismiss")!.addEventListener("click", () => {
+  surfaceBannerEl.hidden = true;
 });
 
 document.getElementById("update-dismiss")!.addEventListener("click", () => {
@@ -1718,13 +1733,23 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
     status.platform === "linux" &&
     status.waylandUnsupported &&
     status.screenshotsEnabled;
+  // Two different Wayland states reach the same button: no grant at all
+  // (nothing is captured), and a grant that works but plays the shutter
+  // sound on every capture. The second one is still worth offering — one
+  // click moves it to the silent path — so it shows the banner too, with
+  // wording that doesn't claim screenshots are off when they aren't.
+  const isWaylandNoisyGate =
+    isWaylandScreenshotGate && status.waylandCaptureIsNoisy;
   screenRecordingBanner.hidden = !(
-    (isMacCaptureGate || isWaylandScreenshotGate) &&
-    !status.screenRecordingGranted
+    ((isMacCaptureGate || isWaylandScreenshotGate) &&
+      !status.screenRecordingGranted) ||
+    isWaylandNoisyGate
   );
-  screenRecordingBannerMessage.textContent = isWaylandScreenshotGate
-    ? "Screenshots are off — needs a one-time screen access grant."
-    : "Window title tracking is off — needs Screen Recording access.";
+  screenRecordingBannerMessage.textContent = isWaylandNoisyGate
+    ? "Screenshots play a shutter sound — grant screen access again to silence them."
+    : isWaylandScreenshotGate
+      ? "Screenshots are off — needs a one-time screen access grant."
+      : "Window title tracking is off — needs Screen Recording access.";
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
@@ -1752,7 +1777,12 @@ screenRecordingGrantButton.addEventListener("click", () => {
     screenRecordingPollHandle = setInterval(() => {
       void (async () => {
         const status = await refreshCapturePermissionBanner();
-        if (status?.screenRecordingGranted || Date.now() > deadline) {
+        // Still noisy means the grant didn't move to the silent path yet —
+        // `screenRecordingGranted` was already true before the click.
+        if (
+          (status?.screenRecordingGranted && !status.waylandCaptureIsNoisy) ||
+          Date.now() > deadline
+        ) {
           stopScreenRecordingGrantPolling();
         }
       })();

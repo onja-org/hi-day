@@ -4,7 +4,7 @@ import { WaylandSilentCapture } from '../wayland-silent-capture';
 
 function make(
   outcome: ScreenCastOutcome,
-  options: { token?: string | null; canGrab?: boolean } = {},
+  options: { token?: string | null; available?: boolean } = {},
 ) {
   let token = options.token === undefined ? 'old-token' : options.token;
   const screenCast = vi.fn().mockResolvedValue(outcome);
@@ -14,7 +14,7 @@ function make(
       token = t;
     },
     screenCast,
-    canGrabFrames: () => Promise.resolve(options.canGrab ?? true),
+    isAvailable: () => Promise.resolve(options.available ?? true),
   });
   return { subject, screenCast, token: () => token };
 }
@@ -22,6 +22,20 @@ function make(
 const frame = Buffer.from('jpeg');
 
 describe('WaylandSilentCapture', () => {
+  describe('canBeGranted', () => {
+    it('is false where the silent path is impossible, so a noisy grant keeps standing', async () => {
+      const { subject } = make({ kind: 'unavailable' }, { available: false });
+
+      expect(await subject.canBeGranted()).toBe(false);
+    });
+
+    it('is true where it could be asked for, even with no grant yet', async () => {
+      const { subject } = make({ kind: 'unavailable' }, { token: null });
+
+      expect(await subject.canBeGranted()).toBe(true);
+    });
+  });
+
   describe('capture (periodic tick)', () => {
     it('does nothing without a remembered grant — never shows the picker', async () => {
       const { subject, screenCast } = make(
@@ -36,7 +50,7 @@ describe('WaylandSilentCapture', () => {
     it('does nothing when frames cannot be grabbed (GStreamer missing)', async () => {
       const { subject, screenCast } = make(
         { kind: 'captured', buffer: frame, restoreToken: 'new' },
-        { canGrab: false },
+        { available: false },
       );
 
       expect(await subject.capture()).toBeNull();
@@ -111,7 +125,7 @@ describe('WaylandSilentCapture', () => {
     it('is unavailable without the portal or GStreamer, never opening a picker for nothing', async () => {
       const { subject, screenCast } = make(
         { kind: 'captured', buffer: frame, restoreToken: 'new' },
-        { token: null, canGrab: false },
+        { token: null, available: false },
       );
 
       expect(await subject.grant()).toEqual({ kind: 'unavailable' });

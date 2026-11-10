@@ -107,6 +107,12 @@ export interface IdlePolicy {
 
 export type DesktopDevicePlatformName = "windows" | "macos" | "linux";
 
+/** Why the window put itself in front, in the person's own words. */
+export interface SurfaceCopy {
+  title: string;
+  body: string;
+}
+
 export interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
   /** What "Track apps & URLs" resolves to for this person. */
@@ -114,6 +120,8 @@ export interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
+  /** Linux/Wayland only — see main.ts's CapturePermissionStatus. */
+  waylandCaptureIsNoisy: boolean;
   /** macOS + Firefox only — see main.ts's CapturePermissionStatus. */
   accessibilityGranted: boolean;
   accessibilityGuidance: string;
@@ -447,6 +455,12 @@ const api = {
     },
     onReopened: (listener: () => void): void => {
       ipcRenderer.on("window:reopened", () => listener());
+    },
+    /** The window was brought forward on its own — see window-surfacing.ts. */
+    onSurfaced: (listener: (copy: SurfaceCopy) => void): void => {
+      ipcRenderer.on("window:surfaced", (_event, copy: SurfaceCopy) =>
+        listener(copy),
+      );
     },
     onCloseRequested: (listener: () => void): void => {
       ipcRenderer.on("window:closeRequested", () => listener());

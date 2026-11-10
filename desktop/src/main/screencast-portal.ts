@@ -61,9 +61,9 @@ type PortalResponse = { code: number; results: Record<string, { value?: unknown 
  *
  * - `restoreToken` null: shows the portal's picker (only ever from an
  *   explicit "Grant Access" click) and asks for the choice to be remembered.
- * - `restoreToken` set: reuses that remembered choice with no picker. The
- *   portal returns a new token every time (each is single-use), which the
- *   caller must store in place of the old one.
+ * - `restoreToken` set: reuses that remembered choice with no picker. Every
+ *   call hands back a token to store in place of the old one — GNOME returns
+ *   the same one, but the interface permits a backend to rotate it.
  *
  * Not `desktopCapturer`: under Wayland that also goes through ScreenCast,
  * but Chromium never keeps a restore token, so it shows the picker on every
@@ -172,6 +172,29 @@ let frameGrabberAvailable: Promise<boolean> | null = null;
 export function canGrabScreenCastFrames(): Promise<boolean> {
   frameGrabberAvailable ??= run('gst-inspect-1.0', ['--exists', 'pipewiresrc'], 5_000);
   return frameGrabberAvailable;
+}
+
+let silentCaptureAvailable: Promise<boolean> | null = null;
+
+/**
+ * Whether the silent path is possible here at all — frame grabber installed
+ * *and* a portal new enough to remember a grant. Asked once; neither can
+ * change while the app runs. Distinct from "has a grant": main.ts needs to
+ * know whether asking is even worth it before letting the noisy grant stand.
+ */
+export function isSilentScreenCastAvailable(): Promise<boolean> {
+  silentCaptureAvailable ??= (async () => {
+    if (!(await canGrabScreenCastFrames())) return false;
+    const bus = dbus.sessionBus();
+    try {
+      return (await screenCastVersion(bus)) >= MIN_SCREENCAST_VERSION;
+    } catch {
+      return false;
+    } finally {
+      bus.disconnect();
+    }
+  })();
+  return silentCaptureAvailable;
 }
 
 /**

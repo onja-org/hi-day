@@ -444,6 +444,7 @@ function launch(scenario: Scenario) {
       onReopened: (listener: () => void) => {
         reopenListeners.push(listener);
       },
+      onSurfaced: () => {},
       onCloseRequested: (listener: () => void) => {
         closeRequestListeners.push(listener);
       },
