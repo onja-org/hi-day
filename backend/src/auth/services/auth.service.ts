@@ -215,8 +215,7 @@ export class AuthService {
         pendingOrganisationName: null,
         pendingOrganisationAddress: null,
         pendingOrganisationWebsite: null,
-        // The same report serves both: this person's own zone, and the
-        // organisation's, which is created from it just below.
+        // The same report serves this person and the organisation below.
         ...(dto.timezone ? { timezone: dto.timezone } : {}),
       });
 

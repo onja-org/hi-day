@@ -25,15 +25,11 @@ export class SetPasswordDto {
   password: string;
 
   /**
-   * Where the browser setting this password is. Reported, not chosen —
-   * same as `UpdateProfileDto.timezone` — and it becomes the new
-   * Organisation's own zone, since this request is where it is created.
-   *
-   * Everything that asks when a day begins reads that zone: the
-   * day-boundary split, the work-time limits, the dashboard's week, the
-   * clock a Device is handed. Defaulting it to UTC meant every
-   * organisation outside it had its days cut at the wrong hour until an
-   * admin noticed a setting nobody had chosen — in Madagascar, at 3am.
+   * Where the browser setting this password is. Reported, not chosen, as
+   * `UpdateProfileDto.timezone` is — and it becomes the new Organisation's
+   * zone, since this request is what creates it. Everything that asks when
+   * a day begins reads that: the day-boundary split, the work-time limits,
+   * the dashboard's week, the clock a Device is handed.
    */
   @IsOptional()
   @IsString()
