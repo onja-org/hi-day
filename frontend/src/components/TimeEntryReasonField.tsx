@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
 import { useTimesheetReasons } from "@/hooks/useTimesheetReasons";
+import { Label } from "@/components/ui/form/Label";
+import { SelectField } from "@/components/ui/form/SelectField";
 
 /** What the picker holds while someone types their own wording. */
 const OTHER = "__other__";
@@ -39,32 +41,33 @@ export function TimeEntryReasonField({
   const isFreeText =
     reasons.length === 0 || isOther || (value !== "" && !isListed);
 
+  const label = `Reason${isRequired ? "*" : ""}`;
+
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-slate-900">
-          Reason{isRequired && "*"}
-        </span>
-        {reasons.length > 0 && (
-          <select
-            value={isFreeText ? OTHER : value}
-            onChange={(event) => {
-              const next = event.target.value;
-              setIsOther(next === OTHER);
-              onChange(next === OTHER ? "" : next);
-            }}
-            className="w-full rounded-brand-sm border-2 border-ink bg-white px-3 py-2 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
-          >
-            <option value="">Select a reason…</option>
-            {reasons.map((reason) => (
-              <option key={reason.id} value={reason.label}>
-                {reason.label}
-              </option>
-            ))}
-            <option value={OTHER}>Other…</option>
-          </select>
-        )}
-      </label>
+      {reasons.length > 0 ? (
+        <SelectField
+          label={label}
+          value={isFreeText ? OTHER : value}
+          onChange={(event) => {
+            const next = event.target.value;
+            setIsOther(next === OTHER);
+            onChange(next === OTHER ? "" : next);
+          }}
+        >
+          <option value="">Select a reason…</option>
+          {reasons.map((reason) => (
+            <option key={reason.id} value={reason.label}>
+              {reason.label}
+            </option>
+          ))}
+          <option value={OTHER}>Other…</option>
+        </SelectField>
+      ) : (
+        // Nothing to pick from, so the box below is the whole field and
+        // carries the label itself (`aria-label`).
+        <Label>{label}</Label>
+      )}
 
       {isFreeText && (
         <textarea
