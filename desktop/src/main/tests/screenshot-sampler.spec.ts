@@ -202,6 +202,79 @@ describe('ScreenshotSampler', () => {
     expect(captures).toHaveLength(0);
   });
 
+  it('captures silently on Linux Wayland first, without touching the Screenshot portal (GNOME shutter sound)', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('silent-jpeg-bytes');
+    const capturePortal = vi.fn().mockResolvedValue(Buffer.from('noisy'));
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.resolve(buffer),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(1);
+    expect(captures[0].buffer).toBe(buffer);
+  });
+
+  it('captures silently on Linux Wayland even with no Screenshot portal grant', async () => {
+    const { sink, captures } = makeSink();
+    const capturePortal = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.resolve(Buffer.from('silent')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(1);
+  });
+
+  it('falls back to the Screenshot portal, non-interactively, when the silent path yields nothing', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('portal-bytes');
+    const capturePortal = vi.fn().mockResolvedValue(buffer);
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.reject(new Error('boom')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).toHaveBeenCalledWith(false);
+    expect(captures[0].buffer).toBe(buffer);
+  });
+
+  it('never tries the silent Wayland path off Wayland', async () => {
+    const { sink } = makeSink();
+    const captureWaylandSilently = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      capture: () => Promise.resolve(Buffer.from('x')),
+      captureWaylandSilently,
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(captureWaylandSilently).not.toHaveBeenCalled();
+  });
+
   it('still captures on Linux X11 (isWayland false)', async () => {
     const { sink, captures } = makeSink();
     const buffer = Buffer.from('fake-jpeg-bytes');

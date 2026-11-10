@@ -67,6 +67,11 @@ import { isWaylandSession, toDevicePlatform } from "./platform";
 import type { DesktopDevicePlatform } from "./platform";
 import { captureScreenViaPortal } from "./screenshot-portal";
 import {
+  canGrabScreenCastFrames,
+  captureScreenViaScreenCast,
+} from "./screencast-portal";
+import { WaylandSilentCapture } from "./wayland-silent-capture";
+import {
   DEFAULT_SCREENSHOT_INTERVAL_MS,
   ScreenshotSampler,
 } from "./screenshot-sampler";
@@ -91,6 +96,8 @@ import {
   type CloseAction,
   hasWaylandScreenshotGrant,
   markWaylandScreenshotGranted,
+  waylandScreenCastToken,
+  rememberWaylandScreenCastToken,
   rememberCloseAction,
   cacheReminderSettings,
   cachedWebAppUrl,
@@ -1059,6 +1066,15 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return false;
   };
+  // The silent Wayland path — GNOME's Screenshot portal plays a shutter
+  // sound and flashes the screen on every capture; ScreenCast does neither.
+  const waylandSilentCapture = new WaylandSilentCapture({
+    loadToken: () => waylandScreenCastToken(app.getPath("userData")),
+    saveToken: (token) =>
+      rememberWaylandScreenCastToken(app.getPath("userData"), token),
+    screenCast: captureScreenViaScreenCast,
+    canGrabFrames: canGrabScreenCastFrames,
+  });
   /**
    * The last answers the server gave, so this app can still be used when
    * nobody can answer (docs/adr/0025-...). Everything read through
@@ -1299,6 +1315,7 @@ async function registerIpcHandlers(): Promise<void> {
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
     isWaylandScreenshotGranted,
+    captureWaylandSilently: () => waylandSilentCapture.capture(),
   });
 
   offlineQueue.start();
@@ -2646,7 +2663,8 @@ async function registerIpcHandlers(): Promise<void> {
             platform === "macos"
               ? systemPreferences.getMediaAccessStatus("screen") === "granted"
               : platform === "linux" && isWaylandSession()
-                ? isWaylandScreenshotGranted()
+                ? waylandSilentCapture.hasGrant() ||
+                  isWaylandScreenshotGranted()
                 : true,
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
@@ -2678,6 +2696,19 @@ async function registerIpcHandlers(): Promise<void> {
         return;
       }
       if (process.platform === "linux" && isWaylandSession()) {
+        // The silent ScreenCast grant first (one picker, then no sound or
+        // flash on any tick); the Screenshot portal's grant only where that
+        // isn't possible. A dismissed picker is an answer, not a reason to
+        // follow it with a second dialog.
+        const silent = await waylandSilentCapture.grant();
+        if (silent.kind === "cancelled") return;
+        if (silent.kind === "granted") {
+          screenshotUploader.upload({
+            buffer: silent.buffer,
+            capturedAt: new Date().toISOString(),
+          });
+          return;
+        }
         const buffer = await captureScreenViaPortal(true);
         if (!buffer) return;
         markWaylandScreenshotGranted(app.getPath("userData"));

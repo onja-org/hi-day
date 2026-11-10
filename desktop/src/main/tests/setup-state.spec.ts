@@ -12,6 +12,8 @@ import {
   cachedReminderSettings,
   hasWaylandScreenshotGrant,
   markWaylandScreenshotGranted,
+  rememberWaylandScreenCastToken,
+  waylandScreenCastToken,
   rememberCloseAction,
   rememberedCloseAction,
   autoStartTimer,
@@ -45,6 +47,19 @@ describe('setup state', () => {
 
   it('has granted nothing on a fresh install', () => {
     expect(hasWaylandScreenshotGrant(userDataDir)).toBe(false);
+    expect(waylandScreenCastToken(userDataDir)).toBeNull();
+  });
+
+  it('replaces and forgets the ScreenCast token without touching the Screenshot grant', () => {
+    markWaylandScreenshotGranted(userDataDir);
+
+    rememberWaylandScreenCastToken(userDataDir, 'first');
+    rememberWaylandScreenCastToken(userDataDir, 'second');
+    expect(waylandScreenCastToken(userDataDir)).toBe('second');
+
+    rememberWaylandScreenCastToken(userDataDir, null);
+    expect(waylandScreenCastToken(userDataDir)).toBeNull();
+    expect(hasWaylandScreenshotGrant(userDataDir)).toBe(true);
   });
 
   it('creates the directory when it does not exist yet', () => {

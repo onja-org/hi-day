@@ -814,6 +814,23 @@ two buttons. See `docs/adr/0028-...`.
   does, and hasn't been verified on this project — a tick there may simply
   keep emitting nothing (same "unlucky failure" fallback as any other
   capture error) rather than silently succeeding.
+- **On GNOME/Wayland, the Screenshot portal plays the camera-shutter sound
+  and flashes the screen on every capture**, with no option to turn either
+  off. So **Grant Access** now asks the ScreenCast portal first
+  (`screencast-portal.ts`, `wayland-silent-capture.ts`): the person picks a
+  screen once and the choice is remembered as a restore token
+  (`setup-state.json`'s `waylandScreenCastToken`, single-use, replaced on
+  every capture). Each tick then opens a session with no picker, pulls one
+  frame from PipeWire with `gst-launch-1.0 pipewiresrc` and closes it again.
+  There's no sound or flash, only GNOME's screen-sharing icon in the top bar
+  for about a second. This needs ScreenCast portal v4+ (GNOME 43+) and
+  GStreamer's PipeWire plugin (the `.deb` recommends `gstreamer1.0-tools` and
+  `gstreamer1.0-pipewire`). Without them, or if the token stops working
+  (e.g. a monitor unplugged), capture falls back to the Screenshot portal
+  path above, sound included. A token the portal rejects is dropped at once
+  so the picker never shows up on a tick. Installs that already granted the
+  old Screenshot portal keep using it until someone clicks **Grant Access**
+  again. Not yet verified on a real GNOME/Wayland session.
 - **App-activity "time spent" is an approximation, not a measured
   duration.** Each sample is assumed to represent
   `DEFAULT_WINDOW_SAMPLE_INTERVAL_MS` (5s) of foreground time — see
