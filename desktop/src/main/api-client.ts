@@ -529,10 +529,13 @@ export class ApiClient {
     endedAt?: string,
     /** This agent's id for the operation, so a replay is not a second stop. */
     opId?: string,
+    /** The entry this stop is about — see `StopTimeEntryDto.entryId`. */
+    entryId?: string,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest('POST', '/device/time-entries/stop', deviceToken, {
       ...(endedAt ? { endedAt } : {}),
       ...(opId ? { opId } : {}),
+      ...(entryId ? { entryId } : {}),
     });
   }
 

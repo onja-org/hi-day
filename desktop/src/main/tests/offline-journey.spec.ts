@@ -26,6 +26,8 @@ describe('tracking offline and syncing back', () => {
       endedAt: string | null;
       startOpId?: string;
       stopOpId?: string;
+      /** Ended by one of the server's own guesses, not by anybody. */
+      closedAsAbandoned?: boolean;
     }[] = [];
     private seq = 0;
 
@@ -53,6 +55,13 @@ describe('tracking offline and syncing back', () => {
       // returns what it already wrote, rather than writing it twice.
       const replay = opId && this.entries.find((e) => e.startOpId === opId);
       if (replay) return Promise.resolve({ ok: true, data: this.entryFor(replay) });
+      if (this.entries.some((e) => e.endedAt === null)) {
+        return Promise.resolve({
+          ok: false,
+          message: 'A timer is already running on this device.',
+          status: 409,
+        });
+      }
       const row = {
         id: `entry-${++this.seq}`,
         projectId,
@@ -68,21 +77,73 @@ describe('tracking offline and syncing back', () => {
       _token: string,
       endedAt?: string,
       opId?: string,
+      entryId?: string,
     ): Promise<TrackingResult<TimeEntry>> {
       if (!this.reachable) return Promise.resolve(unreachable);
       const replay = opId && this.entries.find((e) => e.stopOpId === opId);
       if (replay) return Promise.resolve({ ok: true, data: this.entryFor(replay) });
-      const open = this.entries.find((e) => e.endedAt === null);
-      if (!open) {
+
+      const named = entryId
+        ? this.entries.find((e) => e.id === entryId)
+        : undefined;
+      // Somebody really ended it; this stop has happened.
+      if (named?.endedAt && !named.closedAsAbandoned) {
+        return Promise.resolve({ ok: true, data: this.entryFor(named) });
+      }
+      const target = named ?? this.entries.find((e) => e.endedAt === null);
+      if (!target) {
         return Promise.resolve({
           ok: false,
           message: 'No timer is currently running on this device.',
           status: 404,
         });
       }
-      open.endedAt = endedAt ?? new Date().toISOString();
-      open.stopOpId = opId;
-      return Promise.resolve({ ok: true, data: this.entryFor(open) });
+
+      const at = endedAt ?? new Date().toISOString();
+      if (Date.parse(at) <= Date.parse(target.startedAt)) {
+        return Promise.resolve({
+          ok: false,
+          message: 'End time must be after the start time.',
+          status: 409,
+        });
+      }
+      this.dropInventedAfter(target, at);
+      target.endedAt = at;
+      target.closedAsAbandoned = false;
+      target.stopOpId = opId;
+      return Promise.resolve({ ok: true, data: this.entryFor(target) });
+    }
+
+    /** The hourly job carrying a timer nobody closed into the next day. */
+    splitAtMidnight(boundary: string): void {
+      const open = this.entries.find((e) => e.endedAt === null);
+      if (!open || Date.parse(open.startedAt) >= Date.parse(boundary)) return;
+      open.endedAt = boundary;
+      open.closedAsAbandoned = true;
+      this.entries.push({
+        id: `entry-${++this.seq}`,
+        projectId: open.projectId,
+        startedAt: boundary,
+        endedAt: null,
+      });
+    }
+
+    /** What those splits left describing nothing once the real stop lands. */
+    private dropInventedAfter(
+      target: FakeServer['entries'][number],
+      at: string,
+    ): void {
+      if (!target.endedAt || Date.parse(at) >= Date.parse(target.endedAt)) return;
+      let boundary: string | null = target.endedAt;
+      while (boundary) {
+        const index = this.entries.findIndex(
+          (e) =>
+            e.startedAt === boundary &&
+            (e.endedAt === null || e.closedAsAbandoned),
+        );
+        if (index < 0) return;
+        boundary = this.entries.splice(index, 1)[0].endedAt;
+      }
     }
 
     pauseTimer(token: string): Promise<TrackingResult<TimeEntry>> {
@@ -218,6 +279,72 @@ describe('tracking offline and syncing back', () => {
       await relaunch().ops.flush('t', server);
 
       expect(server.secondsOn(dayOf('2026-10-21T09:00:00.000Z'))).toBe(3600);
+    });
+  });
+
+  /**
+   * Stopped at 21:41 offline, started again at 03:46, both reaching the
+   * server at 04:30 — by which time it had carried the evening's entry
+   * across midnight itself, so every replay met a row it was never about.
+   */
+  describe('a night the server guessed its way through', () => {
+    it('lands the evening where it was stopped and the morning where it was started', async () => {
+      at('2026-11-09T18:05:00.000Z');
+      const { ops } = relaunch();
+      await ops.start('t', 'project-1', null, server);
+
+      // The connection goes before the stop can be sent.
+      at('2026-11-09T21:41:00.000Z');
+      server.reachable = false;
+      await ops.pause('t', server);
+
+      // Nothing told the server, so it carried the entry into the new day.
+      server.splitAtMidnight('2026-11-10T00:00:00.000Z');
+
+      at('2026-11-10T03:46:00.000Z');
+      const morning = relaunch();
+      await morning.ops.start('t', 'project-1', null, server);
+
+      at('2026-11-10T04:30:00.000Z');
+      server.reachable = true;
+      const { settled, refused } = await morning.ops.flush('t', server);
+
+      expect(refused).toEqual([]);
+      expect(settled).toBe(true);
+
+      const evening = server.entries.find(
+        (e) => e.startedAt === '2026-11-09T18:05:00.000Z',
+      );
+      expect(evening?.endedAt).toBe('2026-11-09T21:41:00.000Z');
+      // The span the split invented described nothing once the real stop
+      // landed — and left open, the morning's start met a 409.
+      expect(
+        server.entries.some((e) => e.startedAt === '2026-11-10T00:00:00.000Z'),
+      ).toBe(false);
+
+      const running = server.entries.find((e) => e.endedAt === null);
+      expect(running?.startedAt).toBe('2026-11-10T03:46:00.000Z');
+      // Three hours thirty-six, not the nineteen hours fifty-five somebody
+      // woke up to.
+      expect(server.secondsOn(dayOf('2026-11-09T18:05:00.000Z'))).toBe(
+        3 * 3600 + 36 * 60,
+      );
+    });
+
+    it('reports nothing as refused, so no hours are announced as lost', async () => {
+      at('2026-11-09T18:05:00.000Z');
+      const { ops } = relaunch();
+      await ops.start('t', 'project-1', null, server);
+      at('2026-11-09T21:41:00.000Z');
+      server.reachable = false;
+      await ops.pause('t', server);
+      server.splitAtMidnight('2026-11-10T00:00:00.000Z');
+
+      at('2026-11-10T04:30:00.000Z');
+      server.reachable = true;
+      const { refused } = await relaunch().ops.flush('t', server);
+
+      expect(refused).toEqual([]);
     });
   });
 

@@ -67,6 +67,11 @@ function emptyState(): OfflineCacheState {
   };
 }
 
+/** Local midnight that starts `at`'s day, in the machine's own time zone. */
+function startOfLocalDay(at: Date): Date {
+  return new Date(at.getFullYear(), at.getMonth(), at.getDate());
+}
+
 /** `YYYY-MM-DD` for `at` in the machine's own time zone, never UTC. */
 export function localDay(at: Date): string {
   const month = String(at.getMonth() + 1).padStart(2, '0');
@@ -193,6 +198,35 @@ export class OfflineCache {
               )
             : [...base.projects, { projectId, seconds }],
     });
+  }
+
+  /**
+   * The day's worked seconds with nobody to ask: the last figure the server
+   * gave plus the time since, but only while that figure is still today's.
+   * It counts open entries from their own starts, so carrying it into a new
+   * morning put the whole of yesterday on today's clock. Past midnight the
+   * running entry's own share of today stands in for it.
+   */
+  projectedWorkedSeconds(entry: TimeEntry | null): number {
+    const now = this.now();
+    const state = this.read();
+    const at = state.workedSecondsAt ? new Date(state.workedSecondsAt) : null;
+    if (
+      at !== null &&
+      state.workedSeconds !== null &&
+      localDay(at) === localDay(now)
+    ) {
+      const since = entry
+        ? Math.max(0, Math.floor((now.getTime() - at.getTime()) / 1000))
+        : 0;
+      return state.workedSeconds + since;
+    }
+    if (!entry) return 0;
+    const from = Math.max(
+      Date.parse(entry.startedAt),
+      startOfLocalDay(now).getTime(),
+    );
+    return Math.max(0, Math.floor((now.getTime() - from) / 1000));
   }
 
   /**

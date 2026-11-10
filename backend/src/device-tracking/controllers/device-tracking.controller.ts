@@ -323,7 +323,7 @@ export class DeviceTrackingController {
       request.userId,
       request.deviceId,
       dto.endedAt ? new Date(dto.endedAt) : undefined,
-      { operationId: dto.opId },
+      { operationId: dto.opId, entryId: dto.entryId },
     );
   }
 

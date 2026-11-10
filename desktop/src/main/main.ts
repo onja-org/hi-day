@@ -2503,21 +2503,11 @@ async function registerIpcHandlers(): Promise<void> {
           workedSecondsAt: new Date().toISOString(),
         }),
       (): CurrentTimer | null => {
-        const state = offlineCache.read();
-        const entry = state.runningEntry;
-        const since =
-          entry && state.workedSecondsAt
-            ? Math.max(
-                0,
-                Math.floor(
-                  (Date.now() - new Date(state.workedSecondsAt).getTime()) / 1000,
-                ),
-              )
-            : 0;
+        const entry = offlineCache.read().runningEntry;
         return {
           entry,
           now: new Date().toISOString(),
-          workedSeconds: (state.workedSeconds ?? 0) + since,
+          workedSeconds: offlineCache.projectedWorkedSeconds(entry),
         };
       },
     );

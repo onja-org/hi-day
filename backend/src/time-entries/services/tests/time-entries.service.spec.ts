@@ -1088,10 +1088,244 @@ describe('TimeEntriesService', () => {
         .mockImplementation((options?: { where?: Record<string, unknown> }) => {
           const where = options?.where ?? {};
           if ('closedAsAbandoned' in where) return Promise.resolve(swept);
-          if ('startedAt' in where) return Promise.resolve(next);
+          if ('startedAt' in where) {
+            if (!next) return Promise.resolve(null);
+            // Two questions reach here: the overlap check asks for anything
+            // started after, the chain walk for an exact boundary.
+            const operator = where.startedAt as {
+              type?: string;
+              value?: Date;
+            };
+            if (operator?.type === 'equal') {
+              return Promise.resolve(
+                next.startedAt.getTime() === operator.value?.getTime()
+                  ? next
+                  : null,
+              );
+            }
+            return Promise.resolve(next);
+          }
           return Promise.resolve(null);
         });
     }
+
+    /**
+     * A stop pressed at 21:41 offline and replayed at 04:30, by which time
+     * the server had carried the evening's entry across midnight itself.
+     * Every replay met a row it was never about and was deleted as hours
+     * that could not be saved.
+     */
+    describe('a night the server guessed its way through', () => {
+      const EVENING = new Date('2026-11-09T18:05:00.000Z');
+      const MIDNIGHT = new Date('2026-11-10T00:00:00.000Z');
+      const REALLY_STOPPED = new Date('2026-11-09T21:41:00.000Z');
+
+      /** What the day-boundary split leaves behind: a closed half and an open one. */
+      function splitOvernight() {
+        const evening = {
+          ...runningEntry,
+          id: 'entry-evening',
+          source: TimeEntrySource.AGENT,
+          deviceId: 'device-1',
+          startedAt: EVENING,
+          endedAt: MIDNIGHT,
+          closedAsAbandoned: true,
+        } as TimeEntry;
+        const invented = {
+          ...runningEntry,
+          id: 'entry-invented',
+          source: TimeEntrySource.AGENT,
+          deviceId: 'device-1',
+          startedAt: MIDNIGHT,
+          endedAt: null,
+        } as TimeEntry;
+        return { evening, invented };
+      }
+
+      function repoFor(evening: TimeEntry, invented: TimeEntry | null) {
+        return jest
+          .fn()
+          .mockImplementation(
+            (options?: { where?: Record<string, unknown> }) => {
+              const where = options?.where ?? {};
+              if ('id' in where) return Promise.resolve(evening);
+              if ('startedAt' in where) {
+                const operator = where.startedAt as { value?: Date };
+                return Promise.resolve(
+                  invented &&
+                    invented.startedAt.getTime() === operator?.value?.getTime()
+                    ? invented
+                    : null,
+                );
+              }
+              return Promise.resolve(null);
+            },
+          );
+      }
+
+      it('ends the entry the device names, not the one the split left running', async () => {
+        const { evening, invented } = splitOvernight();
+        const save = jest.fn((input: Partial<TimeEntry>) =>
+          Promise.resolve(input as TimeEntry),
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          REALLY_STOPPED,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.id).toBe('entry-evening');
+        expect(result.endedAt).toEqual(REALLY_STOPPED);
+        // No longer a guess, so nothing may reopen it a second time.
+        expect(save).toHaveBeenCalledWith(
+          expect.objectContaining({ closedAsAbandoned: false }),
+        );
+      });
+
+      it('removes the span the split invented past that stop', async () => {
+        const { evening, invented } = splitOvernight();
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+          }),
+        });
+
+        await service.stop('org-1', 'user-1', 'device-1', REALLY_STOPPED, {
+          entryId: 'entry-evening',
+        });
+
+        // Left behind, it is still open — and the morning's start would meet
+        // "a timer is already running on this device".
+        expect(remove).toHaveBeenCalledWith(TimeEntry, {
+          id: 'entry-invented',
+        });
+      });
+
+      /**
+       * Working *through* the boundary. Ending the first row instead left it
+       * overlapping a successor still open, and the morning's start met
+       * that successor with a 409.
+       */
+      it('ends the row holding the stop when the work ran past the boundary', async () => {
+        const { evening, invented } = splitOvernight();
+        const workedOn = new Date(MIDNIGHT.getTime() + 8 * 60 * 60 * 1000);
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+            save: jest.fn((input: Partial<TimeEntry>) =>
+              Promise.resolve(input as TimeEntry),
+            ),
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          workedOn,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.id).toBe('entry-invented');
+        expect(result.endedAt).toEqual(workedOn);
+        // The evening's own half is a true split, not something to undo.
+        expect(remove).not.toHaveBeenCalled();
+      });
+
+      it('leaves an entry somebody really stopped where the split put it', async () => {
+        const { evening, invented } = splitOvernight();
+        const stopped = { ...invented, endedAt: MIDNIGHT } as TimeEntry;
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, stopped),
+          }),
+        });
+
+        await service.stop('org-1', 'user-1', 'device-1', REALLY_STOPPED, {
+          entryId: 'entry-evening',
+        });
+
+        expect(remove).not.toHaveBeenCalled();
+      });
+
+      it('answers a stop that has already happened rather than refusing it', async () => {
+        const settled = {
+          ...runningEntry,
+          id: 'entry-evening',
+          deviceId: 'device-1',
+          startedAt: EVENING,
+          endedAt: REALLY_STOPPED,
+          closedAsAbandoned: false,
+        } as TimeEntry;
+        const save = jest.fn();
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(settled),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          REALLY_STOPPED,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.endedAt).toEqual(REALLY_STOPPED);
+        expect(save).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('the clock a device is handed', () => {
+      it('counts only today, however long the entry has been open', async () => {
+        const now = Date.now();
+        const todayStart = new Date(
+          Date.UTC(
+            new Date(now).getUTCFullYear(),
+            new Date(now).getUTCMonth(),
+            new Date(now).getUTCDate(),
+          ),
+        );
+        // Open since four hours before midnight and never closed — the
+        // twenty-hour day somebody woke up to.
+        const open = {
+          ...runningEntry,
+          id: 'entry-overnight',
+          deviceId: 'device-1',
+          startedAt: new Date(todayStart.getTime() - 4 * 60 * 60 * 1000),
+          endedAt: null,
+        } as TimeEntry;
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(open),
+            find: jest.fn().mockResolvedValue([open]),
+          }),
+        });
+
+        const result = await service.current('org-1', 'user-1', 'device-1');
+
+        const sinceMidnight = Math.floor((now - todayStart.getTime()) / 1000);
+        expect(result.workedSeconds).toBeLessThanOrEqual(sinceMidnight + 2);
+        expect(result.workedSeconds).toBeGreaterThanOrEqual(sinceMidnight - 2);
+      });
+    });
 
     describe('replayed operations', () => {
       it('returns the entry a replayed start already created, rather than a conflict', async () => {
@@ -1528,7 +1762,27 @@ describe('TimeEntriesService', () => {
         expect(result.endedAt).toEqual(reallyStoppedAt);
       });
 
-      it('ignores a stop no later than where the sweeper already ended it', async () => {
+      // The heartbeat outlives the stop it could not send, so the device's
+      // time is routinely a minute earlier than the sweeper's guess.
+      it('shortens an entry to a stop earlier than the sweeper guessed', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const findOne = sweptRepoFindOne(swept);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+        const reallyStoppedAt = new Date(swept.endedAt!.getTime() - 60_000);
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          reallyStoppedAt,
+        );
+
+        expect(result.endedAt).toEqual(reallyStoppedAt);
+      });
+
+      it('still refuses a stop that would end the entry before it began', async () => {
         const swept = sweptEntry(SWEPT_AGO_MS);
         const findOne = sweptRepoFindOne(swept);
         const service = makeService({
@@ -1540,9 +1794,9 @@ describe('TimeEntriesService', () => {
             'org-1',
             'user-1',
             'device-1',
-            new Date(Date.now() - SWEPT_AGO_MS - 60_000),
+            new Date(swept.startedAt.getTime() - 1000),
           ),
-        ).rejects.toBeInstanceOf(NotFoundException);
+        ).rejects.toBeInstanceOf(ConflictException);
       });
     });
   });
@@ -4894,6 +5148,47 @@ describe('TimeEntriesService', () => {
         taskId: 'task-1',
         membershipId: 'm-1',
       });
+    });
+
+    it('marks a device half it carries past midnight as the guess it is', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        deviceId: 'device-1',
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      // The device may have stopped hours before this boundary and been
+      // unable to say so; `entryToCorrect` is how it says so later.
+      expect(fake.entries.get('entry-orig')!.closedAsAbandoned).toBe(true);
+    });
+
+    it('leaves a web half alone — a closed browser has no stop to replay', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(fake.entries.get('entry-orig')!.closedAsAbandoned).toBeFalsy();
     });
 
     it('catches a multi-day-old entry fully up in one call', async () => {

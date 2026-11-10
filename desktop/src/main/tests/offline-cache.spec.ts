@@ -363,6 +363,72 @@ describe('offline cache', () => {
     });
   });
 
+  describe('the clock it projects with nobody to ask', () => {
+    /** Local parts, not a Z string: a UTC fixture lands either side of the
+     * person's midnight depending on where they are. */
+    const local = (
+      year: number,
+      month: number,
+      day: number,
+      hour: number,
+      minute = 0,
+    ): string => new Date(year, month - 1, day, hour, minute).toISOString();
+
+    it('carries the last figure forward through the day it belongs to', () => {
+      at(local(2026, 10, 21, 9));
+      const held = cache();
+      held.rememberRunning(entry);
+      held.remember({
+        workedSeconds: 3600,
+        workedSecondsAt: local(2026, 10, 21, 9),
+      });
+
+      at(local(2026, 10, 21, 9, 30));
+      expect(cache().projectedWorkedSeconds(entry)).toBe(3600 + 1800);
+    });
+
+    // The server counts open entries from their own starts, so an entry
+    // nobody closed made that figure the whole of yesterday evening.
+    it('will not carry yesterday\'s figure into a new morning', () => {
+      at(local(2026, 11, 9, 21, 41));
+      cache().remember({
+        workedSeconds: 19 * 3600,
+        workedSecondsAt: local(2026, 11, 9, 21, 41),
+      });
+
+      at(local(2026, 11, 10, 4, 30));
+      const morning: TimeEntry = {
+        ...entry,
+        startedAt: local(2026, 11, 10, 3, 46),
+      };
+
+      // The entry's own share of today, which is what the renderer would
+      // have worked out for itself.
+      expect(cache().projectedWorkedSeconds(morning)).toBe(44 * 60);
+    });
+
+    it('counts from midnight for an entry that began before it', () => {
+      at(local(2026, 11, 9, 21, 41));
+      cache().remember({
+        workedSeconds: 19 * 3600,
+        workedSecondsAt: local(2026, 11, 9, 21, 41),
+      });
+
+      at(local(2026, 11, 10, 4, 30));
+      const overnight: TimeEntry = {
+        ...entry,
+        startedAt: local(2026, 11, 9, 18, 5),
+      };
+
+      expect(cache().projectedWorkedSeconds(overnight)).toBe(4.5 * 3600);
+    });
+
+    it('is nothing at all when no timer is running', () => {
+      at(local(2026, 11, 10, 4, 30));
+      expect(cache().projectedWorkedSeconds(null)).toBe(0);
+    });
+  });
+
   it('forgets everything on sign-out', () => {
     const subject = cache();
     subject.readFor('device-1');
