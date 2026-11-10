@@ -11,11 +11,15 @@ Thanks for helping. Keep it small and we'll get it merged.
 
 ## Setup
 
-See [Quick Start](README.md#quick-start). In short:
+Follow the [Quick start](README.md#quick-start) in the README. In short:
 
 ```bash
 pnpm install
-pnpm --filter backend start:dev     # needs Postgres + backend/.env
+createdb workforce_monitoring
+cp backend/.env.example backend/.env      # set DATABASE_URL
+cp frontend/.env.example frontend/.env
+pnpm --filter backend migration:run
+pnpm --filter backend start:dev
 pnpm --filter frontend dev
 ```
 

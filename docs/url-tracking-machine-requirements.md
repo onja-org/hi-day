@@ -1,168 +1,105 @@
-# URL tracking — what must be true on an employee's machine
+# URL tracking: what must be true on an employee's machine
 
-*For whoever rolls this out. Answers one question: what has to be set up on a device
-before website tracking actually produces data, and how much of it can IT push centrally
-rather than asking each person to click something.*
+For whoever rolls hiday out. What has to be set up on a device before website tracking produces data, and how much IT can push centrally instead of asking each person to click something.
 
-## First, a correction: tracking is NOT built browser-by-browser
+Website tracking also has to be switched on: the "Track apps & URLs" setting must be "apps and URLs" for the organisation or the member. The default records apps only.
 
-It's reasonable to assume from the changelog ("added Firefox support") that each browser
-needs its own integration. It doesn't. **The code that finds and reads an address bar never
-consults the browser list at all.**
+## Tracking is not built browser by browser
 
-On Linux, `resolvers/linux/atspi.ts` walks the focused window's accessibility tree and takes
-the first address-bar-shaped node inside a toolbar. It does not know or care which browser it
-is looking at. Windows works the same way — its documented fallback is "first Edit descendant
-that does not have keyboard focus and whose value normalizes to a valid host."
+The code that finds and reads an address bar never consults the browser list.
 
-The browser list (`browser-registry.json`) is consulted for exactly two things, and **neither
-gates URL capture**:
+On Linux, `resolvers/linux/atspi.ts` walks the focused window's accessibility tree for an address-bar-shaped node inside a toolbar, preferring the first one with readable text. It doesn't know which browser it is looking at. Windows works the same way: its fallback is the first Edit element without keyboard focus whose value normalizes to a valid host.
 
-1. **Naming** — so activity reads "chrome" rather than "some browser". An unrecognised browser
-   falls back to a generic label and is still tracked.
-2. **Private-mode detection** — which marker means "incognito" differs per browser.
+The browser list (`browser-registry.json`) is used for two things, and neither gates URL capture:
 
-So a browser nobody has ever tested — a new Chromium fork, a rebranded build — is tracked on
-day one, as long as it exposes an address bar through the platform's accessibility layer.
+1. Naming, so activity reads "chrome" rather than "some browser". An unknown browser gets a generic label and is still tracked.
+2. Private-mode detection, since the incognito marker differs per browser.
 
-### What the Firefox fix actually was
+So a browser nobody has tested, such as a new Chromium fork, is tracked from day one as long as its address bar is exposed through the platform's accessibility layer.
 
-Not "adding Firefox". The generic rule was too narrow: it matched only accessibility role
-`entry`, which is what Chromium uses. Firefox's address bar is a `combo box`. Both roles are
-now accepted, which widens the rule for *every* browser using either — not just Firefox.
-
-That is the honest shape of the remaining per-browser risk: **a browser whose address bar uses
-some third role would still be missed.** The mitigation is widening the role set when one turns
-up, not writing per-browser code.
+Adding Firefox support on Linux was not per-browser code. The address-bar rule only accepted the accessibility role `entry`, which Chromium uses. Firefox's address bar is a `combo box`. Both roles are now accepted, for every browser. The remaining per-browser risk is a browser whose address bar uses some third role. The fix for that is widening the role set, not writing per-browser code.
 
 ## What must be enabled, per platform
 
-This is the part that isn't in the app's control.
-
-| Platform | Required on the machine | User consent prompt? | Can IT push it centrally? |
+| Platform | Required on the machine | Consent prompt? | Can IT push it centrally? |
 |---|---|---|---|
-| **Windows** | Nothing | **No** | N/A — works out of the box |
-| **macOS** | Automation permission per browser; Accessibility permission (Firefox only) | **Yes** — one prompt per (app, browser) pair | Yes, via MDM PPPC profile |
-| **Linux** | `at-spi2-core` present (default on GNOME). The agent activates browsers itself at startup | **No** | Nothing to push — but see the fleet note on `/usr/local/share/applications` |
+| Windows | Nothing | No | Nothing to push |
+| macOS | Automation for System Events and for each browser. Accessibility for Firefox | Yes, one per app pair | Yes, with an MDM PPPC profile, once the app has a stable signature |
+| Linux | `at-spi2-core` (a `.deb` dependency, and default on GNOME). The agent activates browsers itself | No | Nothing required. See the fleet note on `/usr/local/share/applications` |
 
-Windows needs nothing because UI Automation requires no consent. macOS is the most intrusive:
-Automation is granted per *pair*, so a person with five browsers sees five separate prompts.
+Windows needs nothing because UI Automation asks for no consent. macOS is the most intrusive: Automation is granted per pair, so someone with five browsers sees six prompts, counting System Events.
 
-### Linux — the agent activates browsers itself
+### Linux: the agent activates browsers itself
 
-**There is nothing for the employee to do, and nothing for them to switch off.** This
-matters more than convenience: any setting a tracked person can toggle is a setting
-tracking cannot depend on.
+There is nothing for the employee to do and nothing for them to switch off. Any setting the tracked person can toggle is a setting tracking can't depend on.
 
-A Linux browser builds the accessibility tree this agent reads **only if accessibility was
-already active when the browser process started**. Nothing done at runtime populates an
-already-running browser. So activation happens at *agent startup* (`activateBrowsersOnLinux`
-in `main.ts`), not when a timer starts: every browser opened from then on is tracked.
+A Linux browser builds the accessibility tree the agent reads only if accessibility was active when the browser process started. Nothing done later fills in an already-running browser. So activation happens at agent startup (`activateBrowsersOnLinux` in `main.ts`), not when a timer starts, and every browser opened from then on is tracked.
 
-`browser-activation.ts` finds every `.desktop` launcher declaring itself an `http` handler —
-the freedesktop-standard way of saying "I am a web browser", which is why an unknown or
-newly released browser needs no code change — and writes a shadowing copy with:
+`browser-activation.ts` finds every `.desktop` launcher that declares itself an `http` handler, which is the freedesktop way of saying "I am a web browser". That is why a new browser needs no code change. It writes a shadowing copy with:
 
 ```
 Exec=env GNOME_ACCESSIBILITY=1 <original> --force-renderer-accessibility=basic %U
 ```
 
-One universal rewrite, no browser list, no family detection. Verified on this machine:
+One rewrite for every browser, with no browser list. Verified on a real machine:
 
 | Browser | Packaging | Nodes in tree | Address bar |
 |---|---|---|---|
-| Brave | snap | 2 → **295** | `example.com/search?q=full+path+test&page=2` |
-| Chrome, Edge, Opera | deb / snap | stub → full | address bar readable |
-| Firefox | snap | absent from bus → full | address bar readable |
+| Brave | snap | 2 → 295 | `example.com/search?q=full+path+test&page=2` |
+| Chrome, Edge, Opera | deb / snap | stub → full | readable |
+| Firefox | snap | absent from bus → full | readable |
 
-Three findings worth recording, because each contradicts something that looked obvious:
+What the measurements showed:
 
-- **No browser works without this.** Chrome appeared to self-activate, but that instance had
-  inherited a live accessibility session from earlier in the day. A freshly launched Chrome
-  with accessibility off is a stub like the rest. There is no exception to special-case.
-- **`GNOME_ACCESSIBILITY=1` on everything, `=basic` for the flag.** Firefox tolerates the
-  unknown Chromium flag rather than rejecting it, which collapses two family-specific rules
-  into one line. `=basic` exposes the browser UI tree without the expensive web-content
-  tree — 273 nodes vs 274, same address bar, far less overhead per employee machine.
-- **Snap confinement was never the blocker.** Brave is a snap and reaches the accessibility
-  bus fine; it was only ever missing the flag.
-
-**`toolkit-accessibility` is not required and is no longer requested.** Every result above
-was measured with it `false`. The only machine prerequisite is `at-spi2-core`, which ships
-by default on GNOME.
+- No browser works without this. Chrome looked like it activated itself, but that instance had inherited a live accessibility session. A fresh Chrome with accessibility off is a stub like the rest.
+- `GNOME_ACCESSIBILITY=1` covers Gecko, and Firefox ignores the Chromium flag, so one line covers both families. `=basic` exposes the browser UI without the page-content tree: same address bar, much less overhead.
+- `toolkit-accessibility` is not needed and is not requested. Every result above was measured with it `false`.
+- Snap confinement doesn't stop the tree being read. It did stop snap browsers' `window:activate` events from reaching the agent while the `.deb` installed electron-builder's AppArmor profile, so snap Firefox and Opera went untracked. The `.deb`'s `build/afterInstall.sh` now leaves that profile out.
 
 #### What this does not cover
 
-- **Browsers already open when the agent starts** keep their empty tree until next launched,
-  since the tree is built at process start. Unavoidable; it resolves itself the next time the
-  person opens their browser.
-- **The agent writes to `~/.local/share/applications`**, which a determined user could shadow
-  back. For a fleet, deploy the same files to `/usr/local/share/applications` at install
-  time — it precedes both `/usr/share` and `/var/lib/snapd/desktop` in `XDG_DATA_DIRS`, so it
-  covers snaps too.
-- **Uninstall** should call `removeBrowserActivation`, which removes only files carrying the
-  agent's marker comment — a vendor entry sharing a filename is left alone.
+- A browser already open when the agent starts keeps its empty tree until it is fully closed and reopened. The same happens later if a browser's first process starts without the override, for example from a Chrome web-app shortcut, an autostart entry or a terminal. The agent spots these "blind" browsers on every heartbeat (`blind-browsers.ts`), marks the device's URL capture as degraded on the Devices page, and records their time as "Unknown website". Browsers that were open when the agent wrote its overrides are also offered a restart on a setup screen.
+- The agent writes its overrides to `~/.local/share/applications`, which a determined user could shadow back. For a fleet, deploy the same files to `/usr/local/share/applications` at install time. It comes before both `/usr/share` and `/var/lib/snapd/desktop` in `XDG_DATA_DIRS`, so it covers snaps too.
+- On `.deb` uninstall, `build/afterRemove.sh` removes every override carrying the agent's marker comment, in every user's home. A vendor entry with the same filename is left alone. Upgrades leave the overrides in place. The AppImage has no uninstall hook, so `removeBrowserActivation` is not called for it.
 
-### macOS — pre-granting so nobody sees a prompt
+### macOS: pre-granting so nobody sees a prompt
 
-Automation and Accessibility are TCC permissions. An MDM can pre-approve them with a
-**PPPC (Privacy Preferences Policy Control)** profile, which is the supported path for managed
-devices and avoids the per-browser prompt storm.
+Automation and Accessibility are TCC permissions. An MDM can pre-approve them with a PPPC (Privacy Preferences Policy Control) profile. That is the supported path for managed devices and avoids one prompt per browser.
 
-Two things to get right, both of which silently break it:
+Two things silently break it:
 
-- The profile must target the app's **code-signing identity**. TCC grants are keyed to the
-  signature, so a differently-signed build is a different app as far as macOS is concerned.
-- **Re-signing or moving the `.app` resets every existing grant** — see
-  `docs/url-tracking-permissions.md`.
+- The profile must target the app's code-signing identity, because TCC grants are keyed to the signature. Builds are ad-hoc signed for now, and an ad-hoc signature changes on every build. A PPPC profile can't target a stable identity until the app is signed with a Developer ID.
+- Re-signing or moving the `.app` resets every existing grant. See [`url-tracking-permissions.md`](./url-tracking-permissions.md).
 
-*Not verified against a real MDM here.* The mechanism is standard and documented by Apple, but
-the exact payload should be validated on one managed device before a fleet rollout.
+This has not been tested against a real MDM. The mechanism is standard and documented by Apple, but validate the payload on one managed device before a fleet rollout.
 
 ### Firefox, any platform
 
-Firefox has a pref that disables its accessibility engine outright:
+Firefox has a pref that turns off its accessibility engine:
 
 ```
 accessibility.force_disabled = 1   →  no tracking, on any OS
 ```
 
-It ships as `0`/unset, so this only matters if someone set it — it circulates in "speed up
-Firefox" advice. For managed fleets it can be pinned via Firefox's enterprise `policies.json`.
+It ships unset, so this only matters if someone set it. It circulates in "speed up Firefox" advice. Managed fleets can pin it to `0` through Firefox's enterprise `policies.json`.
 
-## Since the devices are company-controlled
+## Checklist for company-managed devices
 
-That removes the hard part. Everything above is centrally deployable:
+- Windows: nothing to do.
+- Linux: nothing required. Optionally copy the launcher overrides to `/usr/local/share/applications` at install time so a user can't shadow them from their home directory.
+- macOS: ship a PPPC profile keyed to the signing identity, once there is a stable one.
+- Firefox: pin `accessibility.force_disabled = 0` through enterprise policy if it may have been set.
 
-- **Windows** — nothing to do.
-- **Linux** — nothing required; the agent activates browsers itself. Optionally copy its
-  launcher overrides to `/usr/local/share/applications` at install time so a user cannot
-  shadow them from their home directory.
-- **macOS** — ship a PPPC profile keyed to the signing identity.
-- **Firefox** — pin `accessibility.force_disabled = 0` via enterprise policy if you have any
-  chance of it having been set.
-
-One rollout-order point worth planning around: on Linux, browsers already running when the
-agent first starts keep their empty accessibility tree until they are next launched, because
-that tree is built at process start. It resolves itself the first time the person reopens
-their browser, so it costs a day at most — but a rollout that ends with "no data yet" on a
-machine someone never closed their browser on is expected, not a fault.
+Plan the Linux rollout around one point. Browsers already running when the agent first starts stay untracked until they are restarted. The setup screen offers to do that. If the person declines, it fixes itself the next time they reopen the browser. A machine showing "no URL data yet" because its browser was never closed is expected, not a fault.
 
 ## How each failure looks
 
-Worth knowing, because most of these fail quietly rather than loudly.
+Most of these fail quietly.
 
 | Symptom | Cause |
 |---|---|
-| No data at all on Linux | `at-spi2-core` missing, so the accessibility bus is not running |
-| Some browsers tracked, one is not, coverage says "Active" | That browser was started before accessibility was enabled — restart it |
-| A browser is tracked by name/title but never by URL | It was already running when the agent started — it picks up tracking when next launched |
-| macOS: one browser tracked, another not | Automation denied for that specific browser |
-| Firefox specifically never tracked, others fine | `accessibility.force_disabled = 1` |
-
-**Known gap:** the middle row is the bad one. The coverage screen reports a browser as "Active"
-whenever it is installed and the helper is healthy — it has no way to know a browser is missing
-from the accessibility bus, because from the helper's side that browser is simply not there. So
-the most likely rollout failure is also the one the UI currently reports as fine. Closing it
-needs the resolver to report which browsers it can actually see, which the pinned protocol has
-no message for yet.
+| No URL data at all on Linux, Devices page says the accessibility service is not running | `at-spi2-core` missing, so there is no accessibility bus. Likely with an AppImage, or a `.deb` installed without its dependencies |
+| Linux: Devices page shows URL capture degraded, naming a browser. Its time shows as "Unknown website" | That browser is blind: it was started before activation or outside the override. Restart it fully |
+| macOS: one browser's time shows as "Unknown website", others are fine | Automation denied for that browser |
+| macOS: nothing tracked in any browser | Automation denied for System Events |
+| Firefox never tracked, other browsers fine | `accessibility.force_disabled = 1`, or on macOS, Accessibility not granted |

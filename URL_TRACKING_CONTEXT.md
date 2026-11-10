@@ -1,11 +1,10 @@
-# CLAUDE.md — URL & website tracking (spec §7.3)
+# URL and website tracking: invariants (spec §7.3)
 
-> Merge this into your existing `CLAUDE.md` rather than replacing it. Everything here is
-> context Claude Code needs in *every* session that touches URL tracking.
+Read this before any work that touches URL tracking. `CLAUDE.md` points here.
 
 ## What we are building
 
-Website (URL) tracking for the Onja desktop time-tracking agent: while the timer runs, record
+Website (URL) tracking for the hiday desktop agent: while the timer runs, record
 which websites the user is actively viewing and for how long. Reported per URL, per session.
 
 The full design lives in `docs/url-tracking-plan.md`. **Read it before proposing any
@@ -43,12 +42,15 @@ implementation.** This file holds only the invariants that must never be violate
 
 ```
 Electron main process
-  timer state · session engine · SQLite · sync · permission state · coverage UI
+  timer state · session engine · SQLite · sync · capture health on the device heartbeat
         │  spawn once; JSON-lines over stdin/stdout; watchdog restarts on failure
         ├── win-resolver.exe     C# / .NET    SetWinEventHook + UI Automation
-        ├── mac-resolver         osascript + small Swift helper
-        └── linux-resolver       Python       GNOME Shell Introspect + AT-SPI2
+        ├── mac-resolver         TypeScript   osascript + small Swift helper (Firefox)
+        └── linux-resolver       TypeScript   AT-SPI2 over D-Bus (dbus-next), focus from window:activate
 ```
+
+The mac and linux resolvers are compiled with the app (`desktop/src/main/resolvers/`) and run
+as child processes on Electron's own binary with `ELECTRON_RUN_AS_NODE=1`.
 
 ## The resolver protocol — pinned, do not redesign
 
@@ -86,7 +88,7 @@ One JSON object per line. Requests and responses on stdin/stdout; logs on **stde
 | `exact` | Real URL straight from the browser | Apple Events |
 | `displayed` | Normalized from the rendered address bar; scheme assumed | UIA, macOS AX, AT-SPI2 |
 | `guess` | Host inferred from a window title | title fallback |
-| `unknown` | A focused browser window whose address could not be read at all; url and host are empty | the orchestrator, never a resolver (`docs/adr/0027-...`) |
+| `unknown` | A focused browser window whose address could not be read at all; url and host are empty | the orchestrator, never a resolver (`docs/adr/0027-blind-browsers-at-runtime-and-unknown-url-time.md`) |
 
 ## Core data model
 
@@ -135,8 +137,9 @@ position, never on English element names; use a cache request; run on a dedicate
 hard ~250 ms deadline (UIA has none of its own); never cache elements across calls; reject any
 reading where the omnibox has keyboard focus.
 
-**Linux** — GNOME Shell Introspect over D-Bus for focus, AT-SPI2 for the URL. Supported only
-on GNOME-under-Wayland or any-WM-under-Xorg; detect and disable elsewhere.
+**Linux** — AT-SPI2 over D-Bus for both focus (`window:activate` events) and the URL. GNOME
+Shell Introspect is not used: `GetWindows` returns `AccessDenied` to an ordinary process on
+GNOME 46. Supported only on GNOME-under-Wayland or any-WM-under-Xorg; detect and disable elsewhere.
 
 A browser builds its accessibility tree **at launch**, so `browser-activation.ts` shadows each
 `.desktop` entry rather than changing any desktop setting. That leaves one gap: a browser already
@@ -158,20 +161,25 @@ no `http` handler and so is never shadowed), an autostart entry or a terminal. E
 afterwards joins that process, so the whole browser stays untracked until it is fully closed.
 That is checked on every heartbeat, not just at setup: a blind browser marks the device's URL
 capture `degraded` on the Devices page, and its windows are kept as "URL unknown" time rather
-than dropped (`docs/adr/0027-...`). The restart offer below still appears only once.
+than dropped (`docs/adr/0027-blind-browsers-at-runtime-and-unknown-url-time.md`). The restart
+offer below is not repeated on that heartbeat check.
 
-The agent offers to restart them, and does it on a button rather than on its own: ending a browser
-also ends whatever is unsaved in it, which no flag restores, so the timing is the person's to pick.
-That offer is a **setup screen shown before the login view**, not a banner over the timer, and it
-appears at most once per install — recorded in `setup-state.json` under the app's data directory,
-which survives logout and re-pairing. It is withheld entirely when no blind browser is running, so
-the single showing is spent on a launch that has something to say. Pressing Continue starts the
-restart and moves straight on rather than waiting for it.
-Only blind browsers are restarted — one launched after activation already has its tree. Chromium
-comes back with `--restore-last-session`, which reopens the previous session whatever the person's
-startup preference. **Firefox has no equivalent flag**: it restores only when
-`browser.startup.page` is `3`, so a Firefox without that preference is deliberately left running
-and reported for the person to restart themselves. Restarting it anyway would cost them their tabs.
+The agent offers to restart browsers, and does it on a button rather than on its own: ending a
+browser also ends whatever is unsaved in it, which no flag restores, so the timing is the person's
+to pick. That offer is a **setup screen shown before the login view**, not a banner over the timer
+(`browser-restart-prompt.ts`). It is asked per sweep, not once per install: it appears only on a
+launch whose activation sweep actually wrote a launcher override, which in practice is the first
+launch after install and any later sweep that rewrites an entry. Nothing is persisted to hold it
+back; a sweep that wrote nothing offers nothing. Pressing Continue starts the restart and moves
+straight on rather than waiting for it.
+It names every browser that was open when the sweep wrote, not only blind ones: a browser that
+already had its tree still lost its launcher binding (no dock icon, a click opens a new window),
+and only a restart gives it back. Browsers Continue has no launcher to restart from are listed
+separately for the person to restart by hand. Chromium comes back with `--restore-last-session`,
+which reopens the previous session whatever the person's startup preference. **Firefox has no
+equivalent flag**: it restores only when `browser.startup.page` is `3`. It is restarted anyway,
+and the screen warns that it won't reopen its tabs on its own and points to
+History > Restore Previous Session (`browser-restart.ts`).
 
 ## Testing expectations
 
@@ -185,9 +193,10 @@ and reported for the person to restart themselves. Restarting it anyway would co
 ## Conventions
 
 - TypeScript strict mode in the Electron app; no `any` in the session engine or protocol types.
-- Side-car binaries live in `native/<platform>/` and are bundled via electron-builder
-  `extraResources`; resolve paths through `process.resourcesPath` and make sure dev and
-  packaged both work.
+- Native side-car binaries (`native/win/` at the repo root, `desktop/native/darwin/` for the
+  Firefox helper) are bundled via electron-builder `extraResources`; resolve paths through
+  `process.resourcesPath` and make sure dev and packaged both work. The TypeScript resolvers
+  ship inside `dist/main/` (`resolvers/resolver-paths.ts`).
 - Never log a full URL at `info` level or above. URLs appear in debug logs only, and the debug
   log is opt-in.
 
@@ -215,26 +224,31 @@ materially different situations:
 | Situation | Meaning | Where |
 |---|---|---|
 | **No signal exists** | The browser genuinely exposes no incognito marker | Safari (Apple Events) |
-| **Signal not read** | A marker exists but this resolver does not attempt it | Linux (AT-SPI), Windows (UIA) |
+| **Signal not read** | A marker exists but this resolver does not attempt it | Linux (AT-SPI), every browser |
 
 Resulting behaviour per platform, as shipped:
 
 - **Linux** — declares no `private` capability at all (`resolvers/linux/index.ts`) and always
   reports `null`. Its own comment concedes this is "the failure direction that leaks a private
   URL". Private-window URLs **are** captured.
-- **Windows** — the same, by decision: reading Chromium's incognito indicator depends on an
-  AutomationId that could not be confirmed without real hardware, so Windows is not to rely on it.
-  Private-window URLs **are** captured. Note the code has not caught up yet — `AddressBarReader.cs`
-  still contains the unverified `IncognitoIndicatorAutomationId` attempt. It must be removed or
-  confirmed on real hardware before release: left as-is, a false positive would redact a *normal*
-  window's URL, which is the opposite failure and loses legitimate data.
-- **macOS** — the only platform that does detect it: Chromium browsers report real `true`/`false`
-  via Apple Events; Safari reports `null` per the original decision above.
+- **Windows** — declares `private`. Firefox reports real `true`/`false` from the per-locale
+  window-title markers (`firefox-private-markers.json`), so Firefox private windows are redacted.
+  Chromium browsers are not to be relied on, by decision: their incognito check depends on an
+  AutomationId (`IncognitoIndicatorAutomationId` = `IncognitoAvatarButton` in
+  `AddressBarReader.cs`) that could not be confirmed without real hardware, and when that element
+  is absent it reports `false`, not `null`. Treat Chromium private-window URLs on Windows as
+  captured. The unverified check must be removed or confirmed on real hardware before release:
+  left as-is, a false positive would redact a *normal* window's URL, which is the opposite failure
+  and loses legitimate data.
+- **macOS** — Chromium browsers report real `true`/`false` via Apple Events, and Firefox via the
+  same window-title markers through the AX helper; Safari reports `null` per the original
+  decision above.
 
 So `private === true` — the only value that triggers redaction in `session-engine.ts` and the
-storage invariant in `store.ts` — is currently reachable **only on macOS**. The anti-goal "do not
-store private-window URLs where `private === true`" still holds exactly as written; it is simply
-inert on two of the three platforms.
+storage invariant in `store.ts` — is reachable on macOS (Chromium and Firefox) and for Firefox on
+Windows, and never on Linux. The anti-goal "do not store private-window URLs where
+`private === true`" still holds exactly as written; it is simply inert wherever `private` is
+never `true`.
 
 This is deliberate and interim, not a bug to be fixed opportunistically. Anyone adding private
 detection to Linux or Windows is changing product behaviour, not filling in a gap — the user-facing

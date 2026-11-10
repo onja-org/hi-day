@@ -1,87 +1,74 @@
-*This research is done with Claude and all info is double checked on Google.*
+# What hiday can and can't do
 
-This is a quick, plain guide to what the product can and can't do, so you know what to expect.
+A plain guide to what to expect. Checked against the product in November 2026.
 
 ## The main thing to know
 
-How well it works depends on whose device it runs on:
+How well it works depends on whose device it runs on.
 
-- **Work devices** (owned by the company): everything works, and staff can't switch it off.
-- **Personal devices** (an employee's own laptop or phone): it still works, but staff can turn parts off. Some features become "best-effort."
+- Work devices (owned by the company): everything works, and the company controls the machine's permissions. Locking the app so staff can't quit it is planned. Today anyone can quit it from the tray menu.
+- Personal devices (an employee's own laptop): it still works, but staff can quit the app or refuse the permissions it asks for. Some features become best-effort.
 
 ## What it can do
 
-- Track time spent on projects and tasks.
+- Track time spent on projects and tasks, including while offline.
 - See which apps and websites are being used.
-- Take screenshots (you choose how often).
+- Take screenshots, as often as you choose, and delete them after a set number of days.
 - Show how active someone is.
-- Turn hours into reports, payroll, and invoices.
+- Turn hours into reports, with CSV export.
+
+Payroll and client invoicing are planned, not built yet.
 
 ## What it can't do
 
-- Track anything secretly from just a web browser — a small app must be installed.
-- Run completely hidden. Staff are shown it's on, and they're asked to allow it.
-- Record exactly what someone types. It only shows active vs. idle.
-- Track a phone's location perfectly in the background as phones limit this.
+- Track anything from just a web browser. The desktop app must be installed.
+- Run hidden. A tray icon shows when tracking is on, and admins can publish a notice explaining what is tracked.
+- Record what someone types. It only shows active vs. idle.
+- Track a phone's location. There is no phone app yet.
 
-## How it works (the apps vs. websites bit)
+## Apps vs. websites
 
-People usually assume that tracking which apps someone uses and tracking which websites they visit work the same way. They don't. And that difference is the whole reason one is rock-solid and the other needs an add-on.
+Tracking apps and tracking websites work differently, which is why one is solid everywhere and the other has gaps.
 
-Start with the apps. Your computer always knows which program we're using right now — it has to, or our typing wouldn't land in the right place. So our app just quietly asks the computer "what's open at the moment?" every few seconds, and the computer tells it: Chrome, Slack, Excel, whatever it is. That's it. Because the computer already has the answer, this part just works, across every program, with pretty much nothing to set up.
+Apps are easy. The computer always knows which program is in front, so the app asks every few seconds and gets an answer: Chrome, Slack, Excel. This works across every program with almost nothing to set up.
 
-Websites are the tricky one. Here's the bit that trips everyone up: our computer knows Chrome is open, but it has *no idea* which website you're actually on. That stays locked inside the browser, and the browser keeps it to itself. So the same trick we use for apps doesn't work here — there's simply nobody to ask.
+Websites are harder. The computer knows Chrome is open but not which page it shows. hiday doesn't use a browser add-on. Instead it reads the address bar the same way screen readers for blind users do, through the system's accessibility features. How well that works depends on the system:
 
-The only thing that knows the web address is the browser itself. So to see it, we have to put a tiny helper inside the browser. That's the add-on. It keeps an eye on the tabs and passes the current address back to the app.
+- Mac: exact web addresses for Safari, Chrome, Edge, Brave, Vivaldi and Opera. Firefox gives the address as shown in its bar. The person has to allow it in System Settings, and can say no.
+- Windows: the address as shown in the browser's bar. No permission needed.
+- Linux: the address as shown in the bar, on GNOME (Wayland) or any desktop running Xorg. A browser that was already open before hiday was first started can't be read until it is restarted. hiday offers to do that.
 
-Which is why website tracking comes with a couple of catches. Every browser needs its own add-on (though Chrome, Edge and Brave all share one). And because the add-on sits inside the browser, someone on their own personal laptop can just switch it off or delete it. On a company-owned device you can lock it in place so it can't be removed — and *that's* when website tracking becomes something you can genuinely count on.
+When hiday can see that a browser is in front but can't read its address, it records that time as "URL unknown" instead of guessing or dropping it.
 
 ## Quick summary
 
 | Feature | Works? | Notes |
 | --- | --- | --- |
-| Time tracking | Yes | Works everywhere. |
-| Apps in use | Yes | Works everywhere. |
-| Reports | Yes | Works everywhere. |
-| Screenshots | Yes | Needs the installed app + permission. |
-| Website tracking | Yes | Reliable on work devices; can be turned off on personal ones. |
-| Activity level | Yes | Shows active vs. idle — not what was typed. |
-| Location / GPS | Yes | Phone app only; less reliable in the background. |
+| Time tracking | Yes | Web and desktop. Keeps working offline. |
+| Apps in use | Yes | Every platform. |
+| Reports | Yes | CSV export. Payroll and invoicing planned. |
+| Screenshots | Yes | Needs the desktop app. On a Mac it needs the screen-recording permission. |
+| Website tracking | Yes | Depends on the browser and system (see above). |
+| Activity level | Yes | Active vs. idle, never what was typed. |
+| Location / GPS | No | Needs a phone app, which is planned for a later release. |
 
-## The technical side: how reliable is it, and why
+## How reliable is it, and why
 
-JavaScript is a solid choice for the whole thing — nothing here forces us into another language. The reliability questions aren't really about JavaScript itself. They're about the few small pieces that have to reach into the operating system, because plain JavaScript can't do that on its own.
+Most of hiday (the server, the web console, timers and reports) is ordinary TypeScript and as dependable as any web app.
 
-Most of the product — the backend, the dashboard, the timers, reports, and even the browser extension's own logic — is ordinary JavaScript, and it's as dependable as any web app you've shipped. The parts that have to touch the operating system are the ones to watch: reading which window is open, taking screenshots, and measuring typing and mouse activity. Those can't be done in plain JavaScript, so they rely on small helper components that ship with the desktop app. They work well, but they're the things that can break when we update the app's framework ([Electron](https://www.electronjs.org/)) or when a new version of Windows or macOS lands.
+The parts to watch are the ones that reach into the operating system: reading which window is in front, reading browser address bars, and taking screenshots. They rely on small helpers that ship with the desktop app, and they can break when the app's framework ([Electron](https://www.electronjs.org/)) is updated or a new Windows or macOS version comes out. The habit that keeps them reliable: pin versions, ship everything prebuilt, and re-test on real Windows and Mac machines after any big update.
 
-So the rule of thumb is simple: pin our versions, ship everything ready-built so nobody's compiling anything on their own machine, and re-test on real Windows and Mac computers after any big OS or [Electron](https://www.electronjs.org/) update. That habit is what keeps a JavaScript agent reliable over time.
-
-There's one real gotcha in the browser extension worth flagging. Modern extensions don't run all the time anymore — the browser puts them to sleep when nothing's happening and wakes them back up when something does (a tab changes, a page loads, the window switches). So the website tracking has to be built to *react to those events*, not to sit in a loop expecting to run forever. Done that way it's reliable. Done the naive way — say, a timer that assumes it's always running — it'll quietly miss visits.
-
-And because the desktop app runs all day, it needs the basics of any long-running program: keep memory tidy, restart itself if it crashes, and save data locally so a dropped internet connection doesn't lose anything. JavaScript handles all of that fine — you just have to build for it on purpose.
-
-**Here's the feature-by-feature picture:**
+Because the desktop app runs all day, it also restarts itself after a crash and saves captured data on the computer first, so a dropped connection loses nothing.
 
 | Feature | Built with | Reliability | The catch |
 | --- | --- | --- | --- |
-| Time, reports, payroll | NestJS + Next.js | Very high | None — it's ordinary web-app code. |
-| Idle detection | Electron (built in) | Very high | Nothing extra needed. |
-| Apps & windows | Electron + @paymoapp/active-window | High | The helper must match the app's Electron version. |
-| Screenshots | Electron + the OS screenshot tool | High | Needs the macOS screen-recording permission. |
-| Website (URL) tracking | Browser extension (JS) | High | Browser sleeps the extension when idle — must be event-driven. |
-| Activity level | Electron + uiohook-napi | Medium | Most fragile helper; can trip antivirus; sensitive to OS updates. |
-| Location / GPS | React Native | Medium | The phone limits background tracking no matter what. |
+| Time and reports | NestJS + Next.js | Very high | None. Ordinary web-app code. |
+| Idle detection | Electron (built in) | Very high | On Linux Wayland it works on GNOME only. Other Wayland desktops don't report idle time. |
+| Apps and windows | Electron + @paymoapp/active-window | High | The helper must match the app's Electron version. |
+| Screenshots | Electron's own screen capture | High | Needs the macOS screen-recording permission. |
+| Activity level | Electron's idle timer | High | Measures whether there was input, not how much. Same Linux limits as idle detection. |
+| Website tracking | Small helper per system (C# on Windows, TypeScript on Mac and Linux) | Medium | Depends on each browser's accessibility support and on permissions. |
 
-## Will it cope with lots of people at once - more on the tech side?
+## Will it cope with lots of people at once?
 
-What matters isn't the number of people; it's how the app talks to the server and where the screenshots end up. A few habits keep it comfortable:
-
-- **Don't chat with the server constantly.** Each installed app should gather its data and send it in batches every minute or so, instead of firing off a message for every tiny thing. That turns thousands of little messages into a light, steady trickle the server barely notices.
-- **Send screenshots straight to storage, not through the server.** Screenshots are the only heavy thing here. The app should upload them directly to cheap cloud storage, so the main server never carries the image files — it just keeps a note of where each one is. This is also why the settings for how often screenshots are taken, and how long they're kept, matter for cost.
-- **Do the heavy lifting in the background.** Jobs like shrinking screenshots and adding up the day's totals for reports should run on a background queue, not while someone's waiting. Everything stays feeling instant.
-- **Prepare the reports ahead of time.** Dashboards should read from ready-made summaries, not crunch through every raw record each time a manager opens a page.
-- **Cope with dropped connections.** If someone's internet drops, the app should hold onto its data and send it once the connection's back — nothing lost, and no flood when everyone reconnects at once.
-
-Built this way, a thousand all-day users still sits comfortably in "one modest server, one database, one storage bucket" territory, with plenty of room to grow to many thousands before anything needs rethinking. The one cost that genuinely grows with use is screenshot storage — which is exactly why the frequency and retention settings are worth getting right.
-
-**Bottom line:** JavaScript end to end is the right call for the first version. The only place where native code (Rust, or a small Swift or C#helper) would be a bit sturdier and lighter is the always-on screenshot and activity capture, because a background program written in native code uses less memory and is less exposed to the helper-breakage above. But that's a later optimisation — and if you ever want it, we can swap out just that one piece and leave everything else in JavaScript.
+Yes. The desktop app sends data in batches about once a minute, screenshots go straight to cloud storage without passing through the server, and reconnecting apps spread out their retries. That keeps 1,000 all-day users within one modest server, one database and one storage bucket. The one cost that grows with use is screenshot storage, which is why the frequency and retention settings matter. See `TECH_DESIGN.md` §4 and §8 for the details.
