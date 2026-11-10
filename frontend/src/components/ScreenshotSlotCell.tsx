@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import Image from "next/image";
+import { ScreenshotZoom } from "./ScreenshotZoom";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatHourLabel } from "@/lib/formatHourLabel";
 import { slotActivityLabel, slotWorkedMinutes } from "@/lib/slotActivityLabel";
@@ -168,16 +169,22 @@ export function ScreenshotSlotCell({
       <div className={clsx("grid gap-2", several && "grid-cols-2")}>
         {slot.screenshots.map((screenshot) => (
           <figure key={screenshot.id} className="flex flex-col gap-1">
-            <span className="relative block aspect-video overflow-hidden rounded-brand-sm bg-cream">
-              <Image
-                src={screenshot.url}
-                alt={`Screenshot at ${formatHourLabel(screenshot.capturedAt)}`}
-                fill
-                sizes="(max-width: 768px) 25vw, 12vw"
-                className="object-cover"
-                unoptimized
-              />
-            </span>
+            <ScreenshotZoom
+              url={screenshot.url}
+              alt={`Screenshot at ${formatHourLabel(screenshot.capturedAt)}`}
+              label={formatHourLabel(screenshot.capturedAt)}
+              className="relative block aspect-video overflow-hidden rounded-brand-sm bg-cream"
+              image={
+                <Image
+                  src={screenshot.url}
+                  alt={`Screenshot at ${formatHourLabel(screenshot.capturedAt)}`}
+                  fill
+                  sizes="(max-width: 768px) 25vw, 12vw"
+                  className="object-cover"
+                  unoptimized
+                />
+              }
+            />
             {/* Only worth naming when there is more than one. */}
             {several && (
               <figcaption className="text-xs tabular-nums text-slate-900/50">

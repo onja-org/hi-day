@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { ImagesSquareIcon } from "@phosphor-icons/react";
+import { ScreenshotZoom } from "./ScreenshotZoom";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
@@ -55,20 +56,24 @@ export function RecentActivityScreenshots({
   return (
     <div className="grid grid-cols-3 gap-2 rounded-lg border border-input-border p-4">
       {screenshots.map((screenshot, index) => (
-        <div
+        <ScreenshotZoom
           key={screenshot.id}
+          url={screenshot.url}
+          alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
+          label={new Date(screenshot.capturedAt).toLocaleTimeString()}
           className="relative aspect-video overflow-hidden rounded-lg bg-cream"
-        >
-          {/* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */}
-          <Image
-            src={screenshot.url}
-            alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
-            fill
-            unoptimized
-            priority={index < 3}
-            className="object-cover"
-          />
-        </div>
+          image={
+            /* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */
+            <Image
+              src={screenshot.url}
+              alt={`Screenshot captured at ${new Date(screenshot.capturedAt).toLocaleTimeString()}`}
+              fill
+              unoptimized
+              priority={index < 3}
+              className="object-cover"
+            />
+          }
+        />
       ))}
     </div>
   );
