@@ -3801,6 +3801,116 @@ describe('TimeEntriesService', () => {
       expect(call[0].where).not.toHaveProperty('startedAt');
     });
 
+    describe('paging', () => {
+      // `count` entries one minute apart, newest first, as the query orders
+      // them.
+      function rows(count: number, offset = 0): TimeEntry[] {
+        return Array.from({ length: count }, (_, i) => {
+          const n = offset + i;
+          return {
+            id: `entry-${String(n).padStart(4, '0')}`,
+            membershipId: 'm-1',
+            projectId: null,
+            taskId: null,
+            startedAt: new Date(Date.UTC(2026, 0, 31, 0, -n)),
+            endedAt: new Date(Date.UTC(2026, 0, 31, 0, -n, 30)),
+            source: TimeEntrySource.AGENT,
+            deviceId: null,
+            project: null,
+            task: null,
+          } as unknown as TimeEntry;
+        });
+      }
+
+      it('returns one page and a cursor at its oldest entry when more remain', async () => {
+        const all = rows(201);
+        const find = jest.fn().mockResolvedValue(all);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        });
+
+        const page = await service.listPage('org-1', 'user-1');
+
+        expect(page.entries).toHaveLength(200);
+        expect(page.nextCursor).toEqual({
+          startedAt: all[199].startedAt,
+          id: all[199].id,
+        });
+        const call = find.mock.calls[0] as [{ take: number; order: unknown }];
+        expect(call[0].take).toBe(201);
+        expect(call[0].order).toEqual({ startedAt: 'DESC', id: 'DESC' });
+      });
+
+      it('returns no cursor on the last page', async () => {
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            find: jest.fn().mockResolvedValue(rows(200)),
+          }),
+        });
+
+        const page = await service.listPage('org-1', 'user-1');
+
+        expect(page.entries).toHaveLength(200);
+        expect(page.nextCursor).toBeNull();
+      });
+
+      it('starts strictly after the cursor, breaking startedAt ties by id', async () => {
+        const find = jest.fn().mockResolvedValue([]);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        });
+        const cursor = {
+          startedAt: new Date('2026-01-15T09:00:00.000Z'),
+          id: 'entry-0100',
+        };
+
+        await service.listPage(
+          'org-1',
+          'user-1',
+          undefined,
+          undefined,
+          undefined,
+          cursor,
+        );
+
+        const call = find.mock.calls[0] as [
+          { where: Record<string, FindOperator<unknown>>[] },
+        ];
+        const [older, tied] = call[0].where;
+        expect(older.startedAt.type).toBe('lessThan');
+        expect(older.startedAt.value).toEqual(cursor.startedAt);
+        expect(tied.startedAt.type).toBe('equal');
+        expect(tied.startedAt.value).toEqual(cursor.startedAt);
+        expect(tied.id.type).toBe('lessThan');
+        expect(tied.id.value).toBe('entry-0100');
+      });
+
+      it('listAllInRange follows every page, so no entry beyond the first 200 is lost', async () => {
+        const all = rows(450);
+        const find = jest
+          .fn()
+          .mockResolvedValueOnce(all.slice(0, 201))
+          .mockResolvedValueOnce(all.slice(200, 401))
+          .mockResolvedValueOnce(all.slice(400));
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        });
+
+        const entries = await service.listAllInRange(
+          'org-1',
+          'user-1',
+          undefined,
+          new Date('2026-01-01T00:00:00.000Z'),
+          new Date('2026-01-31T23:59:59.999Z'),
+        );
+
+        expect(find).toHaveBeenCalledTimes(3);
+        expect(entries.map((entry) => entry.id)).toEqual(
+          all.map((entry) => entry.id),
+        );
+      });
+    });
+
     it('marks canEdit false for a plain member viewing their own entries', async () => {
       const ownEntry = {
         id: 'entry-1',

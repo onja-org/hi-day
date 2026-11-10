@@ -169,7 +169,7 @@ function setup(options: { claimed?: number; sent?: boolean } = {}) {
   const service = new ScheduledReportsService(
     savedReports,
     { transaction } as unknown as DataSource,
-    { list } as unknown as TimeEntriesService,
+    { listAllInRange: list } as unknown as TimeEntriesService,
     { listActiveForOrganisation } as unknown as MembershipsService,
     { sendReportEmail } as unknown as EmailService,
     { record },
