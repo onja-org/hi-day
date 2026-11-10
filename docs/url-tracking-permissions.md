@@ -1,85 +1,49 @@
-# URL tracking — macOS permission gates
+# URL tracking: macOS permission gates
 
-*For anyone debugging "why does this user have no URL data" or wondering why permissions
-that worked yesterday stopped working today. Implementation lives in
-`desktop/src/main/resolvers/darwin/permission-state.ts` and `coverage.ts`.*
+For debugging "why does this person have no URL data" on a Mac, or why permissions that worked yesterday stopped today. For Windows and Linux, and for what IT can push to a managed fleet, see [`url-tracking-machine-requirements.md`](./url-tracking-machine-requirements.md).
 
-*macOS only. For the cross-platform picture — what has to be true on a Windows, macOS or
-Linux machine before tracking produces data, and what IT can push centrally to a managed
-fleet — see [`url-tracking-machine-requirements.md`](./url-tracking-machine-requirements.md).*
+Code: `desktop/src/main/resolvers/darwin/`. `permission-copy.ts` holds the System Settings deep links and guidance text the app shows. `permission-state.ts` and `permission-onboarding.ts` model per-target Automation state, but only tests use them so far; the app does not run them.
 
 ## The gates
 
-| Gate | Needed for | Consent required? | How it's checked |
-|---|---|---|---|
-| **Automation** (per target app) | Apple Events to System Events (focus detection) and to each Chromium browser + Safari (URL resolution) | Yes — one grant per (this app, target app) pair | No dedicated check API exists. Inferred from real Apple Events attempts: a `consent-denied` (-1743) response means denied; any other response (success, or e.g. "no window") means granted, since the event reached the target at all |
-| **Accessibility** | The Firefox AX helper (Step 10); possibly full window-title fidelity via System Events GUI scripting (unconfirmed — flagged below) | Yes | `systemPreferences.isTrustedAccessibilityClient(false)` — Electron's own binding for `AXIsProcessTrusted()`, called from the main process (see `readDarwinPermissions()` in `main.ts`). A real no-prompt check, and no side-car needed |
-| **Screen Recording** | Window titles, in the *original* plan (which assumed `get-windows`) | N/A in this implementation | Modeled as `not-required` — see below |
+| Gate | Needed for | How it's checked |
+|---|---|---|
+| Automation, per target app | Apple Events to System Events (focus detection) and to each Chromium browser and Safari (URL reading) | No check API exists. A real Apple Events call that returns `consent-denied` (-1743) means denied. Any other answer, including "no window", means granted |
+| Accessibility | The Firefox AX helper | `systemPreferences.isTrustedAccessibilityClient(false)` in `main.ts`. A real check that never prompts. It is only asked for when Firefox is installed |
+| Screen Recording | Not needed for URL tracking | Modeled as `not-required` |
 
-**Why Screen Recording is `not-required` here specifically**: the original plan assumed
-`get-windows`, which needs Screen Recording for window titles (a Core Graphics API). This
-implementation reads titles via System Events / the Accessibility tree instead (see the
-Stage B.1 design note on dropping `get-windows` to avoid a second native-module ABI
-surface) — a different code path not believed to need Screen Recording at all. **Flagged
-for real-hardware confirmation, not asserted with false confidence** — if it turns out
-System Events' window introspection does trip a Screen Recording (or additional
-Accessibility) requirement in practice, that's a small correction to
-`permission-state.ts`'s default, not a redesign.
+Screen Recording would be needed to read window titles through Core Graphics. This implementation reads titles through System Events and the Accessibility tree instead, which is not believed to need it. That still needs confirming on real hardware. If it turns out to be needed, the fix is the default in `permission-state.ts`, not a redesign. The app does ask for Screen Recording for screenshots, which is a separate feature.
 
-## Automation is granted per (app, target) pair — seven separate grants
+## Automation is granted per app pair
 
-Automation consent is not one on/off switch. Each of these is independent, and a user can
-grant some and deny others:
+Automation is not one switch. Each target is a separate grant, and a person can allow some and deny others:
 
-- **System Events** — needed for focus detection itself (`focus-monitor.ts`'s frontmost-app
-  script), independent of which browser is focused.
-- **Chrome, Edge, Brave, Opera, Vivaldi** — the shared Chromium-family Apple Events script.
-- **Safari** — its own dictionary.
+- System Events, for focus detection. Needed whichever browser is in front.
+- Chrome, Edge, Brave, Opera and Vivaldi, which share one Chromium AppleScript. Arc uses the same script but has no entry in `permission-state.ts`.
+- Safari, which has its own dictionary.
 
-Firefox needs none of these — it's Accessibility-gated instead, via the Swift AX helper.
+Firefox needs no Automation grant. It uses the Accessibility gate through the Swift AX helper.
 
 ## What breaks without each gate
 
-- **System Events denied** → focus detection produces nothing at all. No `focus` events, no
-  resolve requests ever get sent for any browser, regardless of that browser's own
-  Automation status. This is the single most impactful gate to get right during onboarding.
-- **A specific browser's Automation denied** → that browser resolves nothing (a typed
-  `consent-denied` error on every resolve attempt) while every other granted browser keeps
-  working normally. Not a global failure — this is per-browser.
-- **Accessibility denied** → Firefox degrades to title-only (Prompt B.2's stated fallback);
-  every other browser is unaffected.
-- **Screen Recording** — not required by this implementation; nothing breaks here (see above).
+- System Events denied: focus detection produces nothing, so no browser is ever resolved, whatever its own Automation state. This is the most important gate to get right at onboarding.
+- One browser's Automation denied: that browser returns `consent-denied` on every read, and its time is recorded as "Unknown website (<browser>)". Other browsers keep working.
+- Accessibility denied: Firefox URLs are not read and its time is not recorded as website time. There is no title-only fallback. Other browsers are unaffected.
 
-## Re-signing or moving the .app resets ALL of this
+## Re-signing or moving the .app resets all of this
 
-This is a real, well-documented macOS behavior, not a bug in this codebase: TCC grants are
-keyed by the app's code signature and (in some cases) its path. **Re-signing the app with a
-different signature, or moving/renaming the `.app` bundle, resets every Automation and
-Accessibility grant back to asking again.** During development, this means:
+TCC grants are keyed to the app's code signature, and sometimes its path. Re-signing with a different signature, or moving or renaming the `.app`, resets every Automation and Accessibility grant to "ask again".
 
-- Every fresh local build may re-prompt for every gate, even ones you granted five minutes
-  ago on the previous build.
-- This is expected and does not indicate a regression in the permission state machine —
-  don't spend time debugging `permission-state.ts` when this happens; it's the OS, not us.
-- It also means production users who update via a differently-signed build (shouldn't
-  happen once real notarized signing with a stable Developer ID is in place — Step 27) would
-  see the same reset. Consistent signing identity across releases is what prevents this in
-  production; it doesn't need solving for local development.
+Builds are currently ad-hoc signed (`identity: "-"` in `electron-builder.yml`), and an ad-hoc signature changes on every build. So every new build re-prompts for every gate, in development and for real users updating. This is the OS, not a bug in the permission code. A stable Developer ID signature across releases is what will stop it.
 
-## Recovery — deep links to the right System Settings pane
+## Recovery
 
-A permanent "Don't Allow" is only undoable in System Settings, never re-prompted
-automatically. Deep links used for recovery (see the onboarding/permissions UI):
+A permanent "Don't Allow" can only be undone in System Settings. macOS never re-prompts on its own. Deep links (`SETTINGS_DEEP_LINKS` in `permission-copy.ts`):
 
 - Automation: `x-apple.systempreferences:com.apple.preference.security?Privacy_Automation`
 - Accessibility: `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`
-- Screen Recording (unused today, listed for completeness): `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`
+- Screen Recording: `x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`
 
-## The capability report
+## Where support sees the state
 
-`buildCapabilityReport` (in `resolvers/darwin/coverage.ts`) builds a snapshot combining installed-browser detection with current
-permission state, into exactly what Step 25 asks for: "for each installed browser, whether
-URL tracking is active, degraded, or off, and why, in one sentence." This is what should
-eventually be attached to the device's heartbeat/registration payload (see the open
-integration gap noted in `docs/url-tracking-gap-analysis.md` — no such transport exists yet)
-so support can answer "why do I have no URL data" without a screen-share.
+Each device sends its URL capture health on the heartbeat (`assessUrlCapture` in `desktop/src/main/url-capture-health.ts`), and the Devices page shows it. It reports whether the resolver is running and whether it can read URLs. It does not report per-browser Automation state, so a denied browser shows up only as "Unknown website" time for that browser.

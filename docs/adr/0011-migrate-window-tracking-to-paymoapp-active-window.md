@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded-in-part
+superseded-by: 0026-linux-app-tracking-reads-x11-directly-and-reports-its-health
 ---
 
 # Window tracking migrates from `get-windows` to `@paymoapp/active-window` — dropping the ESM-interop workaround and fixing the macOS title-reading gap `docs/adr/0009-...` had deliberately accepted
+
+Status: partly superseded by [0026](0026-linux-app-tracking-reads-x11-directly-and-reports-its-health.md) (Linux no longer uses the addon). Windows and macOS are unchanged.
 
 Requested as a refactor: replace `get-windows` (`docs/adr/0009-...`) with `@paymoapp/active-window` as the desktop agent's window-capture library. `WindowSampler` (`desktop/src/main/window-sampler.ts`) is the only place that talks to it; `classifyTitleUnavailability` (`desktop/src/main/window-sample.ts`) is the only place that reasons about *why* a title came back unavailable. Both changed; the surrounding architecture (`CaptureSettingsGate`, `TimerStatusGate`, `AppEventUploader`, the `windowTrackingEnabled`/timer-running gating) did not.
 

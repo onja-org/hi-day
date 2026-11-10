@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # Manual pause/resume is a separate gap-ledger table, not state on TimeEntry — amends ADR-0006
+
+Status: superseded without an ADR. Since commit e75ceb0, pause ends the entry and resume starts a new one; see the Pause entry in [CONTEXT.md](../../CONTEXT.md).
 
 Adds the ability to pause and resume the caller's own running Time entry, on both the web console and the desktop agent, without ending it. Requested directly by a person who wanted to see "how much time the timer was running" and be able to stop it from ticking temporarily rather than stopping it outright — a different action from anything ADR-0006 or ADR-0007 built. This is not the idle-discard flow: idle handling (`flag`/`auto_subtract`, see ADR-0007) always *terminates* the entry via `stop(endedAt)` when it decides tracked time should be discarded; a manual pause keeps the same entry alive and resumable, and is initiated by the person, not inferred from inactivity.
 

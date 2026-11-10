@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded-in-part
+superseded-by: 0017-ordinary-logout-no-longer-revokes-paired-devices
 ---
 
 # Desktop app authenticates by pairing with an already-logged-in web session, not its own password form; logging out on the web revokes it
+
+Status: partly superseded by [0017](0017-ordinary-logout-no-longer-revokes-paired-devices.md) (ordinary web logout no longer revokes paired devices).
 
 Product direction: login/logout should only ever happen in the web app. The desktop app's own email/password form (`AuthService.login`'s `deviceFingerprint` branch, added when the desktop agent first shipped) is superseded by a pairing flow, and logging out of the web app now also signs the user's devices out.
 
