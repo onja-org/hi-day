@@ -429,6 +429,61 @@ describe('offline cache', () => {
     });
   });
 
+  /**
+   * The server counts every day from the organisation's midnight, so the
+   * cache has to stamp and measure from the same one — a machine in
+   * another zone was a day out for as many hours as the two differ.
+   */
+  describe('following the organisation s day, not the machine s', () => {
+    const policy = {
+      handling: 'flag' as const,
+      thresholdMinutes: 5,
+      timezone: 'Indian/Antananarivo',
+    };
+
+    it('stamps totals with the organisation s day', () => {
+      // 01:00 on the 10th in Antananarivo; still the 9th anywhere west of it.
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+
+      expect(held.read().today?.day).toBe('2026-11-10');
+    });
+
+    it('withholds totals stamped with the organisation s yesterday', () => {
+      at('2026-11-09T20:00:00.000Z'); // 23:00 on the 9th, Antananarivo
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+      expect(cache().todayTotals()?.workedSeconds).toBe(60);
+
+      at('2026-11-09T22:00:00.000Z'); // 01:00 on the 10th — a new org day
+      expect(cache().todayTotals()).toBeNull();
+    });
+
+    it('measures the running entry from the organisation s midnight', () => {
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      const running: TimeEntry = {
+        ...entry,
+        startedAt: '2026-11-09T18:00:00.000Z',
+      };
+
+      // Org midnight was 21:00Z, so one hour of today, not four.
+      expect(held.projectedWorkedSeconds(running)).toBe(3600);
+    });
+
+    it('falls back to the machine s day when no zone has been heard', () => {
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+
+      expect(held.read().today?.day).toBe(localDay(new Date('2026-11-09T22:00:00.000Z')));
+    });
+  });
+
   it('forgets everything on sign-out', () => {
     const subject = cache();
     subject.readFor('device-1');

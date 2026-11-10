@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { dayKey, startOfDay } from './day-boundary';
 import type { CaptureSettingsValue } from './capture-settings-gate';
 import type {
   IdlePolicy,
@@ -65,11 +66,6 @@ function emptyState(): OfflineCacheState {
     workedSecondsAt: null,
     today: null,
   };
-}
-
-/** Local midnight that starts `at`'s day, in the machine's own time zone. */
-function startOfLocalDay(at: Date): Date {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate());
 }
 
 /** `YYYY-MM-DD` for `at` in the machine's own time zone, never UTC. */
@@ -151,9 +147,17 @@ export class OfflineCache {
     this.remember({ tasks: { ...this.read().tasks, [projectId]: tasks } });
   }
 
+  /**
+   * The organisation's day boundary, or null until one has been heard —
+   * the server counts every day from it, so this must too.
+   */
+  private get zone(): string | null {
+    return this.read().idlePolicy?.timezone ?? null;
+  }
+
   /** Totals stamped with the day they describe — see `todayTotals`. */
   rememberToday(totals: Omit<CachedToday, 'day'>): void {
-    this.remember({ today: { ...totals, day: localDay(this.now()) } });
+    this.remember({ today: { ...totals, day: dayKey(this.now(), this.zone) } });
   }
 
   /**
@@ -162,7 +166,7 @@ export class OfflineCache {
    */
   todayTotals(): CachedToday | null {
     const today = this.read().today;
-    return today?.day === localDay(this.now()) ? today : null;
+    return today?.day === dayKey(this.now(), this.zone) ? today : null;
   }
 
   /**
@@ -214,7 +218,7 @@ export class OfflineCache {
     if (
       at !== null &&
       state.workedSeconds !== null &&
-      localDay(at) === localDay(now)
+      dayKey(at, this.zone) === dayKey(now, this.zone)
     ) {
       const since = entry
         ? Math.max(0, Math.floor((now.getTime() - at.getTime()) / 1000))
@@ -224,7 +228,7 @@ export class OfflineCache {
     if (!entry) return 0;
     const from = Math.max(
       Date.parse(entry.startedAt),
-      startOfLocalDay(now).getTime(),
+      startOfDay(now, this.zone).getTime(),
     );
     return Math.max(0, Math.floor((now.getTime() - from) / 1000));
   }

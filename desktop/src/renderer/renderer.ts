@@ -742,6 +742,8 @@ let syncFailing = false;
 const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
+/** See `startOfToday` — null until a poll has said when the day began. */
+let organisationDayStartsAt: number | null = null;
 let idlePolicyLoadedAt = 0;
 let lastIdleSeconds = 0;
 let idleHandled = false;
@@ -2049,8 +2051,15 @@ projectSearch.addEventListener("input", renderProjects);
 taskPanelClose.addEventListener("click", closeTaskPanel);
 taskSearch.addEventListener("input", renderTaskPanelList);
 
-/** Local midnight that starts the current calendar day, in the machine's own timezone. */
+/**
+ * When the organisation's day began — the boundary the server counts every
+ * day from. Computed by main (`day-boundary.ts`) and carried on the status
+ * poll, since this side of the tsconfig boundary cannot reach it. The
+ * machine's own midnight stands in until the first poll answers, which is
+ * all an agent that has never reached anybody can honestly draw.
+ */
 function startOfToday(): number {
+  if (organisationDayStartsAt !== null) return organisationDayStartsAt;
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
@@ -2109,6 +2118,8 @@ async function refreshStatus(resync = false): Promise<void> {
   if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
     void loadIdlePolicy();
   }
+  const dayStartsAt = result.data.dayStartsAt;
+  if (dayStartsAt) organisationDayStartsAt = Date.parse(dayStartsAt);
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();

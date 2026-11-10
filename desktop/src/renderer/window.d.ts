@@ -87,6 +87,8 @@ declare global {
    */
     workedSeconds: number;
     limitReached?: { kind: "daily" | "weekly"; limitHours: number };
+    /** When the organisation's day began — see `CurrentTimer` in api-client. */
+    dayStartsAt?: string;
   }
 
   type IdleHandling = 'off' | 'flag' | 'auto_subtract';

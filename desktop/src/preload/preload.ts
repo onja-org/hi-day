@@ -96,6 +96,8 @@ export interface CurrentTimer {
   workedSeconds: number;
   /** Present on the one poll that ended the timer for reaching a limit. */
   limitReached?: { kind: "daily" | "weekly"; limitHours: number };
+  /** When the organisation's day began — see `CurrentTimer` in api-client. */
+  dayStartsAt?: string;
 }
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";

@@ -126,6 +126,13 @@ export interface CurrentTimer {
    */
   workedSeconds?: number;
   limitReached?: { kind: 'daily' | 'weekly'; limitHours: number };
+  /**
+   * When the organisation's day began, as an instant. Filled in by main,
+   * never by the server: the renderer cannot reach `day-boundary.ts`
+   * across the tsconfig boundary, and a number refreshed on every poll is
+   * never more than one poll stale. Absent only before the first answer.
+   */
+  dayStartsAt?: string;
 }
 
 export type IdleHandling = 'off' | 'flag' | 'auto_subtract';
@@ -137,6 +144,12 @@ export type AllowedApps = "all" | "desktop_only" | "mobile_only";
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
+  /**
+   * The organisation's own zone — the day boundary the server counts
+   * from. Optional: a backend from before this shipped omits it, and the
+   * agent falls back to the machine's own midnight (`day-boundary.ts`).
+   */
+  timezone?: string;
 }
 
 export interface CaptureSettings {

@@ -967,6 +967,8 @@ describe('OrganisationsService', () => {
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
         handling: 'flag',
         thresholdMinutes: 5,
+        // The agent counts its day from this; an org with no zone set is UTC.
+        timezone: 'UTC',
       });
     });
 
@@ -975,7 +977,11 @@ describe('OrganisationsService', () => {
         makeOrganisationsRepo({
           findOneOrFail: jest.fn().mockResolvedValue({
             id: 'org-1',
-            settings: { idleHandling: 'off', idleThresholdMinutes: 15 },
+            settings: {
+              idleHandling: 'off',
+              idleThresholdMinutes: 15,
+              timezone: 'Indian/Antananarivo',
+            },
           }),
         }),
         makeMembershipsRepo(),
@@ -988,6 +994,7 @@ describe('OrganisationsService', () => {
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
         handling: 'off',
         thresholdMinutes: 15,
+        timezone: 'Indian/Antananarivo',
       });
     });
   });

@@ -534,6 +534,7 @@ export class OrganisationsService {
       handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       thresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+      timezone: settings.timezone ?? DEFAULT_IDLE_POLICY.timezone,
     };
   }
 
