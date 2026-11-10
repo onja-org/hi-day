@@ -29,6 +29,8 @@ export type PendingOp =
       taskId: string | null;
       opId?: string;
       owner?: string;
+      /** So an offline idle Keep still reports its kept stretch on replay. */
+      idleSeconds?: number;
     };
 
 /**
@@ -69,6 +71,7 @@ export interface PendingTimerClient {
     taskId: string | null,
     startedAt?: string,
     opId?: string,
+    idleSeconds?: number,
   ): Promise<TrackingResult<TimeEntry>>;
   switchTimer(
     deviceToken: string,
@@ -313,12 +316,14 @@ export class PendingTimerOps {
       const result =
         op.type === 'stop'
           ? await client.stopTimer(deviceToken, op.at, op.opId)
-          : await client.startTimer(
+          : await this.sendStart(
+              client,
               deviceToken,
               op.projectId,
               op.taskId,
               op.at,
-              op.opId,
+              op.opId ?? randomUUID(),
+              op.idleSeconds,
             );
       const verdict = serverVerdict(result);
 
@@ -355,6 +360,45 @@ export class PendingTimerOps {
     }
     this.save(ops);
     return { settled: ops.length === 0, refused, signedOut: false };
+  }
+
+  /**
+   * The backend validates with `forbidNonWhitelisted`, so a field it has
+   * never heard of is a 400 — and 400 is in `REJECTION_STATUSES`, so the
+   * queue would drop the start and its paired stop and report the hours
+   * refused. An agent ahead of its backend would lose a whole idle-Keep
+   * restart rather than the annotation on it. So one retry without the
+   * field, same `opId` so nothing double-counts; hours matter more than
+   * how much of them was idle.
+   */
+  private async sendStart(
+    client: PendingTimerClient,
+    deviceToken: string,
+    projectId: string | null,
+    taskId: string | null,
+    startedAt: string | undefined,
+    opId: string,
+    idleSeconds: number | undefined,
+  ): Promise<TrackingResult<TimeEntry>> {
+    const result = await client.startTimer(
+      deviceToken,
+      projectId,
+      taskId,
+      startedAt,
+      opId,
+      idleSeconds,
+    );
+    if (idleSeconds === undefined || result.ok || result.status !== 400) {
+      return result;
+    }
+    return await client.startTimer(
+      deviceToken,
+      projectId,
+      taskId,
+      startedAt,
+      opId,
+      undefined,
+    );
   }
 
   /**
@@ -480,17 +524,26 @@ export class PendingTimerOps {
     taskId: string | null,
     client: PendingTimerClient,
     startedAt?: string,
+    idleSeconds?: number,
   ): Promise<TrackingResult<TimeEntry>> {
     const at = startedAt ?? new Date().toISOString();
     const opId = randomUUID();
     const answer = await this.settleFirst(deviceToken, client, () =>
-      this.queueStart(projectId, taskId, at, opId),
+      this.queueStart(projectId, taskId, at, opId, idleSeconds),
     );
     if (answer) return answer;
-    const result = await client.startTimer(deviceToken, projectId, taskId, startedAt, opId);
+    const result = await this.sendStart(
+      client,
+      deviceToken,
+      projectId,
+      taskId,
+      startedAt,
+      opId,
+      idleSeconds,
+    );
     if (result.ok) this.running.write(result.data);
     return serverVerdict(result) === 'undecided'
-      ? this.queueStart(projectId, taskId, at, opId)
+      ? this.queueStart(projectId, taskId, at, opId, idleSeconds)
       : result;
   }
 
@@ -499,14 +552,37 @@ export class PendingTimerOps {
     taskId: string | null,
     at: string,
     opId = randomUUID(),
+    idleSeconds?: number,
   ): TrackingResult<TimeEntry> {
     this.save([
       ...this.load(),
-      this.stamp({ type: 'start', at, projectId, taskId, opId }),
+      this.stamp({ type: 'start', at, projectId, taskId, opId, idleSeconds }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
     return { ok: true, data: entry, fromCache: true };
+  }
+
+  /**
+   * Splits the running entry at this instant on the same Project and Task —
+   * `reconcileDayBoundary` already does this at midnight. Through
+   * `switchTo`, so the stop and start are one transaction carrying paired
+   * operation ids, and unlike `start` it is not re-checked against
+   * work-time limits, so it can never leave somebody with no timer.
+   * `null` when there is nothing to split; a paused entry is already closed.
+   */
+  async splitRunning(
+    deviceToken: string,
+    client: PendingTimerClient,
+  ): Promise<TrackingResult<TimeEntry> | null> {
+    const current = this.running.read();
+    if (!current || current.endedAt || current.pausedAt) return null;
+    return await this.switchTo(
+      deviceToken,
+      current.projectId,
+      current.taskId,
+      client,
+    );
   }
 
   async switchTo(

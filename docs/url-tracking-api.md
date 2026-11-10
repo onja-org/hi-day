@@ -1,9 +1,6 @@
-# URL tracking — sync API contract
+# URL tracking: sync API contract
 
-*For the backend team implementing the ingest side of §7.3 website (URL) tracking. The
-client-side implementation lives in `desktop/src/main/url-capture/` — see
-`sync-contract.ts` for the exact TypeScript types this doc describes, and
-`sync-queue.ts` for how the client uses them.*
+How the desktop agent uploads URL sessions to the backend. The client types are in `desktop/src/main/url-capture/sync-contract.ts` and `session-types.ts`, and `sync-queue.ts` sends them. The server side is `UrlSessionsService.sync` (`backend/src/url-sessions/`), reached through `DeviceTrackingController`.
 
 ## Endpoint
 
@@ -13,108 +10,86 @@ Authorization: Bearer <deviceToken>
 Content-Type: application/json
 ```
 
-Matches the existing `/device/*` prefix convention already used for time-entries and
-projects (see `backend/src/time-entries/`, `backend/src/devices/`).
+Guarded by `DeviceSessionGuard`, like the other `/device/*` routes.
 
 ### Request body
 
 ```ts
 interface SyncRequestBody {
-  sessions: UrlSession[];
+  sessions: UrlSession[];   // 1 to 200 per request
 }
 
 interface UrlSession {
-  id: string;               // client-generated — see Idempotency below
+  id: string;               // UUID, client-generated idempotency key
   url: string;
   host: string;
   path: string | null;
   title: string | null;
   browser: string;
-  private: boolean | null;  // true | false | null (null = couldn't be determined)
-  deviceId: string;
+  private: boolean | null;  // null = couldn't be determined
+  deviceId: string;         // UUID; required, but the server ignores it (see below)
   startedAt: number;        // wall-clock ms
-  endedAt: number | null;
-  activeMs: number;         // accumulated active time — NOT endedAt - startedAt
+  endedAt: number;          // always set on the wire
+  activeMs: number;         // accumulated active time, NOT endedAt - startedAt
   tzOffsetMin: number;
   source: 'apple-events' | 'ax' | 'uia' | 'atspi' | 'title';
   confidence: 'exact' | 'displayed' | 'guess' | 'unknown';
 }
 ```
 
-This is the pinned model from `CLAUDE.md` — the client never sends a session with
-`endedAt: null` (an open, still-accumulating session). Only closed sessions are synced.
+The client only syncs rows with a non-null `endedAt`. That includes closed sessions and checkpoints. A checkpoint is a still-open session published so far, so a long read shows up before it ends. The same id is sent again later with a larger `activeMs`.
 
-**`confidence: 'unknown'`** is browser time whose address could not be read at all — a
-focused browser window the resolver found no address bar in, typically a Linux browser
-started without its accessibility tree (`docs/adr/0027-...`). It is sent with `url: ''`
-and `host: ''`, like a private session, and `private: null`; `source` is the platform's
-own reading method, the one that came back empty. Reports show it as "Unknown website
-(<browser>)", one row per browser, and never offer it for deletion by URL. It is the only
-empty-url session reports show: a private one (`private: true`) stays hidden.
+A private session (`private: true`) is sent with `url: ''` and `host: ''`.
+
+`confidence: 'unknown'` is browser time whose address could not be read at all, for example a Linux browser started without its accessibility tree (see `docs/adr/0027-blind-browsers-at-runtime-and-unknown-url-time.md`). It is sent with `url: ''`, `host: ''` and `private: null`. `source` is the platform's own reading method, the one that came back empty. Reports show it as "Unknown website (<browser>)", one row per browser, and never offer it for deletion by URL. It is the only empty-url session reports show. Private sessions stay hidden.
 
 ### Response body
 
 ```ts
 interface SyncResponseBody {
-  acked: string[];  // ids the server has durably persisted — may be a subset of the batch sent
+  acked: string[];  // ids the server has durably persisted
 }
 ```
 
-## Idempotency — this is the load-bearing part
+## Idempotency
 
-`id` is the client-generated idempotency key. **POSTing a batch containing an `id` the
-server has already persisted must be a no-op success for that id** — return it in `acked`
-again, don't error, don't duplicate the row. This is not an edge case to handle
-defensively; the client relies on it structurally:
+`id` is the idempotency key, and the server upserts by it. The client depends on this:
 
-- If the client's local process crashes after the server durably persists a batch but
-  before the client marks those ids as synced locally, the **next** sync attempt re-sends
-  the same ids. The server must recognize them and just re-confirm.
-- The same `id` can legitimately be sent to the server **more than once with different
-  data** over its lifetime. The session engine's merge window can reopen a session that
-  was already closed-and-synced (e.g. a brief lock/idle interruption on the same page) —
-  when it closes again, the client re-syncs the *same id* with a larger `activeMs` and a
-  later `endedAt`. Treat this as an upsert by `id`, not an insert-once: **last write wins**
-  on `endedAt`/`activeMs`, not first.
-- A partial `acked` list is expected, not exceptional — validation failures, rate
-  limiting, or a mid-batch server error can all mean only some ids succeed. The client
-  retries whatever isn't in `acked` on its next attempt; it never assumes all-or-nothing.
+- If the client crashes after the server stores a batch but before it marks the ids synced, it sends the same ids again. The server must store them again without error or duplicates and return them in `acked`.
+- The same `id` can arrive more than once with different data. Checkpoints do this, and so does the session engine's merge window, which can reopen a closed and synced session after a short lock or idle break. Last write wins on `endedAt` and `activeMs`.
+- `acked` may be a subset of the batch. The client retries whatever is missing and never assumes all-or-nothing.
 
-## Server-side clamping
+What the server does today:
 
-Per `docs/url-tracking-plan.md` Step 5 ("Server clamps every session to the
-tracked-time window"): a session's `[startedAt, endedAt]` range should be clamped to fall
-within the bounds of whatever `time_entry` was actually running on that device at the
-time, if any falls outside it entirely. Clamped sessions should still be included in
-`acked` — from the client's perspective, "the server persisted something for this id" is
-all that matters; it does not need the adjusted values echoed back.
+- It acks the whole batch or rejects it. One invalid session fails validation for the whole request with a 400. `older-backend-fallback.ts` handles the one known case: a backend older than `confidence: 'unknown'` rejects those sessions, so the client resends the batch without them and acks them locally.
+- `deviceId` is taken from the authenticated device session, never from the body.
+- If the member's "Track apps & URLs" setting is not `apps_urls`, the batch is acked without being stored, so the device doesn't retry it forever.
+- If "Window titles" is off, `title` is stored as null. The desktop app also strips it before sending.
 
-## Joining a UrlSession to a time entry / timesheet
+## Joining a UrlSession to a time entry
 
-**No foreign key on `UrlSession` for this.** The pinned client-side shape only carries
-`deviceId` — I'm deliberately not proposing a new field on it (e.g. `timeEntryId`) since
-that's a pinned model and the client can't reliably know which `time_entry` id a session
-belongs to at the moment it's captured (time entries are server-authoritative per
-`docs/adr/0006-time-entries-single-running-timer-server-authoritative.md`; the desktop
-agent doesn't hold that state today — see the open integration gap noted in
-`docs/url-tracking-gap-analysis.md`).
+`UrlSession` has no time entry foreign key, and the pinned client shape stays that way. Time entries are server-authoritative (`docs/adr/0006-time-entries-single-running-timer-server-authoritative.md`), so the client can't know the entry id at capture time.
 
-**Proposed join: time-range overlap, computed at query/report time** —
-`url_sessions.device_id = time_entry.device_id` (or however device→user is resolved)
-`AND url_sessions.started_at < time_entry.ended_at`
-`AND url_sessions.ended_at > time_entry.started_at`. This needs a decision from the
-backend team before reporting queries are built against it — flagging it explicitly here
-rather than assuming.
+The join is done at read time, by Membership and time. `getDayGroupedByUrl` gives each session the project of the time entry covering its `startedAt` (`findEntryCovering`), and hides sessions no entry covers. When a time entry is deleted or its start or end moves, `CaptureCleanupService.pruneUncovered` deletes the URL sessions no remaining entry covers.
+
+The server does not clamp `[startedAt, endedAt]` to the time entry window. Sessions are stored as received (ADR 0010).
+
+## Read and delete endpoints
+
+Web routes, JWT-authenticated, in `UrlSessionsController`:
+
+- `GET /organisations/:id/url-sessions?membershipId=` lists sessions grouped by URL, most recent first. It reads at most 1000 raw rows. Defaults to the caller's own Membership.
+- `GET /organisations/:id/url-sessions/day?date=YYYY-MM-DD&membershipId=&projectId=` returns one day grouped by hour, project and URL.
+- `DELETE /organisations/:id/url-sessions?membershipId=&url=` deletes every session for one URL for one member. Admin or manager only (team managers included), never your own history, and audit-logged as `url_session.deleted_by_url`.
+
+Viewing another member's sessions needs `canViewMembership`.
 
 ## Retention
 
-The client purges its own local rows older than a configurable window regardless of sync
-status (a privacy floor, not a sync-status-gated cleanup — see
-`UrlSessionStore.purgeOlderThan`). The server should enforce its own retention
-independently; don't rely on the client's local purge as the only enforcement point.
+The server has no time-based retention for URL sessions. Rows go away only through the per-URL delete or the time entry pruning above.
+
+On the client, `UrlSessionStore.purgeOlderThan` exists but nothing calls it yet. The local database is emptied on logout, unsent rows included, and rows from another account are deleted when someone else signs in. Don't rely on the client for retention; the server must enforce its own when it gets one.
 
 ## Batching
 
-The client sends up to 50 sessions per request by default (`SyncQueue`'s `batchSize`).
-Nothing here requires that number specifically — it's a client-side tuning knob, not part
-of the contract.
+The client sends up to 50 sessions per request (`SyncQueue`'s default `batchSize`), every 30 seconds (`SYNC_INTERVAL_MS` in `main.ts`). Both are client tuning knobs, not part of the contract. The server's limit of 200 is a defensive upper bound.

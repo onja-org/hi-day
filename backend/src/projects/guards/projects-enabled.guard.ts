@@ -12,6 +12,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { assertOrganisationNotSuspended } from '../../common/organisation-access.util';
 import { resolveProjectsEnabled } from '../../organisations/projects-setting';
 
 /**
@@ -51,6 +52,7 @@ export class ProjectsEnabledGuard implements CanActivate {
     if (!organisation) {
       throw new NotFoundException('Organisation not found.');
     }
+    assertOrganisationNotSuspended(organisation);
 
     const organisationDefault = (
       organisation.settings as { projectsEnabled?: boolean }

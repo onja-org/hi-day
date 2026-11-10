@@ -7,6 +7,9 @@ export interface CaptureSettingsSession {
 
 export interface CaptureSettingsValue {
   windowTrackingEnabled: boolean;
+  /** Gates the activity sampler only — never the idle reading the banner
+   * and sleep-dating use. */
+  activityTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   screenshotsEnabled: boolean;
@@ -34,6 +37,7 @@ const OFF_REMINDERS: ReminderSettings = {
 // longer blocks anything, it just decides whether the banner renders.
 const OFF_SETTINGS: CaptureSettingsValue = {
   windowTrackingEnabled: false,
+  activityTrackingEnabled: false,
   appUrlTracking: "off",
   // `all`, not a restriction: with no session there is nothing to track
   // anyway, and claiming the admin forbade it would be a lie.
@@ -45,9 +49,30 @@ const OFF_SETTINGS: CaptureSettingsValue = {
   reminders: OFF_REMINDERS,
 };
 
+/** What arrives, as opposed to what the agent runs on: an older backend or
+ * a cached object carries no `activityTrackingEnabled`. */
+export type IncomingCaptureSettings = Omit<
+  CaptureSettingsValue,
+  "activityTrackingEnabled"
+> & { activityTrackingEnabled?: boolean };
+
+/**
+ * A missing `activityTrackingEnabled` means **on** — wire compatibility,
+ * not the organisation default, which is `false`. The field is absent only
+ * when the server or the cached object predates the setting, and activity
+ * was recorded for everyone then; an upgrading agent must not read it as
+ * "switched off". Do not "correct" this to `?? false`.
+ */
+function withDefaults(settings: IncomingCaptureSettings): CaptureSettingsValue {
+  return {
+    ...settings,
+    activityTrackingEnabled: settings.activityTrackingEnabled ?? true,
+  };
+}
+
 export interface CaptureSettingsResult {
   ok: boolean;
-  data?: CaptureSettingsValue;
+  data?: IncomingCaptureSettings;
   /** The device was signed out — an answer, unlike a request that failed. */
   unauthorized?: boolean;
 }
@@ -109,9 +134,10 @@ export class CaptureSettingsGate {
    * poll reporting the same settings as the cache would read as "no
    * change" and never be applied at all.
    */
-  prime(settings: CaptureSettingsValue): void {
-    this.lastSettings = settings;
-    this.onChange(settings);
+  prime(settings: IncomingCaptureSettings): void {
+    const normalised = withDefaults(settings);
+    this.lastSettings = normalised;
+    this.onChange(normalised);
   }
 
   async pollOnce(): Promise<void> {
@@ -138,10 +164,10 @@ export class CaptureSettingsGate {
     // default, never reach the renderer as undefined — that is how the
     // "remaining in your work day" line went silently missing.
     if (result.ok && result.data) {
-      return {
+      return withDefaults({
         ...result.data,
         reminders: { ...OFF_REMINDERS, ...(result.data.reminders ?? {}) },
-      };
+      });
     }
     if (result.unauthorized) return OFF_SETTINGS;
     return null;
@@ -160,6 +186,8 @@ export class CaptureSettingsGate {
   private applyIfChanged(settings: CaptureSettingsValue): void {
     if (
       settings.windowTrackingEnabled === this.lastSettings.windowTrackingEnabled &&
+      settings.activityTrackingEnabled ===
+        this.lastSettings.activityTrackingEnabled &&
       settings.appUrlTracking === this.lastSettings.appUrlTracking &&
       settings.allowedApps === this.lastSettings.allowedApps &&
       settings.screenshotsEnabled === this.lastSettings.screenshotsEnabled &&

@@ -100,6 +100,16 @@ export class TimeEntry {
   })
   type: TimeEntryType;
 
+  /**
+   * Seconds at the start of this entry the person was idle for and chose to
+   * keep (see `TimeEntryType.RESUMED`). Always the opening slice and never
+   * more than one, since answering the prompt ends the previous entry and
+   * starts this one back where input stopped. `null` is "none was folded
+   * in", not zero seconds of it.
+   */
+  @Column({ type: 'integer', nullable: true })
+  idleSeconds: number | null;
+
   @Column({ type: 'uuid', nullable: true })
   deviceId: string | null;
 

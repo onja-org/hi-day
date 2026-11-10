@@ -11,6 +11,7 @@ import { DisclosureService } from '../disclosure.service';
 
 const NO_CAPTURE_ENABLED = {
   windowTrackingEnabled: false,
+  activityTrackingEnabled: false,
   screenshotsEnabled: false,
   screenshotFrequencySeconds: 600,
   screenshotRetentionDays: 30,
@@ -19,6 +20,13 @@ const NO_CAPTURE_ENABLED = {
 const CAPTURE_ENABLED = {
   ...NO_CAPTURE_ENABLED,
   windowTrackingEnabled: true,
+};
+
+/** Activity recording on its own is monitoring, and must raise the notice
+ * even with every app/URL/screenshot capture switched off. */
+const ACTIVITY_ONLY_ENABLED = {
+  ...NO_CAPTURE_ENABLED,
+  activityTrackingEnabled: true,
 };
 
 function makeDisclosureVersionsRepo(
@@ -219,6 +227,19 @@ describe('DisclosureService', () => {
       const status = await service.getConsentStatus('org-1', null, 'device-1');
 
       expect(status.required).toBe(false);
+    });
+
+    it('is required when only activity recording is enabled', async () => {
+      const service = makeService({
+        organisationsService: makeOrganisationsService(ACTIVITY_ONLY_ENABLED),
+        disclosureVersionsRepo: makeDisclosureVersionsRepo({
+          findOne: jest.fn().mockResolvedValue(DEFAULT_VERSION),
+        }),
+      });
+
+      const status = await service.getConsentStatus('org-1', null, 'device-1');
+
+      expect(status.required).toBe(true);
     });
 
     it('is not required (fail-closed but non-blocking) when capture is enabled but nothing has been published yet', async () => {
