@@ -38,9 +38,10 @@ export function ScreenshotSlotHourSection({
           />
         </span>
       </header>
-      {/* Six across so an hour reads as one row, top-aligned because an
-          hour mixes tall cards with flat tiles. */}
-      <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* At most four across so each screenshot stays large enough to
+          read. Cells stretch to their row's height, so an empty slot is
+          the same size as a screenshot card beside it. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {hour.slots.map((slot) => (
           <ScreenshotSlotCell
             key={slot.start}

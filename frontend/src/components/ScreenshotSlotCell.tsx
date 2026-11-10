@@ -50,7 +50,7 @@ function ActivityReading({
   if (label.kind === "none") {
     return <span className="text-xs text-slate-900/50">No activity</span>;
   }
-  // The timesheet's own wording, shortened to fit a sixth of a row.
+  // The timesheet's own wording, shortened to fit a quarter of a row.
   if (label.kind === "not-recorded") {
     return (
       <span
@@ -78,7 +78,7 @@ function ActivityReading({
   return (
     <span
       className="flex items-center justify-between gap-2"
-      // Marked rather than spelled out — a sixth of a row cannot carry the
+      // Marked rather than spelled out — a quarter of a row cannot carry the
       // timesheet's full sentence.
       title={
         label.partial
@@ -109,14 +109,16 @@ export function ScreenshotSlotCell({
 }: ScreenshotSlotCellProps) {
   // Nothing tracked, so nothing to say about it: a flat tile reads as
   // absence at a glance, where "No project" and "0 min" would dress one up
-  // as data.
+  // as data. Laid out like a screenshot card, with an empty frame where the
+  // picture would be, so it takes up the same space as one.
   if (slot.workedSeconds <= 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-1 rounded-brand-sm bg-primary-dark/5 px-2 py-6 text-center">
+      <div className="flex h-full flex-col gap-2 rounded-brand-sm bg-primary-dark/5 p-3">
         <span className="text-xs text-slate-900/50">
           {formatHourLabel(slot.start)} – {formatHourLabel(slot.end)}
         </span>
         <span className="text-xs text-slate-900/50">No activity</span>
+        <span className="mt-auto block aspect-video rounded-brand-sm bg-primary-dark/5" />
       </div>
     );
   }
@@ -171,7 +173,7 @@ export function ScreenshotSlotCell({
                 src={screenshot.url}
                 alt={`Screenshot at ${formatHourLabel(screenshot.capturedAt)}`}
                 fill
-                sizes="(max-width: 768px) 25vw, 8vw"
+                sizes="(max-width: 768px) 25vw, 12vw"
                 className="object-cover"
                 unoptimized
               />
