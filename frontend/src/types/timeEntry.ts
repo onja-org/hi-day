@@ -45,6 +45,30 @@ export type TimeEntryListItem = TimeEntry & {
   /** Keyboard/mouse activity across the entry, 0-100, or null when nothing
    * measured it — which is not the same as 0%. */
   activePercentage: number | null;
+  /**
+   * How much of the entry an activity sample actually covers, against how
+   * much could have been measured. They diverge when Record activity was
+   * switched on part-way through, an agent dropped out mid-entry, or the
+   * entry's times were edited outward — cases where a bare percentage would
+   * read as a claim about the whole entry. Optional so a response from a
+   * backend that predates them reads as "no qualifier to show".
+   */
+  activityCoveredSeconds?: number | null;
+  activityMeasurableSeconds?: number | null;
+  /**
+   * Seconds at the start of this entry that were idle time the person chose
+   * to keep when the desktop app asked. Pairs with `type: "resumed"`, which
+   * says *that* it happened where this says how much. Optional so a
+   * response from a backend that predates it reads as "none folded in".
+   */
+  idleSeconds?: number | null;
+  /**
+   * Whether activity is recorded for this entry's member right now. Lets a
+   * null `activePercentage` say *why* it is blank — "Activity not recorded"
+   * rather than a bare dash — without claiming 0%. Optional so a response
+   * from a backend that predates the setting reads as "recorded".
+   */
+  activityRecorded?: boolean;
   /** Whether the viewer can edit *and split* this entry — admin only. */
   canEdit: boolean;
   /** Whether the viewer can delete it — their own always, anyone's if an

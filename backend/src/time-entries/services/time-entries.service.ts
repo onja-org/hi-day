@@ -28,7 +28,14 @@ import { CaptureCleanupService } from '../../captures/services/capture-cleanup.s
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
-import { unionActiveSeconds } from '../../common/time-entry-union.util';
+import {
+  activeIntervals,
+  unionActiveSeconds,
+} from '../../common/time-entry-union.util';
+import type {
+  ProjectInterval as SlotProjectInterval,
+  SamplePeriod as SlotSamplePeriod,
+} from '../../screenshots/screenshot-slots.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { actsAsManager } from '../../common/manager-scope.util';
@@ -72,6 +79,7 @@ import { Device } from '../../database/entities/device.entity';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { TimeEntryType } from '../../database/entities/time-entry-type.enum';
 import { resolveProjectsEnabled } from '../../organisations/projects-setting';
+import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
@@ -179,12 +187,41 @@ export interface TimeEntryListItem extends TimeEntrySummary {
   type: TimeEntryType;
   /**
    * Keyboard/mouse activity across the entry, 0-100, or null when no
-   * activity sample covers it — an agent that never reported, or time
-   * tracked before this existed. Weighted by how much of each 10-minute
-   * sample actually falls inside the entry, so a sample half outside it
-   * counts half.
+   * activity sample covers it — an agent that never reported, time tracked
+   * before this existed, or a timer whose first 10-minute period hasn't
+   * closed yet. Weighted by how much of each 10-minute sample actually
+   * falls inside the entry, so a sample half outside it counts half.
+   *
+   * A running entry reports what has been measured so far; only measured
+   * time is averaged, so it says nothing about *how much* of the entry it
+   * describes — read it with the two figures below.
    */
   activePercentage: number | null;
+  /**
+   * What the percentage covers, against what could have been measured (the
+   * span to now for a running entry, pauses and kept idle time excluded).
+   * They diverge when recording was switched on part-way, an agent dropped
+   * out, a machine was swapped, or the times were edited outward — and a
+   * bare "90%" over the last 10 of 50 minutes reads as a claim about all 50.
+   */
+  activityCoveredSeconds: number | null;
+  activityMeasurableSeconds: number | null;
+  /**
+   * Whether activity is being recorded for this entry's member *right now*
+   * (the "Record activity" setting, their override else the org default).
+   * Lets the timesheet say why a null `activePercentage` is blank —
+   * "Activity not recorded" rather than a bare dash — without claiming 0%.
+   *
+   * Deliberately the current answer, not a historical one: no setting
+   * history is stored, so an entry whose agent simply never reported will
+   * also read "not recorded" once the setting is off. An entry that *does*
+   * carry a percentage keeps showing it either way, so activity measured
+   * before the switch stays visible.
+   */
+  activityRecorded: boolean;
+  /** Pairs with `type: 'resumed'`, which says *that* it happened where
+   * this says how much. */
+  idleSeconds: number | null;
   /** null while the entry is still running (endedAt is null). */
   durationSeconds: number | null;
   /** Whether the *viewer* can edit and split this entry — admin only. */
@@ -579,8 +616,13 @@ export class TimeEntriesService {
     deviceId: string | null,
     /** A device that was offline when start was pressed reports when that was. */
     requestedStartedAt?: Date,
-    /** `operationId` lets a replayed start be recognised — see `TimeEntry.startOperationId`. */
-    options: { operationId?: string } = {},
+    /**
+     * `operationId` lets a replayed start be recognised — see
+     * `TimeEntry.startOperationId`. `idleSeconds` is set only when the agent
+     * is restarting after an idle prompt answered with Keep, and says how
+     * much of this entry's opening the person was away for.
+     */
+    options: { operationId?: string; idleSeconds?: number } = {},
   ): Promise<TimeEntrySummary> {
     // Before anything else, including the one-timer-per-device conflict
     // below: a replay of a start the server already accepted would
@@ -639,6 +681,11 @@ export class TimeEntriesService {
       deviceId,
       requestedStartedAt,
     );
+    const idleSeconds = this.resolveKeptIdleSeconds(
+      options.idleSeconds,
+      requestedStartedAt,
+      startedAt,
+    );
     const entry = this.timeEntries.create({
       organisationId,
       membershipId: membership.id,
@@ -648,6 +695,11 @@ export class TimeEntriesService {
       endedAt: null,
       source,
       deviceId,
+      idleSeconds,
+      // What `resumed` has always meant (see `TimeEntryType`) and until now
+      // nothing ever set: an entry the person kept after an idle warning,
+      // so it contains idle time on purpose.
+      ...(idleSeconds !== null ? { type: TimeEntryType.RESUMED } : {}),
       startOperationId: options.operationId ?? null,
       stopOperationId: null,
       lastSeenAt: deviceId === null ? new Date() : null,
@@ -674,6 +726,7 @@ export class TimeEntriesService {
                 ),
               }
             : {}),
+          ...(idleSeconds !== null ? { keptIdleSeconds: idleSeconds } : {}),
         },
       });
     });
@@ -1012,6 +1065,10 @@ export class TimeEntriesService {
     );
     const activity = await this.getActivityFor(subjectMembershipId, entries);
     const canModifyTime = await this.canModifyTime(membership, organisationId);
+    const activityRecorded = await this.isActivityRecordedFor(
+      organisationId,
+      subjectMembershipId,
+    );
     return entries.map((entry) =>
       this.toListItem(
         entry,
@@ -1019,6 +1076,7 @@ export class TimeEntriesService {
         pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
         canModifyTime,
         activity.get(entry.id),
+        activityRecorded,
       ),
     );
   }
@@ -1051,6 +1109,58 @@ export class TimeEntriesService {
       .andWhere('entry.startedAt < :end', { end })
       .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :start)', { start })
       .getMany();
+  }
+
+  /**
+   * What the Screenshots 10-minute view needs: tracked time overlapping the
+   * window, pauses netted out and tagged with its Project, plus the samples
+   * touching it. Here rather than in `ScreenshotsService` so a slot's
+   * seconds come from the same union rule the timesheet's own total uses
+   * (docs/adr/0022) — a second implementation would be a second opinion
+   * about somebody's hours.
+   */
+  async trackedDay(
+    organisationId: string,
+    membershipId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{
+    intervals: SlotProjectInterval[];
+    samples: SlotSamplePeriod[];
+  }> {
+    const [entries, samples] = await Promise.all([
+      this.timeEntries
+        .createQueryBuilder('entry')
+        .where('entry.organisationId = :organisationId', { organisationId })
+        .andWhere('entry.membershipId = :membershipId', { membershipId })
+        .andWhere('entry.startedAt < :to', { to })
+        .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :from)', { from })
+        .getMany(),
+      this.activitySamples.find({
+        where: {
+          membershipId,
+          periodStart: LessThan(to),
+          periodEnd: MoreThan(from),
+        },
+      }),
+    ]);
+
+    const pauses = await this.pausesByEntry(entries);
+    const now = new Date();
+    const intervals = entries.flatMap((entry) =>
+      activeIntervals(entry, pauses.get(entry.id) ?? [], now).map(
+        (interval) => ({ ...interval, projectId: entry.projectId ?? null }),
+      ),
+    );
+
+    return {
+      intervals,
+      samples: samples.map((sample) => ({
+        periodStart: sample.periodStart,
+        periodEnd: sample.periodEnd,
+        activePercentage: sample.activePercentage,
+      })),
+    };
   }
 
   /**
@@ -2156,6 +2266,27 @@ export class TimeEntriesService {
     }
   }
 
+  /** Through the shared resolver so this and the agent's settings poll
+   * cannot disagree, and off repositories this service already holds —
+   * OrganisationsModule imports TimeEntriesModule, so depending on it here
+   * would make the cycle real. */
+  private async isActivityRecordedFor(
+    organisationId: string,
+    membershipId: string,
+  ): Promise<boolean> {
+    const [organisation, membership] = await Promise.all([
+      this.organisations.findOne({ where: { id: organisationId } }),
+      this.memberships.findOne({ where: { id: membershipId } }),
+    ]);
+    const settings = (organisation?.settings ?? {}) as {
+      activityTrackingEnabled?: boolean;
+    };
+    return resolveActivityTrackingEnabled(
+      settings.activityTrackingEnabled,
+      membership?.activityTrackingEnabled,
+    );
+  }
+
   /**
    * Average keyboard/mouse activity per entry, 0-100.
    *
@@ -2164,20 +2295,28 @@ export class TimeEntriesService {
    * inside the entry — a period half outside counts half. An entry no sample
    * covers is absent from the map rather than reported as 0%, which would
    * read as "they did nothing" instead of "nothing was measured".
+   *
+   * A running entry is weighted up to now: periods close and upload
+   * mid-timer, so waiting for the entry to stop dashed out a live row that
+   * already had readings. The denominator is accumulated overlap, not the
+   * entry's span, so the not-yet-sampled tail drags it neither way.
    */
   private async getActivityFor(
     membershipId: string,
     entries: TimeEntry[],
-  ): Promise<Map<string, number>> {
-    const spans = entries.filter((entry) => entry.endedAt !== null);
-    if (spans.length === 0) return new Map();
+  ): Promise<Map<string, { percentage: number; coveredSeconds: number }>> {
+    if (entries.length === 0) return new Map();
+
+    // No end to weight against, so now stands in — which also trims the
+    // last sample, whose `periodEnd` can sit a segment past the present.
+    const nowMs = Date.now();
+    const endMsOf = (entry: TimeEntry): number =>
+      entry.endedAt?.getTime() ?? nowMs;
 
     const from = new Date(
-      Math.min(...spans.map((entry) => entry.startedAt.getTime())),
+      Math.min(...entries.map((entry) => entry.startedAt.getTime())),
     );
-    const to = new Date(
-      Math.max(...spans.map((entry) => entry.endedAt!.getTime())),
-    );
+    const to = new Date(Math.max(...entries.map(endMsOf)));
 
     const samples = await this.activitySamples.find({
       where: {
@@ -2188,20 +2327,26 @@ export class TimeEntriesService {
     });
     if (samples.length === 0) return new Map();
 
-    const byEntry = new Map<string, number>();
-    for (const entry of spans) {
+    const byEntry = new Map<
+      string,
+      { percentage: number; coveredSeconds: number }
+    >();
+    for (const entry of entries) {
       let weighted = 0;
-      let seconds = 0;
+      let coveredMs = 0;
       for (const sample of samples) {
         const overlap =
-          Math.min(entry.endedAt!.getTime(), sample.periodEnd.getTime()) -
+          Math.min(endMsOf(entry), sample.periodEnd.getTime()) -
           Math.max(entry.startedAt.getTime(), sample.periodStart.getTime());
         if (overlap <= 0) continue;
         weighted += sample.activePercentage * overlap;
-        seconds += overlap;
+        coveredMs += overlap;
       }
-      if (seconds > 0) {
-        byEntry.set(entry.id, Math.round(weighted / seconds));
+      if (coveredMs > 0) {
+        byEntry.set(entry.id, {
+          percentage: Math.round(weighted / coveredMs),
+          coveredSeconds: Math.round(coveredMs / 1000),
+        });
       }
     }
     return byEntry;
@@ -2725,6 +2870,37 @@ export class TimeEntriesService {
     return startedAt;
   }
 
+  /**
+   * The kept stretch as it sits inside the entry actually recorded, which
+   * is not always what the agent reported: `resolveStartedAt` can move a
+   * start forward, and whatever it moved past is no longer inside the
+   * entry, so the same amount comes off the front. Capped at the recorded
+   * span so no agent can call an entry more idle than it is long. `null`
+   * is "none was folded in", as distinct from zero seconds of it.
+   */
+  private resolveKeptIdleSeconds(
+    reported: number | undefined,
+    requestedStartedAt: Date | undefined,
+    startedAt: Date,
+  ): number | null {
+    if (reported === undefined || reported <= 0) return null;
+
+    const clampedAwaySeconds = requestedStartedAt
+      ? Math.max(
+          0,
+          Math.round(
+            (startedAt.getTime() - requestedStartedAt.getTime()) / 1000,
+          ),
+        )
+      : 0;
+    const spanSeconds = Math.max(
+      0,
+      Math.round((Date.now() - startedAt.getTime()) / 1000),
+    );
+    const inside = Math.min(reported - clampedAwaySeconds, spanSeconds);
+    return inside > 0 ? inside : null;
+  }
+
   private assertValidRange(startedAt: Date, endedAt: Date): void {
     if (endedAt.getTime() <= startedAt.getTime()) {
       throw new ConflictException('End time must be after the start time.');
@@ -2840,8 +3016,18 @@ export class TimeEntriesService {
     viewerMembership: Membership,
     pauseState: PauseState,
     canModifyTime: boolean,
-    activePercentage?: number,
+    activity: { percentage: number; coveredSeconds: number } | undefined,
+    activityRecorded: boolean,
   ): TimeEntryListItem {
+    // To now while still running, less paused and kept-idle time: the
+    // sampler runs for neither, so neither is missing coverage.
+    const endMs = entry.endedAt?.getTime() ?? Date.now();
+    const measurableSeconds = Math.max(
+      0,
+      Math.round((endMs - entry.startedAt.getTime()) / 1000) -
+        pauseState.pausedSeconds -
+        (entry.idleSeconds ?? 0),
+    );
     return {
       id: entry.id,
       membershipId: entry.membershipId,
@@ -2859,7 +3045,11 @@ export class TimeEntriesService {
       memberName: entry.membership?.user?.name ?? null,
       memberEmail: entry.membership?.user?.email ?? null,
       type: entry.type,
-      activePercentage: activePercentage ?? null,
+      activePercentage: activity?.percentage ?? null,
+      activityCoveredSeconds: activity ? activity.coveredSeconds : null,
+      activityMeasurableSeconds: activity ? measurableSeconds : null,
+      activityRecorded,
+      idleSeconds: entry.idleSeconds ?? null,
       durationSeconds: entry.endedAt
         ? Math.round(
             (entry.endedAt.getTime() - entry.startedAt.getTime()) / 1000,

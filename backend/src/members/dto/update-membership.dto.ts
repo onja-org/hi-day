@@ -80,6 +80,16 @@ export class UpdateMembershipDto {
   appUrlTracking?: AppUrlTracking | null;
 
   /**
+   * Per-member override of the Organisation's Record activity default.
+   * `null` clears the override so this Membership falls back to the org
+   * default. Omit entirely to leave it unchanged.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  activityTrackingEnabled?: boolean | null;
+
+  /**
    * Per-member override of the Organisation's Projects default, either
    * direction. `null` clears it and inherits again.
    */

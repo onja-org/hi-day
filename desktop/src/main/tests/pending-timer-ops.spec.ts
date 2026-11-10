@@ -89,6 +89,8 @@ describe('PendingTimerOps', () => {
       'task',
       (op as { at: string }).at,
       (op as { opId: string }).opId,
+      // A normal start reports no kept idle time.
+      undefined,
     );
     expect(ops.load()).toEqual([]);
   });
@@ -102,6 +104,7 @@ describe('PendingTimerOps', () => {
       null,
       '2026-10-09T09:00:00.000Z',
       expect.any(String),
+      undefined,
     );
 
     const ops = new PendingTimerOps(dir);
@@ -182,6 +185,7 @@ describe('PendingTimerOps', () => {
       null,
       expect.any(String),
       expect.any(String),
+      undefined,
     );
   });
 
@@ -236,6 +240,7 @@ describe('PendingTimerOps', () => {
         null,
         expect.any(String),
         queued,
+        undefined,
       );
     });
 
@@ -475,7 +480,122 @@ describe('PendingTimerOps', () => {
       ops.retryNow();
       const startTimer = vi.fn(() => Promise.resolve(ok));
       expect((await ops.flush('t', client({ startTimer }))).settled).toBe(true);
-      expect(startTimer).toHaveBeenCalledWith('t', 'p2', null, (queued[0] as { at: string }).at, expect.any(String));
+      expect(startTimer).toHaveBeenCalledWith('t', 'p2', null, (queued[0] as { at: string }).at, expect.any(String), undefined);
+    });
+
+    // Keeping idle time while offline is the easy way to lose the amount:
+    // the start goes in the queue, and the kept stretch has to go with it.
+    it('replays a kept idle stretch with the start it belongs to', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start(
+        't',
+        'p2',
+        null,
+        client({ startTimer: () => Promise.resolve(unavailable) }),
+        '2026-10-09T09:00:00.000Z',
+        1200,
+      );
+
+      const startTimer = vi.fn(() => Promise.resolve(ok));
+      ops.retryNow();
+      await ops.flush('t', client({ startTimer }));
+
+      expect(startTimer).toHaveBeenCalledWith(
+        't',
+        'p2',
+        null,
+        '2026-10-09T09:00:00.000Z',
+        expect.any(String),
+        1200,
+      );
+    });
+
+    // The backend validates with forbidNonWhitelisted, so one that predates
+    // `idleSeconds` answers 400 — a rejection the queue would otherwise read
+    // as final, dropping the start and the hours with it. Keep the hours,
+    // lose only the annotation.
+    it('retries a start without the kept stretch when the server rejects it', async () => {
+      const ops = new PendingTimerOps(dir);
+      const rejected = {
+        ok: false as const,
+        message: 'property idleSeconds should not exist',
+        status: 400,
+      };
+      const startTimer = vi
+        .fn()
+        .mockResolvedValueOnce(rejected)
+        .mockResolvedValueOnce(ok);
+
+      const result = await ops.start(
+        't',
+        'p2',
+        null,
+        client({ startTimer }),
+        '2026-10-09T09:00:00.000Z',
+        1200,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(startTimer).toHaveBeenCalledTimes(2);
+      // Same opId both times, so the server cannot count it twice.
+      const [first, second] = startTimer.mock.calls as unknown[][];
+      expect(first[5]).toBe(1200);
+      expect(second[5]).toBeUndefined();
+      expect(second[4]).toBe(first[4]);
+      // Nothing left queued: the hours landed.
+      expect(ops.load()).toEqual([]);
+    });
+
+    it('splits the running entry on the same project and task', async () => {
+      const ops = new PendingTimerOps(dir);
+      ops.remember({ ...entry, projectId: 'p7', taskId: 't7' });
+      const switchTimer = vi.fn(() => Promise.resolve(ok));
+
+      const result = await ops.splitRunning('t', client({ switchTimer }));
+
+      expect(result?.ok).toBe(true);
+      expect(switchTimer).toHaveBeenCalledWith(
+        't',
+        'p7',
+        't7',
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    it('splits nothing when no timer is running here', async () => {
+      const ops = new PendingTimerOps(dir);
+      const switchTimer = vi.fn(() => Promise.resolve(ok));
+
+      expect(await ops.splitRunning('t', client({ switchTimer }))).toBeNull();
+      expect(switchTimer).not.toHaveBeenCalled();
+    });
+
+    // A paused entry is already closed; resuming opens a fresh one, so
+    // there is no boundary to draw and splitting would start a second
+    // timer behind somebody's back.
+    it('leaves a paused entry alone', async () => {
+      const ops = new PendingTimerOps(dir);
+      ops.remember({ ...entry, pausedAt: '2026-10-09T09:00:00.000Z' });
+      const switchTimer = vi.fn(() => Promise.resolve(ok));
+
+      expect(await ops.splitRunning('t', client({ switchTimer }))).toBeNull();
+      expect(switchTimer).not.toHaveBeenCalled();
+    });
+
+    it('does not retry a start that carried no kept stretch', async () => {
+      const ops = new PendingTimerOps(dir);
+      const startTimer = vi.fn(() =>
+        Promise.resolve({
+          ok: false as const,
+          message: 'Too old to record',
+          status: 400,
+        }),
+      );
+
+      await ops.start('t', 'p2', null, client({ startTimer }));
+
+      expect(startTimer).toHaveBeenCalledTimes(1);
     });
 
     it('keeps the stop paired to a start the server could not answer', async () => {

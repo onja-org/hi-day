@@ -193,6 +193,8 @@ declare global {
           projectId: string | null,
           taskId: string | null,
           startedAt?: string,
+          /** Idle time this start folds back in; the idle prompt's Keep only. */
+          idleSeconds?: number,
         ) => Promise<TrackingResult<TimeEntry>>;
         switchTo: (projectId: string | null, taskId: string | null) => Promise<TrackingResult<TimeEntry>>;
         stop: (endedAt?: string) => Promise<TrackingResult<TimeEntry>>;

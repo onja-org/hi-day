@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class StartTimeEntryDto {
   @IsOptional()
@@ -14,6 +14,18 @@ export class StartTimeEntryDto {
   @IsOptional()
   @IsDateString()
   startedAt?: string;
+
+  /**
+   * Idle seconds this start folds back in, set only by the agent restarting
+   * after an idle prompt answered with Keep — a discarded stretch begins
+   * when they came back, and a short sleep never reached the threshold.
+   * Reported because only the agent knows when input stopped; the server
+   * clamps it to the span it recorded. Device endpoints only.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  idleSeconds?: number;
 
   /**
    * The agent's own id for this operation, so a replay is recognised

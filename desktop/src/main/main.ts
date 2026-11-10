@@ -1317,6 +1317,10 @@ async function registerIpcHandlers(): Promise<void> {
   /** The tray's own start/stop confirmation, kept apart from the alert above. */
   let timerNotification: Notification | null = null;
   let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
+  let activityTrackingEnabled = true;
+  /** Null until settings land once, so priming and the first poll are not
+   * mistaken for a change and do not split anybody's entry at launch. */
+  let lastActivityTracking: boolean | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -1365,27 +1369,32 @@ async function registerIpcHandlers(): Promise<void> {
       void appEventUploader.flush();
     }
 
-    // Rides neither capture setting: activity is not an app, a URL or a
-    // window title, so switching those off must not blank it out.
-    if (timerRunning) {
+    // Rides neither app-capture setting — activity is not an app, a URL or
+    // a window title — but does ride "Record activity".
+    if (timerRunning && activityTrackingEnabled) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
-      // Main's own reading of when input stopped, for the moment the machine
-      // sleeps: the renderer's poll is throttled while its window sits
-      // hidden in the tray, and a stale reading would date the idle stretch
-      // from the sleep instead of from when the person left.
+    } else if (activityTicker) {
+      clearInterval(activityTicker);
+      activityTicker = null;
+      // Emit the part-finished period rather than discarding minutes that
+      // were measured while recording was still on.
+      void activitySampler.flush().then(() => activitySampleUploader.flush());
+    }
+
+    // Deliberately NOT gated on `activityTrackingEnabled`, and kept apart
+    // from the sampler even though both want a running timer: this is
+    // main's own reading of when input stopped, for the moment the machine
+    // sleeps. Idle detection is not activity recording and must keep
+    // working with Record activity off.
+    if (timerRunning) {
       idleSampleTicker ??= setInterval(() => {
         void readIdleSeconds().then((seconds) => {
           lastIdleReading = { seconds, atMs: Date.now() };
         });
       }, IDLE_SAMPLE_INTERVAL_MS);
-    } else if (activityTicker) {
-      clearInterval(activityTicker);
-      activityTicker = null;
-      if (idleSampleTicker) clearInterval(idleSampleTicker);
+    } else if (idleSampleTicker) {
+      clearInterval(idleSampleTicker);
       idleSampleTicker = null;
-      // Emit the part-finished period rather than discarding the minutes
-      // already measured, then push it out with the rest.
-      void activitySampler.flush().then(() => activitySampleUploader.flush());
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
@@ -1618,6 +1627,11 @@ async function registerIpcHandlers(): Promise<void> {
     apiClient,
     (settings) => {
       windowTrackingEnabled = settings.windowTrackingEnabled;
+      const activityTrackingChanged =
+        lastActivityTracking !== null &&
+        lastActivityTracking !== settings.activityTrackingEnabled;
+      lastActivityTracking = settings.activityTrackingEnabled;
+      activityTrackingEnabled = settings.activityTrackingEnabled;
       appUrlTracking = settings.appUrlTracking;
       announceAllowedApps(settings.allowedApps);
       allowedApps = settings.allowedApps;
@@ -1638,8 +1652,39 @@ async function registerIpcHandlers(): Promise<void> {
         }
       }
       recomputeSampling();
+
+      // Samplers first, so either side of the boundary is already being
+      // measured (or not) correctly before it is drawn.
+      if (activityTrackingChanged && timerRunning) {
+        void splitForActivityChange();
+      }
     },
   );
+
+  /**
+   * The time either side of the change is now a different kind of time, so
+   * the entry is split rather than left to describe both — the same thing
+   * the day boundary does at midnight. Best-effort: a split that cannot be
+   * made leaves the entry whole, which still reads correctly through the
+   * coverage figures, so nothing is retried or surfaced.
+   */
+  async function splitForActivityChange(): Promise<void> {
+    const session = authStore.load();
+    if (!session) return;
+    // `null` is "nothing to split" rather than a failure, so it never
+    // reaches callDeviceApi's contact bookkeeping.
+    const result = await pendingOps.splitRunning(
+      session.deviceToken,
+      apiClient,
+    );
+    if (result && !result.ok) {
+      console.warn(
+        "[activity] could not split the entry at the setting change:",
+        result.message,
+      );
+    }
+  }
+
   const timerStatusGate = new TimerStatusGate(
     authStore,
     apiClient,
@@ -2370,9 +2415,18 @@ async function registerIpcHandlers(): Promise<void> {
       projectId: string | null,
       taskId: string | null,
       startedAt?: string,
+      /** Set only by the idle prompt's Keep — see renderer's restartAfterIdle. */
+      idleSeconds?: number,
     ) => {
       const result = await callDeviceApi((token) =>
-        pendingOps.start(token, projectId, taskId, apiClient, startedAt),
+        pendingOps.start(
+          token,
+          projectId,
+          taskId,
+          apiClient,
+          startedAt,
+          idleSeconds,
+        ),
       );
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);

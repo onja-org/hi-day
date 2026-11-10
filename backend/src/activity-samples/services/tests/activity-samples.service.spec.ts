@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ActivitySample } from '../../../database/entities/activity-sample.entity';
 import { Membership } from '../../../database/entities/membership.entity';
+import { OrganisationsService } from '../../../organisations/services/organisations.service';
 import { ActivitySamplesService } from '../activity-samples.service';
 
 describe('ActivitySamplesService', () => {
@@ -20,6 +21,14 @@ describe('ActivitySamplesService', () => {
     } as unknown as Repository<Membership>;
   }
 
+  function makeOrganisationsService(activityTrackingEnabled = true) {
+    return {
+      getCaptureSettings: jest
+        .fn()
+        .mockResolvedValue({ activityTrackingEnabled }),
+    } as unknown as OrganisationsService;
+  }
+
   const SAMPLE = {
     activePercentage: 75,
     periodStart: '2026-09-08T09:00:00.000Z',
@@ -31,6 +40,7 @@ describe('ActivitySamplesService', () => {
     const service = new ActivitySamplesService(
       repo,
       makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(),
     );
 
     await service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE]);
@@ -51,7 +61,11 @@ describe('ActivitySamplesService', () => {
   // membership has to be resolved from the request, never from the Device.
   it('rejects a device whose signed-in user has no active membership', async () => {
     const { repo, save } = makeActivitySamplesRepo();
-    const service = new ActivitySamplesService(repo, makeMembershipsRepo(null));
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo(null),
+      makeOrganisationsService(),
+    );
 
     await expect(
       service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE]),
@@ -64,11 +78,27 @@ describe('ActivitySamplesService', () => {
     const service = new ActivitySamplesService(
       repo,
       makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(),
     );
 
     await service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE, SAMPLE]);
 
     expect(save).toHaveBeenCalledTimes(1);
     expect((save.mock.calls[0] as unknown[][])[0]).toHaveLength(2);
+  });
+
+  // The agent stops sampling when Record activity goes off, but an offline
+  // queue can still arrive with samples taken before it did.
+  it('drops the batch when Record activity is off for the member', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(false),
+    );
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE]);
+
+    expect(save).not.toHaveBeenCalled();
   });
 });

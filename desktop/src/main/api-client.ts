@@ -141,6 +141,13 @@ export interface IdlePolicy {
 
 export interface CaptureSettings {
   windowTrackingEnabled: boolean;
+  /**
+   * Whether keyboard/mouse activity is measured at all — the organisation
+   * default with this member's override applied. Optional: a backend from
+   * before "Record activity" shipped omits it, and omission means on (see
+   * CaptureSettingsGate.withDefaults).
+   */
+  activityTrackingEnabled?: boolean;
   /** The organisation default with this member's override applied. */
   appUrlTracking: AppUrlTracking;
   /** Likewise resolved. */
@@ -469,6 +476,12 @@ export class ApiClient {
     startedAt?: string,
     /** This agent's id for the operation, so a replay is not a second start. */
     opId?: string,
+    /**
+     * Seconds of idle time this start is folding back in, when it is the
+     * restart after an idle prompt answered with Keep. The server clamps it
+     * to the span it actually records.
+     */
+    idleSeconds?: number,
   ): Promise<TrackingResult<TimeEntry>> {
     return this.deviceRequest(
       'POST',
@@ -480,6 +493,7 @@ export class ApiClient {
         ...(taskId ? { taskId } : {}),
         ...(startedAt ? { startedAt } : {}),
         ...(opId ? { opId } : {}),
+        ...(idleSeconds ? { idleSeconds } : {}),
       },
     );
   }

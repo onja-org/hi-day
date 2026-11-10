@@ -7,8 +7,11 @@
  * visible and reviewable — Hubstaff does the same.
  *
  * `resumed` is an entry the person kept after being warned it went idle, so
- * it contains idle time on purpose. `manual` mirrors `source: manual` and is
- * set at creation so one column answers "what kind of time is this".
+ * it contains idle time on purpose — always as its opening slice, since
+ * answering the prompt ends the old entry and starts this one back at the
+ * moment input stopped. How much of it was idle is `TimeEntry.idleSeconds`.
+ * `manual` mirrors `source: manual` and is set at creation so one column
+ * answers "what kind of time is this".
  */
 export enum TimeEntryType {
   NORMAL = 'normal',

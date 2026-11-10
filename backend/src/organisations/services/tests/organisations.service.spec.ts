@@ -231,6 +231,7 @@ describe('OrganisationsService', () => {
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         timesheetModifyTime: 'off',
@@ -1075,7 +1076,7 @@ describe('OrganisationsService', () => {
       });
     });
 
-    it('defaults window tracking on, and everything else off, when the organisation has no explicit capture settings', async () => {
+    it('defaults window tracking on, and everything else off — activity recording included — when the organisation has no explicit capture settings', async () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo({
           findOneOrFail: jest.fn().mockResolvedValue({
@@ -1092,6 +1093,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         screenshotsEnabled: false,
@@ -1122,6 +1124,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         screenshotsEnabled: true,
@@ -1172,6 +1175,56 @@ describe('OrganisationsService', () => {
       await expect(
         service.getCaptureSettings('org-1', 'user-1'),
       ).resolves.toMatchObject({ appUrlTracking: 'off' });
+    });
+
+    it("applies the member's own Record activity override over the organisation default", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { activityTrackingEnabled: true },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ activityTrackingEnabled: false }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ activityTrackingEnabled: false });
+    });
+
+    // The override works both ways — one person measured while the
+    // organisation default is off.
+    it("applies a member's Record activity override that switches it on", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { activityTrackingEnabled: false },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ activityTrackingEnabled: true }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ activityTrackingEnabled: true });
     });
   });
 });
