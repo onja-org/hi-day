@@ -102,11 +102,23 @@ export function unionActiveSeconds(
   entries: TimeEntry[],
   pausesByEntry: Map<string, TimeEntryPause[]>,
   now: Date,
+  /** Counts only from here: an entry open across a day boundary otherwise
+   * reports its whole life as today's work. */
+  since?: Date,
 ): number {
+  const from = since?.getTime();
+  const intervals = entries.flatMap((entry) =>
+    activeIntervals(entry, pausesByEntry.get(entry.id) ?? [], now),
+  );
   return unionSeconds(
-    entries.flatMap((entry) =>
-      activeIntervals(entry, pausesByEntry.get(entry.id) ?? [], now),
-    ),
+    from === undefined
+      ? intervals
+      : intervals
+          .map((interval) => ({
+            start: Math.max(interval.start, from),
+            end: interval.end,
+          }))
+          .filter((interval) => interval.end > interval.start),
   );
 }
 

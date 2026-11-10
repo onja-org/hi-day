@@ -58,6 +58,7 @@ describe('PendingTimerOps', () => {
         type: 'stop',
         at: expect.any(String) as string,
         opId: expect.any(String) as string,
+        entryId: 'e1',
       },
     ]);
   });
@@ -276,6 +277,7 @@ describe('PendingTimerOps', () => {
           type: 'stop',
           at: expect.any(String) as string,
           opId: expect.any(String) as string,
+          entryId: 'e1',
         },
       ]);
     });
@@ -296,7 +298,12 @@ describe('PendingTimerOps', () => {
       expect(pauseTimer).not.toHaveBeenCalled();
       expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-23T09:00:00.000Z', expect.any(String));
       expect(queuedWhenAsked).toEqual([
-        { type: 'stop', at: '2026-10-23T09:00:00.000Z', opId: expect.any(String) as string },
+        {
+          type: 'stop',
+          at: '2026-10-23T09:00:00.000Z',
+          opId: expect.any(String) as string,
+          entryId: 'e1',
+        },
       ]);
     });
 
@@ -544,6 +551,45 @@ describe('PendingTimerOps', () => {
       expect(second[4]).toBe(first[4]);
       // Nothing left queued: the hours landed.
       expect(ops.load()).toEqual([]);
+    });
+
+    // As the kept stretch above: a backend predating `entryId` answers 400,
+    // which the queue would read as final.
+    it('retries a replayed stop without the entry it names when the server rejects it', async () => {
+      const ops = new PendingTimerOps(dir);
+      ops.remember(entry);
+      await ops.pause('t', client());
+      const rejected = {
+        ok: false as const,
+        message: 'property entryId should not exist',
+        status: 400,
+      };
+      const stopTimer = vi
+        .fn()
+        .mockResolvedValueOnce(rejected)
+        .mockResolvedValueOnce(ok);
+
+      const result = await ops.flush('t', client({ stopTimer }));
+
+      expect(result.settled).toBe(true);
+      expect(result.refused).toEqual([]);
+      const [first, second] = stopTimer.mock.calls as unknown[][];
+      expect(first[3]).toBe('e1');
+      expect(second[3]).toBeUndefined();
+      // Same opId both times, so the server cannot count it twice.
+      expect(second[2]).toBe(first[2]);
+    });
+
+    // There is no row to name: the server has never heard of this entry.
+    it('names no entry for a stop ending one this agent invented offline', async () => {
+      const ops = new PendingTimerOps(dir);
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+
+      expect(ops.load()).toEqual([
+        expect.objectContaining({ type: 'start' }),
+        { type: 'stop', at: expect.any(String) as string, opId: expect.any(String) as string },
+      ]);
     });
 
     it('splits the running entry on the same project and task', async () => {

@@ -9,6 +9,13 @@ export const IDLE_HANDLING_VALUES: IdleHandling[] = [
 export interface IdlePolicy {
   handling: IdleHandling;
   thresholdMinutes: number;
+  /**
+   * The Organisation's own zone, so an agent on a machine set to another
+   * one counts its day from the same midnight the server does. Carried
+   * here rather than on its own endpoint because this is the poll the
+   * agent already caches and refreshes for time policy.
+   */
+  timezone: string;
 }
 
 /**
@@ -23,4 +30,5 @@ export interface IdlePolicy {
 export const DEFAULT_IDLE_POLICY: IdlePolicy = {
   handling: 'flag',
   thresholdMinutes: 5,
+  timezone: 'UTC',
 };

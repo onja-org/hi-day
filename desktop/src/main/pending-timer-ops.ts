@@ -20,8 +20,20 @@ const SIGNED_OUT: TrackingResult<never> = {
   status: 401,
 };
 
+/** `undefined` for an entry invented offline: it names no row the server has. */
+function serverEntryId(entry: TimeEntry): string | undefined {
+  return entry.id.startsWith('offline-') ? undefined : entry.id;
+}
+
 export type PendingOp =
-  | { type: 'stop'; at: string; opId?: string; owner?: string }
+  | {
+      type: 'stop';
+      at: string;
+      opId?: string;
+      owner?: string;
+      /** The entry this stop ends — see `StopTimeEntryDto.entryId`. */
+      entryId?: string;
+    }
   | {
       type: 'start';
       at: string;
@@ -64,6 +76,7 @@ export interface PendingTimerClient {
     deviceToken: string,
     endedAt?: string,
     opId?: string,
+    entryId?: string,
   ): Promise<TrackingResult<TimeEntry>>;
   startTimer(
     deviceToken: string,
@@ -315,7 +328,7 @@ export class PendingTimerOps {
       const op = ops[0];
       const result =
         op.type === 'stop'
-          ? await client.stopTimer(deviceToken, op.at, op.opId)
+          ? await this.sendStop(client, deviceToken, op.at, op.opId, op.entryId)
           : await this.sendStart(
               client,
               deviceToken,
@@ -402,6 +415,24 @@ export class PendingTimerOps {
   }
 
   /**
+   * As `sendStart`: a backend that has not heard of `entryId` answers 400,
+   * which the queue would read as a refusal and report as lost hours.
+   */
+  private async sendStop(
+    client: PendingTimerClient,
+    deviceToken: string,
+    at: string,
+    opId: string | undefined,
+    entryId: string | undefined,
+  ): Promise<TrackingResult<TimeEntry>> {
+    const result = await client.stopTimer(deviceToken, at, opId, entryId);
+    if (entryId === undefined || result.ok || result.status !== 400) {
+      return result;
+    }
+    return await client.stopTimer(deviceToken, at, opId, undefined);
+  }
+
+  /**
    * Replays what is waiting before an action of this person's own, which
    * every public method here has to do: a lone stop sent ahead of a queued
    * start would end whatever the server still thinks is running. Answers
@@ -483,7 +514,10 @@ export class PendingTimerOps {
     const at = endedAt ?? new Date().toISOString();
     const opId = randomUUID();
     const waiting = this.load();
-    this.save([...waiting, this.stamp({ type: 'stop', at, opId })]);
+    this.save([
+      ...waiting,
+      this.stamp({ type: 'stop', at, opId, entryId: serverEntryId(current) }),
+    ]);
     this.running.write(null);
     const ended: TimeEntry = { ...current, endedAt: at };
 
@@ -512,7 +546,10 @@ export class PendingTimerOps {
   private queueStop(at: string, opId = randomUUID()): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return { ok: false, message: 'No timer is currently running.' };
-    this.save([...this.load(), this.stamp({ type: 'stop', at, opId })]);
+    this.save([
+      ...this.load(),
+      this.stamp({ type: 'stop', at, opId, entryId: serverEntryId(current) }),
+    ]);
     const entry = { ...current, endedAt: at };
     this.running.write(null);
     return { ok: true, data: entry, fromCache: true };
@@ -625,10 +662,16 @@ export class PendingTimerOps {
     stopOpId = randomUUID(),
     startOpId = randomUUID(),
   ): TrackingResult<TimeEntry> {
-    if (!this.running.read()) return this.queueStart(projectId, taskId, at, startOpId);
+    const current = this.running.read();
+    if (!current) return this.queueStart(projectId, taskId, at, startOpId);
     this.save([
       ...this.load(),
-      this.stamp({ type: 'stop', at, opId: stopOpId }),
+      this.stamp({
+        type: 'stop',
+        at,
+        opId: stopOpId,
+        entryId: serverEntryId(current),
+      }),
       this.stamp({ type: 'start', at, projectId, taskId, opId: startOpId }),
     ]);
     const entry = this.localEntry(projectId, taskId, at);

@@ -106,6 +106,7 @@ import {
   rememberAutoStarted,
 } from "./setup-state";
 import { bootIdentity, decideAutoStart, localDay } from "./auto-start";
+import { startOfDay } from "./day-boundary";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -1605,11 +1606,7 @@ async function registerIpcHandlers(): Promise<void> {
     settings: ReminderSettings,
   ): Promise<boolean> {
     const now = new Date();
-    const from = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    ).toISOString();
+    const from = organisationDayStart(now).toISOString();
 
     const result = await callDeviceApi((token) =>
       apiClient.getCompletedTotals(token, from, now.toISOString()),
@@ -2296,6 +2293,15 @@ async function registerIpcHandlers(): Promise<void> {
     backlogAnnounced ? BACKLOG_MESSAGE : null,
   );
 
+  /**
+   * When the organisation's day began. The server counts every day from
+   * this — the midnight split, the limits, the clock it hands back — so
+   * the agent must too, however the machine's own clock is set. Falls back
+   * to the machine's midnight until a poll has said otherwise.
+   */
+  const organisationDayStart = (now = new Date()): Date =>
+    startOfDay(now, offlineCache.read().idlePolicy?.timezone);
+
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
@@ -2495,7 +2501,7 @@ async function registerIpcHandlers(): Promise<void> {
    */
   ipcMain.handle("tracking:status", async () => {
     await flushPendingOps();
-    return cachedDeviceRead(
+    const result = await cachedDeviceRead(
       (token) => apiClient.getCurrentTimer(token),
       (current) =>
         offlineCache.remember({
@@ -2503,24 +2509,23 @@ async function registerIpcHandlers(): Promise<void> {
           workedSecondsAt: new Date().toISOString(),
         }),
       (): CurrentTimer | null => {
-        const state = offlineCache.read();
-        const entry = state.runningEntry;
-        const since =
-          entry && state.workedSecondsAt
-            ? Math.max(
-                0,
-                Math.floor(
-                  (Date.now() - new Date(state.workedSecondsAt).getTime()) / 1000,
-                ),
-              )
-            : 0;
+        const entry = offlineCache.read().runningEntry;
         return {
           entry,
           now: new Date().toISOString(),
-          workedSeconds: (state.workedSeconds ?? 0) + since,
+          workedSeconds: offlineCache.projectedWorkedSeconds(entry),
         };
       },
     );
+    return result.ok
+      ? {
+          ...result,
+          data: {
+            ...result.data,
+            dayStartsAt: organisationDayStart().toISOString(),
+          },
+        }
+      : result;
   });
 
   ipcMain.handle("tracking:pause", async () => {

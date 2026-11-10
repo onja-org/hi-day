@@ -469,12 +469,16 @@ export class TimeEntriesService {
   }
 
   /** Union of the active time across these entries; see time-entry-union.util. */
-  private async unionWorkedSeconds(entries: TimeEntry[]): Promise<number> {
+  private async unionWorkedSeconds(
+    entries: TimeEntry[],
+    since?: Date,
+  ): Promise<number> {
     if (entries.length === 0) return 0;
     return unionActiveSeconds(
       entries,
       await this.pausesByEntry(entries),
       new Date(),
+      since,
     );
   }
 
@@ -750,6 +754,8 @@ export class TimeEntriesService {
       action?: 'time_entry.stopped' | 'time_entry.paused';
       /** `operationId` lets a replayed stop be recognised — see `TimeEntry.stopOperationId`. */
       operationId?: string;
+      /** The entry the caller means — see `entryToCorrect`. */
+      entryId?: string;
     } = {},
   ): Promise<TimeEntrySummary> {
     // Before the lookup below: a replay of a stop the server already
@@ -763,7 +769,20 @@ export class TimeEntriesService {
 
     const membership = await this.getActiveMembership(organisationId, userId);
     const resolvedEndedAt = endedAt ?? new Date();
-    const running =
+    // Survives the server having rewritten its own guess in the meantime;
+    // "whatever is running now" does not.
+    const named = options.entryId
+      ? await this.entryToCorrect(
+          organisationId,
+          membership.id,
+          deviceId,
+          options.entryId,
+        )
+      : null;
+    if (named?.settled) return await this.toSummary(named.entry);
+
+    let running =
+      named?.entry ??
       (await this.timeEntries.findOne({
         where: this.runningForDevice(membership.id, deviceId),
       })) ??
@@ -778,7 +797,15 @@ export class TimeEntriesService {
       );
     }
 
-    this.assertValidRange(running.startedAt, resolvedEndedAt);
+    const chain = await this.provisionalChain(
+      membership.id,
+      deviceId,
+      running,
+      resolvedEndedAt,
+    );
+    this.assertValidRange(chain.target.startedAt, resolvedEndedAt);
+    await this.dropInvented(chain.invented, resolvedEndedAt);
+    running = chain.target;
 
     running.endedAt = resolvedEndedAt;
     running.stopOperationId = options.operationId ?? null;
@@ -969,11 +996,14 @@ export class TimeEntriesService {
     ]);
 
     // The agent polls this as the web polls `currentForAccount`, so a
-    // limit has to bite here too.
+    // limit has to bite here too. One zone lookup between the two, on an
+    // endpoint every Device hits every fifteen seconds.
+    const zones = new Map<string, string>();
     const limitReached = await this.stopIfOverWorkTimeLimit(
       membership,
       organisationId,
       allRunning,
+      zones,
     );
     const live = limitReached
       ? await this.timeEntries.find({
@@ -993,7 +1023,14 @@ export class TimeEntriesService {
       now: new Date(),
       // Account-wide on purpose: this Device displays the person's total, so
       // a machine joining at 10:00 shows the hour another already accrued.
-      workedSeconds: await this.unionWorkedSeconds(live),
+      // Today's share only, matching the agent's own `workedSoFarMs`.
+      workedSeconds: await this.unionWorkedSeconds(
+        live,
+        this.startOfDayInZone(
+          new Date(),
+          await this.organisationTimezone(organisationId, zones),
+        ),
+      ),
       ...(limitReached ? { limitReached } : {}),
     };
   }
@@ -1431,6 +1468,8 @@ export class TimeEntriesService {
     membership: Membership,
     organisationId: string,
     running: TimeEntry[],
+    /** Shared with a caller that needs the zone too — see `organisationTimezone`. */
+    seen: Map<string, string> = new Map(),
   ): Promise<WorkTimeLimitReached | undefined> {
     const limits = await this.workTimeLimitsFor(organisationId, membership);
     if (limits.dailyLimitHours === null && limits.weeklyLimitHours === null) {
@@ -1438,7 +1477,7 @@ export class TimeEntriesService {
     }
 
     const now = new Date();
-    const zone = await this.organisationTimezone(organisationId, new Map());
+    const zone = await this.organisationTimezone(organisationId, seen);
 
     const over = async (
       limitHours: number | null,
@@ -1628,6 +1667,9 @@ export class TimeEntriesService {
         }
 
         entry.endedAt = boundary;
+        // A guess like the sweeper's, overruled the same way: the Device may
+        // have stopped before this boundary and been unable to say so.
+        if (entry.deviceId !== null) entry.closedAsAbandoned = true;
         await manager.save(entry);
 
         const next = await manager.save(
@@ -2755,8 +2797,11 @@ export class TimeEntriesService {
    *    never one a person stopped;
    *  - only this Device's own latest entry, so extending it can never run
    *    over an entry started after it;
-   *  - only forwards, and only within the window a Device may backdate at
-   *    all, so this cannot resurrect something from months ago.
+   *  - only within the window a Device may backdate at all, so this cannot
+   *    resurrect something from months ago.
+   *
+   * Backwards as well as forwards: the heartbeat outlives the stop it could
+   * not send, so the Device's time is routinely a minute before the guess.
    */
   private async abandonedEntryToExtend(
     membershipId: string,
@@ -2776,7 +2821,6 @@ export class TimeEntriesService {
       order: { startedAt: 'DESC' },
     });
     if (!abandoned?.endedAt) return null;
-    if (endedAt.getTime() <= abandoned.endedAt.getTime()) return null;
     if (Date.now() - abandoned.endedAt.getTime() > MAX_DEVICE_BACKDATE_MS) {
       return null;
     }
@@ -2801,6 +2845,114 @@ export class TimeEntriesService {
     if (next && endedAt.getTime() > next.startedAt.getTime()) return null;
 
     return abandoned;
+  }
+
+  /**
+   * The entry a Device names as the one it means to stop, and whether that
+   * stop has already happened.
+   *
+   * By replay time the server may have closed that entry itself, at the last
+   * heartbeat or at a day boundary. Both are guesses and yield to the
+   * Device; an entry somebody really stopped is `settled` and answered
+   * rather than refused. `null` when the entry is not this Device's to end,
+   * which falls back to the pre-`entryId` behaviour.
+   */
+  private async entryToCorrect(
+    organisationId: string,
+    membershipId: string,
+    deviceId: string | null,
+    entryId: string,
+  ): Promise<{ entry: TimeEntry; settled: boolean } | null> {
+    const entry = await this.timeEntries.findOne({
+      where: {
+        id: Equal(entryId),
+        organisationId,
+        membershipId,
+        deviceId: deviceId === null ? IsNull() : Equal(deviceId),
+      },
+    });
+    if (!entry) return null;
+    if (entry.endedAt === null) return { entry, settled: false };
+    const correctable =
+      entry.closedAsAbandoned &&
+      Date.now() - entry.endedAt.getTime() <= MAX_DEVICE_BACKDATE_MS;
+    return { entry, settled: !correctable };
+  }
+
+  /**
+   * Where a Device's stop lands once the server has carried its entry across
+   * day boundaries in its absence, and which rows that stop leaves
+   * describing nothing.
+   *
+   * Splits before the stop are right and stay; the row holding the stop is
+   * the one that ends; everything after it is time nobody worked, and the
+   * last of it is still open, so leaving it refuses the next start with "a
+   * timer is already running on this device".
+   *
+   * Each invented row begins exactly where the last ended — the split's
+   * signature. Anything a person stopped is theirs, and the walk stops.
+   */
+  private async provisionalChain(
+    membershipId: string,
+    deviceId: string | null,
+    entry: TimeEntry,
+    from: Date,
+  ): Promise<{ target: TimeEntry; invented: TimeEntry[] }> {
+    if (deviceId === null || !entry.endedAt) {
+      return { target: entry, invented: [] };
+    }
+
+    let target = entry;
+    const invented: TimeEntry[] = [];
+    // Two rows sharing a startedAt must not be walked for ever.
+    const seen = new Set<string>([entry.id]);
+    let boundary: Date | null = entry.endedAt;
+
+    while (boundary) {
+      const next: TimeEntry | null = await this.timeEntries.findOne({
+        where: {
+          membershipId,
+          deviceId: Equal(deviceId),
+          startedAt: Equal(boundary),
+        },
+      });
+      if (!next || seen.has(next.id)) break;
+      // Somebody really ended this one, so it is not the server's to undo.
+      if (next.endedAt !== null && !next.closedAsAbandoned) break;
+      seen.add(next.id);
+
+      if (next.startedAt.getTime() <= from.getTime()) {
+        target = next;
+      } else {
+        invented.push(next);
+      }
+      boundary = next.endedAt;
+    }
+
+    return { target, invented };
+  }
+
+  /** Removes rows a corrected stop left describing time nobody worked. */
+  private async dropInvented(invented: TimeEntry[], from: Date): Promise<void> {
+    for (const entry of invented) {
+      await this.dataSource.transaction(async (manager) => {
+        await this.auditLogService.record(manager, {
+          action: 'time_entry.invented_span_removed',
+          organisationId: entry.organisationId,
+          metadata: {
+            timeEntryId: entry.id,
+            deviceId: entry.deviceId,
+            startedAt: entry.startedAt.toISOString(),
+            correctedTo: from.toISOString(),
+          },
+        });
+        await manager.delete(TimeEntry, { id: entry.id });
+      });
+      this.logger.log(
+        `[offline] entry=${entry.id} removed — its device reported stopping ` +
+          `at ${from.toISOString()}, before this span was carried past midnight`,
+      );
+    }
   }
 
   /**
