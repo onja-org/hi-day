@@ -215,12 +215,15 @@ export class AuthService {
         pendingOrganisationName: null,
         pendingOrganisationAddress: null,
         pendingOrganisationWebsite: null,
+        // The same report serves this person and the organisation below.
+        ...(dto.timezone ? { timezone: dto.timezone } : {}),
       });
 
       await this.organisationsService.createForUser(manager, user.id, {
         name: user.pendingOrganisationName!,
         address: user.pendingOrganisationAddress,
         website: user.pendingOrganisationWebsite,
+        timezone: dto.timezone,
       });
 
       refreshToken = await this.refreshTokenService.issue(manager, user.id);

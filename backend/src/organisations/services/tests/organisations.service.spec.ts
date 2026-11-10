@@ -108,6 +108,67 @@ describe('OrganisationsService', () => {
       expect(startTrial).toHaveBeenCalledWith(manager, 'org-1');
     });
 
+    it('founds it in the zone the founder reported, not UTC', async () => {
+      const { manager, create } = makeManager();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await service.createForUser(manager, 'user-1', {
+        name: 'Acme Inc',
+        address: null,
+        website: null,
+        timezone: 'Indian/Antananarivo',
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          settings: {
+            timezone: 'Indian/Antananarivo',
+            currency: 'USD',
+            address: null,
+            website: null,
+          },
+        }),
+      );
+    });
+
+    it('falls back to UTC when no zone was reported', async () => {
+      const { manager, create } = makeManager();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await service.createForUser(manager, 'user-1', {
+        name: 'Acme Inc',
+        address: null,
+        website: null,
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          settings: {
+            timezone: 'UTC',
+            currency: 'USD',
+            address: null,
+            website: null,
+          },
+        }),
+      );
+    });
+
     it('creates the organisation, a default "General" team, and an admin membership with no team_memberships row', async () => {
       const { manager, create } = makeManager();
       const { auditLogService, record } = makeAuditLogService();

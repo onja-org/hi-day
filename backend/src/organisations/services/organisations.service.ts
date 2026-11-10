@@ -63,6 +63,8 @@ export interface CreateOrganisationInput {
   name: string;
   address?: string | null;
   website?: string | null;
+  /** The founder's own zone; `DEFAULT_TIMEZONE` when none was reported. */
+  timezone?: string | null;
 }
 
 export interface OrganisationProfile {
@@ -211,7 +213,7 @@ export class OrganisationsService {
         region: OrganisationRegion.US,
         ownerUserId: userId,
         settings: {
-          timezone: DEFAULT_TIMEZONE,
+          timezone: input.timezone ?? DEFAULT_TIMEZONE,
           currency: DEFAULT_CURRENCY,
           address: input.address ?? null,
           website: input.website ?? null,
