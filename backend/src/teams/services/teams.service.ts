@@ -16,6 +16,7 @@ import { AddTeamMemberDto } from '../dto/add-team-member.dto';
 import { CreateTeamDto } from '../dto/create-team.dto';
 import { UpdateTeamDto } from '../dto/update-team.dto';
 import { teamMemberActionRefusal } from '../../members/team-member-permissions';
+import { actsAsManager } from '../../common/manager-scope.util';
 
 export interface TeamSummary {
   id: string;
@@ -233,6 +234,94 @@ export class TeamsService {
    * The caller's half of `teamMemberActionRefusal` — the same rule the row's
    * disabled state is drawn from, so a button and a 403 never disagree.
    */
+  /**
+   * Sets — or clears — "can see their own activity" for every plain member
+   * of one team. One UPDATE, so a team is never left half-hidden the way a
+   * PATCH-per-member loop can be.
+   *
+   * Only plain members are touched: an admin, and anyone managing a team,
+   * always sees their own activity whatever the override says (see
+   * OrganisationsService.toProfile). The caller is excluded too — applying
+   * something to everyone must never change what you yourself can see.
+   */
+  async setMembersActivityVisibility(
+    organisationId: string,
+    teamId: string,
+    actorUserId: string,
+    canViewOwnActivity: boolean | null,
+  ): Promise<{ updated: number }> {
+    await this.findTeamOrFail(organisationId, teamId);
+
+    const caller = await this.memberships.findOne({
+      where: {
+        userId: actorUserId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+
+    if (!caller) {
+      throw new NotFoundException('Membership not found.');
+    }
+
+    // Targets are plain members by construction below, so this asks only
+    // whether the caller may act on this team's people at all.
+    const refusal = teamMemberActionRefusal(
+      {
+        isOrgAdmin: caller.role === MembershipRole.ADMIN,
+        managesThisTeam: (caller.teamMemberships ?? []).some(
+          (teamMembership) =>
+            teamMembership.teamId === teamId && teamMembership.isManager,
+        ),
+      },
+      { isOrgAdmin: false },
+    );
+
+    if (refusal) {
+      throw new ForbiddenException(refusal);
+    }
+
+    const rows = await this.teamMemberships.find({
+      where: { teamId },
+      relations: { membership: { teamMemberships: true } },
+    });
+
+    const targetIds = rows
+      .map((row) => row.membership)
+      .filter(
+        (membership): membership is Membership =>
+          membership != null &&
+          membership.status === MembershipStatus.ACTIVE &&
+          membership.id !== caller.id &&
+          membership.role !== MembershipRole.ADMIN &&
+          !actsAsManager(membership),
+      )
+      .map((membership) => membership.id);
+
+    if (targetIds.length === 0) {
+      return { updated: 0 };
+    }
+
+    await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ canViewOwnActivity })
+      .whereInIds(targetIds)
+      .execute();
+
+    await this.dataSource.transaction((manager) =>
+      this.auditLogService.record(manager, {
+        action: 'team.activity_visibility_set',
+        organisationId,
+        actorUserId,
+        metadata: { teamId, canViewOwnActivity, members: targetIds.length },
+      }),
+    );
+
+    return { updated: targetIds.length };
+  }
+
   private async assertMayActOnTeamMember(
     organisationId: string,
     teamId: string,

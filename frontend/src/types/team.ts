@@ -47,6 +47,10 @@ export type UpdateTeamResult = CreateTeamResult;
 
 export type TeamActionResult = ApiResult;
 
+/** How many members the bulk change applied to — admins and team managers
+ * are excluded server-side, since the setting does nothing for them. */
+export type SetTeamActivityVisibilityResult = ApiResult<{ updated: number }>;
+
 export type AddTeamMemberInput = {
   membershipId: string;
   isManager?: boolean;

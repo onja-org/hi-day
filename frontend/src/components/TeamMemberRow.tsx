@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { addTeamMember } from "@/lib/addTeamMember";
 import { removeTeamMember } from "@/lib/removeTeamMember";
+import { activityVisibilityApplies } from "@/lib/activityVisibilityApplies";
 import { teamMemberActionRefusal } from "@/lib/teamMemberPermissions.generated";
 import type { TeamMember } from "@/types/team";
 import { CheckboxField } from "@/components/ui/form/CheckboxField";
@@ -33,6 +34,9 @@ export function TeamMemberRow({
     { isOrgAdmin, managesThisTeam: canManage },
     { isOrgAdmin: member.role === "admin" },
   );
+  // Not `refusal`, which is about the caller's authority: the setting has
+  // no effect on an admin or manager, so their row is read-only to anyone.
+  const visibilityApplies = activityVisibilityApplies(member);
 
   const toggleManagerMutation = useMutation({
     mutationFn: (isManager: boolean) =>
@@ -80,20 +84,25 @@ export function TeamMemberRow({
           }
           title={refusal ?? undefined}
         />
-        {canManage && (
-          <button
-            type="button"
-            onClick={() => setIsEditingVisibility(true)}
-            disabled={refusal !== null}
-            title={
-              refusal ??
-              "Control whether this member can see their own activity"
-            }
-            className="cursor-pointer text-primary underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
-          >
-            Activity visibility
-          </button>
-        )}
+        {canManage &&
+          (visibilityApplies ? (
+            <button
+              type="button"
+              onClick={() => setIsEditingVisibility(true)}
+              disabled={refusal !== null}
+              title={
+                refusal ??
+                "Control whether this member can see their own activity"
+              }
+              className="cursor-pointer text-primary underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+            >
+              Activity visibility
+            </button>
+          ) : (
+            <span className="text-sm text-slate-900/60">
+              Always sees their own activity
+            </span>
+          ))}
         {canManage && (
           <button
             type="button"
@@ -107,7 +116,7 @@ export function TeamMemberRow({
         )}
       </div>
 
-      {isEditingVisibility && (
+      {isEditingVisibility && visibilityApplies && (
         <EditMemberActivityVisibilityModal
           organisationId={organisationId}
           membershipId={member.membershipId}

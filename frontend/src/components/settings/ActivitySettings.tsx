@@ -557,7 +557,16 @@ function MemberVisibilityPanel() {
         title="Members can see their own activity"
         description="Control whether a member can see their own tracked activity — the Activity page (apps, URLs, screenshots) and the activity widgets on their dashboard. Turning it off hides those from that member entirely. Admins and team managers are never affected, and can always see the people they oversee."
         options={ACTIVITY_TRACKING_OPTIONS}
-        orgValue={toActivityTracking(organisation.membersCanViewOwnActivity)}
+        // `?? true` mirrors the server's DEFAULT_MEMBERS_CAN_VIEW_OWN_ACTIVITY;
+        // null means nobody has chosen yet, and the note says so.
+        orgValue={toActivityTracking(
+          organisation.membersCanViewOwnActivity ?? true,
+        )}
+        unsetNote={
+          organisation.membersCanViewOwnActivity === null
+            ? "Not set — using the default. Pick either option to save one."
+            : undefined
+        }
         onOrgChange={(next) => orgMutation.mutate(next)}
         isSavingOrg={orgMutation.isPending}
         rows={rows}

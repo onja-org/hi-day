@@ -100,9 +100,10 @@ export interface OrganisationProfile {
    * may always delete, so this is true for them regardless. */
   canDeleteOwnScreenshots: boolean;
   /** The Organisation's default: may members see their own tracked activity
-   * (Activity page + dashboard activity widgets) — what the settings toggle
-   * shows. */
-  membersCanViewOwnActivity: boolean;
+   * — what the settings toggle shows. `null` means nobody has set it, so the
+   * built-in default applies. Reporting the resolved boolean instead made an
+   * untouched organisation look identical to one deliberately set `true`. */
+  membersCanViewOwnActivity: boolean | null;
   /** Resolved for *the caller* — their override, else the org default.
    * Admins and team managers always see their own, so this is true for them
    * regardless. When false, the caller's own Activity surfaces are hidden. */
@@ -854,12 +855,9 @@ export class OrganisationsService {
           (membershipCanDeleteScreenshots ??
             settings.membersCanDeleteScreenshots ??
             false)),
-      // The org default alone, for the settings toggle — not the caller's
-      // own override.
-      membersCanViewOwnActivity: resolveCanViewOwnActivity(
-        settings.membersCanViewOwnActivity,
-        null,
-      ),
+      // The org default alone, and deliberately unresolved: `null` is
+      // "never set", which the toggle shows differently from a choice.
+      membersCanViewOwnActivity: settings.membersCanViewOwnActivity ?? null,
       // Admins and team managers always see their own activity (they can
       // already see everyone they oversee); everyone else, their override
       // else the org default.

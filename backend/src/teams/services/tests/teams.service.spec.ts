@@ -92,6 +92,262 @@ describe('TeamsService', () => {
     );
   }
 
+  describe('setMembersActivityVisibility', () => {
+    const team = { id: 'team-1', name: 'Design', organisationId: 'org-1' };
+
+    function member(
+      id: string,
+      extra: Partial<Membership> = {},
+    ): Membership {
+      return {
+        id,
+        organisationId: 'org-1',
+        userId: `user-${id}`,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.ACTIVE,
+        teamMemberships: [],
+        ...extra,
+      } as unknown as Membership;
+    }
+
+    /** Captures what the UPDATE was told to set, and on whom. */
+    function makeUpdating(members: Membership[], caller: Membership) {
+      const captured: { set?: unknown; ids?: string[] } = {};
+      const builder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn((value: unknown) => {
+          captured.set = value;
+          return builder;
+        }),
+        whereInIds: jest.fn((ids: string[]) => {
+          captured.ids = ids;
+          return builder;
+        }),
+        execute: jest.fn().mockResolvedValue({ affected: members.length }),
+      };
+      const membershipsRepo = makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue(caller),
+        createQueryBuilder: jest.fn().mockReturnValue(builder),
+      } as unknown as Partial<Repository<Membership>>);
+      const teamMembershipsRepo = makeTeamMembershipsRepo({
+        find: jest
+          .fn()
+          .mockResolvedValue(members.map((m) => ({ membership: m }))),
+      } as unknown as Partial<Repository<TeamMembership>>);
+      const teamsRepo = makeTeamsRepo({
+        findOne: jest.fn().mockResolvedValue(team),
+      });
+      return { captured, membershipsRepo, teamMembershipsRepo, teamsRepo };
+    }
+
+    it('hides activity for every plain member of the team in one update', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const members = [member('m-1'), member('m-2')];
+      const { captured, ...repos } = makeUpdating([...members, caller], caller);
+      const service = makeService(repos);
+
+      const result = await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(result).toEqual({ updated: 2 });
+      expect(captured.set).toEqual({ canViewOwnActivity: false });
+      expect(captured.ids).toEqual(['m-1', 'm-2']);
+    });
+
+    it('clears the overrides so everyone inherits the organisation default', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const { captured, ...repos } = makeUpdating([member('m-1')], caller);
+      const service = makeService(repos);
+
+      await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        null,
+      );
+
+      expect(captured.set).toEqual({ canViewOwnActivity: null });
+    });
+
+    it('never touches an admin — the setting does nothing for them', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const otherAdmin = member('admin-2', { role: MembershipRole.ADMIN });
+      const { captured, ...repos } = makeUpdating(
+        [member('m-1'), otherAdmin],
+        caller,
+      );
+      const service = makeService(repos);
+
+      const result = await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(captured.ids).toEqual(['m-1']);
+      expect(result).toEqual({ updated: 1 });
+    });
+
+    it('never touches someone who manages a team — they always see their own', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const teamManager = member('mgr-1', {
+        teamMemberships: [
+          { teamId: 'team-1', isManager: true },
+        ] as unknown as Membership['teamMemberships'],
+      });
+      const { captured, ...repos } = makeUpdating(
+        [member('m-1'), teamManager],
+        caller,
+      );
+      const service = makeService(repos);
+
+      await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(captured.ids).toEqual(['m-1']);
+    });
+
+    it('never includes the caller, so applying to everyone cannot hide your own', async () => {
+      const caller = member('mgr-1', {
+        teamMemberships: [
+          { teamId: 'team-1', isManager: true },
+        ] as unknown as Membership['teamMemberships'],
+      });
+      const { captured, ...repos } = makeUpdating(
+        [member('m-1'), caller],
+        caller,
+      );
+      const service = makeService(repos);
+
+      await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-mgr-1',
+        false,
+      );
+
+      expect(captured.ids).toEqual(['m-1']);
+    });
+
+    it('skips inactive members', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const left = member('m-2', { status: MembershipStatus.INACTIVE });
+      const { captured, ...repos } = makeUpdating([member('m-1'), left], caller);
+      const service = makeService(repos);
+
+      await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(captured.ids).toEqual(['m-1']);
+    });
+
+    it('refuses a caller who neither runs the org nor manages this team', async () => {
+      const caller = member('m-9');
+      const repos = makeUpdating([member('m-1')], caller);
+      const service = makeService(repos);
+
+      await expect(
+        service.setMembersActivityVisibility(
+          'org-1',
+          'team-1',
+          'user-m-9',
+          false,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets this team\'s own manager apply it', async () => {
+      const caller = member('mgr-1', {
+        teamMemberships: [
+          { teamId: 'team-1', isManager: true },
+        ] as unknown as Membership['teamMemberships'],
+      });
+      const { captured, ...repos } = makeUpdating([member('m-1'), caller], caller);
+      const service = makeService(repos);
+
+      await expect(
+        service.setMembersActivityVisibility(
+          'org-1',
+          'team-1',
+          'user-mgr-1',
+          false,
+        ),
+      ).resolves.toEqual({ updated: 1 });
+      expect(captured.ids).toEqual(['m-1']);
+    });
+
+    it('refuses a manager of a different team', async () => {
+      const caller = member('mgr-2', {
+        teamMemberships: [
+          { teamId: 'team-OTHER', isManager: true },
+        ] as unknown as Membership['teamMemberships'],
+      });
+      const repos = makeUpdating([member('m-1')], caller);
+      const service = makeService(repos);
+
+      await expect(
+        service.setMembersActivityVisibility(
+          'org-1',
+          'team-1',
+          'user-mgr-2',
+          false,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('writes nothing and records nothing when the team has no plain members', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const { auditLogService, record } = makeAuditLogService();
+      const repos = makeUpdating([caller], caller);
+      const service = makeService({ ...repos, auditLogService });
+
+      const result = await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(result).toEqual({ updated: 0 });
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it('records what was applied, so a bulk hide is auditable', async () => {
+      const caller = member('admin-1', { role: MembershipRole.ADMIN });
+      const { auditLogService, record } = makeAuditLogService();
+      const repos = makeUpdating([member('m-1'), caller], caller);
+      const service = makeService({ ...repos, auditLogService });
+
+      await service.setMembersActivityVisibility(
+        'org-1',
+        'team-1',
+        'user-admin-1',
+        false,
+      );
+
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'team.activity_visibility_set',
+          metadata: { teamId: 'team-1', canViewOwnActivity: false, members: 1 },
+        }),
+      );
+    });
+  });
+
   describe('create', () => {
     it('creates a team and records an audit log entry', async () => {
       const teamsRepo = makeTeamsRepo({
