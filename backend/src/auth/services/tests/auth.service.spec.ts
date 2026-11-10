@@ -45,7 +45,8 @@ describe('AuthService', () => {
   }
 
   function makeDataSource() {
-    const manager = { update: jest.fn() } as unknown as EntityManager;
+    const update = jest.fn();
+    const manager = { update } as unknown as EntityManager;
     const transaction = jest.fn(
       (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
     );
@@ -53,6 +54,7 @@ describe('AuthService', () => {
       dataSource: { transaction, manager } as unknown,
       manager,
       transaction,
+      update,
     };
   }
 
@@ -447,6 +449,7 @@ describe('AuthService', () => {
         name: 'Acme Inc',
         address: '1 Main St',
         website: 'https://acme.test',
+        timezone: undefined,
       });
       expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
       expect(cookie).toHaveBeenCalledWith(
@@ -460,6 +463,55 @@ describe('AuthService', () => {
         expect.objectContaining({ httpOnly: true }),
       );
       expect(result.message).toContain('signed in');
+    });
+
+    /**
+     * Everything that asks when a day begins reads the Organisation's
+     * zone. Defaulting it to UTC had every organisation outside it cutting
+     * days at the wrong hour — in Madagascar, at three in the morning —
+     * until an admin noticed a setting nobody had chosen.
+     */
+    it('founds the organisation in the zone the browser reported', async () => {
+      const user = {
+        id: 'user-1',
+        emailVerificationToken: 'valid-token',
+        emailVerificationExpiresAt: new Date(Date.now() + 60_000),
+        pendingOrganisationName: 'Acme Inc',
+        pendingOrganisationAddress: null,
+        pendingOrganisationWebsite: null,
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const { organisationsService, createForUser } =
+        makeOrganisationsService();
+      const { dataSource, update } = makeDataSource();
+      const service = makeService({
+        usersRepo,
+        organisationsService,
+        dataSource,
+      });
+
+      await service.setPassword(
+        {
+          token: 'valid-token',
+          password: 'correct-horse',
+          timezone: 'Indian/Antananarivo',
+        },
+        makeResponse().response,
+      );
+
+      expect(createForUser).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ timezone: 'Indian/Antananarivo' }),
+      );
+      // The same report is this person's own zone too.
+      expect(update).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ timezone: 'Indian/Antananarivo' }),
+      );
     });
 
     it('rejects an unknown token', async () => {
