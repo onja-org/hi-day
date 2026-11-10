@@ -9,6 +9,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
+import { ALLOW_SUSPENDED_ORGANISATION_KEY } from '../decorators/allow-suspended-organisation.decorator';
 import { ALLOW_TEAM_MANAGERS_KEY } from '../decorators/allow-team-managers.decorator';
 import { RoleGuard } from './role.guard';
 
@@ -30,11 +31,14 @@ describe('RoleGuard', () => {
   function makeReflector(
     requiredRoles: MembershipRole[] | undefined,
     allowTeamManagers = false,
+    allowSuspended = false,
   ) {
     return {
-      getAllAndOverride: jest.fn((key: string) =>
-        key === ALLOW_TEAM_MANAGERS_KEY ? allowTeamManagers : requiredRoles,
-      ),
+      getAllAndOverride: jest.fn((key: string) => {
+        if (key === ALLOW_TEAM_MANAGERS_KEY) return allowTeamManagers;
+        if (key === ALLOW_SUSPENDED_ORGANISATION_KEY) return allowSuspended;
+        return requiredRoles;
+      }),
     } as unknown as Reflector;
   }
 
@@ -159,6 +163,46 @@ describe('RoleGuard', () => {
       },
       relations: { teamMemberships: true },
     });
+  });
+
+  const suspendedOrganisation = {
+    id: 'org-uuid-1',
+    publicId: 100000,
+    suspendedAt: new Date(),
+  };
+
+  it('rejects everyone, admins included, once the organisation is suspended', async () => {
+    const membershipsFindOne = jest
+      .fn()
+      .mockResolvedValue({ role: MembershipRole.ADMIN });
+    const guard = new RoleGuard(
+      makeReflector([MembershipRole.ADMIN]),
+      makeMembershipsRepo({ findOne: membershipsFindOne }),
+      makeOrganisationsRepo({
+        findOne: jest.fn().mockResolvedValue(suspendedOrganisation),
+      }),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(membershipsFindOne).not.toHaveBeenCalled();
+  });
+
+  it('lets a suspended organisation through a route marked @AllowSuspendedOrganisation', async () => {
+    const guard = new RoleGuard(
+      makeReflector([MembershipRole.ADMIN], false, true),
+      makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({ role: MembershipRole.ADMIN }),
+      }),
+      makeOrganisationsRepo({
+        findOne: jest.fn().mockResolvedValue(suspendedOrganisation),
+      }),
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000')),
+    ).resolves.toBe(true);
   });
 
   it('rejects when the caller has no active membership in that organisation', async () => {

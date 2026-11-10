@@ -90,6 +90,30 @@ describe('ProjectMemberGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('rejects everyone, admins included, once the organisation is suspended', async () => {
+    const { repo: membershipsRepo, findOne: membershipsFindOne } =
+      makeMembershipsRepo(
+        jest.fn().mockResolvedValue({ id: 'm-1', role: MembershipRole.ADMIN }),
+      );
+    const guard = new ProjectMemberGuard(
+      membershipsRepo,
+      makeOrganisationsRepo(
+        jest.fn().mockResolvedValue({
+          id: 'org-uuid-1',
+          publicId: 100000,
+          suspendedAt: new Date(),
+        }),
+      ).repo,
+      makeProjectMembershipsRepo().repo,
+      makeProjectTeamsRepo().repo,
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000', 'project-1')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(membershipsFindOne).not.toHaveBeenCalled();
+  });
+
   it('allows an org admin through without checking project membership', async () => {
     const { repo: projectMembershipsRepo, findOne: projectMembershipsFindOne } =
       makeProjectMembershipsRepo();
