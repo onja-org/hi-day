@@ -115,6 +115,8 @@ export type TimeEntryFormInput = {
   /** Why the time was added by hand; kept in the audit log and the Manual
    * time edits report, same as an edit's or a deletion's. */
   reason?: string;
+  /** Merge with the entries these times overlap instead of being refused. */
+  merge?: boolean;
 };
 
 export type UpdateTimeEntryInput = {
@@ -124,18 +126,41 @@ export type UpdateTimeEntryInput = {
   endedAt?: string;
   /** Why the entry was changed; kept in the audit log and the Manual time edits report. */
   reason?: string;
+  /** Merge with the entries these times overlap instead of being refused. */
+  merge?: boolean;
 };
 
-export type CreateManualTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
+/** An entry a save ran into, as the server names it when refusing. */
+export type OverlappingEntry = {
+  id: string;
+  projectName: string | null;
+  startedAt: string;
+  endedAt: string | null;
+};
 
-export type UpdateTimeEntryResult = ApiResult<{ entry: TimeEntry }>;
+/** Why a save was refused for overlapping, and whether merging is offered.
+ * `canMerge` is false when one of the entries is still running. */
+export type OverlapConflict = {
+  overlaps: OverlappingEntry[];
+  canMerge: boolean;
+};
 
-/** Split returns both halves: the shortened original and the new second
- * entry it was cut from. */
-export type SplitTimeEntryResult = ApiResult<{
-  first: TimeEntry;
-  second: TimeEntry;
-}>;
+export type CreateManualTimeEntryResult = ApiResult<
+  { entry: TimeEntry },
+  { overlap?: OverlapConflict }
+>;
+
+export type UpdateTimeEntryResult = ApiResult<
+  { entry: TimeEntry },
+  { overlap?: OverlapConflict }
+>;
+
+/** What a range is cut for: `remove` drops it, `split` keeps it as its own
+ * entry between the time before and after it. */
+export type CutMode = "remove" | "split";
+
+/** Cutting a range returns every entry that remains, earliest first. */
+export type CutTimeEntryRangeResult = ApiResult<{ entries: TimeEntry[] }>;
 
 /** Delete returns no entry — the row is gone, and the only surviving
  * record of it is the backend's `time_entry.deleted` audit row. */

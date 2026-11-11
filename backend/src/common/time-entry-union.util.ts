@@ -85,6 +85,25 @@ export function mergeIntervals(intervals: Interval[]): Interval[] {
   return merged;
 }
 
+/**
+ * The stretches of `span` that none of `covered` reaches, in order. A merged
+ * entry stores these as its pauses: the time inside its span when nobody was
+ * actually working, so merging never turns a break into worked time.
+ */
+export function gapsWithin(span: Interval, covered: Interval[]): Interval[] {
+  const gaps: Interval[] = [];
+  let cursor = span.start;
+  for (const interval of mergeIntervals(covered)) {
+    const start = Math.max(interval.start, span.start);
+    const end = Math.min(interval.end, span.end);
+    if (end <= start) continue;
+    if (start > cursor) gaps.push({ start: cursor, end: start });
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < span.end) gaps.push({ start: cursor, end: span.end });
+  return gaps;
+}
+
 /** Seconds covered by the union of these intervals, counting shared time once. */
 export function unionSeconds(intervals: Interval[]): number {
   const total = mergeIntervals(intervals).reduce(

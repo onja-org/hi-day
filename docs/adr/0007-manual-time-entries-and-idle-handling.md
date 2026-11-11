@@ -1,11 +1,11 @@
 ---
 status: superseded-in-part
-superseded-by: 0028-idle-timeout-holds-tracking-and-sleep-counts-as-idle
+superseded-by: 0028-idle-timeout-holds-tracking-and-sleep-counts-as-idle, 0035-running-entries-can-be-edited
 ---
 
 # Manual time entries and idle-discard both need client-supplied timestamps — amends ADR-0006; edits are your-own-entries-only; idle policy lives on Organisation.settings
 
-Status: partly superseded by [0028](0028-idle-timeout-holds-tracking-and-sleep-counts-as-idle.md) (idle timeout and its audit metadata). Who may edit an entry is now the Modify time setting, with no ADR; see the Timesheets settings entry in [CONTEXT.md](../../CONTEXT.md).
+Status: partly superseded by [0028](0028-idle-timeout-holds-tracking-and-sleep-counts-as-idle.md) (idle timeout and its audit metadata) and [0035](0035-running-entries-can-be-edited.md) (running entries can now be edited). Who may edit an entry is now the Modify time setting, with no ADR; see the Timesheets settings entry in [CONTEXT.md](../../CONTEXT.md).
 
 Adds the epic's remaining two Time Tracking sub-tasks: manual time entry/editing with an audit trail, and idle detection/handling. Both push on a claim ADR-0006 made explicitly ("timestamps are server-assigned only... no client-supplied `startedAt`") — this ADR amends that claim rather than leaving the code and the record disagreeing.
 

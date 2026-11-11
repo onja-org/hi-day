@@ -2,6 +2,7 @@ import { TimeEntry } from '../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../database/entities/time-entry-pause.entity';
 import {
   activeIntervals,
+  gapsWithin,
   mergeIntervals,
   unionActiveSeconds,
   unionSeconds,
@@ -168,5 +169,36 @@ describe('unionActiveSeconds — two devices, one person', () => {
 describe('unionSeconds', () => {
   it('never returns a negative total', () => {
     expect(unionSeconds([{ start: 100, end: 50 }])).toBe(0);
+  });
+});
+
+describe('gapsWithin', () => {
+  const ms = (hhmm: string): number => at(hhmm).getTime();
+  const span = { start: ms('09:00'), end: ms('17:00') };
+
+  it('returns the whole span when nothing covers it', () => {
+    expect(gapsWithin(span, [])).toEqual([span]);
+  });
+
+  it('returns nothing when the span is fully covered', () => {
+    expect(
+      gapsWithin(span, [
+        { start: ms('08:00'), end: ms('12:00') },
+        { start: ms('11:00'), end: ms('18:00') },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('returns the uncovered stretches, in order, clipped to the span', () => {
+    expect(
+      gapsWithin(span, [
+        { start: ms('13:00'), end: ms('14:00') },
+        { start: ms('08:00'), end: ms('10:00') },
+        { start: ms('16:00'), end: ms('20:00') },
+      ]),
+    ).toEqual([
+      { start: ms('10:00'), end: ms('13:00') },
+      { start: ms('14:00'), end: ms('16:00') },
+    ]);
   });
 });

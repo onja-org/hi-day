@@ -9,17 +9,14 @@ const NO_MODIFY_TIME =
 /**
  * Why Edit is unavailable on an entry, or undefined when it isn't.
  *
- * A *paused* entry can be edited: nothing is accruing, so its project, task
- * and start are as settled as a finished entry's. Only a live, ticking one
- * is held back — and even then just because its end is still moving, which
- * the form handles by withholding that field.
+ * Running and paused entries can be edited too: their start, project and
+ * task can be corrected while the timer keeps going. Only the end is held
+ * back on a ticking one, which the form handles by withholding that field —
+ * Stop is still how a running entry ends.
  */
 export function entryEditBlockedReason(entry: Gateable): string | undefined {
   if (!entry.canEdit) {
     return NO_MODIFY_TIME;
-  }
-  if (entry.endedAt === null && !entry.pausedAt) {
-    return "Stop the timer first to edit this entry.";
   }
   return undefined;
 }

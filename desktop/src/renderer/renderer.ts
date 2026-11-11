@@ -2132,7 +2132,15 @@ async function refreshStatus(resync = false): Promise<void> {
   // A click finished mid-poll; applying this snapshot would revert it.
   if (versionAtStart !== runningStateVersion) return;
 
-  const changedElsewhere = (entry?.id ?? null) !== (runningEntry?.id ?? null);
+  // The same entry with a new start: someone corrected it on the web, and
+  // the clock has to count from there rather than from the old start.
+  const startEditedElsewhere =
+    entry !== null &&
+    runningEntry !== null &&
+    entry.id === runningEntry.id &&
+    entry.startedAt !== runningEntry.startedAt;
+  const changedElsewhere =
+    (entry?.id ?? null) !== (runningEntry?.id ?? null) || startEditedElsewhere;
   setRunning(entry);
   if (resync || changedElsewhere) {
     accountWorkedMs = workedMs;

@@ -114,6 +114,45 @@ describe('ManualTimeEditsService', () => {
     });
   });
 
+  it('reports a removed range as negative time for the span cut out', async () => {
+    const { service } = setup({
+      logs: [
+        log('time_entry.range_removed', {
+          ...added.metadata,
+          startedAt: '2026-10-05T12:00:00.000Z',
+          endedAt: '2026-10-05T13:00:00.000Z',
+          reason: 'Lunch',
+        }),
+      ],
+    });
+
+    const [row] = await service.list('org', 'user', 'all', from, to);
+
+    expect(row).toMatchObject({
+      action: 'delete',
+      changeSeconds: -3600,
+      reason: 'Lunch',
+      projectName: 'Website',
+    });
+  });
+
+  it('reports a merge by what it added, as an add or an edit', async () => {
+    const merged = (origin: string) =>
+      log(
+        'time_entry.merged',
+        { ...added.metadata, addedSeconds: 1800, origin },
+        origin,
+      );
+    const { service } = setup({ logs: [merged('add'), merged('edit')] });
+
+    const rows = await service.list('org', 'user', 'all', from, to);
+
+    expect(rows).toEqual([
+      expect.objectContaining({ action: 'add', changeSeconds: 1800 }),
+      expect.objectContaining({ action: 'edit', changeSeconds: 1800 }),
+    ]);
+  });
+
   it('works an edit out as the difference between its own before and after', async () => {
     const { service } = setup({
       logs: [

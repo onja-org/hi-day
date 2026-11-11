@@ -30,7 +30,10 @@ import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
   activeIntervals,
+  gapsWithin,
+  groupPausesByEntry,
   unionActiveSeconds,
+  unionSeconds,
 } from '../../common/time-entry-union.util';
 import type {
   ProjectInterval as SlotProjectInterval,
@@ -82,6 +85,7 @@ import { resolveProjectsEnabled } from '../../organisations/projects-setting';
 import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
 import { hasTeamProjectAccess } from '../../projects/team-project-access.util';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
+import { CutTimeEntryRangeDto } from '../dto/cut-time-entry-range.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
 import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { UpdateTimeEntryDto } from '../dto/update-time-entry.dto';
@@ -105,6 +109,11 @@ const LIST_LIMIT = 200;
 // query isn't paired with a membershipId like everything else here, so it's
 // the one query in this service that scans across every org at once.
 const DAY_BOUNDARY_SPLIT_BATCH_SIZE = 200;
+
+// How many times a merge looks again for entries its grown span now reaches.
+// Each round can only add entries inside one person's day, so this is a
+// backstop against a runaway loop, not a limit anyone should meet.
+const MERGE_MAX_ROUNDS = 10;
 
 /**
  * How long a Device or a browser may go unheard before its running timer is
@@ -1749,14 +1758,31 @@ export class TimeEntriesService {
     this.assertValidRange(startedAt, endedAt);
     // Editing has always refused an overlap; creating never did, so a span
     // could be typed that editing then would not let you keep.
-    await this.assertNoOverlap(
+    const clashes = await this.findOverlaps(
       membership.id,
       null,
-      null,
+      [],
       startedAt,
       endedAt,
       'manual',
     );
+    if (clashes.length > 0) {
+      if (!dto.merge) throw this.overlapConflict(clashes, 'manual');
+      return await this.merge({
+        organisationId,
+        userId,
+        membershipId: membership.id,
+        deviceId: null,
+        scope: 'manual',
+        startedAt,
+        endedAt,
+        projectId,
+        taskId: task?.id ?? null,
+        edited: null,
+        clashes,
+        reason: dto.reason,
+      });
+    }
 
     const entry = this.timeEntries.create({
       organisationId,
@@ -1798,9 +1824,12 @@ export class TimeEntriesService {
    * editor can see — see `canEditEntry`.
    *
    * An unstopped entry (`endedAt IS NULL`, which a *paused* one also is)
-   * can still have its Project, Task and start corrected. Only `endedAt` is
-   * refused: setting it here would end the timer without emitting
-   * `time_entry.stopped`, leaving no account of how it ended — use `stop`.
+   * can still have its Project, Task and start corrected, and the timer
+   * keeps running. Only `endedAt` is refused on a ticking one: setting it
+   * here would end the timer without emitting `time_entry.stopped`, leaving
+   * no account of how it ended — use `stop`. A new start for it can't be in
+   * the future, overlap another entry up to now, or pass its first pause
+   * (see `assertRunningStartFits`).
    *
    * Moving an unstopped entry to another Project takes the time already
    * accrued with it; nothing is split at the edit point (see `split`).
@@ -1898,21 +1927,45 @@ export class TimeEntriesService {
     const nextEndedAt = dto.endedAt ? new Date(dto.endedAt) : entry.endedAt;
     if (nextEndedAt) {
       this.assertValidRange(nextStartedAt, nextEndedAt);
-      await this.assertNoOverlap(
+      // A manual entry is held to the stricter rule however it is reached,
+      // so one cannot be edited into an overlap it could not be created
+      // with.
+      const scope: OverlapScope =
+        entry.source === TimeEntrySource.MANUAL ? 'manual' : 'tracked';
+      const clashes = await this.findOverlaps(
         entry.membershipId,
         entry.deviceId,
-        entry.id,
+        [entry.id],
         nextStartedAt,
         nextEndedAt,
-        // A manual entry is held to the stricter rule however it is reached,
-        // so one cannot be edited into an overlap it could not be created
-        // with.
-        entry.source === TimeEntrySource.MANUAL ? 'manual' : 'tracked',
+        scope,
       );
-    } else if (nextStartedAt.getTime() > Date.now()) {
-      // No end to bracket the start against — but a future start would still
-      // render as a negative elapsed time.
-      throw new ConflictException('Start time cannot be in the future.');
+      if (clashes.length > 0) {
+        if (!dto.merge) throw this.overlapConflict(clashes, scope);
+        return await this.merge({
+          organisationId,
+          userId,
+          membershipId: entry.membershipId,
+          deviceId: entry.deviceId,
+          scope,
+          startedAt: nextStartedAt,
+          endedAt: nextEndedAt,
+          projectId: nextProjectId,
+          taskId: nextTaskId,
+          edited: entry,
+          clashes,
+          reason: dto.reason,
+        });
+      }
+    } else {
+      if (nextStartedAt.getTime() > Date.now()) {
+        // No end to bracket the start against — but a future start would
+        // still render as a negative elapsed time.
+        throw new ConflictException('Start time cannot be in the future.');
+      }
+      if (nextStartedAt.getTime() !== entry.startedAt.getTime()) {
+        await this.assertRunningStartFits(entry, nextStartedAt);
+      }
     }
 
     const changed: Record<string, { from: unknown; to: unknown }> = {};
@@ -2081,6 +2134,172 @@ export class TimeEntriesService {
   }
 
   /**
+   * Cuts a typed range `[from, to)` out of one stopped entry. `remove` drops
+   * the range and keeps the time either side as separate entries; `split`
+   * keeps all three pieces (before, the range, after) so the middle one can
+   * be moved to another Project. A range touching either end of the entry
+   * leaves no piece on that side.
+   *
+   * Built from the same cut `split` makes, twice: first at `to`, then at
+   * `from`, each moving the pauses after it onto the new piece. The original
+   * row stays the earliest piece, keeping its id. Removing the range then
+   * deletes the middle piece and the captures nothing else covers, like
+   * `remove`, and needs a reason when the organisation requires one.
+   *
+   * Same permission as editing (`canEditEntry`).
+   */
+  async cutRange(
+    organisationId: string,
+    userId: string,
+    timeEntryId: string,
+    dto: CutTimeEntryRangeDto,
+  ): Promise<{ entries: TimeEntrySummary[] }> {
+    const membership = await this.getActiveMembership(organisationId, userId);
+    const entry = await this.timeEntries.findOne({
+      where: { id: timeEntryId, organisationId },
+    });
+    if (!entry) {
+      throw new NotFoundException('Time entry not found.');
+    }
+    if (
+      !(await this.canEditEntry(membership, organisationId, entry.membershipId))
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to change this time entry.',
+      );
+    }
+    if (entry.endedAt === null) {
+      throw new ConflictException(
+        'This timer has not stopped yet — stop it before cutting time out of it.',
+      );
+    }
+    if (dto.mode === 'remove') {
+      await this.assertReasonGiven(organisationId, dto.reason);
+    }
+
+    const from = new Date(dto.from);
+    const to = new Date(dto.to);
+    const originalStartedAt = entry.startedAt;
+    const originalEndedAt = entry.endedAt;
+    if (to.getTime() <= from.getTime()) {
+      throw new ConflictException('The range must end after it starts.');
+    }
+    if (
+      from.getTime() < originalStartedAt.getTime() ||
+      to.getTime() > originalEndedAt.getTime()
+    ) {
+      throw new ConflictException(
+        'The range must fall between the start and end of the entry.',
+      );
+    }
+    if (
+      from.getTime() === originalStartedAt.getTime() &&
+      to.getTime() === originalEndedAt.getTime()
+    ) {
+      throw new ConflictException(
+        dto.mode === 'remove'
+          ? 'The range covers the whole entry — delete the entry instead.'
+          : 'The range covers the whole entry, so there is nothing to split.',
+      );
+    }
+
+    const piece = (manager: EntityManager, startedAt: Date, endedAt: Date) =>
+      manager.save(
+        manager.create(TimeEntry, {
+          organisationId,
+          membershipId: entry.membershipId,
+          projectId: entry.projectId,
+          taskId: entry.taskId,
+          startedAt,
+          endedAt,
+          source: entry.source,
+          type: entry.type,
+          deviceId: entry.deviceId,
+        }),
+      );
+
+    const { kept, pruned } = await this.dataSource.transaction(
+      async (manager) => {
+        let after: TimeEntry | null = null;
+        if (to.getTime() < originalEndedAt.getTime()) {
+          after = await piece(manager, to, originalEndedAt);
+          entry.endedAt = to;
+          await manager.save(entry);
+          await this.movePausesAcrossSplit(
+            manager,
+            organisationId,
+            entry.id,
+            after.id,
+            to,
+          );
+        }
+
+        let before: TimeEntry | null = null;
+        let middle: TimeEntry = entry;
+        if (from.getTime() > originalStartedAt.getTime()) {
+          middle = await piece(manager, from, to);
+          entry.endedAt = from;
+          before = await manager.save(entry);
+          await this.movePausesAcrossSplit(
+            manager,
+            organisationId,
+            entry.id,
+            middle.id,
+            from,
+          );
+        }
+
+        let result: PrunedCaptures | null = null;
+        if (dto.mode === 'remove') {
+          await manager.delete(TimeEntry, { id: middle.id });
+          result = await this.captureCleanup.pruneUncovered(
+            manager,
+            entry.membershipId,
+            { from, to },
+          );
+        }
+
+        const keptPieces = [
+          before,
+          dto.mode === 'split' ? middle : null,
+          after,
+        ].filter((value): value is TimeEntry => value !== null);
+
+        await this.auditLogService.record(manager, {
+          action:
+            dto.mode === 'remove'
+              ? 'time_entry.range_removed'
+              : 'time_entry.split',
+          organisationId,
+          actorUserId: userId,
+          metadata: {
+            timeEntryId: entry.id,
+            // The removed span, shaped like a deletion's snapshot so the
+            // Manual time edits report can read it the same way.
+            membershipId: entry.membershipId,
+            projectId: entry.projectId,
+            taskId: entry.taskId,
+            startedAt: from,
+            endedAt: to,
+            originalStartedAt,
+            originalEndedAt,
+            resultingTimeEntryIds: keptPieces.map((kept) => kept.id),
+            ...(dto.reason ? { reason: dto.reason } : {}),
+            ...(result ? { prunedCaptures: this.capturesSummary(result) } : {}),
+          },
+        });
+
+        return { kept: keptPieces, pruned: result };
+      },
+    );
+
+    await this.captureCleanup.deleteStoredObjects(pruned?.storageKeys ?? []);
+    return {
+      entries: await Promise.all(kept.map((kept) => this.toSummary(kept))),
+    };
+  }
+
+  /**
    * Re-homes pause spans either side of a split point: spans wholly after
    * the cut move to the new entry, and one straddling it becomes two — so
    * each half's paused time still matches the span it now covers.
@@ -2202,6 +2421,46 @@ export class TimeEntriesService {
   }
 
   /**
+   * A new start for an entry that hasn't stopped (running or paused). It
+   * has no end yet, so the span it will claim runs to "now":
+   *
+   * - It must not overlap another entry. Moving a running timer's start
+   *   earlier over time already tracked would count that time twice.
+   * - It must not pass the timer's first pause. Pauses are subtracted from
+   *   the entry's duration, so one left before the start would take away
+   *   time the entry no longer covers.
+   */
+  private async assertRunningStartFits(
+    entry: TimeEntry,
+    nextStartedAt: Date,
+  ): Promise<void> {
+    const firstPause = await this.timeEntryPauses.findOne({
+      where: { timeEntryId: entry.id },
+      order: { pausedAt: 'ASC' },
+    });
+    if (firstPause && nextStartedAt.getTime() > firstPause.pausedAt.getTime()) {
+      throw new ConflictException(
+        'Start time must be before this timer was first paused.',
+      );
+    }
+    const scope: OverlapScope =
+      entry.source === TimeEntrySource.MANUAL ? 'manual' : 'tracked';
+    const clashes = await this.findOverlaps(
+      entry.membershipId,
+      entry.deviceId,
+      [entry.id],
+      nextStartedAt,
+      new Date(),
+      scope,
+    );
+    if (clashes.length > 0) {
+      // Never offered as a merge: this entry is the running one, with no end
+      // to merge up to, however finished the entries it ran into are.
+      throw this.overlapConflict(clashes, scope, { mergeable: false });
+    }
+  }
+
+  /**
    * Rejects a span that would sit on top of another of this person's
    * entries. Touching endpoints are fine — one entry ending exactly where
    * the next begins is adjacency, not overlap, and is what `switch`
@@ -2221,6 +2480,59 @@ export class TimeEntriesService {
     endedAt: Date,
     scope: OverlapScope,
   ): Promise<void> {
+    const clashes = await this.findOverlaps(
+      membershipId,
+      deviceId,
+      timeEntryId === null ? [] : [timeEntryId],
+      startedAt,
+      endedAt,
+      scope,
+    );
+    if (clashes.length > 0) {
+      throw this.overlapConflict(clashes, scope);
+    }
+  }
+
+  /**
+   * Every entry `[startedAt, endedAt)` overlaps on the same timeline, oldest
+   * first, with its Project loaded so the refusal can name it.
+   */
+  private async findOverlaps(
+    membershipId: string,
+    deviceId: string | null,
+    excludeIds: string[],
+    startedAt: Date,
+    endedAt: Date,
+    scope: OverlapScope,
+  ): Promise<TimeEntry[]> {
+    const where = this.overlapWhere(
+      membershipId,
+      deviceId,
+      excludeIds,
+      startedAt,
+      endedAt,
+      scope,
+    );
+    // One row answers the common case, no overlap at all; the full list is
+    // only fetched to name the clashes.
+    const first = await this.timeEntries.findOne({ where });
+    if (!first) return [];
+    const all = await this.timeEntries.find({
+      where,
+      relations: { project: true },
+      order: { startedAt: 'ASC' },
+    });
+    return all.length > 0 ? all : [first];
+  }
+
+  private overlapWhere(
+    membershipId: string,
+    deviceId: string | null,
+    excludeIds: string[],
+    startedAt: Date,
+    endedAt: Date,
+    scope: OverlapScope,
+  ): FindOptionsWhere<TimeEntry>[] {
     // Two scopes, because two different things are being prevented.
     //
     // A *tracked* entry is scoped to its Device, mirroring the running-timer
@@ -2241,29 +2553,229 @@ export class TimeEntriesService {
     const sameTimeline = {
       membershipId,
       ...deviceScope,
-      ...(timeEntryId === null ? {} : { id: Not(timeEntryId) }),
+      ...(excludeIds.length === 0
+        ? {}
+        : {
+            id:
+              excludeIds.length === 1
+                ? Not(excludeIds[0])
+                : Not(In(excludeIds)),
+          }),
     };
-    const clash = await this.timeEntries.findOne({
-      where: [
-        {
-          ...sameTimeline,
-          startedAt: LessThan(endedAt),
-          endedAt: MoreThan(startedAt),
-        },
-        {
-          ...sameTimeline,
-          startedAt: LessThan(endedAt),
-          endedAt: IsNull(),
-        },
-      ],
-    });
-    if (clash) {
-      throw new ConflictException(
+    return [
+      {
+        ...sameTimeline,
+        startedAt: LessThan(endedAt),
+        endedAt: MoreThan(startedAt),
+      },
+      {
+        ...sameTimeline,
+        startedAt: LessThan(endedAt),
+        endedAt: IsNull(),
+      },
+    ];
+  }
+
+  /**
+   * The refusal for an overlap, naming each entry in the way so the form can
+   * say which ones clash and offer to merge them (see `merge`). `canMerge`
+   * is false when one of them is still running, or when the entry being
+   * saved is (`mergeable: false`): a running entry has no end to merge up to.
+   */
+  private overlapConflict(
+    clashes: TimeEntry[],
+    scope: OverlapScope,
+    { mergeable = true }: { mergeable?: boolean } = {},
+  ): ConflictException {
+    return new ConflictException({
+      statusCode: 409,
+      error: 'Conflict',
+      message:
         scope === 'manual'
           ? 'These times overlap time already tracked for this person. Adjust the times so they do not cover the same period.'
           : 'These times overlap another time entry from the same device — one machine cannot track two entries at once. Adjust the times so they do not cover the same period.',
+      overlaps: clashes.map((clash) => ({
+        id: clash.id,
+        projectName: clash.project?.name ?? null,
+        startedAt: clash.startedAt,
+        endedAt: clash.endedAt,
+      })),
+      canMerge: mergeable && clashes.every((clash) => clash.endedAt !== null),
+    });
+  }
+
+  /**
+   * Saves a span (a new manual entry, or an edit) by merging it with every
+   * entry it overlaps into one entry, instead of refusing.
+   *
+   * - The merged entry runs from the earliest start to the latest end, and
+   *   takes the Project and Task chosen in the form.
+   * - It keeps a tracked entry's row (its id, Device and source) when any
+   *   piece was tracked, so its screenshots and activity stay attached; it is
+   *   manual only when every piece was. The span only grows, so no capture
+   *   falls outside it.
+   * - Its pauses become the gaps where *no* piece was working, so merging
+   *   never counts time twice and never turns a break into worked time.
+   * - Anything the grown span now reaches on the same timeline is merged
+   *   too, so the result never overlaps a neighbour it skipped.
+   * - A running entry can't be merged: it has no end yet. Edit its start
+   *   instead (ADR-0035).
+   */
+  private async merge(params: {
+    organisationId: string;
+    userId: string;
+    membershipId: string;
+    deviceId: string | null;
+    scope: OverlapScope;
+    startedAt: Date;
+    endedAt: Date;
+    projectId: string | null;
+    taskId: string | null;
+    /** The entry being edited, as it was before this edit; null when adding. */
+    edited: TimeEntry | null;
+    clashes: TimeEntry[];
+    reason?: string;
+  }): Promise<TimeEntrySummary> {
+    const { organisationId, userId, membershipId, edited } = params;
+    const now = new Date();
+
+    const pieces = new Map(params.clashes.map((clash) => [clash.id, clash]));
+    let start = params.startedAt.getTime();
+    let end = params.endedAt.getTime();
+    const widen = (entry: TimeEntry) => {
+      start = Math.min(start, entry.startedAt.getTime());
+      end = Math.max(end, (entry.endedAt ?? now).getTime());
+    };
+    params.clashes.forEach(widen);
+    for (let round = 0; round < MERGE_MAX_ROUNDS; round++) {
+      const reached = await this.timeEntries.find({
+        where: this.overlapWhere(
+          membershipId,
+          params.deviceId,
+          [...pieces.keys(), ...(edited ? [edited.id] : [])],
+          new Date(start),
+          new Date(end),
+          params.scope,
+        ),
+      });
+      if (reached.length === 0) break;
+      for (const entry of reached) {
+        pieces.set(entry.id, entry);
+        widen(entry);
+      }
+    }
+
+    const clashes = [...pieces.values()];
+    if (clashes.some((clash) => clash.endedAt === null)) {
+      throw new ConflictException(
+        "One of the overlapping entries is still running, so they can't be merged. Stop it first, or edit its start time instead.",
       );
     }
+
+    const ids = [...clashes.map((clash) => clash.id)];
+    if (edited) ids.push(edited.id);
+    const pausesByEntry = groupPausesByEntry(
+      await this.timeEntryPauses.find({ where: { timeEntryId: In(ids) } }),
+    );
+    const activeOf = (
+      entry: Pick<TimeEntry, 'startedAt' | 'endedAt'>,
+      id?: string,
+    ) => activeIntervals(entry, id ? (pausesByEntry.get(id) ?? []) : [], now);
+    const clashActive = clashes.flatMap((clash) => activeOf(clash, clash.id));
+    const savedActive = activeOf(
+      { startedAt: params.startedAt, endedAt: params.endedAt },
+      edited?.id,
+    );
+    const workedBefore = unionSeconds([
+      ...clashActive,
+      ...(edited ? activeOf(edited, edited.id) : []),
+    ]);
+    const workedAfter = [...clashActive, ...savedActive];
+    const gaps = gapsWithin({ start, end }, workedAfter);
+
+    const candidates = edited ? [edited, ...clashes] : clashes;
+    const byStart = (a: TimeEntry, b: TimeEntry) =>
+      a.startedAt.getTime() - b.startedAt.getTime();
+    const survivor =
+      candidates
+        .filter((entry) => entry.source !== TimeEntrySource.MANUAL)
+        .sort(byStart)[0] ??
+      edited ??
+      [...clashes].sort(byStart)[0];
+    const mergedIds = candidates
+      .filter((entry) => entry.id !== survivor.id)
+      .map((entry) => entry.id);
+    const editedSpan = edited
+      ? { from: edited.startedAt, to: edited.endedAt ?? now }
+      : null;
+    const startedAt = new Date(start);
+    const endedAt = new Date(end);
+
+    const pruned = await this.dataSource.transaction(async (manager) => {
+      await manager.delete(TimeEntryPause, { timeEntryId: In(ids) });
+      if (mergedIds.length > 0) {
+        await manager.delete(TimeEntry, { id: In(mergedIds) });
+      }
+      // `update`, not `save`: a loaded `project` relation would otherwise
+      // win over the new `projectId`.
+      await manager.update(
+        TimeEntry,
+        { id: survivor.id },
+        {
+          startedAt,
+          endedAt,
+          projectId: params.projectId,
+          taskId: params.taskId,
+        },
+      );
+      for (const gap of gaps) {
+        await manager.save(
+          manager.create(TimeEntryPause, {
+            organisationId,
+            timeEntryId: survivor.id,
+            pausedAt: new Date(gap.start),
+            resumedAt: new Date(gap.end),
+          }),
+        );
+      }
+      // Only the edited entry can have given up time outside the merged
+      // span; every other piece lies inside it.
+      const result = editedSpan
+        ? await this.captureCleanup.pruneUncovered(
+            manager,
+            membershipId,
+            editedSpan,
+          )
+        : null;
+
+      await this.auditLogService.record(manager, {
+        action: 'time_entry.merged',
+        organisationId,
+        actorUserId: userId,
+        metadata: {
+          timeEntryId: survivor.id,
+          mergedTimeEntryIds: mergedIds,
+          membershipId,
+          projectId: params.projectId,
+          taskId: params.taskId,
+          startedAt,
+          endedAt,
+          // What the merge added to the person's worked time, counted once:
+          // the Manual time edits report shows this as the change.
+          addedSeconds: unionSeconds(workedAfter) - workedBefore,
+          origin: edited ? 'edit' : 'add',
+          reason: params.reason ?? null,
+          ...(result ? { prunedCaptures: this.capturesSummary(result) } : {}),
+        },
+      });
+      return result;
+    });
+
+    await this.captureCleanup.deleteStoredObjects(pruned?.storageKeys ?? []);
+    const saved = await this.timeEntries.findOne({
+      where: { id: survivor.id, organisationId },
+    });
+    return await this.toSummary(saved!);
   }
 
   /** Through the shared resolver so this and the agent's settings poll

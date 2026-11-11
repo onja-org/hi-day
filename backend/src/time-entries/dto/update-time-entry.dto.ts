@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsOptional,
   IsString,
@@ -25,6 +26,12 @@ export class UpdateTimeEntryDto {
   @IsOptional()
   @IsDateString()
   endedAt?: string;
+
+  /** When the times overlap entries the save would otherwise refuse,
+   * merge them all into one entry instead. See TimeEntriesService.merge. */
+  @IsOptional()
+  @IsBoolean()
+  merge?: boolean;
 
   /** Kept on the `time_entry.updated` audit row and shown in the Manual
    * time edits report. Optional in shape; required by the service whenever

@@ -1,5 +1,6 @@
 import { API_URL } from "./apiUrl";
-import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
+import { GENERIC_ERROR_MESSAGE } from "./parseApiError";
+import { parseTimeEntrySaveError } from "./parseTimeEntrySaveError";
 import type {
   CreateManualTimeEntryResult,
   TimeEntryFormInput,
@@ -25,6 +26,7 @@ export async function createManualTimeEntry(
           endedAt: new Date(input.endedAt).toISOString(),
           membershipId: input.membershipId,
           reason: input.reason,
+          ...(input.merge ? { merge: true } : {}),
         }),
       },
     );
@@ -36,5 +38,5 @@ export async function createManualTimeEntry(
     const body = await response.json();
     return { ok: true, ...body };
   }
-  return { ok: false, message: await parseApiErrorMessage(response) };
+  return { ok: false, ...(await parseTimeEntrySaveError(response)) };
 }

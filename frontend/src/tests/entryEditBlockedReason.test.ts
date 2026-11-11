@@ -17,8 +17,10 @@ describe("entryEditBlockedReason", () => {
     expect(entryEditBlockedReason({ ...FINISHED, canEdit: false })).toContain("Modify time");
   });
 
-  it("blocks an entry whose timer is still ticking", () => {
-    expect(entryEditBlockedReason(RUNNING)).toContain("Stop the timer");
+  // Its start, project and task can be corrected while the timer keeps
+  // running; the form withholds the end field.
+  it("allows an entry whose timer is still ticking", () => {
+    expect(entryEditBlockedReason(RUNNING)).toBeUndefined();
   });
 
   // Nothing accrues while paused, so its project, task and start are as
@@ -27,7 +29,7 @@ describe("entryEditBlockedReason", () => {
     expect(entryEditBlockedReason(PAUSED)).toBeUndefined();
   });
 
-  it("reports the permission first when both block it", () => {
+  it("blocks a running entry for a viewer who cannot edit", () => {
     expect(entryEditBlockedReason({ ...RUNNING, canEdit: false })).toContain("Modify time");
   });
 });
