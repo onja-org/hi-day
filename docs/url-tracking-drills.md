@@ -1,19 +1,12 @@
-# URL tracking — manual verification drills
+# URL tracking: manual verification drills
 
-Everything that can be scripted lives in `desktop/src/main/url-capture/tests/` (see
-`failure-drills.spec.ts` and `acceptance-criteria.spec.ts`, run via `pnpm --filter desktop
-drills`). This document is only for what genuinely needs a real machine, a real browser, or a
-real person — the automated suite cannot meaningfully fake any of these.
+The scripted drills live in `desktop/src/main/url-capture/tests/` (`failure-drills.spec.ts` and `acceptance-criteria.spec.ts`). Run them with `pnpm --filter desktop drills`. This checklist covers what needs a real machine, a real browser or a real person.
 
-Run through this list before shipping a release that touches Stage B/C/D (any platform
-resolver) or Stage E (normalization). Record the result of each row — pass, fail, or "not
-applicable to this platform" — don't leave any blank.
+Run it before shipping a release that touches a platform resolver or the normalization pipeline. Record every row as pass, fail or not applicable. Don't leave any blank.
 
 ## Per-browser matrix
 
-For each browser your organization supports, on each platform that browser runs on: start a
-timer, browse for a few minutes across several real sites, stop the timer, and confirm the
-recorded sessions look right (real URLs, reasonable durations, no garbage rows).
+For each supported browser on each platform it runs on: start a timer, browse several real sites for a few minutes, stop the timer. Check that the recorded sessions have real URLs, sensible durations and no garbage rows.
 
 | Browser | macOS | Windows | Linux |
 |---|---|---|---|
@@ -23,64 +16,53 @@ recorded sessions look right (real URLs, reasonable durations, no garbage rows).
 | Vivaldi | | | |
 | Opera | | | |
 | Firefox | | | |
-| Safari | N/A (macOS only) | N/A | N/A |
+| Safari | | N/A | N/A |
 
-## Incognito and private windows
+## Private and incognito windows
 
-For each browser above that supports a private/incognito mode: open one, browse for a few
-minutes, stop the timer, and confirm **the stored session has no URL, host, or path** — only
-title, browser, duration, and `private: true`. This is the single most safety-critical check
-in this whole document; see `docs/url-tracking-privacy.md`.
+This is the most safety-critical check here. See `docs/url-tracking-privacy.md` and the private-mode section of `URL_TRACKING_CONTEXT.md`.
+
+Open a private window, browse for a few minutes, stop the timer. Where the platform detects private mode, the stored session must have no URL, host or path. It keeps only title, browser, duration and `private: true`.
+
+What to expect, by platform:
+
+- macOS: Chrome, Edge, Brave, Vivaldi, Opera and Firefox are detected. Safari is not (it gives no signal), so confirm its private windows are captured with `private: null`, per the capture-with-flag policy.
+- Windows: Firefox is detected. Chromium detection relies on an unverified UIA AutomationId (`IncognitoIndicatorAutomationId` in `AddressBarReader.cs`). This drill is what confirms or rules it out. Record what actually happens, and check that normal windows are not marked private.
+- Linux: nothing is detected. Confirm private windows are captured with `private: null`.
+
+Checklist:
 
 - [ ] Chrome incognito
 - [ ] Edge InPrivate
 - [ ] Brave private
 - [ ] Vivaldi private
+- [ ] Opera private
 - [ ] Firefox private browsing
-- [ ] Safari private (confirm it's *not* detected as private — expected, since Safari gives no
-      signal — and that the disclosed "capture with flag" policy from
-      `URL_TRACKING_CONTEXT.md` is what actually happens)
+- [ ] Safari private
 
-## Multi-monitor and window spanning displays
+## Multi-monitor
 
-- [ ] Move the focused browser window across two monitors mid-session — confirm tracking
-      doesn't drop or duplicate.
-- [ ] A window that spans two displays (partially on each) — confirm focus detection still
-      identifies it correctly.
+- [ ] Move the focused browser window to another monitor mid-session. Tracking should not drop or duplicate.
+- [ ] Place a window across two displays. Focus detection should still identify it.
 
 ## Non-English UI locale
 
-This is where name-matching bugs surface — every element-matching strategy in this project is
-supposed to key off control type/position/AutomationId, never a localized label, but this is
-the only way to actually prove that.
+Element matching is supposed to use control type, position or AutomationId, never a localized label. This is the only way to prove it.
 
-- [ ] Set the OS (or just the browser's language, where that's independent) to a non-English
-      locale per platform — French and Japanese are good choices (very different address-bar
-      layouts/rendering). Confirm URL reading and private-mode detection both still work.
+- [ ] On each platform, set the OS (or just the browser, where that's independent) to a non-English locale. French and Japanese are good choices. Confirm URL reading and private-mode detection still work.
 
-## Windows-specific
+## Windows
 
-- [ ] An elevated (Run as Administrator) browser, non-elevated agent: confirm `resolve()`
-      returns the `elevated-target` typed error, not a hang or a crash, and the coverage
-      screen shows a clear reason.
+- [ ] Run the browser elevated (Run as Administrator) and the agent not elevated. The resolver should return the `elevated-target` error, not hang or crash.
 
-## macOS-specific
+## macOS
 
-- [ ] Firefox with `accessibility.force_disabled` set (a real setting some users apply from
-      "speed up Firefox" advice): confirm the agent detects Accessibility is unavailable and
-      degrades to title-only rather than silently doing nothing.
+- [ ] Set `accessibility.force_disabled` in Firefox (it circulates in "speed up Firefox" advice). The Firefox helper should fail cleanly, with no hang and no crash. No Firefox URLs are recorded in this state.
 
-## Browser updated and restarted mid-session
+## Browser restarted mid-session
 
-- [ ] Start a timer, start browsing, then let the browser auto-update and restart itself (or
-      simulate by quitting and relaunching) while the timer keeps running. Confirm the
-      session closes cleanly on the quit and a fresh one opens correctly once the browser (and
-      focus) come back — no hang, no stuck state, no orphaned COM/AX state on the resolver
-      side (see native/win/README.md's watchdog contract section for what "no orphaned state"
-      is actually claiming and why).
+- [ ] Start a timer and browse. Let the browser auto-update and restart, or quit and relaunch it, while the timer runs. The session should close cleanly on quit, and a new one should open once the browser has focus again. No hang, no stuck state, no orphaned COM or AX state in the resolver. `native/win/README.md`'s watchdog contract section explains what "no orphaned state" means.
 
 ## Recording results
 
-Copy this file's checklist into your release notes (or a tracking issue) with each box
-checked/failed, plus the platform/browser/OS-version combination actually tested — "tested"
-without specifics is not verifiable later.
+Copy this checklist into the release notes or a tracking issue. Mark each box pass or fail and note the exact platform, browser and OS version tested. "Tested" with no specifics can't be checked later.

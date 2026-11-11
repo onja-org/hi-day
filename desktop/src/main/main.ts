@@ -67,6 +67,18 @@ import { isWaylandSession, toDevicePlatform } from "./platform";
 import type { DesktopDevicePlatform } from "./platform";
 import { captureScreenViaPortal } from "./screenshot-portal";
 import {
+  captureScreenViaScreenCast,
+  isSilentScreenCastAvailable,
+} from "./screencast-portal";
+import { WaylandSilentCapture } from "./wayland-silent-capture";
+import {
+  ScreenshotEnabledWatcher,
+  decideSurface,
+  installSurfaceHandler,
+  surfaceCopy,
+  surfaceWindow,
+} from "./window-surfacing";
+import {
   DEFAULT_SCREENSHOT_INTERVAL_MS,
   ScreenshotSampler,
 } from "./screenshot-sampler";
@@ -91,6 +103,8 @@ import {
   type CloseAction,
   hasWaylandScreenshotGrant,
   markWaylandScreenshotGranted,
+  waylandScreenCastToken,
+  rememberWaylandScreenCastToken,
   rememberCloseAction,
   cacheReminderSettings,
   cachedWebAppUrl,
@@ -106,6 +120,7 @@ import {
   rememberAutoStarted,
 } from "./setup-state";
 import { bootIdentity, decideAutoStart, localDay } from "./auto-start";
+import { startOfDay } from "./day-boundary";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
@@ -254,6 +269,13 @@ interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatform;
   screenRecordingGranted: boolean;
+  /**
+   * Linux/Wayland only: capture works, but through the Screenshot portal,
+   * which on GNOME plays the camera-shutter sound and flashes the screen
+   * every time — and the silent ScreenCast grant is available to be asked
+   * for. The renderer offers that upgrade; capture keeps running meanwhile.
+   */
+  waylandCaptureIsNoisy: boolean;
   waylandUnsupported: boolean;
   /**
    * macOS + Firefox only: the AX helper needs Accessibility, while every other
@@ -1059,6 +1081,15 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return false;
   };
+  // The silent Wayland path — GNOME's Screenshot portal plays a shutter
+  // sound and flashes the screen on every capture; ScreenCast does neither.
+  const waylandSilentCapture = new WaylandSilentCapture({
+    loadToken: () => waylandScreenCastToken(app.getPath("userData")),
+    saveToken: (token) =>
+      rememberWaylandScreenCastToken(app.getPath("userData"), token),
+    screenCast: captureScreenViaScreenCast,
+    isAvailable: isSilentScreenCastAvailable,
+  });
   /**
    * The last answers the server gave, so this app can still be used when
    * nobody can answer (docs/adr/0025-...). Everything read through
@@ -1284,6 +1315,53 @@ async function registerIpcHandlers(): Promise<void> {
     }
     return powerMonitor.getSystemIdleTime();
   };
+  // The one place that knows how to put the window in front of someone;
+  // callers pass a reason and never touch a window themselves.
+  installSurfaceHandler(async (request) => {
+    const copy = surfaceCopy(request);
+    const action = decideSurface(
+      {
+        exists: mainWindow !== null && !mainWindow.isDestroyed(),
+        visible: mainWindow?.isVisible() ?? false,
+        focused: mainWindow?.isFocused() ?? false,
+        minimized: mainWindow?.isMinimized() ?? false,
+      },
+      await readIdleSeconds(),
+    );
+    if (action === "nothing") return;
+
+    // First and always: on Wayland a background app cannot raise itself,
+    // so a clickable notification is the only reliable mechanism.
+    if (Notification.isSupported()) {
+      surfaceNotification?.close();
+      surfaceNotification = new Notification({ title: copy.title, body: copy.body });
+      surfaceNotification.on("click", showMainWindow);
+      surfaceNotification.show();
+    }
+    if (action === "notify") return;
+
+    showMainWindow();
+    // The renderer owns which view is drawn, so asking it to go full keeps
+    // the two in step, and it renders the message in-window.
+    mainWindow?.webContents.send("window:surfaced", copy);
+
+    try {
+      if (process.platform === "darwin") {
+        // The one platform that lets a background app take the foreground.
+        // `dock` is null only in a tray-only build, which this is not.
+        app.focus({ steal: true });
+        app.dock?.bounce("informational");
+      } else {
+        // Windows refuses the focus steal and flashes the taskbar instead;
+        // on Linux this sets the urgency hint, which GNOME ignores.
+        mainWindow?.flashFrame(true);
+        mainWindow?.once("focus", () => mainWindow?.flashFrame(false));
+      }
+    } catch (error) {
+      console.log(`[surface-window] attention failed: ${String(error)}`);
+    }
+  }, (line) => console.log(line));
+
   const activitySampler = new ActivitySampler(activitySampleUploader.enqueue, {
     readIdleSeconds,
   });
@@ -1299,6 +1377,7 @@ async function registerIpcHandlers(): Promise<void> {
   const screenshotSampler = new ScreenshotSampler({
     sink: screenshotUploader.upload,
     isWaylandScreenshotGranted,
+    captureWaylandSilently: () => waylandSilentCapture.capture(),
   });
 
   offlineQueue.start();
@@ -1314,9 +1393,15 @@ async function registerIpcHandlers(): Promise<void> {
   let allowedApps: AllowedApps = "all";
   /** Held so it can be withdrawn once read — see `dismissTrackingAlert`. */
   let trackingNotification: Notification | null = null;
+  /** Replaces rather than stacks: two of these say the same thing. */
+  let surfaceNotification: Notification | null = null;
   /** The tray's own start/stop confirmation, kept apart from the alert above. */
   let timerNotification: Notification | null = null;
   let trackingAlertDwell: ReturnType<typeof setTimeout> | null = null;
+  let activityTrackingEnabled = true;
+  /** Null until settings land once, so priming and the first poll are not
+   * mistaken for a change and do not split anybody's entry at launch. */
+  let lastActivityTracking: boolean | null = null;
   let screenshotsEnabled = false;
   let screenshotFrequencyMs = DEFAULT_SCREENSHOT_INTERVAL_MS;
   let timerRunning = false;
@@ -1365,27 +1450,32 @@ async function registerIpcHandlers(): Promise<void> {
       void appEventUploader.flush();
     }
 
-    // Rides neither capture setting: activity is not an app, a URL or a
-    // window title, so switching those off must not blank it out.
-    if (timerRunning) {
+    // Rides neither app-capture setting — activity is not an app, a URL or
+    // a window title — but does ride "Record activity".
+    if (timerRunning && activityTrackingEnabled) {
       activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
-      // Main's own reading of when input stopped, for the moment the machine
-      // sleeps: the renderer's poll is throttled while its window sits
-      // hidden in the tray, and a stale reading would date the idle stretch
-      // from the sleep instead of from when the person left.
+    } else if (activityTicker) {
+      clearInterval(activityTicker);
+      activityTicker = null;
+      // Emit the part-finished period rather than discarding minutes that
+      // were measured while recording was still on.
+      void activitySampler.flush().then(() => activitySampleUploader.flush());
+    }
+
+    // Deliberately NOT gated on `activityTrackingEnabled`, and kept apart
+    // from the sampler even though both want a running timer: this is
+    // main's own reading of when input stopped, for the moment the machine
+    // sleeps. Idle detection is not activity recording and must keep
+    // working with Record activity off.
+    if (timerRunning) {
       idleSampleTicker ??= setInterval(() => {
         void readIdleSeconds().then((seconds) => {
           lastIdleReading = { seconds, atMs: Date.now() };
         });
       }, IDLE_SAMPLE_INTERVAL_MS);
-    } else if (activityTicker) {
-      clearInterval(activityTicker);
-      activityTicker = null;
-      if (idleSampleTicker) clearInterval(idleSampleTicker);
+    } else if (idleSampleTicker) {
+      clearInterval(idleSampleTicker);
       idleSampleTicker = null;
-      // Emit the part-finished period rather than discarding the minutes
-      // already measured, then push it out with the rest.
-      void activitySampler.flush().then(() => activitySampleUploader.flush());
     }
 
     screenshotSampler.setIntervalMs(screenshotFrequencyMs);
@@ -1596,11 +1686,7 @@ async function registerIpcHandlers(): Promise<void> {
     settings: ReminderSettings,
   ): Promise<boolean> {
     const now = new Date();
-    const from = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    ).toISOString();
+    const from = organisationDayStart(now).toISOString();
 
     const result = await callDeviceApi((token) =>
       apiClient.getCompletedTotals(token, from, now.toISOString()),
@@ -1613,14 +1699,25 @@ async function registerIpcHandlers(): Promise<void> {
     );
   }
 
+  const screenshotsTurnedOn = new ScreenshotEnabledWatcher();
   const captureSettingsGate = new CaptureSettingsGate(
     authStore,
     apiClient,
     (settings) => {
       windowTrackingEnabled = settings.windowTrackingEnabled;
+      const activityTrackingChanged =
+        lastActivityTracking !== null &&
+        lastActivityTracking !== settings.activityTrackingEnabled;
+      lastActivityTracking = settings.activityTrackingEnabled;
+      activityTrackingEnabled = settings.activityTrackingEnabled;
       appUrlTracking = settings.appUrlTracking;
       announceAllowedApps(settings.allowedApps);
       allowedApps = settings.allowedApps;
+      // Nothing else tells them: they granted screen capture once, so the
+      // OS never prompts again when an admin turns it back on.
+      if (screenshotsTurnedOn.observe(settings.screenshotsEnabled)) {
+        surfaceWindow({ reason: "screenshots-enabled" });
+      }
       screenshotsEnabled = settings.screenshotsEnabled;
       screenshotFrequencyMs = settings.screenshotFrequencySeconds * 1000;
       reminderSettings = settings.reminders;
@@ -1638,8 +1735,39 @@ async function registerIpcHandlers(): Promise<void> {
         }
       }
       recomputeSampling();
+
+      // Samplers first, so either side of the boundary is already being
+      // measured (or not) correctly before it is drawn.
+      if (activityTrackingChanged && timerRunning) {
+        void splitForActivityChange();
+      }
     },
   );
+
+  /**
+   * The time either side of the change is now a different kind of time, so
+   * the entry is split rather than left to describe both — the same thing
+   * the day boundary does at midnight. Best-effort: a split that cannot be
+   * made leaves the entry whole, which still reads correctly through the
+   * coverage figures, so nothing is retried or surfaced.
+   */
+  async function splitForActivityChange(): Promise<void> {
+    const session = authStore.load();
+    if (!session) return;
+    // `null` is "nothing to split" rather than a failure, so it never
+    // reaches callDeviceApi's contact bookkeeping.
+    const result = await pendingOps.splitRunning(
+      session.deviceToken,
+      apiClient,
+    );
+    if (result && !result.ok) {
+      console.warn(
+        "[activity] could not split the entry at the setting change:",
+        result.message,
+      );
+    }
+  }
+
   const timerStatusGate = new TimerStatusGate(
     authStore,
     apiClient,
@@ -2251,6 +2379,15 @@ async function registerIpcHandlers(): Promise<void> {
     backlogAnnounced ? BACKLOG_MESSAGE : null,
   );
 
+  /**
+   * When the organisation's day began. The server counts every day from
+   * this — the midnight split, the limits, the clock it hands back — so
+   * the agent must too, however the machine's own clock is set. Falls back
+   * to the machine's midnight until a poll has said otherwise.
+   */
+  const organisationDayStart = (now = new Date()): Date =>
+    startOfDay(now, offlineCache.read().idlePolicy?.timezone);
+
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
@@ -2370,9 +2507,18 @@ async function registerIpcHandlers(): Promise<void> {
       projectId: string | null,
       taskId: string | null,
       startedAt?: string,
+      /** Set only by the idle prompt's Keep — see renderer's restartAfterIdle. */
+      idleSeconds?: number,
     ) => {
       const result = await callDeviceApi((token) =>
-        pendingOps.start(token, projectId, taskId, apiClient, startedAt),
+        pendingOps.start(
+          token,
+          projectId,
+          taskId,
+          apiClient,
+          startedAt,
+          idleSeconds,
+        ),
       );
       if (result.ok && projectId !== null) {
         authStore.rememberProject(projectId, taskId);
@@ -2441,7 +2587,7 @@ async function registerIpcHandlers(): Promise<void> {
    */
   ipcMain.handle("tracking:status", async () => {
     await flushPendingOps();
-    return cachedDeviceRead(
+    const result = await cachedDeviceRead(
       (token) => apiClient.getCurrentTimer(token),
       (current) =>
         offlineCache.remember({
@@ -2449,24 +2595,23 @@ async function registerIpcHandlers(): Promise<void> {
           workedSecondsAt: new Date().toISOString(),
         }),
       (): CurrentTimer | null => {
-        const state = offlineCache.read();
-        const entry = state.runningEntry;
-        const since =
-          entry && state.workedSecondsAt
-            ? Math.max(
-                0,
-                Math.floor(
-                  (Date.now() - new Date(state.workedSecondsAt).getTime()) / 1000,
-                ),
-              )
-            : 0;
+        const entry = offlineCache.read().runningEntry;
         return {
           entry,
           now: new Date().toISOString(),
-          workedSeconds: (state.workedSeconds ?? 0) + since,
+          workedSeconds: offlineCache.projectedWorkedSeconds(entry),
         };
       },
     );
+    return result.ok
+      ? {
+          ...result,
+          data: {
+            ...result.data,
+            dayStartsAt: organisationDayStart().toISOString(),
+          },
+        }
+      : result;
   });
 
   ipcMain.handle("tracking:pause", async () => {
@@ -2592,8 +2737,18 @@ async function registerIpcHandlers(): Promise<void> {
             platform === "macos"
               ? systemPreferences.getMediaAccessStatus("screen") === "granted"
               : platform === "linux" && isWaylandSession()
-                ? isWaylandScreenshotGranted()
+                ? waylandSilentCapture.hasGrant() ||
+                  isWaylandScreenshotGranted()
                 : true,
+          // Granted, but through the loud path — `screenRecordingGranted`
+          // alone cannot say so. Only reported where the silent grant can
+          // actually be obtained; otherwise there is nothing to offer.
+          waylandCaptureIsNoisy:
+            platform === "linux" &&
+            isWaylandSession() &&
+            !waylandSilentCapture.hasGrant() &&
+            isWaylandScreenshotGranted() &&
+            (await waylandSilentCapture.canBeGranted()),
           waylandUnsupported: isWaylandSession(),
           // Non-prompting, like the check above: `false` means "tell me", never
           // "ask the user". Only Firefox needs Accessibility, so without it
@@ -2624,6 +2779,19 @@ async function registerIpcHandlers(): Promise<void> {
         return;
       }
       if (process.platform === "linux" && isWaylandSession()) {
+        // The silent ScreenCast grant first (one picker, then no sound or
+        // flash on any tick); the Screenshot portal's grant only where that
+        // isn't possible. A dismissed picker is an answer, not a reason to
+        // follow it with a second dialog.
+        const silent = await waylandSilentCapture.grant();
+        if (silent.kind === "cancelled") return;
+        if (silent.kind === "granted") {
+          screenshotUploader.upload({
+            buffer: silent.buffer,
+            capturedAt: new Date().toISOString(),
+          });
+          return;
+        }
         const buffer = await captureScreenViaPortal(true);
         if (!buffer) return;
         markWaylandScreenshotGranted(app.getPath("userData"));

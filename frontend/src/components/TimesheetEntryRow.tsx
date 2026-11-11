@@ -3,6 +3,8 @@
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { formatTimeInZone } from "@/lib/timezone";
 import { formatElapsed } from "@/lib/formatElapsed";
+import { activityCoverageLabel } from "@/lib/activityCoverageLabel";
+import { idleShareLabel } from "@/lib/idleShareLabel";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
 import { ProjectAvatar } from "./ProjectAvatar";
@@ -30,6 +32,8 @@ export function TimesheetEntryRow({
 }: TimesheetEntryRowProps) {
   const projectsEnabled = useProjectsEnabled();
   const title = entryTitle(entry);
+  const coverageLabel = activityCoverageLabel(entry);
+  const idleLabel = idleShareLabel(entry);
 
   return (
     <tr className="border-b border-input-border last:border-b-0">
@@ -61,18 +65,41 @@ export function TimesheetEntryRow({
           </span>
         </td>
       )}
-      {/* Null is "nothing measured", which a bare 0% would misreport. */}
+      {/* Null is "nothing measured", which a bare 0% would misreport. An
+          entry that does carry a percentage keeps it even once recording is
+          off, and is labelled when it covers materially less than the
+          entry. */}
       <td className="px-3 py-3 tabular-nums text-slate-900">
         {entry.activePercentage === null ? (
-          <span className="text-slate-900/40">—</span>
+          entry.activityRecorded === false ? (
+            <span className="text-xs text-slate-900/60">
+              Activity not recorded
+            </span>
+          ) : (
+            <span className="text-slate-900/40">—</span>
+          )
         ) : (
-          `${entry.activePercentage}%`
+          <span className="flex flex-col">
+            <span>{entry.activePercentage}%</span>
+            {coverageLabel && (
+              <span className="text-xs text-slate-900/60">
+                {coverageLabel}
+              </span>
+            )}
+          </span>
         )}
       </td>
+      {/* The badge says the entry contains kept idle time; the line under
+          it says how much. */}
       <td className="px-3 py-3 text-slate-900">
         {entry.type === "idle" || entry.type === "resumed" ? (
-          <span className="rounded-full bg-cream px-2 py-0.5 text-xs text-primary-dark capitalize">
-            {entry.type}
+          <span className="flex flex-col items-start gap-1">
+            <span className="rounded-full bg-cream px-2 py-0.5 text-xs text-primary-dark capitalize">
+              {entry.type}
+            </span>
+            {idleLabel && (
+              <span className="text-xs text-slate-900/60">{idleLabel}</span>
+            )}
           </span>
         ) : (
           <span className="text-slate-900/40">—</span>

@@ -32,7 +32,18 @@ import { UpdateMembershipDto } from '../dto/update-membership.dto';
  * list: the blocked list went stale every time an override was added.
  */
 const MANAGER_EDITABLE_FIELDS: ReadonlySet<keyof UpdateMembershipDto> = new Set(
-  ['role', 'deactivate', 'disclosureRegion', 'firstName', 'lastName'],
+  [
+    'role',
+    'deactivate',
+    'disclosureRegion',
+    'firstName',
+    'lastName',
+    // A team manager may hide/show a member's own activity view — the one
+    // org-setting override intentionally delegated to managers, still
+    // scoped to members of a team they manage (see assertManagerCanModify's
+    // team check). Every other override stays admin-only.
+    'canViewOwnActivity',
+  ],
 );
 
 /** The overrides a request names — for the manager check and the audit row. */
@@ -61,6 +72,11 @@ export interface ActiveMemberSummary {
   timezone: string | null;
   /** `null` means inherit the Organisation's default. */
   appUrlTracking: AppUrlTracking | null;
+  /** `null` means inherit the Organisation's Record activity default. */
+  activityTrackingEnabled: boolean | null;
+  /** `null` inherits the Organisation's "Members can see their own
+   * activity" default; `true`/`false` override it either way. */
+  canViewOwnActivity: boolean | null;
   /** `null` inherits the Organisation's Projects default; `true`/`false`
    * override it either way. */
   projectsEnabled: boolean | null;
@@ -285,6 +301,12 @@ export class MembershipsService {
 
     if (dto.appUrlTracking !== undefined) {
       membership.appUrlTracking = dto.appUrlTracking;
+    }
+    if (dto.activityTrackingEnabled !== undefined) {
+      membership.activityTrackingEnabled = dto.activityTrackingEnabled;
+    }
+    if (dto.canViewOwnActivity !== undefined) {
+      membership.canViewOwnActivity = dto.canViewOwnActivity;
     }
     if (dto.projectsEnabled !== undefined) {
       membership.projectsEnabled = dto.projectsEnabled;
@@ -513,7 +535,7 @@ export class MembershipsService {
 
     if (Object.keys(overridesIn(dto)).length > 0) {
       throw new ForbiddenException(
-        "Only an admin can change a member's organisation settings. A manager can change their role, status, name and disclosure region.",
+        "Only an admin can change a member's organisation settings. A manager can change their role, status, name, disclosure region and activity visibility.",
       );
     }
 
@@ -568,6 +590,8 @@ export class MembershipsService {
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
       // `?? null`: a partially-selected row leaves this undefined.
+      activityTrackingEnabled: membership.activityTrackingEnabled ?? null,
+      canViewOwnActivity: membership.canViewOwnActivity ?? null,
       projectsEnabled: membership.projectsEnabled ?? null,
       allowedApps: membership.allowedApps,
       // `?? null`, because a partially-selected row leaves these
@@ -692,6 +716,67 @@ export class MembershipsService {
       );
       await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);
     }
+    return { cleared };
+  }
+
+  /**
+   * Admin-only bulk-reset of every Membership's `activityTrackingEnabled`
+   * override. Backs "Apply to all" on the Record activity setting — see
+   * `resetAllAppUrlTrackingOverrides` for the shape this copies.
+   */
+  async resetAllActivityTrackingOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ activityTrackingEnabled: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"activityTrackingEnabled" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.activity_tracking_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { cleared },
+        }),
+      );
+    }
+
+    return { cleared };
+  }
+
+  /** "Apply to all" for the "Members can see their own activity" setting —
+   * clears every per-member override so each inherits the org default. */
+  async resetAllCanViewOwnActivityOverrides(
+    organisationId: string,
+    actorUserId: string,
+  ): Promise<{ cleared: number }> {
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ canViewOwnActivity: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere('"canViewOwnActivity" IS NOT NULL')
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.can_view_own_activity_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { cleared },
+        }),
+      );
+    }
+
     return { cleared };
   }
 

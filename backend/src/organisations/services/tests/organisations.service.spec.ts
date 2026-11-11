@@ -108,6 +108,67 @@ describe('OrganisationsService', () => {
       expect(startTrial).toHaveBeenCalledWith(manager, 'org-1');
     });
 
+    it('founds it in the zone the founder reported, not UTC', async () => {
+      const { manager, create } = makeManager();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await service.createForUser(manager, 'user-1', {
+        name: 'Acme Inc',
+        address: null,
+        website: null,
+        timezone: 'Indian/Antananarivo',
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          settings: {
+            timezone: 'Indian/Antananarivo',
+            currency: 'USD',
+            address: null,
+            website: null,
+          },
+        }),
+      );
+    });
+
+    it('falls back to UTC when no zone was reported', async () => {
+      const { manager, create } = makeManager();
+      const service = new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo(),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await service.createForUser(manager, 'user-1', {
+        name: 'Acme Inc',
+        address: null,
+        website: null,
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          settings: {
+            timezone: 'UTC',
+            currency: 'USD',
+            address: null,
+            website: null,
+          },
+        }),
+      );
+    });
+
     it('creates the organisation, a default "General" team, and an admin membership with no team_memberships row', async () => {
       const { manager, create } = makeManager();
       const { auditLogService, record } = makeAuditLogService();
@@ -197,6 +258,59 @@ describe('OrganisationsService', () => {
   });
 
   describe('findCurrentForUser', () => {
+    function profileFor(
+      settings: Record<string, unknown>,
+      role = MembershipRole.MEMBER,
+    ) {
+      const findOne = jest.fn().mockResolvedValue({
+        role,
+        canViewOwnActivity: null,
+        teamMemberships: [],
+        organisation: {
+          id: 'org-1',
+          publicId: 100000,
+          name: 'Acme Inc',
+          settings,
+        },
+      });
+      return new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      ).findCurrentForUser('user-1');
+    }
+
+    it('reports the activity-visibility default as null when no admin ever set it', async () => {
+      // Resolving to the built-in `true` made an untouched organisation
+      // look identical to one deliberately set to true.
+      const profile = await profileFor({});
+
+      expect(profile.membersCanViewOwnActivity).toBeNull();
+    });
+
+    it('reports an explicitly stored activity-visibility default as itself', async () => {
+      await expect(
+        profileFor({ membersCanViewOwnActivity: true }).then(
+          (p) => p.membersCanViewOwnActivity,
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        profileFor({ membersCanViewOwnActivity: false }).then(
+          (p) => p.membersCanViewOwnActivity,
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it("still resolves the caller's own visibility from the built-in default", async () => {
+      // Only the reported default is unresolved, never the answer.
+      const profile = await profileFor({});
+
+      expect(profile.canViewOwnActivity).toBe(true);
+    });
+
     it("returns the organisation profile, including the caller's role, for the user's membership", async () => {
       const findOne = jest.fn().mockResolvedValue({
         role: MembershipRole.MANAGER,
@@ -231,6 +345,7 @@ describe('OrganisationsService', () => {
         idleHandling: 'flag',
         idleThresholdMinutes: 5,
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         timesheetModifyTime: 'off',
@@ -247,6 +362,8 @@ describe('OrganisationsService', () => {
         weekStartsOn: 'monday',
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
+        membersCanViewOwnActivity: null,
+        canViewOwnActivity: true,
         projectsEnabled: false,
         projectsDefaultEnabled: false,
         projectsManageable: false,
@@ -447,6 +564,7 @@ describe('OrganisationsService', () => {
               name: 'Ada',
               email: 'ada@example.com',
               isManager: true,
+              canViewOwnActivity: null,
             },
           ],
           projectCount: 2,
@@ -966,6 +1084,8 @@ describe('OrganisationsService', () => {
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
         handling: 'flag',
         thresholdMinutes: 5,
+        // The agent counts its day from this; an org with no zone set is UTC.
+        timezone: 'UTC',
       });
     });
 
@@ -974,7 +1094,11 @@ describe('OrganisationsService', () => {
         makeOrganisationsRepo({
           findOneOrFail: jest.fn().mockResolvedValue({
             id: 'org-1',
-            settings: { idleHandling: 'off', idleThresholdMinutes: 15 },
+            settings: {
+              idleHandling: 'off',
+              idleThresholdMinutes: 15,
+              timezone: 'Indian/Antananarivo',
+            },
           }),
         }),
         makeMembershipsRepo(),
@@ -987,6 +1111,7 @@ describe('OrganisationsService', () => {
       await expect(service.getIdlePolicy('org-1')).resolves.toEqual({
         handling: 'off',
         thresholdMinutes: 15,
+        timezone: 'Indian/Antananarivo',
       });
     });
   });
@@ -1075,7 +1200,7 @@ describe('OrganisationsService', () => {
       });
     });
 
-    it('defaults window tracking on, and everything else off, when the organisation has no explicit capture settings', async () => {
+    it('defaults window tracking on, and everything else off — activity recording included — when the organisation has no explicit capture settings', async () => {
       const service = new OrganisationsService(
         makeOrganisationsRepo({
           findOneOrFail: jest.fn().mockResolvedValue({
@@ -1092,6 +1217,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         screenshotsEnabled: false,
@@ -1122,6 +1248,7 @@ describe('OrganisationsService', () => {
 
       await expect(service.getCaptureSettings('org-1')).resolves.toEqual({
         windowTrackingEnabled: true,
+        activityTrackingEnabled: false,
         appUrlTracking: 'apps',
         allowedApps: 'all',
         screenshotsEnabled: true,
@@ -1172,6 +1299,56 @@ describe('OrganisationsService', () => {
       await expect(
         service.getCaptureSettings('org-1', 'user-1'),
       ).resolves.toMatchObject({ appUrlTracking: 'off' });
+    });
+
+    it("applies the member's own Record activity override over the organisation default", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { activityTrackingEnabled: true },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ activityTrackingEnabled: false }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ activityTrackingEnabled: false });
+    });
+
+    // The override works both ways — one person measured while the
+    // organisation default is off.
+    it("applies a member's Record activity override that switches it on", async () => {
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue({
+            id: 'org-1',
+            settings: { activityTrackingEnabled: false },
+          }),
+        }),
+        makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ activityTrackingEnabled: true }),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+
+      await expect(
+        service.getCaptureSettings('org-1', 'user-1'),
+      ).resolves.toMatchObject({ activityTrackingEnabled: true });
     });
   });
 });

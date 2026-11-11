@@ -212,6 +212,19 @@ export class UrlSessionsService {
       membership,
       targetMembershipId,
     );
+    // Self view only: a member blocked from seeing their own activity gets
+    // an empty list (the dashboard's recent-URLs widget), indistinguishable
+    // from "nothing tracked". Viewing another member is already gated by
+    // resolveSubjectMembershipId; admins/managers always pass for their own.
+    if (
+      subjectMembershipId === membership.id &&
+      !(await this.organisationsService.mayViewOwnActivity(
+        organisationId,
+        userId,
+      ))
+    ) {
+      return [];
+    }
 
     const rows = await this.urlSessions.find({
       where: reportableSessions({
@@ -274,6 +287,20 @@ export class UrlSessionsService {
       targetMembershipId,
     );
     const resolvedDate = this.resolveDate(date);
+    // Self view only: a member blocked from seeing their own activity gets
+    // an empty day, indistinguishable from "nothing tracked" — not a 403,
+    // which would reveal the data exists. Viewing another member's day is
+    // already gated by resolveSubjectMembershipId's visibility check, and
+    // admins/managers always pass mayViewOwnActivity for their own.
+    if (
+      subjectMembershipId === membership.id &&
+      !(await this.organisationsService.mayViewOwnActivity(
+        organisationId,
+        userId,
+      ))
+    ) {
+      return { date: resolvedDate, totalActiveMs: 0, buckets: [] };
+    }
     const start = new Date(`${resolvedDate}T00:00:00.000Z`);
     const end = new Date(start.getTime() + MS_PER_DAY);
 

@@ -58,6 +58,25 @@ export class Membership {
   appUrlTracking: AppUrlTracking | null;
 
   /**
+   * Per-member override of the Organisation's "Record activity" default.
+   * `null` means inherit the org default (see
+   * `Organisation.settings.activityTrackingEnabled`).
+   */
+  @Column({ type: 'boolean', nullable: true })
+  activityTrackingEnabled: boolean | null;
+
+  /**
+   * Per-member override of the Organisation's "Members can see their own
+   * activity" default. `null` inherits (see
+   * `Organisation.settings.membersCanViewOwnActivity`). When the resolved
+   * value is `false`, this member's own Activity page and dashboard
+   * activity widgets are hidden, and the self-view API endpoints refuse
+   * their own data — so they cannot tell it is being collected.
+   */
+  @Column({ type: 'boolean', nullable: true })
+  canViewOwnActivity: boolean | null;
+
+  /**
    * Per-member override of the Organisation's "Track time against Projects"
    * default, in either direction. `null` inherits (see
    * `Organisation.settings.projectsEnabled`).

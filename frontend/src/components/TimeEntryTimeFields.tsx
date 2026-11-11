@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { clampDatetimeLocal } from "@/lib/clampDatetimeLocal";
+import { useState, type MouseEvent } from "react";
 import { toDatetimeLocalValue } from "@/lib/toDatetimeLocalValue";
+import { timeRangeFromParts, timeRangeToParts } from "@/lib/timeRangeParts";
+import type { TimeRangeParts } from "@/lib/timeRangeParts";
 import type { TimeEntryFieldErrors } from "@/lib/timeEntryFieldErrors";
-import { DateAndTimeField } from "@/components/DateAndTimeField";
+import { TextField } from "@/components/ui/form/TextField";
 
 type TimeEntryTimeFieldsProps = {
-  /** ISO instants, or undefined to leave the field empty. */
+  /** ISO instants, or undefined to leave the fields empty. */
   startedAt?: string;
   endedAt?: string | null;
   /** The timer is still ticking, so there is no end to set yet. A *paused*
@@ -15,14 +16,21 @@ type TimeEntryTimeFieldsProps = {
   isTicking: boolean;
   /** Shown under whichever field is at fault — see `timeEntryFieldErrors`. */
   errors?: TimeEntryFieldErrors;
-  /** Both current values, so the form can judge them as they are picked. */
+  /** Both current values, so the form can judge them as they are typed. */
   onChange?: (startedAt: string, endedAt: string) => void;
 };
 
-/** How often the cut-off catches up with the clock while the form is open. */
-const NOW_REFRESH_MS = 30_000;
+/** Opens a field's picker from a click anywhere on it, not just the small
+ * icon at its edge. Typing into it is unaffected. */
+function openPicker(event: MouseEvent<HTMLInputElement>): void {
+  try {
+    event.currentTarget.showPicker();
+  } catch {
+    // No picker to show, or one already open — the field still takes typing.
+  }
+}
 
-/** The Start and End inputs of the time-entry form. */
+/** The one date and the two times of day a time entry is written as. */
 export function TimeEntryTimeFields({
   startedAt,
   endedAt,
@@ -30,68 +38,76 @@ export function TimeEntryTimeFields({
   errors,
   onChange,
 }: TimeEntryTimeFieldsProps) {
-  const range = errors?.range;
-  const [now, setNow] = useState(() => new Date());
-
-  useEffect(() => {
-    const handle = setInterval(() => setNow(new Date()), NOW_REFRESH_MS);
-    return () => clearInterval(handle);
-  }, []);
-
-  const max = toDatetimeLocalValue(now.toISOString());
-  const [start, setStart] = useState(() =>
-    startedAt ? toDatetimeLocalValue(startedAt) : "",
+  const [today] = useState(() =>
+    toDatetimeLocalValue(new Date().toISOString()).slice(0, 10),
   );
-  const [end, setEnd] = useState(() =>
-    endedAt ? toDatetimeLocalValue(endedAt) : "",
-  );
+  // A new entry opens on today, the day it almost always belongs to; an
+  // existing one keeps its own. Neither fills in a time.
+  const [parts, setParts] = useState(() => {
+    const initial = timeRangeToParts(startedAt, endedAt);
+    return initial.date === "" ? { ...initial, date: today } : initial;
+  });
 
-  // The date half is still a native input, whose `max` does not stop a later
-  // date being typed. Clamping on render also pulls back a value the passing
-  // clock has left in the future.
-  const startValue = clampDatetimeLocal(start, max);
-  const endValue = clampDatetimeLocal(end, max);
+  const rangeError = errors?.range;
+  const range = timeRangeFromParts(parts);
 
-  function change(field: "start" | "end"): (value: string) => void {
-    return (raw) => {
-      const value = clampDatetimeLocal(raw, max);
-      if (field === "start") setStart(value);
-      else setEnd(value);
-      onChange?.(
-        field === "start" ? value : startValue,
-        field === "end" ? value : endValue,
-      );
-    };
+  function change(field: keyof TimeRangeParts, value: string): void {
+    const next = { ...parts, [field]: value };
+    setParts(next);
+    const updated = timeRangeFromParts(next);
+    onChange?.(updated.startedAt, isTicking ? "" : updated.endedAt);
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <DateAndTimeField
-        label="Start"
-        name="startedAt"
-        value={startValue}
-        onChange={change("start")}
-        maxDate={max.slice(0, 10)}
-        now={now}
-        error={errors?.startedAt}
-        invalid={range !== undefined}
+      <TextField
+        label="Date"
+        type="date"
+        max={today}
+        required
+        invalid={rangeError !== undefined || errors?.startedAt !== undefined}
+        value={parts.date}
+        onChange={(event) => change("date", event.target.value)}
+        onClick={openPicker}
+        inputClassName="cursor-pointer"
       />
 
-      {isTicking ? (
-        <p className="text-sm text-slate-900/60">
-          This timer is still running, so it has no end time yet — stop it
-          to set one.
-        </p>
-      ) : (
-        <DateAndTimeField
-          label="End"
-          name="endedAt"
-          value={endValue}
-          onChange={change("end")}
-          maxDate={max.slice(0, 10)}
-          now={now}
-          error={errors?.endedAt ?? range}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <TextField
+          label="From"
+          type="time"
+          required
+          invalid={rangeError !== undefined}
+          error={errors?.startedAt}
+          value={parts.startTime}
+          onChange={(event) => change("startTime", event.target.value)}
+          onClick={openPicker}
+          inputClassName="cursor-pointer"
         />
+
+        {isTicking ? (
+          <p className="self-center text-sm text-slate-900/60">
+            This timer is still running, so it has no end time yet — stop it
+            to set one.
+          </p>
+        ) : (
+          <TextField
+            label="To"
+            type="time"
+            required
+            error={errors?.endedAt ?? rangeError}
+            hint={range.endsNextDay ? "Ends the next day." : undefined}
+            value={parts.endTime}
+            onChange={(event) => change("endTime", event.target.value)}
+            onClick={openPicker}
+            inputClassName="cursor-pointer"
+          />
+        )}
+      </div>
+
+      <input type="hidden" name="startedAt" value={range.startedAt} />
+      {!isTicking && (
+        <input type="hidden" name="endedAt" value={range.endedAt} />
       )}
     </div>
   );

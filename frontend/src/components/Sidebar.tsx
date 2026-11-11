@@ -65,6 +65,12 @@ export function Sidebar({
   const settingsGroups = visibleSettingsGroups(useBillingEnabled());
   const projectsManageable =
     organisationQuery.data?.projectsManageable ?? false;
+  // Hidden entirely for a member whose own activity is switched off — they
+  // can't view others either, so the page would only ever be empty, and
+  // showing it at all would hint the data exists. Defaults to shown until
+  // the profile loads. Admins/managers always have this true.
+  const canViewOwnActivity =
+    organisationQuery.data?.canViewOwnActivity ?? true;
   // Whoever runs a team sees its members; Devices stays admin-only here.
   const canSeeMembers = useCanViewOthers();
 
@@ -129,12 +135,16 @@ export function Sidebar({
       href: `/organisations/${organisationId}/time_entries`,
       icon: Clock,
     },
-    {
-      kind: "link",
-      label: "Activity",
-      href: `/organisations/${organisationId}/activities`,
-      icon: ChartLineUp,
-    },
+    ...(canViewOwnActivity
+      ? [
+          {
+            kind: "link" as const,
+            label: "Activity",
+            href: `/organisations/${organisationId}/activities`,
+            icon: ChartLineUp,
+          },
+        ]
+      : []),
     ...(projectsManageable ? [projectManagementEntry] : []),
     {
       kind: "group",

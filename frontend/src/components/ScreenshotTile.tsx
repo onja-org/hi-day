@@ -6,6 +6,7 @@ import { CheckIcon, TrashIcon } from "@phosphor-icons/react";
 import { formatTimeOfDay } from "@/lib/formatTimeOfDay";
 import type { ScreenshotSummaryItem } from "@/types/screenshot";
 import { ProjectBadgeOrUntracked } from "./ProjectBadgeOrUntracked";
+import { ScreenshotZoom } from "./ScreenshotZoom";
 import { Spinner } from "./Spinner";
 
 type ScreenshotTileProps = {
@@ -44,16 +45,23 @@ export function ScreenshotTile({
         !isSelected && "border-input-border",
       )}
     >
-      <div className="relative aspect-video w-full bg-cream">
-        {/* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */}
-        <Image
-          src={screenshot.url}
-          alt={`Screenshot captured at ${capturedAt.toLocaleTimeString()}`}
-          fill
-          unoptimized
-          priority={priority}
-          className="object-cover"
-        />
+      <ScreenshotZoom
+        url={screenshot.url}
+        alt={`Screenshot captured at ${capturedAt.toLocaleTimeString()}`}
+        label={timeOfDay}
+        className="relative aspect-video w-full bg-cream"
+        image={
+          /* unoptimized: each url is a presigned, single-use Wasabi link — not worth proxying through Next's image optimizer. */
+          <Image
+            src={screenshot.url}
+            alt={`Screenshot captured at ${capturedAt.toLocaleTimeString()}`}
+            fill
+            unoptimized
+            priority={priority}
+            className="object-cover"
+          />
+        }
+      >
         {onDelete && (
           // Revealed on hover, but always present for keyboard and touch,
           // which have no hover.
@@ -98,7 +106,7 @@ export function ScreenshotTile({
             </button>
           </>
         )}
-      </div>
+      </ScreenshotZoom>
       <figcaption className="flex flex-col gap-2 px-2 pb-2">
         <span className="text-sm text-slate-900/70">{timeOfDay}</span>
         <ProjectBadgeOrUntracked

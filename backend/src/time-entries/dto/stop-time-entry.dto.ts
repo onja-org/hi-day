@@ -11,6 +11,15 @@ export class StopTimeEntryDto {
   endedAt?: string;
 
   /**
+   * The entry this stop is about, for a Device replaying one it queued
+   * offline. Without it the server stops whatever is running now, which
+   * after a night away is a different entry. Device endpoints only.
+   */
+  @IsOptional()
+  @IsUUID()
+  entryId?: string;
+
+  /**
    * The agent's own id for this operation, so a replay is recognised
    * rather than acted on twice — see `TimeEntry.startOperationId`. A
    * device that was offline replays queued operations on reconnect and

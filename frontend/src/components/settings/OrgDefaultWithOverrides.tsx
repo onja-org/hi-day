@@ -60,6 +60,9 @@ type Props<K extends string> = {
   /** `select` for a list long enough that a segmented control would wrap.
    * Defaults to the segmented control the other settings panels use. */
   control?: "segmented" | "select";
+  /** Shown beside the default when `orgValue` is only the built-in
+   * fallback, so a value nobody saved doesn't read as a decision. */
+  unsetNote?: string;
   secondary?: SecondaryToggleColumn<K>;
   /** Rendered between the default and the member table, for an org-wide
    * switch belonging with the default (Timesheets' "Approval permission"). */
@@ -84,6 +87,7 @@ export function OrgDefaultWithOverrides<K extends string>({
   onApplyToAll,
   isResetting,
   control = "segmented",
+  unsetNote,
   secondary,
   belowDefault,
 }: Props<K>) {
@@ -133,6 +137,9 @@ export function OrgDefaultWithOverrides<K extends string>({
               value={orgValue}
               onChange={onOrgChange}
             />
+          )}
+          {unsetNote && (
+            <span className="text-sm text-slate-900/60">{unsetNote}</span>
           )}
           {secondary && (
             <span

@@ -34,8 +34,8 @@ We do not run a paid bounty programme.
 ## Supported versions
 
 Fixes go to the latest release. There are no long-term support branches, so
-self-hosted installs should be reasonably current — see **Upgrading** in the
-[README](README.md).
+self-hosted installs should be reasonably current — see [Upgrading](docs/SELF_HOSTING.md#upgrading)
+in the self-hosting guide.
 
 ## Things that are deliberate, not bugs
 

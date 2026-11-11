@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { dayKey, startOfDay } from './day-boundary';
 import type { CaptureSettingsValue } from './capture-settings-gate';
 import type {
   IdlePolicy,
@@ -146,9 +147,17 @@ export class OfflineCache {
     this.remember({ tasks: { ...this.read().tasks, [projectId]: tasks } });
   }
 
+  /**
+   * The organisation's day boundary, or null until one has been heard —
+   * the server counts every day from it, so this must too.
+   */
+  private get zone(): string | null {
+    return this.read().idlePolicy?.timezone ?? null;
+  }
+
   /** Totals stamped with the day they describe — see `todayTotals`. */
   rememberToday(totals: Omit<CachedToday, 'day'>): void {
-    this.remember({ today: { ...totals, day: localDay(this.now()) } });
+    this.remember({ today: { ...totals, day: dayKey(this.now(), this.zone) } });
   }
 
   /**
@@ -157,7 +166,7 @@ export class OfflineCache {
    */
   todayTotals(): CachedToday | null {
     const today = this.read().today;
-    return today?.day === localDay(this.now()) ? today : null;
+    return today?.day === dayKey(this.now(), this.zone) ? today : null;
   }
 
   /**
@@ -193,6 +202,35 @@ export class OfflineCache {
               )
             : [...base.projects, { projectId, seconds }],
     });
+  }
+
+  /**
+   * The day's worked seconds with nobody to ask: the last figure the server
+   * gave plus the time since, but only while that figure is still today's.
+   * It counts open entries from their own starts, so carrying it into a new
+   * morning put the whole of yesterday on today's clock. Past midnight the
+   * running entry's own share of today stands in for it.
+   */
+  projectedWorkedSeconds(entry: TimeEntry | null): number {
+    const now = this.now();
+    const state = this.read();
+    const at = state.workedSecondsAt ? new Date(state.workedSecondsAt) : null;
+    if (
+      at !== null &&
+      state.workedSeconds !== null &&
+      dayKey(at, this.zone) === dayKey(now, this.zone)
+    ) {
+      const since = entry
+        ? Math.max(0, Math.floor((now.getTime() - at.getTime()) / 1000))
+        : 0;
+      return state.workedSeconds + since;
+    }
+    if (!entry) return 0;
+    const from = Math.max(
+      Date.parse(entry.startedAt),
+      startOfDay(now, this.zone).getTime(),
+    );
+    return Math.max(0, Math.floor((now.getTime() - from) / 1000));
   }
 
   /**

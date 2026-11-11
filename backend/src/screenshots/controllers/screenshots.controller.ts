@@ -13,8 +13,12 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import { ListScreenshotSlotsDto } from '../dto/list-screenshot-slots.dto';
 import { ListScreenshotsDto } from '../dto/list-screenshots.dto';
-import type { ScreenshotsPage } from '../services/screenshots.service';
+import type {
+  ScreenshotSlotsDay,
+  ScreenshotsPage,
+} from '../services/screenshots.service';
 import { ScreenshotsService } from '../services/screenshots.service';
 
 @Controller('organisations/:id/screenshots')
@@ -39,6 +43,21 @@ export class ScreenshotsController {
       request.organisationId!,
       request.userId,
       screenshotId,
+    );
+  }
+
+  /** The 10-minute view of the caller's own day. */
+  @Get('slots/mine')
+  getMySlots(
+    @Query() query: ListScreenshotSlotsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ScreenshotSlotsDay> {
+    return this.screenshotsService.getMySlots(
+      request.organisationId!,
+      request.userId,
+      query.date,
+      { projectId: query.projectId },
+      { page: query.page, pageSize: query.pageSize },
     );
   }
 

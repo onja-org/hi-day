@@ -42,6 +42,10 @@ export function DashboardSections() {
   }
 
   const organisationId = String(organisationQuery.data.id);
+  // When a member's own activity is switched off, the apps/URLs and
+  // screenshots widgets are hidden entirely — same rule as the Activity nav
+  // item. Admins and team managers always have this true.
+  const canViewOwnActivity = organisationQuery.data.canViewOwnActivity;
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,32 +105,36 @@ export function DashboardSections() {
           </section>
         )}
 
-        <section className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-primary-dark">Apps &amp; URLs</h2>
-            <Link
-              href={`/organisations/${organisationId}/activities/apps`}
-              className="text-sm text-primary underline-offset-2 hover:underline"
-            >
-              View activity →
-            </Link>
-          </div>
-          <UrlSessionList organisationId={organisationId} maxEntries={5} />
-        </section>
+        {canViewOwnActivity && (
+          <section className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-primary-dark">Apps &amp; URLs</h2>
+              <Link
+                href={`/organisations/${organisationId}/activities/apps`}
+                className="text-sm text-primary underline-offset-2 hover:underline"
+              >
+                View activity →
+              </Link>
+            </div>
+            <UrlSessionList organisationId={organisationId} maxEntries={5} />
+          </section>
+        )}
       </div>
 
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-primary-dark">Screenshots</h2>
-          <Link
-            href={`/organisations/${organisationId}/activities/screenshots`}
-            className="text-sm text-primary underline-offset-2 hover:underline"
-          >
-            View Screenshots Activity →
-          </Link>
-        </div>
-        <RecentActivityScreenshots organisationId={organisationId} />
-      </section>
+      {canViewOwnActivity && (
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-primary-dark">Screenshots</h2>
+            <Link
+              href={`/organisations/${organisationId}/activities/screenshots`}
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              View Screenshots Activity →
+            </Link>
+          </div>
+          <RecentActivityScreenshots organisationId={organisationId} />
+        </section>
+      )}
     </div>
   );
 }

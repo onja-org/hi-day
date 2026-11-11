@@ -91,6 +91,11 @@ export class UpdateOrganisationDto {
   @IsBoolean()
   windowTrackingEnabled?: boolean;
 
+  /** The organisation-wide "Record activity" default. */
+  @IsOptional()
+  @IsBoolean()
+  activityTrackingEnabled?: boolean;
+
   @IsOptional()
   @IsIn(APP_URL_TRACKING_VALUES)
   appUrlTracking?: AppUrlTracking;
@@ -102,6 +107,15 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsBoolean()
   membersCanDeleteScreenshots?: boolean;
+
+  /**
+   * Organisation default for whether members may see their own tracked
+   * activity (Activity page + dashboard activity widgets). Off hides those
+   * surfaces for members entirely. Admins/managers are unaffected.
+   */
+  @IsOptional()
+  @IsBoolean()
+  membersCanViewOwnActivity?: boolean;
 
   @IsOptional()
   @IsArray()

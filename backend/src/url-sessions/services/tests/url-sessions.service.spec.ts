@@ -89,6 +89,7 @@ describe('UrlSessionsService', () => {
         screenshotRetentionDays: 30,
         ...overrides,
       }),
+      mayViewOwnActivity: jest.fn().mockResolvedValue(true),
     } as unknown as OrganisationsService;
   }
 
@@ -368,6 +369,29 @@ describe('UrlSessionsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    it('rejects a manager who manages no team, whoever they ask for', async () => {
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'm-manager',
+              role: MembershipRole.MANAGER,
+              teamMemberships: [],
+            })
+            .mockResolvedValueOnce({
+              id: 'other-membership',
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-a', isManager: false }],
+            }),
+        }),
+      });
+
+      await expect(
+        service.listGroupedByUrl('org-1', 'user-1', 'other-membership'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it("lets an admin view another member's activity by membershipId", async () => {
       const membershipsRepo = makeMembershipsRepo({
         findOne: jest
@@ -574,6 +598,38 @@ describe('UrlSessionsService', () => {
       expect(day.buckets[0].pages[0].url).toBe('https://tracked.example/');
     });
 
+    it('rejects a manager viewing a member outside the teams they manage', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        urlSessionsRepo: makeUrlSessionsRepo({ find }),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'm-manager',
+              role: MembershipRole.MANAGER,
+              teamMemberships: [{ teamId: 'team-a', isManager: true }],
+            })
+            .mockResolvedValueOnce({
+              id: 'other-membership',
+              role: MembershipRole.MEMBER,
+              teamMemberships: [{ teamId: 'team-b', isManager: false }],
+            }),
+        }),
+      });
+
+      await expect(
+        service.getDayGroupedByUrl(
+          'org-1',
+          'user-1',
+          '2026-09-08',
+          {},
+          'other-membership',
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(find).not.toHaveBeenCalled();
+    });
+
     it('rejects a malformed date', async () => {
       const service = makeService();
 
@@ -649,6 +705,83 @@ describe('UrlSessionsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
       // And nothing was removed before the check.
       expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    // deleteByUrl looks the TARGET up first, then the CALLER.
+    function serviceForDelete(target: object, caller: object) {
+      const deleteFn = jest.fn().mockResolvedValue({ affected: 1 });
+      const service = makeService({
+        urlSessionsRepo: makeUrlSessionsRepo({ delete: deleteFn }),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce(target)
+            .mockResolvedValueOnce(caller),
+        }),
+      });
+      return { service, deleteFn };
+    }
+
+    const teamManager = {
+      id: 'm-manager',
+      role: MembershipRole.MANAGER,
+      teamMemberships: [{ teamId: 'team-a', isManager: true }],
+    };
+
+    it("refuses a manager deleting an admin's activity, even on a team they manage", async () => {
+      const { service, deleteFn } = serviceForDelete(
+        {
+          id: 'm-admin',
+          role: MembershipRole.ADMIN,
+          teamMemberships: [{ teamId: 'team-a', isManager: false }],
+        },
+        teamManager,
+      );
+
+      await expect(
+        service.deleteByUrl('org-1', 'manager-user', 'm-admin', 'https://a/'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it("refuses a manager who manages no team deleting a member's activity", async () => {
+      const { service, deleteFn } = serviceForDelete(
+        {
+          id: 'm-member',
+          role: MembershipRole.MEMBER,
+          teamMemberships: [{ teamId: 'team-a', isManager: false }],
+        },
+        { id: 'm-manager', role: MembershipRole.MANAGER, teamMemberships: [] },
+      );
+
+      await expect(
+        service.deleteByUrl('org-1', 'manager-user', 'm-member', 'https://a/'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it("lets a manager delete a plain member's activity on a team they manage", async () => {
+      const { service, deleteFn } = serviceForDelete(
+        {
+          id: 'm-member',
+          role: MembershipRole.MEMBER,
+          teamMemberships: [{ teamId: 'team-a', isManager: false }],
+        },
+        teamManager,
+      );
+
+      await service.deleteByUrl(
+        'org-1',
+        'manager-user',
+        'm-member',
+        'https://a/',
+      );
+
+      expect(deleteFn).toHaveBeenCalledWith({
+        organisationId: 'org-1',
+        membershipId: 'm-member',
+        url: 'https://a/',
+      });
     });
 
     it('rejects when membershipId or url is missing', async () => {

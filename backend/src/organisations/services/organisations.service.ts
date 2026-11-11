@@ -20,7 +20,12 @@ import { AllowedApps, DEFAULT_ALLOWED_APPS } from '../allowed-apps';
 import { DEFAULT_WORK_TIME_LIMITS } from '../work-time-limits';
 import type { WorkTimeLimits } from '../work-time-limits';
 import { AppUrlTracking, DEFAULT_APP_URL_TRACKING } from '../app-url-tracking';
-import { CaptureSettings, DEFAULT_CAPTURE_SETTINGS } from '../capture-settings';
+import {
+  CaptureSettings,
+  DEFAULT_CAPTURE_SETTINGS,
+  resolveActivityTrackingEnabled,
+  resolveCanViewOwnActivity,
+} from '../capture-settings';
 import { DEFAULT_WEEK_START } from '../company-profile';
 import { DEFAULT_WORKING_HOURS_PER_DAY } from '../working-hours-policy';
 import {
@@ -59,6 +64,8 @@ export interface CreateOrganisationInput {
   name: string;
   address?: string | null;
   website?: string | null;
+  /** The founder's own zone; `DEFAULT_TIMEZONE` when none was reported. */
+  timezone?: string | null;
 }
 
 export interface OrganisationProfile {
@@ -84,6 +91,9 @@ export interface OrganisationProfile {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  /** The organisation-wide "Record activity" default, whatever the caller's
+   * own override is — what the Record activity settings toggle shows. */
+  activityTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   /** The Organisation's default: may members delete their own screenshots. */
@@ -91,6 +101,15 @@ export interface OrganisationProfile {
   /** Resolved for *the caller* — their override, else the default. Admins
    * may always delete, so this is true for them regardless. */
   canDeleteOwnScreenshots: boolean;
+  /** The Organisation's default: may members see their own tracked activity
+   * — what the settings toggle shows. `null` means nobody has set it, so the
+   * built-in default applies. Reporting the resolved boolean instead made an
+   * untouched organisation look identical to one deliberately set `true`. */
+  membersCanViewOwnActivity: boolean | null;
+  /** Resolved for *the caller* — their override, else the org default.
+   * Admins and team managers always see their own, so this is true for them
+   * regardless. When false, the caller's own Activity surfaces are hidden. */
+  canViewOwnActivity: boolean;
   workTimeLimits: WorkTimeLimits;
   trackingReminders: {
     intervalMinutes: number;
@@ -139,9 +158,11 @@ interface OrganisationSettings {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  activityTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;
+  membersCanViewOwnActivity?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;
@@ -167,6 +188,9 @@ export interface TeamOverviewMember {
   email: string;
   isManager: boolean;
   role: MembershipRole;
+  /** Per-member override of "Members can see their own activity"; `null`
+   * inherits. Mirrors the team detail endpoint so both feed the same row. */
+  canViewOwnActivity: boolean | null;
 }
 
 export interface TeamOverview {
@@ -203,7 +227,7 @@ export class OrganisationsService {
         region: OrganisationRegion.US,
         ownerUserId: userId,
         settings: {
-          timezone: DEFAULT_TIMEZONE,
+          timezone: input.timezone ?? DEFAULT_TIMEZONE,
           currency: DEFAULT_CURRENCY,
           address: input.address ?? null,
           website: input.website ?? null,
@@ -279,6 +303,7 @@ export class OrganisationsService {
       membership.role === MembershipRole.ADMIN || actsAsManager(membership),
       membership.timesheetModifyTime,
       membership.canDeleteScreenshots,
+      membership.canViewOwnActivity,
       await this.projectsContext(
         membership.organisationId,
         membership.projectsEnabled,
@@ -366,6 +391,8 @@ export class OrganisationsService {
         email: teamMembership.membership.user.email,
         isManager: teamMembership.isManager,
         role: teamMembership.membership.role,
+        canViewOwnActivity:
+          teamMembership.membership.canViewOwnActivity ?? null,
       })),
       projectCount: (team.projectTeams ?? []).length,
     }));
@@ -426,6 +453,9 @@ export class OrganisationsService {
       ...(dto.windowTrackingEnabled !== undefined
         ? { windowTrackingEnabled: dto.windowTrackingEnabled }
         : {}),
+      ...(dto.activityTrackingEnabled !== undefined
+        ? { activityTrackingEnabled: dto.activityTrackingEnabled }
+        : {}),
       ...(dto.appUrlTracking !== undefined
         ? { appUrlTracking: dto.appUrlTracking }
         : {}),
@@ -434,6 +464,9 @@ export class OrganisationsService {
         : {}),
       ...(dto.membersCanDeleteScreenshots !== undefined
         ? { membersCanDeleteScreenshots: dto.membersCanDeleteScreenshots }
+        : {}),
+      ...(dto.membersCanViewOwnActivity !== undefined
+        ? { membersCanViewOwnActivity: dto.membersCanViewOwnActivity }
         : {}),
       ...(dto.expectedWorkDays !== undefined
         ? { expectedWorkDays: dto.expectedWorkDays }
@@ -501,6 +534,7 @@ export class OrganisationsService {
       true,
       adminMembership?.timesheetModifyTime ?? null,
       adminMembership?.canDeleteScreenshots ?? null,
+      adminMembership?.canViewOwnActivity ?? null,
       await this.projectsContext(
         organisationId,
         adminMembership?.projectsEnabled ?? null,
@@ -523,6 +557,7 @@ export class OrganisationsService {
       handling: settings.idleHandling ?? DEFAULT_IDLE_POLICY.handling,
       thresholdMinutes:
         settings.idleThresholdMinutes ?? DEFAULT_IDLE_POLICY.thresholdMinutes,
+      timezone: settings.timezone ?? DEFAULT_IDLE_POLICY.timezone,
     };
   }
 
@@ -595,6 +630,44 @@ export class OrganisationsService {
         settings.dailyLimitHours ??
         null,
     };
+  }
+
+  /**
+   * Whether this user may see their *own* tracked activity (Activity page +
+   * dashboard activity widgets). Admins and team managers always may — they
+   * can already see everyone they oversee; everyone else gets their
+   * per-member override, else the organisation default. The self-view
+   * activity endpoints (screenshots, URLs, apps) call this and return empty
+   * results when it is false, so a member cannot tell — from the API any
+   * more than from the UI — that the data is being collected.
+   *
+   * Resolves from the database, never a JWT claim, like every other role
+   * check here (see docs/adr/0005).
+   */
+  async mayViewOwnActivity(
+    organisationId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const membership = await this.memberships.findOne({
+      where: {
+        userId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { teamMemberships: true },
+    });
+    if (!membership) return false;
+    if (membership.role === MembershipRole.ADMIN || actsAsManager(membership)) {
+      return true;
+    }
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+    return resolveCanViewOwnActivity(
+      settings.membersCanViewOwnActivity,
+      membership.canViewOwnActivity,
+    );
   }
 
   /** Narrow, like `getIdlePolicy`: the screenshots service needs only
@@ -707,6 +780,10 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      activityTrackingEnabled: resolveActivityTrackingEnabled(
+        settings.activityTrackingEnabled,
+        membership?.activityTrackingEnabled,
+      ),
       appUrlTracking:
         membership?.appUrlTracking ??
         settings.appUrlTracking ??
@@ -736,6 +813,7 @@ export class OrganisationsService {
     /** The caller's own override; `null`/omitted inherits the org default. */
     membershipModifyTime: TimesheetModifyTime | null = null,
     membershipCanDeleteScreenshots: boolean | null = null,
+    membershipCanViewOwnActivity: boolean | null = null,
     projects: { override: boolean | null; anySwitchedOn: boolean } = {
       override: null,
       anySwitchedOn: false,
@@ -762,6 +840,12 @@ export class OrganisationsService {
       windowTrackingEnabled:
         settings.windowTrackingEnabled ??
         DEFAULT_CAPTURE_SETTINGS.windowTrackingEnabled,
+      // The org default alone — the settings page edits that, not the
+      // caller's own override.
+      activityTrackingEnabled: resolveActivityTrackingEnabled(
+        settings.activityTrackingEnabled,
+        null,
+      ),
       appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
       allowedApps: settings.allowedApps ?? DEFAULT_ALLOWED_APPS,
       membersCanDeleteScreenshots:
@@ -774,6 +858,18 @@ export class OrganisationsService {
           (membershipCanDeleteScreenshots ??
             settings.membersCanDeleteScreenshots ??
             false)),
+      // The org default alone, and deliberately unresolved: `null` is
+      // "never set", which the toggle shows differently from a choice.
+      membersCanViewOwnActivity: settings.membersCanViewOwnActivity ?? null,
+      // Admins and team managers always see their own activity (they can
+      // already see everyone they oversee); everyone else, their override
+      // else the org default.
+      canViewOwnActivity:
+        canViewOthers ||
+        resolveCanViewOwnActivity(
+          settings.membersCanViewOwnActivity,
+          membershipCanViewOwnActivity,
+        ),
       workTimeLimits: {
         expectedWorkDays:
           settings.expectedWorkDays ??

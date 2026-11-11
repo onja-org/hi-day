@@ -96,6 +96,8 @@ export interface CurrentTimer {
   workedSeconds: number;
   /** Present on the one poll that ended the timer for reaching a limit. */
   limitReached?: { kind: "daily" | "weekly"; limitHours: number };
+  /** When the organisation's day began — see `CurrentTimer` in api-client. */
+  dayStartsAt?: string;
 }
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
@@ -107,6 +109,12 @@ export interface IdlePolicy {
 
 export type DesktopDevicePlatformName = "windows" | "macos" | "linux";
 
+/** Why the window put itself in front, in the person's own words. */
+export interface SurfaceCopy {
+  title: string;
+  body: string;
+}
+
 export interface CapturePermissionStatus {
   windowTrackingEnabled: boolean;
   /** What "Track apps & URLs" resolves to for this person. */
@@ -114,6 +122,8 @@ export interface CapturePermissionStatus {
   screenshotsEnabled: boolean;
   platform: DesktopDevicePlatformName;
   screenRecordingGranted: boolean;
+  /** Linux/Wayland only — see main.ts's CapturePermissionStatus. */
+  waylandCaptureIsNoisy: boolean;
   /** macOS + Firefox only — see main.ts's CapturePermissionStatus. */
   accessibilityGranted: boolean;
   accessibilityGuidance: string;
@@ -248,10 +258,16 @@ const api = {
       projectId: string | null,
       taskId: string | null,
       startedAt?: string,
+      /** Idle time this start folds back in; the idle prompt's Keep only. */
+      idleSeconds?: number,
     ): Promise<TrackingResult<TimeEntry>> =>
-      ipcRenderer.invoke("tracking:start", projectId, taskId, startedAt) as Promise<
-        TrackingResult<TimeEntry>
-      >,
+      ipcRenderer.invoke(
+        "tracking:start",
+        projectId,
+        taskId,
+        startedAt,
+        idleSeconds,
+      ) as Promise<TrackingResult<TimeEntry>>,
     switchTo: (
       projectId: string | null,
       taskId: string | null,
@@ -441,6 +457,12 @@ const api = {
     },
     onReopened: (listener: () => void): void => {
       ipcRenderer.on("window:reopened", () => listener());
+    },
+    /** The window was brought forward on its own — see window-surfacing.ts. */
+    onSurfaced: (listener: (copy: SurfaceCopy) => void): void => {
+      ipcRenderer.on("window:surfaced", (_event, copy: SurfaceCopy) =>
+        listener(copy),
+      );
     },
     onCloseRequested: (listener: () => void): void => {
       ipcRenderer.on("window:closeRequested", () => listener());

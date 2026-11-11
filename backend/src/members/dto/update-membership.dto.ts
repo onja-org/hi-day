@@ -80,6 +80,16 @@ export class UpdateMembershipDto {
   appUrlTracking?: AppUrlTracking | null;
 
   /**
+   * Per-member override of the Organisation's Record activity default.
+   * `null` clears the override so this Membership falls back to the org
+   * default. Omit entirely to leave it unchanged.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  activityTrackingEnabled?: boolean | null;
+
+  /**
    * Per-member override of the Organisation's Projects default, either
    * direction. `null` clears it and inherits again.
    */
@@ -87,6 +97,17 @@ export class UpdateMembershipDto {
   @ValidateIf((_, value: boolean | null) => value !== null)
   @IsBoolean()
   projectsEnabled?: boolean | null;
+
+  /**
+   * Per-member override of the Organisation's "Members can see their own
+   * activity" default. `false` hides this member's own Activity page and
+   * dashboard activity widgets. `null` clears the override and inherits the
+   * org default. Omit entirely to leave unchanged.
+   */
+  @IsOptional()
+  @ValidateIf((_, value: boolean | null) => value !== null)
+  @IsBoolean()
+  canViewOwnActivity?: boolean | null;
 
   /** `null` clears the override and inherits the Organisation default. */
   @IsOptional()

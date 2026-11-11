@@ -1,9 +1,11 @@
 ---
-status: superseded
+status: superseded-in-part
 superseded-by: 0022-one-running-timer-per-device-hours-are-a-union
 ---
 
 # A start/stop timer is server-authoritative and single-running-per-Membership; a collision rejects instead of auto-stopping
+
+Status: partly superseded by [0022](0022-one-running-timer-per-device-hours-are-a-union.md): a timer now runs per Device, not per Membership. The 409-instead-of-auto-stop rule still stands.
 
 Added the first Time entry sub-feature of the Time Tracking epic: starting and stopping a timer from either the web console or the desktop agent, kept in sync through one backend (`TimeEntriesService`) that both surfaces call into — the web console through `organisations/:id/(projects/:projectId/)time-entries/*`, the agent through the mirrored `device/(projects/:projectId/)time-entries/*` routes, authenticated by the device's bearer token instead of a JWT.
 

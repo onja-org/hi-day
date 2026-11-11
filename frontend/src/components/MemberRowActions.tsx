@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ACTIVE_MEMBERS_QUERY_KEY } from "@/hooks/useActiveMembers";
 import { useInvalidateTeams } from "@/hooks/useInvalidateTeams";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { updateMembership } from "@/lib/updateMembership";
 import type { ActiveMemberListItem, MembershipRole } from "@/types/membership";
 import { ActionsMenu } from "./ActionsMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EditMemberActivityVisibilityModal } from "./EditMemberActivityVisibilityModal";
 import { EditMemberAssignmentsModal } from "./EditMemberAssignmentsModal";
 import { EditMemberNameModal } from "./EditMemberNameModal";
 import { EditMemberRoleModal } from "./EditMemberRoleModal";
@@ -20,7 +22,14 @@ type MemberRowActionsProps = {
   isSelf: boolean;
 };
 
-type OpenModal = "name" | "role" | "assignments" | "reset" | "remove" | null;
+type OpenModal =
+  | "name"
+  | "role"
+  | "assignments"
+  | "activity-visibility"
+  | "reset"
+  | "remove"
+  | null;
 
 const ADMIN_ASSIGNABLE_ROLES: MembershipRole[] = ["admin", "manager", "member"];
 const MANAGER_ASSIGNABLE_ROLES: MembershipRole[] = ["manager", "member"];
@@ -29,6 +38,7 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
   const projectsEnabled = useProjectsEnabled();
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const invalidate = useInvalidateTeams(organisationId);
+  const queryClient = useQueryClient();
   const close = () => setOpenModal(null);
 
   const isAdmin = callerRole === "admin";
@@ -66,6 +76,7 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
           { label: "Edit member", onSelect: () => setOpenModal("name"), ...locked(canModify || canEditOwnDetails) },
           { label: "Edit role", onSelect: () => setOpenModal("role"), ...locked(canModify) },
           { label: projectsEnabled ? "Edit teams & projects" : "Edit teams", onSelect: () => setOpenModal("assignments"), ...locked(canModify || isAdmin) },
+          { label: "Activity visibility", onSelect: () => setOpenModal("activity-visibility"), ...locked(canModify) },
           { label: "Send password reset", onSelect: () => setOpenModal("reset"), ...locked(canModify) },
           { label: "Remove member", onSelect: () => setOpenModal("remove"), tone: "danger" as const, ...locked(canModify) },
         ]}
@@ -84,6 +95,26 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
       )}
       {openModal === "assignments" && (
         <EditMemberAssignmentsModal organisationId={organisationId} member={member} onClose={close} />
+      )}
+      {openModal === "activity-visibility" && (
+        <EditMemberActivityVisibilityModal
+          organisationId={organisationId}
+          membershipId={member.id}
+          memberLabel={label}
+          currentOverride={member.canViewOwnActivity}
+          onSaved={(override) =>
+            queryClient.setQueryData<ActiveMemberListItem[]>(
+              ACTIVE_MEMBERS_QUERY_KEY(organisationId),
+              (previous) =>
+                previous?.map((row) =>
+                  row.id === member.id
+                    ? { ...row, canViewOwnActivity: override }
+                    : row,
+                ) ?? previous,
+            )
+          }
+          onClose={close}
+        />
       )}
       {openModal === "reset" && (
         <SendPasswordResetDialog

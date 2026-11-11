@@ -363,6 +363,127 @@ describe('offline cache', () => {
     });
   });
 
+  describe('the clock it projects with nobody to ask', () => {
+    /** Local parts, not a Z string: a UTC fixture lands either side of the
+     * person's midnight depending on where they are. */
+    const local = (
+      year: number,
+      month: number,
+      day: number,
+      hour: number,
+      minute = 0,
+    ): string => new Date(year, month - 1, day, hour, minute).toISOString();
+
+    it('carries the last figure forward through the day it belongs to', () => {
+      at(local(2026, 10, 21, 9));
+      const held = cache();
+      held.rememberRunning(entry);
+      held.remember({
+        workedSeconds: 3600,
+        workedSecondsAt: local(2026, 10, 21, 9),
+      });
+
+      at(local(2026, 10, 21, 9, 30));
+      expect(cache().projectedWorkedSeconds(entry)).toBe(3600 + 1800);
+    });
+
+    // The server counts open entries from their own starts, so an entry
+    // nobody closed made that figure the whole of yesterday evening.
+    it('will not carry yesterday\'s figure into a new morning', () => {
+      at(local(2026, 11, 9, 21, 41));
+      cache().remember({
+        workedSeconds: 19 * 3600,
+        workedSecondsAt: local(2026, 11, 9, 21, 41),
+      });
+
+      at(local(2026, 11, 10, 4, 30));
+      const morning: TimeEntry = {
+        ...entry,
+        startedAt: local(2026, 11, 10, 3, 46),
+      };
+
+      // The entry's own share of today, which is what the renderer would
+      // have worked out for itself.
+      expect(cache().projectedWorkedSeconds(morning)).toBe(44 * 60);
+    });
+
+    it('counts from midnight for an entry that began before it', () => {
+      at(local(2026, 11, 9, 21, 41));
+      cache().remember({
+        workedSeconds: 19 * 3600,
+        workedSecondsAt: local(2026, 11, 9, 21, 41),
+      });
+
+      at(local(2026, 11, 10, 4, 30));
+      const overnight: TimeEntry = {
+        ...entry,
+        startedAt: local(2026, 11, 9, 18, 5),
+      };
+
+      expect(cache().projectedWorkedSeconds(overnight)).toBe(4.5 * 3600);
+    });
+
+    it('is nothing at all when no timer is running', () => {
+      at(local(2026, 11, 10, 4, 30));
+      expect(cache().projectedWorkedSeconds(null)).toBe(0);
+    });
+  });
+
+  /**
+   * The server counts every day from the organisation's midnight, so the
+   * cache has to stamp and measure from the same one — a machine in
+   * another zone was a day out for as many hours as the two differ.
+   */
+  describe('following the organisation s day, not the machine s', () => {
+    const policy = {
+      handling: 'flag' as const,
+      thresholdMinutes: 5,
+      timezone: 'Indian/Antananarivo',
+    };
+
+    it('stamps totals with the organisation s day', () => {
+      // 01:00 on the 10th in Antananarivo; still the 9th anywhere west of it.
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+
+      expect(held.read().today?.day).toBe('2026-11-10');
+    });
+
+    it('withholds totals stamped with the organisation s yesterday', () => {
+      at('2026-11-09T20:00:00.000Z'); // 23:00 on the 9th, Antananarivo
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+      expect(cache().todayTotals()?.workedSeconds).toBe(60);
+
+      at('2026-11-09T22:00:00.000Z'); // 01:00 on the 10th — a new org day
+      expect(cache().todayTotals()).toBeNull();
+    });
+
+    it('measures the running entry from the organisation s midnight', () => {
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.remember({ idlePolicy: policy });
+      const running: TimeEntry = {
+        ...entry,
+        startedAt: '2026-11-09T18:00:00.000Z',
+      };
+
+      // Org midnight was 21:00Z, so one hour of today, not four.
+      expect(held.projectedWorkedSeconds(running)).toBe(3600);
+    });
+
+    it('falls back to the machine s day when no zone has been heard', () => {
+      at('2026-11-09T22:00:00.000Z');
+      const held = cache();
+      held.rememberToday({ workedSeconds: 60, deviceSeconds: 60, projects: [] });
+
+      expect(held.read().today?.day).toBe(localDay(new Date('2026-11-09T22:00:00.000Z')));
+    });
+  });
+
   it('forgets everything on sign-out', () => {
     const subject = cache();
     subject.readFor('device-1');

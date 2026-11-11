@@ -145,10 +145,18 @@ async function readAndDeletePortalFile(uri: string): Promise<Buffer | null> {
     const pngBuffer = await readFile(path);
     void unlink(path).catch(() => {});
 
-    const image = nativeImage.createFromBuffer(pngBuffer);
-    if (image.isEmpty()) return null;
-    return image.toJPEG(SCREENSHOT_JPEG_QUALITY);
+    return pngToJpeg(pngBuffer);
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared with screencast-portal.ts, whose frames also arrive as PNG — every
+ * capture source uploads JPEG (see `SCREENSHOT_JPEG_QUALITY`).
+ */
+export function pngToJpeg(pngBuffer: Buffer): Buffer | null {
+  const image = nativeImage.createFromBuffer(pngBuffer);
+  if (image.isEmpty()) return null;
+  return image.toJPEG(SCREENSHOT_JPEG_QUALITY);
 }

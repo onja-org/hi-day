@@ -17,6 +17,94 @@ describe('ScreenshotSampler', () => {
   // session actually running the test suite — see the dedicated Wayland
   // tests below for the guard itself.
 
+  /**
+   * "N per 10 minutes" is a promise about a clock period, not a cadence:
+   * `start()` captures immediately, so without a quota every stop and
+   * start adds one more than the organisation asked for.
+   */
+  describe('the per-10-minute quota', () => {
+    function quotaSampler(intervalMs: number, nowMs: () => number) {
+      const { sink, captures } = makeSink();
+      const sampler = new ScreenshotSampler({
+        sink,
+        intervalMs,
+        now: nowMs,
+        capture: () => Promise.resolve(Buffer.from('jpeg')),
+        isWayland: () => false,
+      });
+      return { sampler, captures };
+    }
+
+    it('allows exactly three at "3 per 10 minutes", however often it ticks', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(200_000, () => now);
+
+      // Ten ticks inside one period — what a morning of stopping and
+      // starting the timer produces.
+      for (let i = 0; i < 10; i += 1) {
+        now = i * 30_000;
+        await sampler.tick();
+      }
+
+      expect(captures).toHaveLength(3);
+    });
+
+    it('allows one at "1 per 10 minutes"', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(600_000, () => now);
+
+      for (let i = 0; i < 5; i += 1) {
+        now = i * 60_000;
+        await sampler.tick();
+      }
+
+      expect(captures).toHaveLength(1);
+    });
+
+    it('starts the allowance again in the next clock period', async () => {
+      let now = 0;
+      const { sampler, captures } = quotaSampler(200_000, () => now);
+
+      for (let i = 0; i < 5; i += 1) {
+        now = i * 30_000;
+        await sampler.tick();
+      }
+      expect(captures).toHaveLength(3);
+
+      // Over the 10-minute boundary.
+      now = 600_000;
+      await sampler.tick();
+
+      expect(captures).toHaveLength(4);
+    });
+
+    // A tick that produced no image never got the person a screenshot, so
+    // it must not spend one of their three.
+    it('does not spend an allowance on a capture that produced nothing', async () => {
+      const { sink, captures } = makeSink();
+      let now = 0;
+      let buffer: Buffer | null = null;
+      const sampler = new ScreenshotSampler({
+        sink,
+        intervalMs: 600_000,
+        now: () => now,
+        capture: () => Promise.resolve(buffer),
+        isWayland: () => false,
+      });
+
+      // Permission not granted yet.
+      await sampler.tick();
+      expect(captures).toHaveLength(0);
+
+      // Granted, still the same period.
+      buffer = Buffer.from('jpeg');
+      now = 60_000;
+      await sampler.tick();
+
+      expect(captures).toHaveLength(1);
+    });
+  });
+
   it('emits a capture with the buffer and an ISO timestamp', async () => {
     const { sink, captures } = makeSink();
     const buffer = Buffer.from('fake-jpeg-bytes');
@@ -112,6 +200,79 @@ describe('ScreenshotSampler', () => {
 
     expect(capturePortal).not.toHaveBeenCalled();
     expect(captures).toHaveLength(0);
+  });
+
+  it('captures silently on Linux Wayland first, without touching the Screenshot portal (GNOME shutter sound)', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('silent-jpeg-bytes');
+    const capturePortal = vi.fn().mockResolvedValue(Buffer.from('noisy'));
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.resolve(buffer),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(1);
+    expect(captures[0].buffer).toBe(buffer);
+  });
+
+  it('captures silently on Linux Wayland even with no Screenshot portal grant', async () => {
+    const { sink, captures } = makeSink();
+    const capturePortal = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.resolve(Buffer.from('silent')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(1);
+  });
+
+  it('falls back to the Screenshot portal, non-interactively, when the silent path yields nothing', async () => {
+    const { sink, captures } = makeSink();
+    const buffer = Buffer.from('portal-bytes');
+    const capturePortal = vi.fn().mockResolvedValue(buffer);
+    const sampler = new ScreenshotSampler({
+      sink,
+      capturePortal,
+      captureWaylandSilently: () => Promise.reject(new Error('boom')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isWaylandScreenshotGranted: () => true,
+    });
+
+    await sampler.tick();
+
+    expect(capturePortal).toHaveBeenCalledWith(false);
+    expect(captures[0].buffer).toBe(buffer);
+  });
+
+  it('never tries the silent Wayland path off Wayland', async () => {
+    const { sink } = makeSink();
+    const captureWaylandSilently = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      capture: () => Promise.resolve(Buffer.from('x')),
+      captureWaylandSilently,
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+    });
+
+    await sampler.tick();
+
+    expect(captureWaylandSilently).not.toHaveBeenCalled();
   });
 
   it('still captures on Linux X11 (isWayland false)', async () => {

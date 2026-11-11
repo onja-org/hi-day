@@ -219,6 +219,8 @@ function showLoginView(errorMessage?: string): void {
 
 const AUTO_UPDATE_POLL_INTERVAL_MS = 10_000;
 
+const surfaceBannerEl = document.getElementById("surface-banner")!;
+const surfaceMessageEl = document.getElementById("surface-message")!;
 const updateBannerEl = document.getElementById("update-banner")!;
 const updateMessageEl = document.getElementById("update-message")!;
 const updateButtonEl = document.getElementById(
@@ -300,6 +302,19 @@ updateButtonEl.addEventListener("click", () => {
     return;
   }
   void window.api.update.openReleasesPage();
+});
+
+// The window came forward on its own — say why, in the window itself, so
+// it never just appears. Full view because the compact bar and the 68px
+// square have nowhere to put a sentence.
+window.api.windowControls.onSurfaced((copy) => {
+  surfaceMessageEl.textContent = copy.body;
+  surfaceBannerEl.hidden = false;
+  setMode("full", true);
+});
+
+document.getElementById("surface-dismiss")!.addEventListener("click", () => {
+  surfaceBannerEl.hidden = true;
 });
 
 document.getElementById("update-dismiss")!.addEventListener("click", () => {
@@ -742,6 +757,8 @@ let syncFailing = false;
 const projectTotalElements = new Map<string, HTMLElement>();
 
 let idlePolicy: IdlePolicy | null = null;
+/** See `startOfToday` — null until a poll has said when the day began. */
+let organisationDayStartsAt: number | null = null;
 let idlePolicyLoadedAt = 0;
 let lastIdleSeconds = 0;
 let idleHandled = false;
@@ -1394,8 +1411,18 @@ async function settleIdleHold(): Promise<void> {
  * Starts tracking again after a hold — from `startedAt` on the held
  * Project and Task, or on `assignTo` with no Task, since a Task belongs to
  * one Project and can't follow the time elsewhere.
+ *
+ * `idleSeconds` records how much of the new entry is idle time the person
+ * chose to keep, and is passed by **Keep alone**. Discard starts from when
+ * they came back, so its entry contains none; a short sleep resumed without
+ * asking never reached the organisation's own idle threshold, so by that
+ * definition it is not idle time to flag.
  */
-async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<void> {
+async function restartAfterIdle(
+  startedAt: string,
+  assignTo?: string,
+  idleSeconds?: number,
+): Promise<void> {
   const hold = idleHold;
   if (!hold || idleRestartInFlight) return;
   const projectId = assignTo ?? hold.projectId;
@@ -1406,7 +1433,7 @@ async function restartAfterIdle(startedAt: string, assignTo?: string): Promise<v
   idleRestartInFlight = true;
   try {
     const startResult = await callTracking(() =>
-      window.api.tracking.start(projectId, taskId, startedAt),
+      window.api.tracking.start(projectId, taskId, startedAt, idleSeconds),
     );
     if (!startResult.ok) {
       // Still unanswered — a work limit, say, refused it — so the hold
@@ -1708,13 +1735,23 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
     status.platform === "linux" &&
     status.waylandUnsupported &&
     status.screenshotsEnabled;
+  // Two different Wayland states reach the same button: no grant at all
+  // (nothing is captured), and a grant that works but plays the shutter
+  // sound on every capture. The second one is still worth offering — one
+  // click moves it to the silent path — so it shows the banner too, with
+  // wording that doesn't claim screenshots are off when they aren't.
+  const isWaylandNoisyGate =
+    isWaylandScreenshotGate && status.waylandCaptureIsNoisy;
   screenRecordingBanner.hidden = !(
-    (isMacCaptureGate || isWaylandScreenshotGate) &&
-    !status.screenRecordingGranted
+    ((isMacCaptureGate || isWaylandScreenshotGate) &&
+      !status.screenRecordingGranted) ||
+    isWaylandNoisyGate
   );
-  screenRecordingBannerMessage.textContent = isWaylandScreenshotGate
-    ? "Screenshots are off — needs a one-time screen access grant."
-    : "Window title tracking is off — needs Screen Recording access.";
+  screenRecordingBannerMessage.textContent = isWaylandNoisyGate
+    ? "Screenshots play a shutter sound — grant screen access again to silence them."
+    : isWaylandScreenshotGate
+      ? "Screenshots are off — needs a one-time screen access grant."
+      : "Window title tracking is off — needs Screen Recording access.";
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
@@ -1742,7 +1779,12 @@ screenRecordingGrantButton.addEventListener("click", () => {
     screenRecordingPollHandle = setInterval(() => {
       void (async () => {
         const status = await refreshCapturePermissionBanner();
-        if (status?.screenRecordingGranted || Date.now() > deadline) {
+        // Still noisy means the grant didn't move to the silent path yet —
+        // `screenRecordingGranted` was already true before the click.
+        if (
+          (status?.screenRecordingGranted && !status.waylandCaptureIsNoisy) ||
+          Date.now() > deadline
+        ) {
           stopScreenRecordingGrantPolling();
         }
       })();
@@ -2039,8 +2081,15 @@ projectSearch.addEventListener("input", renderProjects);
 taskPanelClose.addEventListener("click", closeTaskPanel);
 taskSearch.addEventListener("input", renderTaskPanelList);
 
-/** Local midnight that starts the current calendar day, in the machine's own timezone. */
+/**
+ * When the organisation's day began — the boundary the server counts every
+ * day from. Computed by main (`day-boundary.ts`) and carried on the status
+ * poll, since this side of the tsconfig boundary cannot reach it. The
+ * machine's own midnight stands in until the first poll answers, which is
+ * all an agent that has never reached anybody can honestly draw.
+ */
 function startOfToday(): number {
+  if (organisationDayStartsAt !== null) return organisationDayStartsAt;
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 }
@@ -2076,7 +2125,19 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
  */
 async function refreshStatus(resync = false): Promise<void> {
   const versionAtStart = runningStateVersion;
-  const result = await callTracking(() => window.api.tracking.status());
+  // A thrown read is a failed sync, no different from an `{ ok: false }`
+  // answer: the real IPC resolves even offline (main serves from cache),
+  // but the poll fires this as a floating promise, so a read that does
+  // throw must not leak as an unhandled rejection. onWake catches too;
+  // keeping the function total means no caller has to.
+  const result = await callTracking(() => window.api.tracking.status()).catch(
+    () => null,
+  );
+  if (!result) {
+    syncFailing = true;
+    updateSyncStatus();
+    return;
+  }
   if (!result.ok) {
     if (result.unauthorized) {
       showLoginView(result.message);
@@ -2099,6 +2160,8 @@ async function refreshStatus(resync = false): Promise<void> {
   if (!idlePolicy || Date.now() - idlePolicyLoadedAt > IDLE_POLICY_REFRESH_MS) {
     void loadIdlePolicy();
   }
+  const dayStartsAt = result.data.dayStartsAt;
+  if (dayStartsAt) organisationDayStartsAt = Date.parse(dayStartsAt);
   serverOffsetMs = new Date(result.data.now).getTime() - Date.now();
   const workedMs = (result.data.workedSeconds ?? 0) * 1000;
   const receivedAt = Date.now();
@@ -2346,7 +2409,13 @@ switchButton.addEventListener("click", () => {
 });
 
 idleKeepButton.addEventListener("click", () => {
-  if (idleHold) void restartAfterIdle(keepStartedAt(idleHold));
+  if (idleHold) {
+    void restartAfterIdle(
+      keepStartedAt(idleHold),
+      undefined,
+      awaySeconds(idleHold, Date.now() + serverOffsetMs),
+    );
+  }
 });
 
 idleDiscardButton.addEventListener("click", () => {
@@ -2372,7 +2441,13 @@ idleAssignToggle.addEventListener("click", () => {
     button.addEventListener(
       "click",
       () => {
-        if (idleHold) void restartAfterIdle(keepStartedAt(idleHold), project.id);
+        if (idleHold) {
+          void restartAfterIdle(
+            keepStartedAt(idleHold),
+            project.id,
+            awaySeconds(idleHold, Date.now() + serverOffsetMs),
+          );
+        }
       },
     );
 

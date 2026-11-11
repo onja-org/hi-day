@@ -6,6 +6,7 @@ import { useTeamDetail } from "@/hooks/useTeamDetail";
 import { AddTeamMemberModal } from "./AddTeamMemberModal";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
+import { TeamActivityVisibilityBulk } from "./TeamActivityVisibilityBulk";
 import { TeamMemberRow } from "./TeamMemberRow";
 import { TeamRenameForm } from "./TeamRenameForm";
 
@@ -78,6 +79,16 @@ export function TeamDetail({ organisationId, teamId, showName = true }: TeamDeta
             </button>
           )}
         </div>
+
+        {canManageMembers && team.members.length > 0 && (
+          <TeamActivityVisibilityBulk
+            organisationId={organisationId}
+            teamId={teamId}
+            teamName={team.name}
+            members={team.members}
+            callerUserId={callerUserId}
+          />
+        )}
 
         {team.members.length === 0 ? (
           <p className="text-slate-900">No members on this team yet.</p>

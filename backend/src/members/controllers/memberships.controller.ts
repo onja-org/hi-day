@@ -23,8 +23,12 @@ import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import type { NoteEntry } from '../../notes/services/notes.service';
 import { NotesService } from '../../notes/services/notes.service';
+import { ListScreenshotSlotsDto } from '../../screenshots/dto/list-screenshot-slots.dto';
 import { ListScreenshotsDto } from '../../screenshots/dto/list-screenshots.dto';
-import type { ScreenshotsPage } from '../../screenshots/services/screenshots.service';
+import type {
+  ScreenshotSlotsDay,
+  ScreenshotsPage,
+} from '../../screenshots/services/screenshots.service';
 import { ScreenshotsService } from '../../screenshots/services/screenshots.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
@@ -194,6 +198,38 @@ export class MembershipsController {
     };
   }
 
+  @Post('activity-tracking/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetActivityTrackingOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllActivityTrackingOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
+  @Post('can-view-own-activity/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetCanViewOwnActivityOverrides(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllCanViewOwnActivityOverrides(
+        request.organisationId!,
+        request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
   @Post('app-url-tracking/reset-overrides')
   @RequireRole(MembershipRole.ADMIN)
   async resetAppUrlTrackingOverrides(
@@ -284,6 +320,29 @@ export class MembershipsController {
       membershipId,
       date,
       { projectId },
+    );
+  }
+
+  /** The 10-minute view of someone else's day — same visibility rule as
+   * the gallery below it. */
+  @Get(':membershipId/screenshots/slots')
+  @RequireRole(
+    MembershipRole.ADMIN,
+    MembershipRole.MANAGER,
+    MembershipRole.MEMBER,
+  )
+  getScreenshotSlots(
+    @Param('membershipId') membershipId: string,
+    @Query() query: ListScreenshotSlotsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ScreenshotSlotsDay> {
+    return this.screenshotsService.getSlotsForMembership(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+      query.date,
+      { projectId: query.projectId },
+      { page: query.page, pageSize: query.pageSize },
     );
   }
 

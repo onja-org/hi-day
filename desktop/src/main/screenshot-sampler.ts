@@ -5,6 +5,11 @@ import { captureScreenViaPortal } from './screenshot-portal';
 
 export const DEFAULT_SCREENSHOT_INTERVAL_MS = 600_000; // 10 minutes — matches the backend's DEFAULT_SCREENSHOT_FREQUENCY_SECONDS.
 
+/** Admins pick "N per 10 minutes", so this is the window that promise is
+ * kept over — the same ten minutes an ActivitySample covers and the
+ * Screenshots page slices its day into. */
+export const SCREENSHOT_PERIOD_MS = 600_000;
+
 /**
  * JPEG, not PNG — a full-resolution screen capture as PNG is several times
  * larger for no real benefit here (this isn't pixel-perfect archival, it's
@@ -54,6 +59,8 @@ async function captureScreen(): Promise<Buffer | null> {
 
 export interface ScreenshotSamplerDeps {
   intervalMs?: number;
+  /** Injectable so the quota can be tested without real clocks. */
+  now?: () => number;
   sink?: ScreenshotSink;
   capture?: () => Promise<Buffer | null>;
   getPlatform?: () => DesktopDevicePlatform;
@@ -68,6 +75,13 @@ export interface ScreenshotSamplerDeps {
    * same as macOS before Screen Recording is granted.
    */
   isWaylandScreenshotGranted?: () => boolean;
+  /**
+   * The silent Wayland path (ScreenCast portal with a remembered grant — see
+   * wayland-silent-capture.ts), tried before the Screenshot portal, which
+   * on GNOME plays the shutter sound and flashes the screen every time.
+   * Resolves null when it has no grant or fails; never shows UI.
+   */
+  captureWaylandSilently?: () => Promise<Buffer | null>;
 }
 
 /**
@@ -92,11 +106,17 @@ export class ScreenshotSampler {
   private readonly isWayland: () => boolean;
   private readonly capturePortal: (interactive: boolean) => Promise<Buffer | null>;
   private readonly isWaylandScreenshotGranted: () => boolean;
+  private readonly captureWaylandSilently: () => Promise<Buffer | null>;
   private intervalMs: number;
   private handle: ReturnType<typeof setInterval> | null = null;
+  private readonly now: () => number;
+  /** Which clock period `takenInPeriod` counts for. */
+  private periodKey: number | null = null;
+  private takenInPeriod = 0;
 
   constructor(deps: ScreenshotSamplerDeps = {}) {
     this.intervalMs = deps.intervalMs ?? DEFAULT_SCREENSHOT_INTERVAL_MS;
+    this.now = deps.now ?? Date.now;
     this.sink = deps.sink ?? (() => {});
     this.capture = deps.capture ?? captureScreen;
     this.getPlatform =
@@ -104,6 +124,8 @@ export class ScreenshotSampler {
     this.isWayland = deps.isWayland ?? isWaylandSession;
     this.capturePortal = deps.capturePortal ?? captureScreenViaPortal;
     this.isWaylandScreenshotGranted = deps.isWaylandScreenshotGranted ?? (() => false);
+    this.captureWaylandSilently =
+      deps.captureWaylandSilently ?? (() => Promise.resolve(null));
   }
 
   start(): void {
@@ -135,6 +157,9 @@ export class ScreenshotSampler {
   }
 
   async tick(): Promise<void> {
+    // "3 per 10 minutes" has to mean three.
+    if (!this.periodHasRoom()) return;
+
     const capturedAt = new Date().toISOString();
 
     let buffer: Buffer | null;
@@ -143,9 +168,44 @@ export class ScreenshotSampler {
     } catch {
       buffer = null;
     }
+    // Counted on the way out: a tick that captured nothing must not spend
+    // an allowance nobody got an image for.
     if (!buffer) return;
+    this.recordCapture();
 
     await this.sink({ buffer, capturedAt });
+  }
+
+  /**
+   * The cadence alone does not keep the setting's promise: `start()`
+   * captures immediately, so every stop and start adds one out of turn and
+   * somebody pausing a few times inside a period collected several extra.
+   * Measured against the clock's periods, not the interval's phase, so it
+   * lines up with the slots the Screenshots page shows. Per Device — each
+   * agent counts only its own.
+   */
+  private periodHasRoom(): boolean {
+    if (this.periodKey !== this.currentPeriodKey()) return true;
+    return this.takenInPeriod < this.maxPerPeriod();
+  }
+
+  private recordCapture(): void {
+    const key = this.currentPeriodKey();
+    if (key !== this.periodKey) {
+      this.periodKey = key;
+      this.takenInPeriod = 0;
+    }
+    this.takenInPeriod += 1;
+  }
+
+  private currentPeriodKey(): number {
+    return Math.floor(this.now() / SCREENSHOT_PERIOD_MS);
+  }
+
+  /** What the organisation asked for, read off the interval it set. */
+  private maxPerPeriod(): number {
+    if (this.intervalMs <= 0) return 1;
+    return Math.max(1, Math.round(SCREENSHOT_PERIOD_MS / this.intervalMs));
   }
 
   /**
@@ -160,10 +220,18 @@ export class ScreenshotSampler {
    * doesn't share that crash. It still only ever captures silently
    * (`interactive: false`) once the one-time "Grant Access" flow has run —
    * see `isWaylandScreenshotGranted`'s doc comment.
+   *
+   * The silent ScreenCast path goes first; the Screenshot portal is only
+   * the fallback (no remembered ScreenCast grant, GStreamer missing, a
+   * portal too old), and only once its own grant exists — calling it
+   * without one could put a permission dialog in front of the person on a
+   * tick.
    */
-  private captureBuffer(): Promise<Buffer | null> {
+  private async captureBuffer(): Promise<Buffer | null> {
     if (this.getPlatform() === 'linux' && this.isWayland()) {
-      if (!this.isWaylandScreenshotGranted()) return Promise.resolve(null);
+      const silent = await this.captureWaylandSilently().catch(() => null);
+      if (silent) return silent;
+      if (!this.isWaylandScreenshotGranted()) return null;
       return this.capturePortal(false);
     }
     return this.capture();

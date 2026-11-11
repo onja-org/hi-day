@@ -74,6 +74,9 @@ export type OrganisationProfile = {
   idleHandling: IdleHandling;
   idleThresholdMinutes: number;
   windowTrackingEnabled: boolean;
+  /** The organisation-wide "Record activity" default, whatever the caller's
+   * own override is — what the Record activity toggle shows. */
+  activityTrackingEnabled: boolean;
   appUrlTracking: AppUrlTracking;
   allowedApps: AllowedApps;
   /** The organisation default: may members delete their own screenshots. */
@@ -81,6 +84,15 @@ export type OrganisationProfile = {
   /** Resolved for *you* — your override, else the default. Always true for
    * an admin, who may delete anyone's. */
   canDeleteOwnScreenshots: boolean;
+  /** The organisation default: may members see their own tracked activity
+   * (Activity page + dashboard activity widgets) — what the settings toggle
+   * shows. `null` means nobody has set it, so the built-in default
+   * (visible) applies and the toggle says so. */
+  membersCanViewOwnActivity: boolean | null;
+  /** Resolved for *you* — your override, else the default. Always true for
+   * an admin or team manager. When false, your own Activity page and
+   * dashboard activity widgets are hidden. */
+  canViewOwnActivity: boolean;
   workTimeLimits: WorkTimeLimits;
   trackingReminders: TrackingReminders;
   timesheetModifyTime: TimesheetModifyTime;
@@ -159,9 +171,11 @@ export type UpdateOrganisationInput = {
   idleHandling?: IdleHandling;
   idleThresholdMinutes?: number;
   windowTrackingEnabled?: boolean;
+  activityTrackingEnabled?: boolean;
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;
+  membersCanViewOwnActivity?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;

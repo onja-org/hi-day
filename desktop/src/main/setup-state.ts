@@ -11,6 +11,7 @@ export type CloseAction = 'minimize' | 'quit';
 interface SetupState {
   closeAction?: CloseAction;
   waylandScreenshotGranted?: boolean;
+  waylandScreenCastToken?: string;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
   autoStartTimer?: boolean;
@@ -58,6 +59,26 @@ export function hasWaylandScreenshotGrant(userDataDir: string): boolean {
 
 export function markWaylandScreenshotGranted(userDataDir: string): void {
   write(userDataDir, { ...read(userDataDir), waylandScreenshotGranted: true });
+}
+
+/**
+ * The ScreenCast portal's restore token for the silent Wayland capture path
+ * (see screencast-portal.ts). Separate from `waylandScreenshotGranted`: that
+ * one records the Screenshot portal's grant, which stays the fallback.
+ * Single-use — every capture hands back a new one to store in its place.
+ */
+export function waylandScreenCastToken(userDataDir: string): string | null {
+  return read(userDataDir).waylandScreenCastToken ?? null;
+}
+
+export function rememberWaylandScreenCastToken(
+  userDataDir: string,
+  token: string | null,
+): void {
+  const state = read(userDataDir);
+  if (token) state.waylandScreenCastToken = token;
+  else delete state.waylandScreenCastToken;
+  write(userDataDir, state);
 }
 
 /**

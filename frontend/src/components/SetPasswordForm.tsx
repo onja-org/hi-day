@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
+import { detectTimezone } from "@/lib/timezone";
 import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { Spinner } from "@/components/Spinner";
@@ -32,7 +33,7 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
     const password = String(
       new FormData(event.currentTarget).get("password") ?? "",
     );
-    mutation.mutate({ token, password });
+    mutation.mutate({ token, password, timezone: detectTimezone() });
   }
 
   return (

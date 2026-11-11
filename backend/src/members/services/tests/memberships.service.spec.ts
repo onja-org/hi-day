@@ -173,8 +173,9 @@ describe('MembershipsService', () => {
           dailyLimitHours: null,
           canDeleteScreenshots: null,
           screenshotFrequencySeconds: null,
-          canDeleteScreenshots: null,
           projectsEnabled: null,
+          activityTrackingEnabled: null,
+          canViewOwnActivity: null,
         },
       ]);
     });

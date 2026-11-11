@@ -20,6 +20,7 @@ import { Task } from '../../../database/entities/task.entity';
 import { TimeEntry } from '../../../database/entities/time-entry.entity';
 import { TimeEntryPause } from '../../../database/entities/time-entry-pause.entity';
 import { TimeEntrySource } from '../../../database/entities/time-entry-source.enum';
+import { TimeEntryType } from '../../../database/entities/time-entry-type.enum';
 import { TimeEntriesService } from '../time-entries.service';
 
 describe('TimeEntriesService', () => {
@@ -405,6 +406,104 @@ describe('TimeEntriesService', () => {
         expect.anything(),
         expect.objectContaining({ action: 'time_entry.started' }),
       );
+    });
+
+    describe('kept idle time', () => {
+      /** Returns the row handed to `create`, which is what gets persisted. */
+      async function startWith(
+        options: { idleSeconds?: number },
+        requestedStartedAt?: Date,
+        lastEndedAt?: Date,
+      ) {
+        const create = jest.fn(
+          (input: Partial<TimeEntry>) => input as TimeEntry,
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            create,
+            findOne: jest
+              .fn()
+              .mockResolvedValue(
+                lastEndedAt ? ({ endedAt: lastEndedAt } as TimeEntry) : null,
+              ),
+          }),
+        });
+        await service.start(
+          'org-1',
+          'user-1',
+          'project-1',
+          undefined,
+          TimeEntrySource.AGENT,
+          'device-1',
+          requestedStartedAt,
+          options,
+        );
+        return create.mock.calls[0][0];
+      }
+
+      it('leaves a normal start with no idle time and no resumed type', async () => {
+        const row = await startWith({});
+
+        expect(row.idleSeconds).toBeNull();
+        expect(row.type).toBeUndefined();
+      });
+
+      it('stores the kept stretch and marks the entry resumed', async () => {
+        const startedAt = new Date(Date.now() - 20 * 60_000);
+        const row = await startWith({ idleSeconds: 1200 }, startedAt);
+
+        expect(row.idleSeconds).toBe(1200);
+        expect(row.type).toBe(TimeEntryType.RESUMED);
+      });
+
+      // resolveStartedAt moves a start forward to the previous entry's end;
+      // whatever it moved past is not inside this entry, so the idle stretch
+      // loses the same amount off its front.
+      it('takes clamped-away time off the front of the stretch', async () => {
+        const requested = new Date(Date.now() - 20 * 60_000);
+        const lastEndedAt = new Date(Date.now() - 15 * 60_000);
+        const row = await startWith(
+          { idleSeconds: 1200 },
+          requested,
+          lastEndedAt,
+        );
+
+        // 20 min reported, 5 min clamped away, 15 min actually inside.
+        expect(row.idleSeconds).toBe(900);
+      });
+
+      // A wrong or hostile agent must not be able to call an entry more idle
+      // than it is long.
+      it('caps the stretch at the recorded span', async () => {
+        const row = await startWith(
+          { idleSeconds: 86_400 },
+          new Date(Date.now() - 10 * 60_000),
+        );
+
+        expect(row.idleSeconds).toBeLessThanOrEqual(600);
+        expect(row.idleSeconds).toBeGreaterThan(595);
+      });
+
+      // An entry starting now contains no past, so there is nothing for a
+      // reported stretch to sit inside.
+      it('ignores idle time reported against a start that was not backdated', async () => {
+        const row = await startWith({ idleSeconds: 600 });
+
+        expect(row.idleSeconds).toBeNull();
+      });
+
+      it('treats a stretch clamped away entirely as no idle time', async () => {
+        const requested = new Date(Date.now() - 20 * 60_000);
+        const lastEndedAt = new Date(Date.now());
+        const row = await startWith(
+          { idleSeconds: 600 },
+          requested,
+          lastEndedAt,
+        );
+
+        expect(row.idleSeconds).toBeNull();
+        expect(row.type).toBeUndefined();
+      });
     });
 
     it('starts at the time an offline device pressed start, never in the future', async () => {
@@ -989,10 +1088,244 @@ describe('TimeEntriesService', () => {
         .mockImplementation((options?: { where?: Record<string, unknown> }) => {
           const where = options?.where ?? {};
           if ('closedAsAbandoned' in where) return Promise.resolve(swept);
-          if ('startedAt' in where) return Promise.resolve(next);
+          if ('startedAt' in where) {
+            if (!next) return Promise.resolve(null);
+            // Two questions reach here: the overlap check asks for anything
+            // started after, the chain walk for an exact boundary.
+            const operator = where.startedAt as {
+              type?: string;
+              value?: Date;
+            };
+            if (operator?.type === 'equal') {
+              return Promise.resolve(
+                next.startedAt.getTime() === operator.value?.getTime()
+                  ? next
+                  : null,
+              );
+            }
+            return Promise.resolve(next);
+          }
           return Promise.resolve(null);
         });
     }
+
+    /**
+     * A stop pressed at 21:41 offline and replayed at 04:30, by which time
+     * the server had carried the evening's entry across midnight itself.
+     * Every replay met a row it was never about and was deleted as hours
+     * that could not be saved.
+     */
+    describe('a night the server guessed its way through', () => {
+      const EVENING = new Date('2026-11-09T18:05:00.000Z');
+      const MIDNIGHT = new Date('2026-11-10T00:00:00.000Z');
+      const REALLY_STOPPED = new Date('2026-11-09T21:41:00.000Z');
+
+      /** What the day-boundary split leaves behind: a closed half and an open one. */
+      function splitOvernight() {
+        const evening = {
+          ...runningEntry,
+          id: 'entry-evening',
+          source: TimeEntrySource.AGENT,
+          deviceId: 'device-1',
+          startedAt: EVENING,
+          endedAt: MIDNIGHT,
+          closedAsAbandoned: true,
+        } as TimeEntry;
+        const invented = {
+          ...runningEntry,
+          id: 'entry-invented',
+          source: TimeEntrySource.AGENT,
+          deviceId: 'device-1',
+          startedAt: MIDNIGHT,
+          endedAt: null,
+        } as TimeEntry;
+        return { evening, invented };
+      }
+
+      function repoFor(evening: TimeEntry, invented: TimeEntry | null) {
+        return jest
+          .fn()
+          .mockImplementation(
+            (options?: { where?: Record<string, unknown> }) => {
+              const where = options?.where ?? {};
+              if ('id' in where) return Promise.resolve(evening);
+              if ('startedAt' in where) {
+                const operator = where.startedAt as { value?: Date };
+                return Promise.resolve(
+                  invented &&
+                    invented.startedAt.getTime() === operator?.value?.getTime()
+                    ? invented
+                    : null,
+                );
+              }
+              return Promise.resolve(null);
+            },
+          );
+      }
+
+      it('ends the entry the device names, not the one the split left running', async () => {
+        const { evening, invented } = splitOvernight();
+        const save = jest.fn((input: Partial<TimeEntry>) =>
+          Promise.resolve(input as TimeEntry),
+        );
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          REALLY_STOPPED,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.id).toBe('entry-evening');
+        expect(result.endedAt).toEqual(REALLY_STOPPED);
+        // No longer a guess, so nothing may reopen it a second time.
+        expect(save).toHaveBeenCalledWith(
+          expect.objectContaining({ closedAsAbandoned: false }),
+        );
+      });
+
+      it('removes the span the split invented past that stop', async () => {
+        const { evening, invented } = splitOvernight();
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+          }),
+        });
+
+        await service.stop('org-1', 'user-1', 'device-1', REALLY_STOPPED, {
+          entryId: 'entry-evening',
+        });
+
+        // Left behind, it is still open — and the morning's start would meet
+        // "a timer is already running on this device".
+        expect(remove).toHaveBeenCalledWith(TimeEntry, {
+          id: 'entry-invented',
+        });
+      });
+
+      /**
+       * Working *through* the boundary. Ending the first row instead left it
+       * overlapping a successor still open, and the morning's start met
+       * that successor with a 409.
+       */
+      it('ends the row holding the stop when the work ran past the boundary', async () => {
+        const { evening, invented } = splitOvernight();
+        const workedOn = new Date(MIDNIGHT.getTime() + 8 * 60 * 60 * 1000);
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, invented),
+            save: jest.fn((input: Partial<TimeEntry>) =>
+              Promise.resolve(input as TimeEntry),
+            ),
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          workedOn,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.id).toBe('entry-invented');
+        expect(result.endedAt).toEqual(workedOn);
+        // The evening's own half is a true split, not something to undo.
+        expect(remove).not.toHaveBeenCalled();
+      });
+
+      it('leaves an entry somebody really stopped where the split put it', async () => {
+        const { evening, invented } = splitOvernight();
+        const stopped = { ...invented, endedAt: MIDNIGHT } as TimeEntry;
+        const { dataSource, remove } = makeDataSource();
+        const service = makeService({
+          dataSource,
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: repoFor(evening, stopped),
+          }),
+        });
+
+        await service.stop('org-1', 'user-1', 'device-1', REALLY_STOPPED, {
+          entryId: 'entry-evening',
+        });
+
+        expect(remove).not.toHaveBeenCalled();
+      });
+
+      it('answers a stop that has already happened rather than refusing it', async () => {
+        const settled = {
+          ...runningEntry,
+          id: 'entry-evening',
+          deviceId: 'device-1',
+          startedAt: EVENING,
+          endedAt: REALLY_STOPPED,
+          closedAsAbandoned: false,
+        } as TimeEntry;
+        const save = jest.fn();
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(settled),
+            save,
+          }),
+        });
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          REALLY_STOPPED,
+          { entryId: 'entry-evening' },
+        );
+
+        expect(result.endedAt).toEqual(REALLY_STOPPED);
+        expect(save).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('the clock a device is handed', () => {
+      it('counts only today, however long the entry has been open', async () => {
+        const now = Date.now();
+        const todayStart = new Date(
+          Date.UTC(
+            new Date(now).getUTCFullYear(),
+            new Date(now).getUTCMonth(),
+            new Date(now).getUTCDate(),
+          ),
+        );
+        // Open since four hours before midnight and never closed — the
+        // twenty-hour day somebody woke up to.
+        const open = {
+          ...runningEntry,
+          id: 'entry-overnight',
+          deviceId: 'device-1',
+          startedAt: new Date(todayStart.getTime() - 4 * 60 * 60 * 1000),
+          endedAt: null,
+        } as TimeEntry;
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue(open),
+            find: jest.fn().mockResolvedValue([open]),
+          }),
+        });
+
+        const result = await service.current('org-1', 'user-1', 'device-1');
+
+        const sinceMidnight = Math.floor((now - todayStart.getTime()) / 1000);
+        expect(result.workedSeconds).toBeLessThanOrEqual(sinceMidnight + 2);
+        expect(result.workedSeconds).toBeGreaterThanOrEqual(sinceMidnight - 2);
+      });
+    });
 
     describe('replayed operations', () => {
       it('returns the entry a replayed start already created, rather than a conflict', async () => {
@@ -1429,7 +1762,27 @@ describe('TimeEntriesService', () => {
         expect(result.endedAt).toEqual(reallyStoppedAt);
       });
 
-      it('ignores a stop no later than where the sweeper already ended it', async () => {
+      // The heartbeat outlives the stop it could not send, so the device's
+      // time is routinely a minute earlier than the sweeper's guess.
+      it('shortens an entry to a stop earlier than the sweeper guessed', async () => {
+        const swept = sweptEntry(SWEPT_AGO_MS);
+        const findOne = sweptRepoFindOne(swept);
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+        });
+        const reallyStoppedAt = new Date(swept.endedAt!.getTime() - 60_000);
+
+        const result = await service.stop(
+          'org-1',
+          'user-1',
+          'device-1',
+          reallyStoppedAt,
+        );
+
+        expect(result.endedAt).toEqual(reallyStoppedAt);
+      });
+
+      it('still refuses a stop that would end the entry before it began', async () => {
         const swept = sweptEntry(SWEPT_AGO_MS);
         const findOne = sweptRepoFindOne(swept);
         const service = makeService({
@@ -1441,9 +1794,9 @@ describe('TimeEntriesService', () => {
             'org-1',
             'user-1',
             'device-1',
-            new Date(Date.now() - SWEPT_AGO_MS - 60_000),
+            new Date(swept.startedAt.getTime() - 1000),
           ),
-        ).rejects.toBeInstanceOf(NotFoundException);
+        ).rejects.toBeInstanceOf(ConflictException);
       });
     });
   });
@@ -4064,7 +4417,13 @@ describe('TimeEntriesService', () => {
       } as ActivitySample;
     }
 
-    function listWith(samples: ActivitySample[], entry: Partial<TimeEntry>) {
+    function listWith(
+      samples: ActivitySample[],
+      entry: Partial<TimeEntry>,
+      /** The organisation's Record activity default; undefined leaves it
+       * unset, which resolves to on. */
+      activityTrackingEnabled?: boolean,
+    ) {
       const listed = {
         id: 'entry-1',
         membershipId: 'm-1',
@@ -4083,6 +4442,15 @@ describe('TimeEntriesService', () => {
           find: jest.fn().mockResolvedValue([listed]),
         }),
         activitySamplesRepo: makeActivitySamplesRepo(samples),
+        ...(activityTrackingEnabled === undefined
+          ? {}
+          : {
+              organisationsRepo: {
+                findOne: jest.fn().mockResolvedValue({
+                  settings: { timezone: 'UTC', activityTrackingEnabled },
+                }),
+              } as unknown as Repository<Organisation>,
+            }),
       });
       return service.list('org-1', 'user-1');
     }
@@ -4125,13 +4493,111 @@ describe('TimeEntriesService', () => {
       expect(result[0].activePercentage).toBeNull();
     });
 
-    it('reports null for an entry that has not stopped', async () => {
+    // A running timer uploads a closed period every ten minutes, so the
+    // measurements exist well before the entry stops — dashing the row out
+    // until then hid real data.
+    it('reports what a running entry has measured so far', async () => {
       const result = await listWith(
         [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 90)],
         { endedAt: null },
       );
 
+      expect(result[0].activePercentage).toBe(90);
+    });
+
+    // The un-sampled remainder of a running entry must not drag the average
+    // down: only measured time is averaged, never the whole span.
+    it('does not dilute a running entry with its not-yet-sampled tail', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 80)],
+        { startedAt: new Date('2026-01-05T09:00:00Z'), endedAt: null },
+      );
+
+      // 80, not 80 scaled down by the hours since 09:10.
+      expect(result[0].activePercentage).toBe(80);
+    });
+
+    it('still reports null for a timer whose first period has not closed', async () => {
+      const result = await listWith([], { endedAt: null });
+
       expect(result[0].activePercentage).toBeNull();
+      expect(result[0].activityCoveredSeconds).toBeNull();
+      expect(result[0].activityMeasurableSeconds).toBeNull();
+    });
+
+    // Record activity switched on part-way through a completed entry: the
+    // 90% is true of the ten minutes measured, and says nothing about the
+    // fifty minutes tracked. Coverage is what keeps it from reading as a
+    // claim about the whole entry.
+    it('reports coverage well short of the span when recording started part-way through', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:40:00Z', '2026-01-05T09:50:00Z', 90)],
+        {
+          startedAt: new Date('2026-01-05T09:00:00Z'),
+          endedAt: new Date('2026-01-05T09:50:00Z'),
+        },
+      );
+
+      expect(result[0].activePercentage).toBe(90);
+      expect(result[0].activityCoveredSeconds).toBe(600);
+      expect(result[0].activityMeasurableSeconds).toBe(3000);
+    });
+
+    it('reports coverage matching the span when the whole entry was measured', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+      );
+
+      expect(result[0].activityCoveredSeconds).toBe(3600);
+      expect(result[0].activityMeasurableSeconds).toBe(3600);
+    });
+
+    // So the timesheet can say *why* the cell is blank rather than showing
+    // an unexplained dash.
+    it('marks entries as not recorded when Record activity is off', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T14:00:00Z', '2026-01-05T14:10:00Z', 90)],
+        {},
+        false,
+      );
+
+      expect(result[0].activePercentage).toBeNull();
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    // Switching it off must not blank out what was already measured.
+    it('keeps a measured percentage visible after Record activity goes off', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+        false,
+      );
+
+      expect(result[0].activePercentage).toBe(70);
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    // A new Organisation starts with Record activity off; the ones that
+    // predate the setting were backfilled with an explicit `true`.
+    it('reports activity as not recorded when an organisation has never set it', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+      );
+
+      expect(result[0].activityRecorded).toBe(false);
+    });
+
+    it('reports activity as recorded for an organisation that has it on', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T10:00:00Z', 70)],
+        {},
+        true,
+      );
+
+      expect(result[0].activityRecorded).toBe(true);
+      expect(result[0].activePercentage).toBe(70);
     });
   });
 
@@ -4682,6 +5148,47 @@ describe('TimeEntriesService', () => {
         taskId: 'task-1',
         membershipId: 'm-1',
       });
+    });
+
+    it('marks a device half it carries past midnight as the guess it is', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        deviceId: 'device-1',
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      // The device may have stopped hours before this boundary and been
+      // unable to say so; `entryToCorrect` is how it says so later.
+      expect(fake.entries.get('entry-orig')!.closedAsAbandoned).toBe(true);
+    });
+
+    it('leaves a web half alone — a closed browser has no stop to replay', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-06T10:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        startedAt: new Date('2026-01-05T09:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          find: jest.fn().mockResolvedValue([original]),
+        }),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(fake.entries.get('entry-orig')!.closedAsAbandoned).toBeFalsy();
     });
 
     it('catches a multi-day-old entry fully up in one call', async () => {

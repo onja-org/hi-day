@@ -72,6 +72,29 @@ describe('TeamRoleGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('rejects everyone, admins included, once the organisation is suspended', async () => {
+    const { repo: membershipsRepo, findOne: membershipsFindOne } =
+      makeMembershipsRepo(
+        jest.fn().mockResolvedValue({ id: 'm-1', role: MembershipRole.ADMIN }),
+      );
+    const guard = new TeamRoleGuard(
+      membershipsRepo,
+      makeOrganisationsRepo(
+        jest.fn().mockResolvedValue({
+          id: 'org-uuid-1',
+          publicId: 100000,
+          suspendedAt: new Date(),
+        }),
+      ).repo,
+      makeTeamMembershipsRepo().repo,
+    );
+
+    await expect(
+      guard.canActivate(makeContext('user-1', '100000', 'team-1')),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(membershipsFindOne).not.toHaveBeenCalled();
+  });
+
   it('allows an org admin through without checking team membership', async () => {
     const { repo: teamMembershipsRepo, findOne: teamMembershipsFindOne } =
       makeTeamMembershipsRepo();

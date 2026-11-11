@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Hi Day desktop agent (login, device registration, and start/stop time tracking)",

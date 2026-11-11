@@ -26,6 +26,9 @@ export type TeamMember = {
   isManager: boolean;
   /** Their org role — an admin's row is read-only to a team manager. */
   role: MembershipRole;
+  /** Per-member override of "Members can see their own activity"; `null`
+   * inherits the org default. Settable here by a team manager. */
+  canViewOwnActivity: boolean | null;
 };
 
 export type TeamDetail = {
@@ -43,6 +46,10 @@ export type CreateTeamResult = ApiResult<{ team: OrganisationTeam }>;
 export type UpdateTeamResult = CreateTeamResult;
 
 export type TeamActionResult = ApiResult;
+
+/** How many members the bulk change applied to — admins and team managers
+ * are excluded server-side, since the setting does nothing for them. */
+export type SetTeamActivityVisibilityResult = ApiResult<{ updated: number }>;
 
 export type AddTeamMemberInput = {
   membershipId: string;
