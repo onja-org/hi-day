@@ -95,10 +95,7 @@ describe('TeamsService', () => {
   describe('setMembersActivityVisibility', () => {
     const team = { id: 'team-1', name: 'Design', organisationId: 'org-1' };
 
-    function member(
-      id: string,
-      extra: Partial<Membership> = {},
-    ): Membership {
+    function member(id: string, extra: Partial<Membership> = {}): Membership {
       return {
         id,
         organisationId: 'org-1',
@@ -113,7 +110,14 @@ describe('TeamsService', () => {
     /** Captures what the UPDATE was told to set, and on whom. */
     function makeUpdating(members: Membership[], caller: Membership) {
       const captured: { set?: unknown; ids?: string[] } = {};
-      const builder = {
+      // Typed up front so the arrows below can return `builder` without it
+      // resolving to `any` through its own circular inference.
+      const builder: {
+        update: jest.Mock;
+        set: jest.Mock;
+        whereInIds: jest.Mock;
+        execute: jest.Mock;
+      } = {
         update: jest.fn().mockReturnThis(),
         set: jest.fn((value: unknown) => {
           captured.set = value;
@@ -128,12 +132,12 @@ describe('TeamsService', () => {
       const membershipsRepo = makeMembershipsRepo({
         findOne: jest.fn().mockResolvedValue(caller),
         createQueryBuilder: jest.fn().mockReturnValue(builder),
-      } as unknown as Partial<Repository<Membership>>);
+      });
       const teamMembershipsRepo = makeTeamMembershipsRepo({
         find: jest
           .fn()
           .mockResolvedValue(members.map((m) => ({ membership: m }))),
-      } as unknown as Partial<Repository<TeamMembership>>);
+      });
       const teamsRepo = makeTeamsRepo({
         findOne: jest.fn().mockResolvedValue(team),
       });
@@ -240,8 +244,11 @@ describe('TeamsService', () => {
 
     it('skips inactive members', async () => {
       const caller = member('admin-1', { role: MembershipRole.ADMIN });
-      const left = member('m-2', { status: MembershipStatus.INACTIVE });
-      const { captured, ...repos } = makeUpdating([member('m-1'), left], caller);
+      const left = member('m-2', { status: MembershipStatus.DEACTIVATED });
+      const { captured, ...repos } = makeUpdating(
+        [member('m-1'), left],
+        caller,
+      );
       const service = makeService(repos);
 
       await service.setMembersActivityVisibility(
@@ -269,13 +276,16 @@ describe('TeamsService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('lets this team\'s own manager apply it', async () => {
+    it("lets this team's own manager apply it", async () => {
       const caller = member('mgr-1', {
         teamMemberships: [
           { teamId: 'team-1', isManager: true },
         ] as unknown as Membership['teamMemberships'],
       });
-      const { captured, ...repos } = makeUpdating([member('m-1'), caller], caller);
+      const { captured, ...repos } = makeUpdating(
+        [member('m-1'), caller],
+        caller,
+      );
       const service = makeService(repos);
 
       await expect(
