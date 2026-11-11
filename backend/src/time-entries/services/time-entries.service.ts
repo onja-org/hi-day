@@ -9,6 +9,7 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
+  And,
   Between,
   DataSource,
   EntityManager,
@@ -27,6 +28,7 @@ import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
+import type { TimeEntryCursor } from '../../common/time-entry-cursor.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
   activeIntervals,
@@ -95,9 +97,9 @@ function canSeeAnyone(membership: Membership): boolean {
   return membership.role === MembershipRole.ADMIN || actsAsManager(membership);
 }
 
-// A personal timesheet listing, not a report — plenty for one person's own
-// history at a glance. Revisit with real pagination if/when this becomes a
-// manager-facing, multi-person view.
+// One page of a timesheet listing. Callers that need a whole range (reports,
+// a week's totals) follow `nextCursor` — see listAllInRange — rather than
+// trusting one page to hold everything.
 const LIST_LIMIT = 200;
 
 // Caps splitRunningEntriesAcrossDayBoundary's hourly scan, same reasoning as
@@ -173,6 +175,12 @@ export interface PauseSpan {
   pausedAt: Date;
   /** null while this particular span is still open (currently paused). */
   resumedAt: Date | null;
+}
+
+export interface TimeEntryListPage {
+  entries: TimeEntryListItem[];
+  /** Where the next (older) page starts; null on the last page. */
+  nextCursor: TimeEntryCursor | null;
 }
 
 export interface TimeEntryListItem extends TimeEntrySummary {
@@ -1051,6 +1059,60 @@ export class TimeEntriesService {
     from?: Date,
     to?: Date,
   ): Promise<TimeEntryListItem[]> {
+    const page = await this.listPage(
+      organisationId,
+      userId,
+      targetMembershipId,
+      from,
+      to,
+    );
+    return page.entries;
+  }
+
+  /**
+   * Every entry whose `startedAt` falls in `[from, to]`, following
+   * `listPage` until the range is exhausted, for reports and anything else
+   * whose totals must be complete. A single `list()` call stops at
+   * LIST_LIMIT, and desktop users easily pass that in a month (pauses,
+   * idle holds and midnight splits each make a new entry), so a report
+   * built from one call silently loses its earliest days.
+   */
+  async listAllInRange(
+    organisationId: string,
+    userId: string,
+    targetMembershipId: string | undefined,
+    from: Date,
+    to: Date,
+  ): Promise<TimeEntryListItem[]> {
+    const entries: TimeEntryListItem[] = [];
+    let cursor: TimeEntryCursor | undefined;
+    do {
+      const page = await this.listPage(
+        organisationId,
+        userId,
+        targetMembershipId,
+        from,
+        to,
+        cursor,
+      );
+      entries.push(...page.entries);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    return entries;
+  }
+
+  /**
+   * One page of `list()`, newest first, starting strictly after `cursor`
+   * when one is given. `nextCursor` is set only when older entries remain.
+   */
+  async listPage(
+    organisationId: string,
+    userId: string,
+    targetMembershipId?: string,
+    from?: Date,
+    to?: Date,
+    cursor?: TimeEntryCursor,
+  ): Promise<TimeEntryListPage> {
     const membership = await this.getActiveMembership(organisationId, userId);
 
     let subjectMembershipId = membership.id;
@@ -1079,23 +1141,47 @@ export class TimeEntriesService {
       subjectMembershipId = target.id;
     }
 
-    const entries = await this.timeEntries.find({
-      where: {
-        membershipId: subjectMembershipId,
-        ...(from && to
-          ? { startedAt: Between(from, to) }
-          : from
-            ? { startedAt: MoreThanOrEqual(from) }
-            : to
-              ? { startedAt: LessThanOrEqual(to) }
-              : {}),
-      },
+    const range =
+      from && to
+        ? Between(from, to)
+        : from
+          ? MoreThanOrEqual(from)
+          : to
+            ? LessThanOrEqual(to)
+            : undefined;
+    const base = { membershipId: subjectMembershipId };
+    // Keyset paging: strictly older than the cursor, or as old with a
+    // smaller id — matching the `startedAt DESC, id DESC` order below.
+    const where: FindOptionsWhere<TimeEntry> | FindOptionsWhere<TimeEntry>[] =
+      cursor
+        ? [
+            {
+              ...base,
+              startedAt: range
+                ? And(range, LessThan(cursor.startedAt))
+                : LessThan(cursor.startedAt),
+            },
+            {
+              ...base,
+              startedAt: Equal(cursor.startedAt),
+              id: LessThan(cursor.id),
+            },
+          ]
+        : { ...base, ...(range ? { startedAt: range } : {}) };
+
+    // One extra row tells us whether another page exists, without a
+    // trailing empty request.
+    const rows = await this.timeEntries.find({
+      where,
       // `membership.user` is loaded only for the member's display name, so
       // confirmations can say whose hours they are about to touch.
       relations: { project: true, task: true, membership: { user: true } },
-      order: { startedAt: 'DESC' },
-      take: LIST_LIMIT,
+      order: { startedAt: 'DESC', id: 'DESC' },
+      take: LIST_LIMIT + 1,
     });
+    const hasMore = rows.length > LIST_LIMIT;
+    const entries = hasMore ? rows.slice(0, LIST_LIMIT) : rows;
+    const oldest = entries[entries.length - 1];
 
     const pauseStates = await this.getPauseStatesFor(
       entries.map((entry) => entry.id),
@@ -1106,16 +1192,22 @@ export class TimeEntriesService {
       organisationId,
       subjectMembershipId,
     );
-    return entries.map((entry) =>
-      this.toListItem(
-        entry,
-        membership,
-        pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
-        canModifyTime,
-        activity.get(entry.id),
-        activityRecorded,
+    return {
+      entries: entries.map((entry) =>
+        this.toListItem(
+          entry,
+          membership,
+          pauseStates.get(entry.id) ?? NO_PAUSE_STATE,
+          canModifyTime,
+          activity.get(entry.id),
+          activityRecorded,
+        ),
       ),
-    );
+      nextCursor:
+        hasMore && oldest
+          ? { startedAt: oldest.startedAt, id: oldest.id }
+          : null,
+    };
   }
 
   /**
