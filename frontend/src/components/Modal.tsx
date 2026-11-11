@@ -10,8 +10,9 @@ type ModalProps = {
   title: string;
   onClose: () => void;
   children: ReactNode;
-  /** "wide" fits content like a table that the default width would squash. */
-  size?: "default" | "wide";
+  /** "wide" fits content like a table that the default width would squash;
+   * "full" is for a screenshot, where the image itself is the content. */
+  size?: "default" | "wide" | "full";
 };
 
 export function Modal({ title, onClose, children, size = "default" }: ModalProps) {
@@ -121,6 +122,7 @@ export function Modal({ title, onClose, children, size = "default" }: ModalProps
           "flex max-h-full w-full cursor-auto flex-col gap-6 overflow-y-auto rounded-brand border-3 border-ink bg-white p-6 shadow-hard transition-all duration-200",
           size === "default" && "max-w-lg",
           size === "wide" && "max-w-2xl",
+          size === "full" && "max-w-5xl",
           visible && "scale-100 opacity-100",
           !visible && "scale-95 opacity-0",
         )}

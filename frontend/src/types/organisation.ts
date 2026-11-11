@@ -84,6 +84,15 @@ export type OrganisationProfile = {
   /** Resolved for *you* — your override, else the default. Always true for
    * an admin, who may delete anyone's. */
   canDeleteOwnScreenshots: boolean;
+  /** The organisation default: may members see their own tracked activity
+   * (Activity page + dashboard activity widgets) — what the settings toggle
+   * shows. `null` means nobody has set it, so the built-in default
+   * (visible) applies and the toggle says so. */
+  membersCanViewOwnActivity: boolean | null;
+  /** Resolved for *you* — your override, else the default. Always true for
+   * an admin or team manager. When false, your own Activity page and
+   * dashboard activity widgets are hidden. */
+  canViewOwnActivity: boolean;
   workTimeLimits: WorkTimeLimits;
   trackingReminders: TrackingReminders;
   timesheetModifyTime: TimesheetModifyTime;
@@ -166,6 +175,7 @@ export type UpdateOrganisationInput = {
   appUrlTracking?: AppUrlTracking;
   allowedApps?: AllowedApps;
   membersCanDeleteScreenshots?: boolean;
+  membersCanViewOwnActivity?: boolean;
   expectedWorkDays?: number[];
   trackingDisabledDays?: number[];
   expectedWeeklyHours?: number | null;

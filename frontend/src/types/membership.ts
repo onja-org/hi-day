@@ -26,6 +26,9 @@ export type ActiveMember = {
   appUrlTracking: AppUrlTracking | null;
   /** Per-member override of the org's Record activity default; `null` inherits. */
   activityTrackingEnabled: boolean | null;
+  /** Per-member override of the org's "Members can see their own activity"
+   * default; `null` inherits. */
+  canViewOwnActivity: boolean | null;
   /** `null` inherits the organisation's; `0` is "None". */
   screenshotFrequencySeconds: number | null;
   /** `null` inherits the organisation's screenshot-deletion setting. */
@@ -75,6 +78,8 @@ export type UpdateMembershipInput = {
   appUrlTracking?: AppUrlTracking | null;
   /** `null` clears the override; omit to leave the override as-is. */
   activityTrackingEnabled?: boolean | null;
+  /** `null` clears the override; omit to leave the override as-is. */
+  canViewOwnActivity?: boolean | null;
   screenshotFrequencySeconds?: number | null;
   canDeleteScreenshots?: boolean | null;
   projectsEnabled?: boolean | null;

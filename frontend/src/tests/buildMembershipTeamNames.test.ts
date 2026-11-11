@@ -7,6 +7,7 @@ const member = (membershipId: string) => ({
   name: null,
   email: `${membershipId}@example.com`,
   isManager: false, role: "member" as const,
+  canViewOwnActivity: null,
 });
 
 const teams = [

@@ -68,6 +68,7 @@ describe('AppEventsService', () => {
         screenshotRetentionDays: 30,
         ...overrides,
       }),
+      mayViewOwnActivity: jest.fn().mockResolvedValue(true),
     } as unknown as OrganisationsService;
   }
 

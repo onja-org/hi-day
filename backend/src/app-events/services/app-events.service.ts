@@ -125,6 +125,21 @@ export class AppEventsService {
     date: string | undefined,
     filter: AppActivityFilter = {},
   ): Promise<AppActivityDay> {
+    // A member blocked from seeing their own activity gets an empty day,
+    // indistinguishable from "nothing tracked" — not a 403, which would
+    // reveal the data exists (see OrganisationsService.mayViewOwnActivity).
+    if (
+      !(await this.organisationsService.mayViewOwnActivity(
+        organisationId,
+        userId,
+      ))
+    ) {
+      return {
+        date: this.resolveDate(date),
+        totalSecondsSpent: 0,
+        buckets: [],
+      };
+    }
     const membership = await this.getActiveMembership(organisationId, userId);
     return this.buildDayForMembershipId(
       organisationId,

@@ -108,6 +108,15 @@ export class UpdateOrganisationDto {
   @IsBoolean()
   membersCanDeleteScreenshots?: boolean;
 
+  /**
+   * Organisation default for whether members may see their own tracked
+   * activity (Activity page + dashboard activity widgets). Off hides those
+   * surfaces for members entirely. Admins/managers are unaffected.
+   */
+  @IsOptional()
+  @IsBoolean()
+  membersCanViewOwnActivity?: boolean;
+
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })

@@ -258,6 +258,59 @@ describe('OrganisationsService', () => {
   });
 
   describe('findCurrentForUser', () => {
+    function profileFor(
+      settings: Record<string, unknown>,
+      role = MembershipRole.MEMBER,
+    ) {
+      const findOne = jest.fn().mockResolvedValue({
+        role,
+        canViewOwnActivity: null,
+        teamMemberships: [],
+        organisation: {
+          id: 'org-1',
+          publicId: 100000,
+          name: 'Acme Inc',
+          settings,
+        },
+      });
+      return new OrganisationsService(
+        makeOrganisationsRepo(),
+        makeMembershipsRepo({ findOne }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      ).findCurrentForUser('user-1');
+    }
+
+    it('reports the activity-visibility default as null when no admin ever set it', async () => {
+      // Resolving to the built-in `true` made an untouched organisation
+      // look identical to one deliberately set to true.
+      const profile = await profileFor({});
+
+      expect(profile.membersCanViewOwnActivity).toBeNull();
+    });
+
+    it('reports an explicitly stored activity-visibility default as itself', async () => {
+      await expect(
+        profileFor({ membersCanViewOwnActivity: true }).then(
+          (p) => p.membersCanViewOwnActivity,
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        profileFor({ membersCanViewOwnActivity: false }).then(
+          (p) => p.membersCanViewOwnActivity,
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it("still resolves the caller's own visibility from the built-in default", async () => {
+      // Only the reported default is unresolved, never the answer.
+      const profile = await profileFor({});
+
+      expect(profile.canViewOwnActivity).toBe(true);
+    });
+
     it("returns the organisation profile, including the caller's role, for the user's membership", async () => {
       const findOne = jest.fn().mockResolvedValue({
         role: MembershipRole.MANAGER,
@@ -309,6 +362,8 @@ describe('OrganisationsService', () => {
         weekStartsOn: 'monday',
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
+        membersCanViewOwnActivity: null,
+        canViewOwnActivity: true,
         projectsEnabled: false,
         projectsDefaultEnabled: false,
         projectsManageable: false,
@@ -509,6 +564,7 @@ describe('OrganisationsService', () => {
               name: 'Ada',
               email: 'ada@example.com',
               isManager: true,
+              canViewOwnActivity: null,
             },
           ],
           projectCount: 2,

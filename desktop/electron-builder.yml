@@ -197,6 +197,12 @@ deb:
     - libuuid1
     - libsecret-1-0
     - at-spi2-core
+  # What the silent Wayland screenshot path (src/main/screencast-portal.ts)
+  # grabs its frame with. Recommended, not required: without them screenshots
+  # fall back to the Screenshot portal, which on GNOME plays a shutter sound.
+  recommends:
+    - gstreamer1.0-tools
+    - gstreamer1.0-pipewire
   # electron-builder's own after-install minus the AppArmor profile it
   # generates — that profile's label is what stops a snap-confined browser
   # sending us its accessibility events. See the script for the measurements.

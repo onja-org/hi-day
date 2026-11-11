@@ -175,6 +175,7 @@ describe('MembershipsService', () => {
           screenshotFrequencySeconds: null,
           projectsEnabled: null,
           activityTrackingEnabled: null,
+          canViewOwnActivity: null,
         },
       ]);
     });

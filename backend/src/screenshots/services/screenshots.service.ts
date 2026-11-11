@@ -246,6 +246,22 @@ export class ScreenshotsService {
     filter: ScreenshotsFilter = {},
     pagination: ScreenshotsPagination = {},
   ): Promise<ScreenshotsPage> {
+    // Members blocked from seeing their own activity get an empty page —
+    // not a 403, which would itself reveal the data exists (see
+    // OrganisationsService.mayViewOwnActivity).
+    if (
+      !(await this.organisationsService.mayViewOwnActivity(
+        organisationId,
+        userId,
+      ))
+    ) {
+      return {
+        items: [],
+        total: 0,
+        page: pagination.page ?? 1,
+        pageSize: pagination.pageSize ?? DEFAULT_SCREENSHOTS_PAGE_SIZE,
+      };
+    }
     const membership = await this.getActiveMembership(organisationId, userId);
     return this.listForMembershipId(
       organisationId,
@@ -394,6 +410,25 @@ export class ScreenshotsService {
     filter: ScreenshotsFilter = {},
     pagination: ScreenshotSlotsPagination = {},
   ): Promise<ScreenshotSlotsDay> {
+    // Blocked members get an empty day, indistinguishable from "nothing
+    // tracked" — the same stealth contract as getMyScreenshots.
+    if (
+      !(await this.organisationsService.mayViewOwnActivity(
+        organisationId,
+        userId,
+      ))
+    ) {
+      return {
+        hours: [],
+        page: pagination.page ?? 1,
+        pageSize: pagination.pageSize ?? DEFAULT_SLOT_HOURS_PAGE_SIZE,
+        totalHours: 0,
+        workedSeconds: 0,
+        activePercentage: null,
+        activityRecorded: false,
+        screenshotsEnabled: false,
+      };
+    }
     const membership = await this.getActiveMembership(organisationId, userId);
     return this.listSlotsForMembershipId(
       organisationId,

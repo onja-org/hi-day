@@ -16,6 +16,7 @@ import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { AddTeamMemberDto } from '../dto/add-team-member.dto';
 import { CreateTeamDto } from '../dto/create-team.dto';
+import { SetTeamActivityVisibilityDto } from '../dto/set-team-activity-visibility.dto';
 import { UpdateTeamDto } from '../dto/update-team.dto';
 import { TeamRoleGuard } from '../guards/team-role.guard';
 import { TeamViewGuard } from '../guards/team-view.guard';
@@ -105,6 +106,27 @@ export class TeamsController {
       dto,
     );
     return { message: 'Team member added' };
+  }
+
+  // Same authority as managing this team's membership (TeamRoleGuard):
+  // this is the one org-setting override delegated to a team's manager.
+  @Post(':teamId/members/activity-visibility')
+  @UseGuards(TeamRoleGuard)
+  async setMembersActivityVisibility(
+    @Param('teamId') teamId: string,
+    @Body() dto: SetTeamActivityVisibilityDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ updated: number; message: string }> {
+    const { updated } = await this.teamsService.setMembersActivityVisibility(
+      request.organisationId!,
+      teamId,
+      request.userId,
+      dto.canViewOwnActivity,
+    );
+    return {
+      updated,
+      message: `Updated ${updated} member${updated === 1 ? '' : 's'}`,
+    };
   }
 
   @Delete(':teamId/members/:membershipId')

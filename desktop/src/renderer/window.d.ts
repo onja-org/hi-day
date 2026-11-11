@@ -109,6 +109,12 @@ declare global {
 
   type DesktopDevicePlatformName = 'windows' | 'macos' | 'linux';
 
+  /** Why the window put itself in front — see main's window-surfacing.ts. */
+  interface SurfaceCopy {
+    title: string;
+    body: string;
+  }
+
   interface CapturePermissionStatus {
     windowTrackingEnabled: boolean;
     /** What "Track apps & URLs" resolves to for this person. */
@@ -116,6 +122,8 @@ declare global {
     screenshotsEnabled: boolean;
     platform: DesktopDevicePlatformName;
     screenRecordingGranted: boolean;
+    /** Granted, but through the noisy Screenshot portal — see main.ts. */
+    waylandCaptureIsNoisy: boolean;
     /** macOS + Firefox only — the AX helper that reads Firefox's address bar. */
     accessibilityGranted: boolean;
     /** Sent from main so permission-copy.ts stays the single source of wording. */
@@ -272,6 +280,7 @@ declare global {
           }) => void,
         ) => void;
         onReopened: (listener: () => void) => void;
+        onSurfaced: (listener: (copy: SurfaceCopy) => void) => void;
         /** Main asks whether closing should minimise to the tray or quit. */
         onCloseRequested: (listener: () => void) => void;
         /** null cancels: the window stays as it is. */

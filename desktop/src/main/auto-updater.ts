@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { isNewerVersion } from './update-checker';
+import { surfaceWindow } from './window-surfacing';
 
 export type AutoUpdatePhase =
   | 'idle'
@@ -100,6 +101,7 @@ export function startAutoUpdater(logger: (line: string) => void): void {
 
   autoUpdater.on('update-available', (info) => {
     state = { phase: 'downloading', latestVersion: info.version, progressPercent: 0 };
+    surfaceWindow({ reason: 'update-available', occurrence: info.version });
   });
 
   autoUpdater.on('update-not-available', () => {
@@ -116,6 +118,7 @@ export function startAutoUpdater(logger: (line: string) => void): void {
 
   autoUpdater.on('update-downloaded', (info) => {
     state = { phase: 'downloaded', latestVersion: info.version };
+    surfaceWindow({ reason: 'update-downloaded', occurrence: info.version });
   });
 
   autoUpdater.on('error', (error) => {

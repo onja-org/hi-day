@@ -75,6 +75,13 @@ export interface ScreenshotSamplerDeps {
    * same as macOS before Screen Recording is granted.
    */
   isWaylandScreenshotGranted?: () => boolean;
+  /**
+   * The silent Wayland path (ScreenCast portal with a remembered grant — see
+   * wayland-silent-capture.ts), tried before the Screenshot portal, which
+   * on GNOME plays the shutter sound and flashes the screen every time.
+   * Resolves null when it has no grant or fails; never shows UI.
+   */
+  captureWaylandSilently?: () => Promise<Buffer | null>;
 }
 
 /**
@@ -99,6 +106,7 @@ export class ScreenshotSampler {
   private readonly isWayland: () => boolean;
   private readonly capturePortal: (interactive: boolean) => Promise<Buffer | null>;
   private readonly isWaylandScreenshotGranted: () => boolean;
+  private readonly captureWaylandSilently: () => Promise<Buffer | null>;
   private intervalMs: number;
   private handle: ReturnType<typeof setInterval> | null = null;
   private readonly now: () => number;
@@ -116,6 +124,8 @@ export class ScreenshotSampler {
     this.isWayland = deps.isWayland ?? isWaylandSession;
     this.capturePortal = deps.capturePortal ?? captureScreenViaPortal;
     this.isWaylandScreenshotGranted = deps.isWaylandScreenshotGranted ?? (() => false);
+    this.captureWaylandSilently =
+      deps.captureWaylandSilently ?? (() => Promise.resolve(null));
   }
 
   start(): void {
@@ -210,10 +220,18 @@ export class ScreenshotSampler {
    * doesn't share that crash. It still only ever captures silently
    * (`interactive: false`) once the one-time "Grant Access" flow has run —
    * see `isWaylandScreenshotGranted`'s doc comment.
+   *
+   * The silent ScreenCast path goes first; the Screenshot portal is only
+   * the fallback (no remembered ScreenCast grant, GStreamer missing, a
+   * portal too old), and only once its own grant exists — calling it
+   * without one could put a permission dialog in front of the person on a
+   * tick.
    */
-  private captureBuffer(): Promise<Buffer | null> {
+  private async captureBuffer(): Promise<Buffer | null> {
     if (this.getPlatform() === 'linux' && this.isWayland()) {
-      if (!this.isWaylandScreenshotGranted()) return Promise.resolve(null);
+      const silent = await this.captureWaylandSilently().catch(() => null);
+      if (silent) return silent;
+      if (!this.isWaylandScreenshotGranted()) return null;
       return this.capturePortal(false);
     }
     return this.capture();
