@@ -2,7 +2,7 @@
 
 Each file here records one decision and why it was made. Code comments link to these files by name, so a file is never renamed, renumbered or deleted, and its body is not rewritten. When a later decision replaces one, add a status line under the old one's title and link to the new one.
 
-To add one, take the next free number (0035) and a short kebab-case file name that states the decision, such as `0035-invites-expire-after-a-week.md`. Start with a `#` title that says the decision as a sentence. Older ADRs open with `status:` frontmatter and use "Considered options" and "Consequences" sections. Newer ones skip the frontmatter and use sections like "The ask", "What this ADR decided" and "Not verified". Either is fine.
+To add one, take the next free number (0037) and a short kebab-case file name that states the decision, such as `0037-invites-expire-after-a-week.md`. Start with a `#` title that says the decision as a sentence. Older ADRs open with `status:` frontmatter and use "Considered options" and "Consequences" sections. Newer ones skip the frontmatter and use sections like "The ask", "What this ADR decided" and "Not verified". Either is fine.
 
 0009 has three ADRs and 0010 has two. They keep their file names because code links to them.
 
@@ -14,7 +14,7 @@ To add one, take the next free number (0035) and a short kebab-case file name th
 | 0004 | [Organisation created with the first password](0004-organisation-created-atomically-with-first-password.md) | Accepted |
 | 0005 | [Role checks re-read the database, not the JWT](0005-role-checks-reresolve-from-database-not-jwt.md) | Accepted |
 | 0006 | [Server-authoritative timer, one running per Membership](0006-time-entries-single-running-timer-server-authoritative.md) | Partly superseded by 0022 |
-| 0007 | [Manual time entries and idle handling](0007-manual-time-entries-and-idle-handling.md) | Partly superseded by 0028 |
+| 0007 | [Manual time entries and idle handling](0007-manual-time-entries-and-idle-handling.md) | Partly superseded by 0028, 0035 |
 | 0008 | [Manager scope from `Membership.teamId`](0008-manager-scope-uses-membership-team-id.md) | Superseded (Teams join table, no ADR) |
 | 0009 | [Desktop signs in by pairing with the web](0009-desktop-device-pairing-replaces-password-login.md) | Partly superseded by 0017 |
 | 0009 | [Pause and resume as a gap ledger](0009-manual-pause-resume-via-gap-ledger.md) | Superseded (pause now ends the entry, no ADR) |
@@ -45,3 +45,5 @@ To add one, take the next free number (0035) and a short kebab-case file name th
 | 0032 | [Renewal state lives in Stripe](0032-renewal-state-lives-in-stripe.md) | Accepted |
 | 0033 | [Extra seats are charged on arrival](0033-extra-seats-are-charged-on-arrival.md) | Accepted |
 | 0034 | [Deleting an Organisation stops its subscription](0034-deleting-an-organisation-stops-its-subscription.md) | Accepted |
+| 0035 | [Running entries can be edited](0035-running-entries-can-be-edited.md) | Accepted |
+| 0036 | [Overlapping time can be merged, and a typed range can be cut out of an entry](0036-overlapping-time-can-be-merged-and-ranges-cut-out.md) | Accepted |

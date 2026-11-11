@@ -11,6 +11,7 @@ import { useProject } from "@/hooks/useProject";
 import { useProjectTasks } from "@/hooks/useProjectTasks";
 import { useInvalidateTimeEntryViews } from "@/hooks/useInvalidateTimeEntryViews";
 import { useRequireTimeEntryReason } from "@/hooks/useRequireTimeEntryReason";
+import { changedDatetimeValue } from "@/lib/changedDatetimeValue";
 import { createManualTimeEntry } from "@/lib/createManualTimeEntry";
 import { describeTimeEntryChanges } from "@/lib/describeTimeEntryChanges";
 import { findOverlappingEntry } from "@/lib/findOverlappingEntry";
@@ -24,11 +25,16 @@ import {
   type TimeEntryFieldErrors,
 } from "@/lib/timeEntryFieldErrors";
 import { updateTimeEntry } from "@/lib/updateTimeEntry";
-import type { TimeEntryListItem, UpdateTimeEntryInput } from "@/types/timeEntry";
+import type {
+  OverlapConflict,
+  TimeEntryListItem,
+  UpdateTimeEntryInput,
+} from "@/types/timeEntry";
 import { LogTimeForSelect } from "@/components/LogTimeForSelect";
 import { Spinner } from "@/components/Spinner";
 import { TimeEntryReasonField } from "@/components/TimeEntryReasonField";
 import { TimeEntryEditConfirmDialog } from "@/components/TimeEntryEditConfirmDialog";
+import { TimeEntryOverlapNotice } from "@/components/TimeEntryOverlapNotice";
 import { TimeEntryTimeFields } from "@/components/TimeEntryTimeFields";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { SelectField } from "@/components/ui/form/SelectField";
@@ -77,6 +83,12 @@ export function TimeEntryForm({
     input: UpdateTimeEntryInput;
     changes: TimeEntryChange[];
   } | null>(null);
+  // A save refused for overlapping other entries, and how to send it again
+  // as a merge. Cleared as soon as the times change or the form is resent.
+  const [overlap, setOverlap] = useState<{
+    conflict: OverlapConflict;
+    merge: () => void;
+  } | null>(null);
   const tasksQuery = useProjectTasks(organisationId, projectId, {
     enabled: projectId !== "",
   });
@@ -108,16 +120,25 @@ export function TimeEntryForm({
       endedAt: string;
       membershipId?: string;
       reason?: string;
+      merge?: boolean;
     }) => createManualTimeEntry(organisationId, input),
     // Shown under the field at fault rather than as a toast in the corner
     meta: { inlineErrors: true },
-    onSuccess: (result) => {
+    onSuccess: (result, input) => {
       if (result.ok) {
         invalidate();
         onSaved();
         return;
       }
       setErrors(serverMessageToField(result.message));
+      setOverlap(
+        result.overlap
+          ? {
+              conflict: result.overlap,
+              merge: () => createMutation.mutate({ ...input, merge: true }),
+            }
+          : null,
+      );
     },
   });
 
@@ -128,9 +149,10 @@ export function TimeEntryForm({
       startedAt?: string;
       endedAt?: string;
       reason?: string;
+      merge?: boolean;
     }) => updateTimeEntry(organisationId, entry!.id, input),
     meta: { inlineErrors: true },
-    onSuccess: (result) => {
+    onSuccess: (result, input) => {
       if (result.ok) {
         invalidate();
         onSaved();
@@ -138,21 +160,34 @@ export function TimeEntryForm({
       }
       setPendingEdit(null);
       setErrors(serverMessageToField(result.message));
+      setOverlap(
+        result.overlap
+          ? {
+              conflict: result.overlap,
+              merge: () => updateMutation.mutate({ ...input, merge: true }),
+            }
+          : null,
+      );
     },
   });
 
   /** Judges the times as they are picked, rather than on submit. Silent
    * while either is empty — someone part-way through has not erred yet. */
-  function handleTimesChange(startedAt: string, endedAt: string): void {
+  function handleTimesChange(startedAt: string, typedEnd: string): void {
+    setOverlap(null);
+    // A running timer has no end field; the time it claims runs to now.
+    const endedAt = isTicking ? new Date().toISOString() : typedEnd;
     if (startedAt === "" || endedAt === "") {
       setErrors({});
       return;
     }
 
-    const rangeErrors = validateTimeRange(startedAt, endedAt);
-    if (!hasNoErrors(rangeErrors)) {
-      setErrors(rangeErrors);
-      return;
+    if (!isTicking) {
+      const rangeErrors = validateTimeRange(startedAt, endedAt);
+      if (!hasNoErrors(rangeErrors)) {
+        setErrors(rangeErrors);
+        return;
+      }
     }
 
     // Only when we know whose day it is, or an admin's view of someone
@@ -186,6 +221,7 @@ export function TimeEntryForm({
     const endedAt = String(formData.get("endedAt") ?? "");
     const membershipId = String(formData.get("membershipId") ?? "");
     const trimmedReason = reason.trim();
+    setOverlap(null);
 
     if (isReasonRequired && trimmedReason === "") {
       setErrors({ form: "Give a reason for this change." });
@@ -219,8 +255,10 @@ export function TimeEntryForm({
         projectId:
           projectId !== (entry.projectId ?? "") ? projectId : undefined,
         taskId: taskId !== (entry.taskId ?? "") ? taskId || null : undefined,
-        startedAt,
-        endedAt: isTicking ? undefined : endedAt,
+        // Only a time actually moved: resending an untouched one would trim
+        // its seconds and log an edit nobody made.
+        startedAt: changedDatetimeValue(startedAt, entry.startedAt),
+        endedAt: isTicking ? undefined : changedDatetimeValue(endedAt, entry.endedAt),
         reason: trimmedReason || undefined,
       };
       const changes = describeTimeEntryChanges(
@@ -343,6 +381,14 @@ export function TimeEntryForm({
         />
 
         {errors.form && <ErrorMessage message={errors.form} />}
+
+        {overlap && (
+          <TimeEntryOverlapNotice
+            conflict={overlap.conflict}
+            isPending={mutation.isPending}
+            onMerge={overlap.merge}
+          />
+        )}
 
         <button
           type="submit"

@@ -37,6 +37,11 @@ const ACTION_BY_AUDIT_ACTION: Record<string, ManualTimeEditAction> = {
   'time_entry.created_manually': 'add',
   'time_entry.updated': 'edit',
   'time_entry.deleted': 'delete',
+  // A typed range cut out of an entry: recorded like a deletion of that span.
+  'time_entry.range_removed': 'delete',
+  // Overlapping entries merged into one; `toFacts` reads whether it came from
+  // adding or editing time, and what it added, from the log itself.
+  'time_entry.merged': 'edit',
 };
 
 // A month of edits is a few hundred rows at most; this only stops a runaway
@@ -276,6 +281,14 @@ export class ManualTimeEditsService {
     entry: EntryFacts;
     changeSeconds: number;
   } {
+    if (log.action === 'time_entry.merged') {
+      return {
+        log,
+        action: log.metadata.origin === 'add' ? 'add' : 'edit',
+        entry: this.snapshotFacts(log.metadata),
+        changeSeconds: Number(log.metadata.addedSeconds ?? 0),
+      };
+    }
     const action = ACTION_BY_AUDIT_ACTION[log.action];
     if (action !== 'edit') {
       const entry = this.snapshotFacts(log.metadata);

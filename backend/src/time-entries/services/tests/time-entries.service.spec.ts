@@ -3215,6 +3215,160 @@ describe('TimeEntriesService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    describe('start time of a running entry', () => {
+      const ownRunning = { ...runningEntry, membershipId: 'm-admin' };
+
+      it('moves the start earlier and keeps the timer running, with an audit row', async () => {
+        const timeEntriesRepo = makeTimeEntriesRepo({
+          findOne: findEntryThenNoOverlap({ ...ownRunning }),
+        });
+        const { auditLogService, record } = makeAuditLogService();
+        const service = makeService({
+          timeEntriesRepo,
+          auditLogService,
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+        const earlier = '2026-01-01T07:30:00.000Z';
+
+        const result = await service.update(
+          'org-1',
+          'admin-1',
+          'entry-running',
+          { startedAt: earlier },
+        );
+
+        expect(result.startedAt).toEqual(new Date(earlier));
+        expect(result.endedAt).toBeNull();
+        const call = record.mock.calls[0] as [
+          unknown,
+          { action: string; metadata: { changed: Record<string, unknown> } },
+        ];
+        expect(call[1].action).toBe('time_entry.updated');
+        expect(call[1].metadata.changed).toHaveProperty('startedAt');
+        expect(call[1].metadata.changed).not.toHaveProperty('endedAt');
+      });
+
+      it('checks the new span against other entries up to now', async () => {
+        const findOne = findEntryThenNoOverlap({ ...ownRunning });
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+        const before = Date.now();
+
+        await service.update('org-1', 'admin-1', 'entry-running', {
+          startedAt: '2026-01-01T07:30:00.000Z',
+        });
+
+        const overlapQuery = findOne.mock.calls[1] as [
+          {
+            where: {
+              startedAt: FindOperator<Date>;
+              id: FindOperator<string>;
+            }[];
+          },
+        ];
+        const [closed] = overlapQuery[0].where;
+        expect(closed.id).toEqual(Not('entry-running'));
+        // The span runs to "now", since the entry has no end yet.
+        expect(closed.startedAt.value.getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it('refuses a start that overlaps another entry', async () => {
+        const timeEntriesRepo = makeTimeEntriesRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({ ...ownRunning })
+            .mockResolvedValue({ id: 'entry-earlier' }),
+        });
+        const service = makeService({
+          timeEntriesRepo,
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+
+        await expect(
+          service.update('org-1', 'admin-1', 'entry-running', {
+            startedAt: '2026-01-01T07:30:00.000Z',
+          }),
+        ).rejects.toThrow(/overlap/);
+      });
+
+      // The entries it runs into are finished, but this one is running: a
+      // merge can't be offered, since merging needs an end on every piece.
+      it('never offers a merge when moving a running start over another entry', async () => {
+        const finished = {
+          id: 'entry-earlier',
+          startedAt: new Date('2026-01-01T07:00:00Z'),
+          endedAt: new Date('2026-01-01T08:00:00Z'),
+        };
+        const timeEntriesRepo = makeTimeEntriesRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValueOnce({ ...ownRunning })
+            .mockResolvedValue(finished),
+          find: jest.fn().mockResolvedValue([finished]),
+        });
+        const service = makeService({
+          timeEntriesRepo,
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+
+        const error = (await service
+          .update('org-1', 'admin-1', 'entry-running', {
+            startedAt: '2026-01-01T07:30:00.000Z',
+          })
+          .catch((caught: unknown) => caught)) as ConflictException;
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.getResponse()).toMatchObject({
+          canMerge: false,
+          overlaps: [{ id: 'entry-earlier' }],
+        });
+      });
+
+      it('refuses a start later than the first pause', async () => {
+        const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'pause-1',
+            timeEntryId: 'entry-running',
+            pausedAt: new Date('2026-01-01T10:00:00Z'),
+            resumedAt: new Date('2026-01-01T10:15:00Z'),
+          }),
+        });
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: findEntryThenNoOverlap({ ...ownRunning }),
+          }),
+          timeEntryPausesRepo,
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+
+        await expect(
+          service.update('org-1', 'admin-1', 'entry-running', {
+            startedAt: '2026-01-01T10:30:00.000Z',
+          }),
+        ).rejects.toThrow(
+          'Start time must be before this timer was first paused.',
+        );
+      });
+
+      it('skips the start checks when only the project changes', async () => {
+        const findOne = findEntryThenNoOverlap({ ...ownRunning });
+        const service = makeService({
+          timeEntriesRepo: makeTimeEntriesRepo({ findOne }),
+          membershipsRepo: makeAdminMembershipsRepo(),
+        });
+
+        await service.update('org-1', 'admin-1', 'entry-running', {
+          projectId: 'project-2',
+          startedAt: ownRunning.startedAt.toISOString(),
+        });
+
+        // Only the entry lookup itself: no overlap query.
+        expect(findOne).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('throws when the entry does not exist', async () => {
       const service = makeService({
         membershipsRepo: makeAdminMembershipsRepo(),
@@ -5428,6 +5582,392 @@ describe('TimeEntriesService', () => {
       expect(fake.entries.size).toBe(1);
       const entry = fake.entries.get('entry-today')!;
       expect(entry.endedAt).toBeNull();
+    });
+  });
+
+  describe('overlaps and merging', () => {
+    const at = (hhmm: string) => new Date(`2026-01-01T${hhmm}:00.000Z`);
+
+    function adminMemberships() {
+      return makeMembershipsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'm-admin',
+          role: MembershipRole.ADMIN,
+          timesheetModifyTime: 'add_edit',
+        }),
+      });
+    }
+
+    // A desktop entry 10:00–11:00 with a 10:20–10:30 break.
+    const tracked = {
+      id: 'entry-tracked',
+      membershipId: 'm-admin',
+      projectId: 'project-1',
+      taskId: null,
+      startedAt: at('10:00'),
+      endedAt: at('11:00'),
+      source: TimeEntrySource.AGENT,
+      deviceId: 'device-a',
+      project: { name: 'Website' },
+    } as unknown as TimeEntry;
+    const trackedBreak = {
+      id: 'pause-1',
+      timeEntryId: 'entry-tracked',
+      pausedAt: at('10:20'),
+      resumedAt: at('10:30'),
+    } as TimeEntryPause;
+
+    function setup(clash: TimeEntry = tracked) {
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce(clash)
+          .mockResolvedValue({ ...clash }),
+        // The full clash list, then nothing more for the grown span to reach.
+        find: jest.fn().mockResolvedValueOnce([clash]).mockResolvedValue([]),
+      });
+      const timeEntryPausesRepo = makeTimeEntryPausesRepo({
+        find: jest.fn().mockResolvedValue([trackedBreak]),
+      });
+      const data = makeDataSource();
+      const audit = makeAuditLogService();
+      const service = makeService({
+        membershipsRepo: adminMemberships(),
+        timeEntriesRepo,
+        timeEntryPausesRepo,
+        dataSource: data.dataSource,
+        auditLogService: audit.auditLogService,
+      });
+      return { service, ...data, ...audit };
+    }
+
+    const manualOverTracked = {
+      startedAt: at('09:00').toISOString(),
+      endedAt: at('10:15').toISOString(),
+    };
+
+    it('names the overlapping entries and offers a merge when refusing', async () => {
+      const { service } = setup();
+
+      const error = (await service
+        .createManual('org-1', 'user-1', 'project-1', manualOverTracked)
+        .catch((caught: unknown) => caught)) as ConflictException;
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.message).toContain('overlap');
+      expect(error.getResponse()).toMatchObject({
+        canMerge: true,
+        overlaps: [
+          {
+            id: 'entry-tracked',
+            projectName: 'Website',
+            startedAt: at('10:00'),
+            endedAt: at('11:00'),
+          },
+        ],
+      });
+    });
+
+    it('does not offer a merge when an overlapping entry is still running', async () => {
+      const { service } = setup({ ...tracked, endedAt: null });
+
+      const error = (await service
+        .createManual('org-1', 'user-1', 'project-1', manualOverTracked)
+        .catch((caught: unknown) => caught)) as ConflictException;
+
+      expect(error.getResponse()).toMatchObject({ canMerge: false });
+    });
+
+    it('merges added time into the tracked entry, counting shared time once', async () => {
+      const { service, update, managerSave, remove, record } = setup();
+
+      await service.createManual('org-1', 'user-1', 'project-1', {
+        ...manualOverTracked,
+        merge: true,
+      });
+
+      // The tracked row survives, stretched over both, on the chosen project.
+      expect(update).toHaveBeenCalledWith(
+        TimeEntry,
+        { id: 'entry-tracked' },
+        {
+          startedAt: at('09:00'),
+          endedAt: at('11:00'),
+          projectId: 'project-1',
+          taskId: null,
+        },
+      );
+      // The old pauses go; the only gap nobody worked is the 10:20 break.
+      const deletedTargets = (remove.mock.calls as [unknown][]).map(
+        ([target]) => target,
+      );
+      expect(deletedTargets).toContain(TimeEntryPause);
+      const pausesSaved = managerSave.mock.calls
+        .map(([saved]) => saved as unknown as Partial<TimeEntryPause>)
+        .filter((saved) => 'pausedAt' in saved);
+      expect(pausesSaved).toEqual([
+        expect.objectContaining({
+          timeEntryId: 'entry-tracked',
+          pausedAt: at('10:20'),
+          resumedAt: at('10:30'),
+        }),
+      ]);
+      // 09:00–10:20 plus 10:30–11:00 worked now, against 50 minutes before.
+      const call = record.mock.calls[0] as [
+        unknown,
+        { action: string; metadata: Record<string, unknown> },
+      ];
+      expect(call[1].action).toBe('time_entry.merged');
+      expect(call[1].metadata).toMatchObject({
+        timeEntryId: 'entry-tracked',
+        mergedTimeEntryIds: [],
+        addedSeconds: 60 * 60,
+        origin: 'add',
+      });
+    });
+
+    it('refuses to merge into an entry that is still running', async () => {
+      const { service } = setup({ ...tracked, endedAt: null });
+
+      await expect(
+        service.createManual('org-1', 'user-1', 'project-1', {
+          ...manualOverTracked,
+          merge: true,
+        }),
+      ).rejects.toThrow(/still running/);
+    });
+
+    it('merges an edited entry and deletes the pieces that are not kept', async () => {
+      // A manual entry edited to run over the tracked one: the tracked row
+      // survives and the manual one goes.
+      const manualEntry = {
+        id: 'entry-manual',
+        membershipId: 'm-admin',
+        projectId: 'project-1',
+        taskId: null,
+        startedAt: at('08:00'),
+        endedAt: at('09:00'),
+        source: TimeEntrySource.MANUAL,
+        deviceId: null,
+      } as TimeEntry;
+      const timeEntriesRepo = makeTimeEntriesRepo({
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce(manualEntry)
+          .mockResolvedValueOnce(tracked)
+          .mockResolvedValue({ ...tracked }),
+        find: jest.fn().mockResolvedValueOnce([tracked]).mockResolvedValue([]),
+      });
+      const data = makeDataSource();
+      const service = makeService({
+        membershipsRepo: adminMemberships(),
+        timeEntriesRepo,
+        dataSource: data.dataSource,
+      });
+
+      await service.update('org-1', 'admin-1', 'entry-manual', {
+        endedAt: at('10:30').toISOString(),
+        merge: true,
+      });
+
+      const deleted = data.remove.mock.calls.find(
+        ([target]) => target === TimeEntry,
+      ) as [unknown, { id: FindOperator<string[]> }];
+      expect(deleted[1].id.value).toEqual(['entry-manual']);
+      expect(data.update).toHaveBeenCalledWith(
+        TimeEntry,
+        { id: 'entry-tracked' },
+        expect.objectContaining({
+          startedAt: at('08:00'),
+          endedAt: at('11:00'),
+        }),
+      );
+    });
+  });
+
+  describe('cutRange', () => {
+    const at = (hhmm: string) => new Date(`2026-01-01T${hhmm}:00.000Z`);
+    const entry = {
+      id: 'entry-done',
+      membershipId: 'm-other',
+      projectId: 'project-1',
+      taskId: 'task-9',
+      startedAt: at('09:00'),
+      endedAt: at('17:00'),
+      source: TimeEntrySource.AGENT,
+      deviceId: 'device-1',
+    } as TimeEntry;
+
+    function setup(
+      overrides: { entry?: Partial<TimeEntry>; requireReason?: boolean } = {},
+    ) {
+      const data = makeDataSource();
+      let pieces = 0;
+      data.managerSave.mockImplementation((input: Partial<TimeEntry>) =>
+        Promise.resolve({
+          id: input.id ?? `piece-${++pieces}`,
+          ...input,
+        } as TimeEntry),
+      );
+      const audit = makeAuditLogService();
+      const cleanup = makeCaptureCleanup();
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue({ ...entry, ...overrides.entry }),
+        }),
+        organisationsRepo: makeOrganisationsRepo(
+          'UTC',
+          'off',
+          overrides.requireReason ?? false,
+        ),
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'm-admin',
+            role: MembershipRole.ADMIN,
+            timesheetModifyTime: 'add_edit',
+          }),
+        }),
+        dataSource: data.dataSource,
+        auditLogService: audit.auditLogService,
+        captureCleanup: cleanup.captureCleanup,
+      });
+      return { service, ...data, ...audit, ...cleanup };
+    }
+
+    const spans = (entries: { startedAt: Date; endedAt: Date | null }[]) =>
+      entries.map((piece) => [
+        piece.startedAt.toISOString().slice(11, 16),
+        piece.endedAt?.toISOString().slice(11, 16),
+      ]);
+
+    it('removes the range and keeps the time either side as two entries', async () => {
+      const { service, remove, pruneUncovered, record } = setup();
+
+      const { entries } = await service.cutRange(
+        'org-1',
+        'admin-1',
+        'entry-done',
+        {
+          from: at('12:00').toISOString(),
+          to: at('13:00').toISOString(),
+          mode: 'remove',
+        },
+      );
+
+      expect(spans(entries)).toEqual([
+        ['09:00', '12:00'],
+        ['13:00', '17:00'],
+      ]);
+      expect(entries[0].id).toBe('entry-done');
+      expect(remove).toHaveBeenCalledWith(TimeEntry, { id: 'piece-2' });
+      expect(pruneUncovered).toHaveBeenCalledWith(
+        expect.anything(),
+        'm-other',
+        {
+          from: at('12:00'),
+          to: at('13:00'),
+        },
+      );
+      const call = record.mock.calls[0] as [
+        unknown,
+        { action: string; metadata: Record<string, unknown> },
+      ];
+      expect(call[1].action).toBe('time_entry.range_removed');
+      expect(call[1].metadata).toMatchObject({
+        startedAt: at('12:00'),
+        endedAt: at('13:00'),
+        membershipId: 'm-other',
+      });
+    });
+
+    it('splits into three entries, keeping the range as its own', async () => {
+      const { service, remove, pruneUncovered, record } = setup();
+
+      const { entries } = await service.cutRange(
+        'org-1',
+        'admin-1',
+        'entry-done',
+        {
+          from: at('12:00').toISOString(),
+          to: at('13:00').toISOString(),
+          mode: 'split',
+        },
+      );
+
+      expect(spans(entries)).toEqual([
+        ['09:00', '12:00'],
+        ['12:00', '13:00'],
+        ['13:00', '17:00'],
+      ]);
+      expect(remove).not.toHaveBeenCalled();
+      expect(pruneUncovered).not.toHaveBeenCalled();
+      const call = record.mock.calls[0] as [unknown, { action: string }];
+      expect(call[1].action).toBe('time_entry.split');
+    });
+
+    it('leaves one entry when the removed range starts at the entry start', async () => {
+      const { service, remove } = setup();
+
+      const { entries } = await service.cutRange(
+        'org-1',
+        'admin-1',
+        'entry-done',
+        {
+          from: at('09:00').toISOString(),
+          to: at('10:00').toISOString(),
+          mode: 'remove',
+        },
+      );
+
+      expect(spans(entries)).toEqual([['10:00', '17:00']]);
+      expect(remove).toHaveBeenCalledWith(TimeEntry, { id: 'entry-done' });
+    });
+
+    it.each([
+      ['covers the whole entry', '09:00', '17:00', /whole entry/],
+      [
+        'falls outside the entry',
+        '08:00',
+        '10:00',
+        /between the start and end/,
+      ],
+      ['ends before it starts', '13:00', '12:00', /end after it starts/],
+    ])('refuses a range that %s', async (_case, from, to, message) => {
+      const { service } = setup();
+
+      await expect(
+        service.cutRange('org-1', 'admin-1', 'entry-done', {
+          from: at(from).toISOString(),
+          to: at(to).toISOString(),
+          mode: 'remove',
+        }),
+      ).rejects.toThrow(message);
+    });
+
+    it('refuses an entry that is still running', async () => {
+      const { service } = setup({ entry: { endedAt: null } });
+
+      await expect(
+        service.cutRange('org-1', 'admin-1', 'entry-done', {
+          from: at('12:00').toISOString(),
+          to: at('13:00').toISOString(),
+          mode: 'remove',
+        }),
+      ).rejects.toThrow(/not stopped/);
+    });
+
+    it('needs a reason to remove time when the organisation requires one', async () => {
+      const { service } = setup({ requireReason: true });
+
+      await expect(
+        service.cutRange('org-1', 'admin-1', 'entry-done', {
+          from: at('12:00').toISOString(),
+          to: at('13:00').toISOString(),
+          mode: 'remove',
+        }),
+      ).rejects.toThrow(/reason/);
     });
   });
 });

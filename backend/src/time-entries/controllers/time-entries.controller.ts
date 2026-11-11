@@ -23,6 +23,7 @@ import {
 } from '../../common/time-entry-cursor.util';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
+import { CutTimeEntryRangeDto } from '../dto/cut-time-entry-range.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
 import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { StartTimeEntryDto } from '../dto/start-time-entry.dto';
@@ -174,6 +175,27 @@ export class TimeEntriesController {
       dto,
     );
     return { first, second, message: 'Time entry split' };
+  }
+
+  // Removes a typed range from a stopped entry, or splits it there into
+  // three pieces — see TimeEntriesService.cutRange.
+  @Post(':timeEntryId/cut')
+  async cut(
+    @Param('timeEntryId', ParseUUIDPipe) timeEntryId: string,
+    @Body() dto: CutTimeEntryRangeDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entries: TimeEntrySummary[]; message: string }> {
+    const { entries } = await this.timeEntriesService.cutRange(
+      request.organisationId!,
+      request.userId,
+      timeEntryId,
+      dto,
+    );
+    return {
+      entries,
+      message:
+        dto.mode === 'remove' ? 'Time removed from entry' : 'Time entry split',
+    };
   }
 
   @Delete(':timeEntryId')
