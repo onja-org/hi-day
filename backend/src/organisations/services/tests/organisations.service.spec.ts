@@ -197,7 +197,10 @@ describe('OrganisationsService', () => {
   });
 
   describe('findCurrentForUser', () => {
-    function profileFor(settings: Record<string, unknown>, role = MembershipRole.MEMBER) {
+    function profileFor(
+      settings: Record<string, unknown>,
+      role = MembershipRole.MEMBER,
+    ) {
       const findOne = jest.fn().mockResolvedValue({
         role,
         canViewOwnActivity: null,
