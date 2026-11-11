@@ -77,6 +77,14 @@ export class Membership {
   canViewOwnActivity: boolean | null;
 
   /**
+   * When "Record activity" last went from on to off for this member, by
+   * either switch. Activity measured before then is still accepted when it
+   * arrives late; `null` means no such moment is known.
+   */
+  @Column({ type: 'timestamptz', precision: 3, nullable: true })
+  activityTrackingOffSince: Date | null;
+
+  /**
    * Per-member override of the Organisation's "Track time against Projects"
    * default, in either direction. `null` inherits (see
    * `Organisation.settings.projectsEnabled`).

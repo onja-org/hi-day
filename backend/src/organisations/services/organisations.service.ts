@@ -423,6 +423,11 @@ export class OrganisationsService {
       organisation.billingEmail =
         (dto.billingEmail ?? '').trim().toLowerCase() || null;
     }
+    const wasRecordingActivity = resolveActivityTrackingEnabled(
+      (organisation.settings as OrganisationSettings | null)
+        ?.activityTrackingEnabled,
+      null,
+    );
     organisation.settings = {
       ...organisation.settings,
       // `||`, not `??`: '' means cleared, and storing it would read back
@@ -519,6 +524,18 @@ export class OrganisationsService {
     };
 
     await this.organisations.save(organisation);
+
+    // Switched off for everybody who inherits it: activity their agents
+    // measured until now still counts when it arrives late.
+    if (wasRecordingActivity && dto.activityTrackingEnabled === false) {
+      await this.memberships
+        .createQueryBuilder()
+        .update(Membership)
+        .set({ activityTrackingOffSince: () => 'now()' })
+        .where('organisationId = :organisationId', { organisationId })
+        .andWhere('"activityTrackingEnabled" IS NULL')
+        .execute();
+    }
 
     if (dto.allowedApps !== undefined) {
       await this.timeEntriesService.stopEntriesDisallowedByApps(organisationId);

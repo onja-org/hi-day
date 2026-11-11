@@ -47,18 +47,27 @@ export class ActivitySamplesService {
     }
 
     // Silently, same as app events: an agent told "off" has nothing to fix
-    // by retrying, and this also discards an offline queue's backlog.
+    // by retrying. What it measured while recording was still on is kept
+    // though — the part-period it sends at the switch, an offline queue —
+    // and only what began after the switch is dropped, which is all a
+    // stale agent can add.
     const { activityTrackingEnabled } =
       await this.organisationsService.getCaptureSettings(
         organisationId,
         userId,
       );
-    if (!activityTrackingEnabled) {
+    const offSince = membership.activityTrackingOffSince;
+    const accepted = activityTrackingEnabled
+      ? samples
+      : offSince
+        ? samples.filter((sample) => new Date(sample.periodStart) < offSince)
+        : [];
+    if (accepted.length === 0) {
       return;
     }
 
     await this.activitySamples.save(
-      samples.map((sample) =>
+      accepted.map((sample) =>
         this.activitySamples.create({
           organisationId,
           membershipId: membership.id,
