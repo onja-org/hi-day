@@ -470,7 +470,7 @@ export class ScheduledReportsService {
       );
       for (const member of included) {
         entries.push(
-          ...(await this.timeEntriesService.list(
+          ...(await this.timeEntriesService.listAllInRange(
             organisationId,
             userId,
             member.id,
@@ -485,7 +485,7 @@ export class ScheduledReportsService {
         filters.teamIds.length === 0 ||
         ownTeamIds.some((id) => filters.teamIds.includes(id));
       if (onChosenTeam) {
-        entries = await this.timeEntriesService.list(
+        entries = await this.timeEntriesService.listAllInRange(
           organisationId,
           userId,
           undefined,

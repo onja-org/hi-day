@@ -148,7 +148,7 @@ export function TimeEntryDetailModal({
                 onClick={() => setAction("split")}
                 className="cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:border-input-border disabled:text-slate-900/40 disabled:hover:border-input-border disabled:hover:text-slate-900/40"
               >
-                Split
+                Split or remove time
               </button>
             </div>
             {(editBlocked ?? splitBlocked) && (

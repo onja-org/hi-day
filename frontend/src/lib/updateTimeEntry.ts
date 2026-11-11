@@ -1,5 +1,6 @@
 import { API_URL } from "./apiUrl";
-import { GENERIC_ERROR_MESSAGE, parseApiErrorMessage } from "./parseApiError";
+import { GENERIC_ERROR_MESSAGE } from "./parseApiError";
+import { parseTimeEntrySaveError } from "./parseTimeEntrySaveError";
 import type {
   UpdateTimeEntryInput,
   UpdateTimeEntryResult,
@@ -21,6 +22,7 @@ export async function updateTimeEntry(
   }
 
   if (input.reason) body.reason = input.reason;
+  if (input.merge) body.merge = true;
 
   let response: Response;
   try {
@@ -41,5 +43,5 @@ export async function updateTimeEntry(
     const body = await response.json();
     return { ok: true, ...body };
   }
-  return { ok: false, message: await parseApiErrorMessage(response) };
+  return { ok: false, ...(await parseTimeEntrySaveError(response)) };
 }

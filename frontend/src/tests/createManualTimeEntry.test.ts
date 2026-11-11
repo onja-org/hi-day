@@ -156,4 +156,25 @@ describe("createManualTimeEntry", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("asks to merge only when told to", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ entry: { id: "te-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      startedAt: "2026-01-01T09:00",
+      endedAt: "2026-01-01T10:00",
+    };
+
+    await createManualTimeEntry("org-1", input);
+    await createManualTimeEntry("org-1", { ...input, merge: true });
+
+    const bodies = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse((init as RequestInit).body as string),
+    );
+    expect(bodies[0]).not.toHaveProperty("merge");
+    expect(bodies[1]).toHaveProperty("merge", true);
+  });
 });

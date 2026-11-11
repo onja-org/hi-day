@@ -16,11 +16,13 @@ import { AuthService } from '../../auth/services/auth.service';
 import { DevicesService } from '../../devices/services/devices.service';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { Membership } from '../../database/entities/membership.entity';
+import { Organisation } from '../../database/entities/organisation.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { User } from '../../database/entities/user.entity';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
@@ -303,7 +305,22 @@ export class MembershipsService {
       membership.appUrlTracking = dto.appUrlTracking;
     }
     if (dto.activityTrackingEnabled !== undefined) {
+      const organisationDefault =
+        await this.organisationRecordsActivity(organisationId);
+      const wasRecording = resolveActivityTrackingEnabled(
+        organisationDefault,
+        membership.activityTrackingEnabled,
+      );
       membership.activityTrackingEnabled = dto.activityTrackingEnabled;
+      if (
+        wasRecording &&
+        !resolveActivityTrackingEnabled(
+          organisationDefault,
+          membership.activityTrackingEnabled,
+        )
+      ) {
+        membership.activityTrackingOffSince = new Date();
+      }
     }
     if (dto.canViewOwnActivity !== undefined) {
       membership.canViewOwnActivity = dto.canViewOwnActivity;
@@ -719,6 +736,19 @@ export class MembershipsService {
     return { cleared };
   }
 
+  /** The organisation's own "Record activity" default, before overrides. */
+  private async organisationRecordsActivity(
+    organisationId: string,
+  ): Promise<boolean> {
+    const organisation = await this.dataSource
+      .getRepository(Organisation)
+      .findOne({ where: { id: organisationId } });
+    return resolveActivityTrackingEnabled(
+      organisation?.settings?.activityTrackingEnabled as boolean | undefined,
+      null,
+    );
+  }
+
   /**
    * Admin-only bulk-reset of every Membership's `activityTrackingEnabled`
    * override. Backs "Apply to all" on the Record activity setting — see
@@ -728,6 +758,17 @@ export class MembershipsService {
     organisationId: string,
     actorUserId: string,
   ): Promise<{ cleared: number }> {
+    // Those kept on by their own override go off with it when the
+    // organisation's default is off.
+    if (!(await this.organisationRecordsActivity(organisationId))) {
+      await this.memberships
+        .createQueryBuilder()
+        .update(Membership)
+        .set({ activityTrackingOffSince: () => 'now()' })
+        .where('organisationId = :organisationId', { organisationId })
+        .andWhere('"activityTrackingEnabled" = true')
+        .execute();
+    }
     const result = await this.memberships
       .createQueryBuilder()
       .update(Membership)

@@ -119,7 +119,7 @@ export function TimeEntryActionsMenu({
               }}
             />
             <ActionsMenuItem
-              label="Split"
+              label="Split or remove time"
               disabled={splitBlocked !== undefined}
               title={splitBlocked}
               onSelect={() => {

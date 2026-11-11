@@ -34,6 +34,9 @@ async function bootstrap() {
   app.enableCors({
     origin: configService.get<string>('CORS_ORIGIN', 'http://localhost:3000'),
     credentials: true,
+    // Timesheet paging (see TimeEntriesController.list). Only lets the
+    // already-allowed origin read this header; no new origin is allowed.
+    exposedHeaders: ['X-Next-Cursor'],
   });
 
   await app.listen(configService.get<number>('PORT', 3001));

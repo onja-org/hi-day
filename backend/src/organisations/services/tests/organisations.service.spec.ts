@@ -671,6 +671,67 @@ describe('OrganisationsService', () => {
   });
 
   describe('updateProfile', () => {
+    function switchingActivity(from: boolean | undefined, to: boolean) {
+      const organisation = {
+        id: 'org-1',
+        publicId: 100000,
+        name: 'Acme Inc',
+        settings: from === undefined ? {} : { activityTrackingEnabled: from },
+      } as unknown as Organisation;
+      const queryBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 2 }),
+      };
+      const service = new OrganisationsService(
+        makeOrganisationsRepo({
+          findOneOrFail: jest.fn().mockResolvedValue(organisation),
+          save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+        }),
+        makeMembershipsRepo({
+          createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+        }),
+        makeTeamsRepo(),
+        makeAuditLogService().auditLogService,
+        makeTimeEntriesService(),
+        makeTrialService().trialService,
+      );
+      return {
+        queryBuilder,
+        run: () =>
+          service.updateProfile('org-1', 'user-1', {
+            activityTrackingEnabled: to,
+          }),
+      };
+    }
+
+    // Activity their agents measured until the switch still counts when it
+    // arrives late; members with their own override aren't affected.
+    it('stamps the switch-off for every member who inherits Record activity', async () => {
+      const { queryBuilder, run } = switchingActivity(true, false);
+
+      await run();
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '"activityTrackingEnabled" IS NULL',
+      );
+      expect(queryBuilder.execute).toHaveBeenCalled();
+    });
+
+    it('stamps nothing when Record activity was already off or goes on', async () => {
+      for (const [from, to] of [
+        [false, false],
+        [undefined, false],
+        [true, true],
+      ] as const) {
+        const { queryBuilder, run } = switchingActivity(from, to);
+        await run();
+        expect(queryBuilder.execute).not.toHaveBeenCalled();
+      }
+    });
+
     it('treats null on address, tax ID and website as clearing them', async () => {
       const organisation = {
         id: 'org-1',

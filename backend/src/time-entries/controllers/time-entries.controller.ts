@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,13 +10,20 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { RoleGuard } from '../../common/guards/role.guard';
+import {
+  decodeTimeEntryCursor,
+  encodeTimeEntryCursor,
+} from '../../common/time-entry-cursor.util';
 import { TimeEntrySource } from '../../database/entities/time-entry-source.enum';
 import { CreateManualTimeEntryDto } from '../dto/create-manual-time-entry.dto';
+import { CutTimeEntryRangeDto } from '../dto/cut-time-entry-range.dto';
 import { DeleteTimeEntryDto } from '../dto/delete-time-entry.dto';
 import { SplitTimeEntryDto } from '../dto/split-time-entry.dto';
 import { StartTimeEntryDto } from '../dto/start-time-entry.dto';
@@ -28,6 +36,8 @@ import type {
   TimeEntrySummary,
 } from '../services/time-entries.service';
 import { TimeEntriesService } from '../services/time-entries.service';
+
+export const NEXT_CURSOR_HEADER = 'X-Next-Cursor';
 
 // Not scoped to a :projectId — these act on "whatever the caller's own
 // timer is doing" rather than a specific project, so the plain org-member
@@ -42,20 +52,37 @@ export class TimeEntriesController {
   // TimeEntriesService.list for who's allowed to pass someone else's.
   // `from`/`to` are ISO instants (not bare dates) — the frontend resolves
   // what "today" etc. means in the viewer's own timezone before sending.
+  // The body is one page, newest first. When older entries remain, the
+  // `X-Next-Cursor` header carries where the next page starts; pass it back
+  // as `cursor`. The body stays a plain array so older clients still work.
   @Get()
-  list(
+  async list(
     @Query('membershipId') membershipId: string | undefined,
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
+    @Query('cursor') rawCursor: string | undefined,
     @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<TimeEntryListItem[]> {
-    return this.timeEntriesService.list(
+    const cursor = rawCursor ? decodeTimeEntryCursor(rawCursor) : undefined;
+    if (cursor === null) {
+      throw new BadRequestException('Invalid cursor.');
+    }
+    const page = await this.timeEntriesService.listPage(
       request.organisationId!,
       request.userId,
       membershipId,
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
+      cursor,
     );
+    if (page.nextCursor) {
+      response.setHeader(
+        NEXT_CURSOR_HEADER,
+        encodeTimeEntryCursor(page.nextCursor),
+      );
+    }
+    return page.entries;
   }
 
   @Get('current')
@@ -148,6 +175,27 @@ export class TimeEntriesController {
       dto,
     );
     return { first, second, message: 'Time entry split' };
+  }
+
+  // Removes a typed range from a stopped entry, or splits it there into
+  // three pieces — see TimeEntriesService.cutRange.
+  @Post(':timeEntryId/cut')
+  async cut(
+    @Param('timeEntryId', ParseUUIDPipe) timeEntryId: string,
+    @Body() dto: CutTimeEntryRangeDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ entries: TimeEntrySummary[]; message: string }> {
+    const { entries } = await this.timeEntriesService.cutRange(
+      request.organisationId!,
+      request.userId,
+      timeEntryId,
+      dto,
+    );
+    return {
+      entries,
+      message:
+        dto.mode === 'remove' ? 'Time removed from entry' : 'Time entry split',
+    };
   }
 
   @Delete(':timeEntryId')
