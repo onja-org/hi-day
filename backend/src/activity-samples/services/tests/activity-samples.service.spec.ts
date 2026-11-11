@@ -101,4 +101,50 @@ describe('ActivitySamplesService', () => {
 
     expect(save).not.toHaveBeenCalled();
   });
+
+  // The agent sends the part-period it was measuring at the switch, and an
+  // offline queue arrives whenever it can: measured while recording was on,
+  // so it counts. Only what began after the switch — which a stale agent
+  // that never heard about it could still send — is dropped.
+  it('keeps what was measured before Record activity went off, and drops what began after', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({
+        id: 'membership-1',
+        activityTrackingOffSince: new Date('2026-09-08T09:05:00.000Z'),
+      }),
+      makeOrganisationsService(false),
+    );
+    const after = {
+      activePercentage: 40,
+      periodStart: '2026-09-08T09:10:00.000Z',
+      periodEnd: '2026-09-08T09:20:00.000Z',
+    };
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE, after]);
+
+    expect(save).toHaveBeenCalledWith([
+      expect.objectContaining({
+        periodStart: new Date(SAMPLE.periodStart),
+        activePercentage: 75,
+      }),
+    ]);
+  });
+
+  it('saves nothing when every sample began after the switch-off', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({
+        id: 'membership-1',
+        activityTrackingOffSince: new Date('2026-09-08T08:00:00.000Z'),
+      }),
+      makeOrganisationsService(false),
+    );
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [SAMPLE]);
+
+    expect(save).not.toHaveBeenCalled();
+  });
 });

@@ -1421,6 +1421,106 @@ describe('MembershipsService', () => {
     });
   });
 
+  describe('Record activity switch-off time', () => {
+    const caller = {
+      id: 'admin-membership',
+      userId: 'admin-1',
+      role: MembershipRole.ADMIN,
+      teamMemberships: [],
+    };
+
+    function memberWith(activityTrackingEnabled: boolean | null) {
+      return {
+        id: 'membership-1',
+        userId: 'user-1',
+        role: MembershipRole.MEMBER,
+        teamMemberships: [],
+        status: MembershipStatus.ACTIVE,
+        createdAt: new Date('2026-01-01'),
+        user: { email: 'a@b.test', name: 'A B' },
+        activityTrackingEnabled,
+        activityTrackingOffSince: null as Date | null,
+      };
+    }
+
+    /** A data source whose organisation records activity by default or not. */
+    function dataSourceRecording(organisationDefault: boolean) {
+      const { dataSource, save } = makeDataSource();
+      Object.assign(dataSource as object, {
+        getRepository: () => ({
+          findOne: jest.fn().mockResolvedValue({
+            settings: { activityTrackingEnabled: organisationDefault },
+          }),
+        }),
+      });
+      return { dataSource, save };
+    }
+
+    async function update(
+      member: ReturnType<typeof memberWith>,
+      organisationDefault: boolean,
+      activityTrackingEnabled: boolean | null,
+    ) {
+      const findOne = jest
+        .fn()
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(member);
+      const { dataSource } = dataSourceRecording(organisationDefault);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+        dataSource,
+      });
+      await service.update('org-1', 'membership-1', 'admin-1', {
+        activityTrackingEnabled,
+      });
+      return member;
+    }
+
+    it('stamps the moment an override turns recording off', async () => {
+      const member = await update(memberWith(null), true, false);
+
+      expect(member.activityTrackingOffSince).toBeInstanceOf(Date);
+    });
+
+    it('stamps clearing an override that kept recording on under an off default', async () => {
+      const member = await update(memberWith(true), false, null);
+
+      expect(member.activityTrackingOffSince).toBeInstanceOf(Date);
+    });
+
+    it('leaves it alone when recording was already off, or stays on', async () => {
+      expect(
+        (await update(memberWith(false), true, null)).activityTrackingOffSince,
+      ).toBeNull();
+      expect(
+        (await update(memberWith(null), false, false)).activityTrackingOffSince,
+      ).toBeNull();
+      expect(
+        (await update(memberWith(null), true, true)).activityTrackingOffSince,
+      ).toBeNull();
+    });
+
+    it('stamps everyone an override kept on when "Apply to all" clears them under an off default', async () => {
+      const queryBuilder = makeQueryBuilder();
+      Object.assign(queryBuilder, {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      });
+      const { dataSource } = dataSourceRecording(false);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ queryBuilder }),
+        dataSource,
+      });
+
+      await service.resetAllActivityTrackingOverrides('org-1', 'admin-1');
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '"activityTrackingEnabled" = true',
+      );
+    });
+  });
+
   describe('update — timesheet overrides', () => {
     it('sets both timesheet overrides when provided', async () => {
       const caller = {
