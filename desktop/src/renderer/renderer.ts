@@ -2116,7 +2116,19 @@ async function reconcileDayBoundary(entry: TimeEntry): Promise<boolean> {
  */
 async function refreshStatus(resync = false): Promise<void> {
   const versionAtStart = runningStateVersion;
-  const result = await callTracking(() => window.api.tracking.status());
+  // A thrown read is a failed sync, no different from an `{ ok: false }`
+  // answer: the real IPC resolves even offline (main serves from cache),
+  // but the poll fires this as a floating promise, so a read that does
+  // throw must not leak as an unhandled rejection. onWake catches too;
+  // keeping the function total means no caller has to.
+  const result = await callTracking(() => window.api.tracking.status()).catch(
+    () => null,
+  );
+  if (!result) {
+    syncFailing = true;
+    updateSyncStatus();
+    return;
+  }
   if (!result.ok) {
     if (result.unauthorized) {
       showLoginView(result.message);
