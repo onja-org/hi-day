@@ -1390,6 +1390,10 @@ describe('renderer idle timeout', () => {
     expect(app.trackingError()).toBeNull();
 
     app.server.refuseStarts = false;
+    // Answering is itself input, so the machine is no longer idle — without
+    // this the restart is met by the stretch that is still 20 minutes long
+    // and the question comes straight back.
+    app.setIdleSeconds(0);
     app.clickDiscardIdle();
     await waitForIdleRestart(app);
     expect(app.heldIdle()).toBeNull();
