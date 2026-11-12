@@ -12,6 +12,7 @@ import { isBillingEnabled } from './entitlements/billing-enabled';
 import { EntitlementsModule } from './entitlements/entitlements.module';
 import { ContactModule } from './contact/modules/contact.module';
 import { DashboardModule } from './dashboard/modules/dashboard.module';
+import { InsightsModule } from './insights/modules/insights.module';
 import { ReportsModule } from './reports/modules/reports.module';
 import { SavedReportsModule } from './saved-reports/modules/saved-reports.module';
 import { DatabaseModule } from './database/database.module';
@@ -58,6 +59,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     UrlSessionsModule,
     DashboardModule,
     ReportsModule,
+    InsightsModule,
     SavedReportsModule,
     ContactModule,
   ],

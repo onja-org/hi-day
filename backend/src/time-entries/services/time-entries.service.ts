@@ -1302,6 +1302,52 @@ export class TimeEntriesService {
   }
 
   /**
+   * What the Insights Timeline needs: every entry overlapping the window
+   * with its kind and pauses intact, plus the samples touching it. Unlike
+   * `trackedDay`, the entries keep their `type` and `idleSeconds`, because
+   * the Timeline colours tracked, manual and idle time apart. Here for the
+   * same reason as `trackedDay` — one place reads somebody's hours.
+   */
+  async timelineWindow(
+    organisationId: string,
+    membershipId: string,
+    from: Date,
+    to: Date,
+  ): Promise<{
+    entries: TimeEntry[];
+    pausesByEntry: Map<string, TimeEntryPause[]>;
+    samples: SlotSamplePeriod[];
+  }> {
+    const [entries, samples] = await Promise.all([
+      this.timeEntries
+        .createQueryBuilder('entry')
+        .where('entry.organisationId = :organisationId', { organisationId })
+        .andWhere('entry.membershipId = :membershipId', { membershipId })
+        .andWhere('entry.startedAt < :to', { to })
+        .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :from)', { from })
+        .getMany(),
+      this.activitySamples.find({
+        where: {
+          organisationId,
+          membershipId,
+          periodStart: LessThan(to),
+          periodEnd: MoreThan(from),
+        },
+      }),
+    ]);
+
+    return {
+      entries,
+      pausesByEntry: await this.pausesByEntry(entries),
+      samples: samples.map((sample) => ({
+        periodStart: sample.periodStart,
+        periodEnd: sample.periodEnd,
+        activePercentage: sample.activePercentage,
+      })),
+    };
+  }
+
+  /**
    * Keeps a running timer from silently spanning multiple calendar days —
    * without this, a timer left running overnight attributes its entire
    * elapsed time to whichever day it started, corrupting every per-day

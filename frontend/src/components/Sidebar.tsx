@@ -11,6 +11,8 @@ import {
   Gauge,
   Buildings,
   Gear,
+  Lightbulb,
+  Rows,
   SquaresFour,
   ListChecks,
   Star,
@@ -145,6 +147,19 @@ export function Sidebar({
           },
         ]
       : []),
+    {
+      kind: "group",
+      label: "Insights",
+      icon: Lightbulb,
+      children: [
+        {
+          kind: "link",
+          label: "Timeline",
+          href: `/organisations/${organisationId}/insights/timeline`,
+          icon: Rows,
+        },
+      ],
+    },
     ...(projectsManageable ? [projectManagementEntry] : []),
     {
       kind: "group",
