@@ -2,16 +2,21 @@
 
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useInsightsFilters } from "@/hooks/useInsightsFilters";
+import { insightsHref } from "@/lib/insightsHref";
 import { DEFAULT_INSIGHTS_PRESET } from "@/lib/parseInsightsRange";
+import type { InsightsPage } from "@/types/insights";
 
 type InsightsMemberHeaderProps = {
   organisationId: string;
   /** The Insights page's own name, e.g. "Timeline". */
   title: string;
+  /** Which page this is, so "All members" leads back to it for the next pick. */
+  page: InsightsPage;
 };
 
 /**
@@ -19,7 +24,8 @@ type InsightsMemberHeaderProps = {
  * list (for those who can see anyone else), whose insights these are, and
  * the date range. Shared so each Insights page only renders its own body.
  */
-export function InsightsMemberHeader({ organisationId, title }: InsightsMemberHeaderProps) {
+export function InsightsMemberHeader({ organisationId, title, page }: InsightsMemberHeaderProps) {
+  const searchParams = useSearchParams();
   const canViewOthers = useCanViewOthers();
   const { membershipId, range, preset, zone, setRange } = useInsightsFilters();
   const membersQuery = useActiveMembers(organisationId, {
@@ -33,7 +39,7 @@ export function InsightsMemberHeader({ organisationId, title }: InsightsMemberHe
     <header className="flex flex-col gap-4">
       {canViewOthers && (
         <Link
-          href={`/organisations/${organisationId}/insights`}
+          href={insightsHref(`/organisations/${organisationId}/insights`, { kind: "list", page }, searchParams)}
           className="flex w-fit cursor-pointer items-center gap-2 text-sm text-primary underline-offset-2 transition-colors duration-150 hover:text-primary-dark hover:underline"
         >
           <ArrowLeftIcon size={16} aria-hidden="true" />

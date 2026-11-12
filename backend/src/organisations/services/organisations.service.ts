@@ -736,6 +736,33 @@ export class OrganisationsService {
   }
 
   /**
+   * The organisation-wide defaults Insights Performance reads once and then
+   * resolves per member against each Membership's own overrides — so
+   * averaging over a whole organisation costs one settings read, not one
+   * per member. Narrow for the same reason as `getWorkingHoursPolicy`.
+   */
+  async getInsightsDefaults(organisationId: string): Promise<{
+    timezone: string;
+    hoursPerDay: number;
+    expectedWorkDays: number[];
+    activityTrackingEnabled: boolean | undefined;
+  }> {
+    const organisation = await this.organisations.findOneOrFail({
+      where: { id: organisationId },
+    });
+    const settings = organisation.settings as OrganisationSettings;
+
+    return {
+      timezone: settings.timezone ?? DEFAULT_TIMEZONE,
+      hoursPerDay:
+        settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
+      expectedWorkDays:
+        settings.expectedWorkDays ?? DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
+      activityTrackingEnabled: settings.activityTrackingEnabled,
+    };
+  }
+
+  /**
    * Read by other services (e.g. the dashboard summary) that need the
    * daily-hours target without depending on the full `OrganisationProfile`
    * shape — same rationale as `getIdlePolicy`. Informational only: nothing

@@ -5,7 +5,10 @@ import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
 import { GetTimelineDto } from '../dto/get-timeline.dto';
-import type { MemberTimeline } from '../services/insights.service';
+import type {
+  MemberPerformanceReport,
+  MemberTimeline,
+} from '../services/insights.service';
 import { InsightsService } from '../services/insights.service';
 
 /**
@@ -30,6 +33,21 @@ export class InsightsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<MemberTimeline> {
     return this.insightsService.getTimeline(
+      request.organisationId!,
+      request.userId,
+      query.membershipId,
+      query.from,
+      query.to,
+    );
+  }
+
+  /** Same query as the Timeline: whose, and which days. */
+  @Get('performance')
+  getPerformance(
+    @Query() query: GetTimelineDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<MemberPerformanceReport> {
+    return this.insightsService.getPerformance(
       request.organisationId!,
       request.userId,
       query.membershipId,

@@ -23,7 +23,7 @@ export function MemberTimelineContent({ organisationId }: MemberTimelineContentP
 
   return (
     <div className="flex flex-col gap-6">
-      <InsightsMemberHeader organisationId={organisationId} title="Timeline" />
+      <InsightsMemberHeader organisationId={organisationId} title="Timeline" page="timeline" />
       <section className="flex flex-col gap-3 rounded-brand-sm border border-input-border bg-white p-4">
         {timelineQuery.isPending && (
           <p className="flex items-center gap-2 text-slate-900">

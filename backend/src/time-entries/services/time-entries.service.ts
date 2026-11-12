@@ -160,6 +160,13 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+/** One member's entries, pauses and samples over a window — see `timelineWindow`. */
+export interface TimelineWindow {
+  entries: TimeEntry[];
+  pausesByEntry: Map<string, TimeEntryPause[]>;
+  samples: SlotSamplePeriod[];
+}
+
 export interface TimeEntrySummary {
   id: string;
   membershipId: string;
@@ -1313,38 +1320,70 @@ export class TimeEntriesService {
     membershipId: string,
     from: Date,
     to: Date,
-  ): Promise<{
-    entries: TimeEntry[];
-    pausesByEntry: Map<string, TimeEntryPause[]>;
-    samples: SlotSamplePeriod[];
-  }> {
+  ): Promise<TimelineWindow> {
+    const windows = await this.timelineWindows(
+      organisationId,
+      [membershipId],
+      from,
+      to,
+    );
+    return windows.get(membershipId)!;
+  }
+
+  /**
+   * `timelineWindow` for several members in two queries rather than two
+   * per member — what Insights Performance needs for its organisation and
+   * team averages. Every requested member gets an entry, empty or not.
+   */
+  async timelineWindows(
+    organisationId: string,
+    membershipIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, TimelineWindow>> {
+    const windows = new Map<string, TimelineWindow>(
+      membershipIds.map((id) => [
+        id,
+        { entries: [], pausesByEntry: new Map(), samples: [] },
+      ]),
+    );
+    if (membershipIds.length === 0) return windows;
+
     const [entries, samples] = await Promise.all([
       this.timeEntries
         .createQueryBuilder('entry')
         .where('entry.organisationId = :organisationId', { organisationId })
-        .andWhere('entry.membershipId = :membershipId', { membershipId })
+        .andWhere('entry.membershipId IN (:...membershipIds)', {
+          membershipIds,
+        })
         .andWhere('entry.startedAt < :to', { to })
         .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :from)', { from })
         .getMany(),
       this.activitySamples.find({
         where: {
           organisationId,
-          membershipId,
+          membershipId: In(membershipIds),
           periodStart: LessThan(to),
           periodEnd: MoreThan(from),
         },
       }),
     ]);
 
-    return {
-      entries,
-      pausesByEntry: await this.pausesByEntry(entries),
-      samples: samples.map((sample) => ({
+    const pausesByEntry = await this.pausesByEntry(entries);
+    for (const entry of entries) {
+      const window = windows.get(entry.membershipId)!;
+      window.entries.push(entry);
+      const pauses = pausesByEntry.get(entry.id);
+      if (pauses) window.pausesByEntry.set(entry.id, pauses);
+    }
+    for (const sample of samples) {
+      windows.get(sample.membershipId)!.samples.push({
         periodStart: sample.periodStart,
         periodEnd: sample.periodEnd,
         activePercentage: sample.activePercentage,
-      })),
-    };
+      });
+    }
+    return windows;
   }
 
   /**
