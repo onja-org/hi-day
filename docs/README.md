@@ -8,6 +8,7 @@ Start with the [main README](../README.md) for setup. Domain terms (Organisation
 
 ## Product and design
 
+- [FEATURES.md](FEATURES.md): a one-page list of what hiday does today, and what's planned.
 - [PRD.md](PRD.md): what hiday should do. Each requirement says whether it's built or planned.
 - [TECH_DESIGN.md](TECH_DESIGN.md): how the backend, web console and desktop agent fit together.
 - [CAPABILITIES_FAQ.md](CAPABILITIES_FAQ.md): what the app can and can't do, in plain language.

@@ -18,6 +18,7 @@ Other useful places:
 
 - [`CONTEXT.md`](CONTEXT.md) defines the domain terms we use (Organisation, Membership and so on).
 - [`docs/adr/`](docs/adr/) records past design decisions and why we made them.
+- [`docs/FEATURES.md`](docs/FEATURES.md) lists everything hiday does today.
 - [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) is the full guide to running hiday on your own server.
 - [`docs/`](docs/README.md) has the product spec, technical design and the rest of the docs.
 
