@@ -7,11 +7,19 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { canViewMembership } from '../../common/membership-visibility.util';
+import { dateKeyInZone } from '../../common/calendar-week.util';
 import { addDaysToKey, startOfDayInZone } from '../../common/zoned-time.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
+import {
+  averagePerformance,
+  computeMemberPerformance,
+  MemberPerformance,
+  PerformanceAverages,
+} from '../performance.util';
 import { buildTimelineDays, DayBounds, TimelineDay } from '../timeline.util';
 
 /** One request covers at most this many days — a month, plus slack for 31. */
@@ -33,6 +41,20 @@ export interface MemberTimeline {
   timezone: string;
   activityStatus: ActivityStatus;
   days: TimelineDay[];
+}
+
+export interface MemberPerformanceReport {
+  membershipId: string;
+  timezone: string;
+  activityStatus: ActivityStatus;
+  /** Activity and focus are `null` unless `activityStatus` is `recorded`. */
+  member: MemberPerformance;
+  averages: {
+    organisation: PerformanceAverages;
+    /** `null` when the member is on no team. */
+    team: PerformanceAverages | null;
+  };
+  workTimeClassification: { status: 'not_set_up' };
 }
 
 @Injectable()
@@ -90,6 +112,126 @@ export class InsightsService {
       activityStatus,
       days: built,
     };
+  }
+
+  /**
+   * The member's six Performance figures, beside the same figures averaged
+   * over the whole organisation and over the teams they're on. Averages are
+   * aggregates, so a manager comparing against the organisation sees no
+   * individual outside their teams.
+   */
+  async getPerformance(
+    organisationId: string,
+    callerUserId: string,
+    targetMembershipId: string | undefined,
+    from: string,
+    to: string,
+  ): Promise<MemberPerformanceReport> {
+    const { caller, target } = await this.getViewableMembership(
+      organisationId,
+      callerUserId,
+      targetMembershipId,
+    );
+    const dayKeys = this.dayKeysBetween(from, to);
+
+    const [defaults, activityStatus, members] = await Promise.all([
+      this.organisationsService.getInsightsDefaults(organisationId),
+      this.activityStatusFor(organisationId, caller, target),
+      this.memberships.find({
+        where: { organisationId, status: MembershipStatus.ACTIVE },
+        relations: { teamMemberships: true },
+      }),
+    ]);
+    const days: DayBounds[] = dayKeys.map((date) => ({
+      date,
+      start: startOfDayInZone(date, defaults.timezone),
+      end: startOfDayInZone(addDaysToKey(date, 1), defaults.timezone),
+    }));
+    const now = new Date();
+    const todayKey = dateKeyInZone(now, defaults.timezone);
+
+    // The target may be deactivated and still viewable; they're always
+    // measured, even when the averages below leave them out.
+    const everyone = members.some((member) => member.id === target.id)
+      ? members
+      : [...members, target];
+    const windows = await this.timeEntriesService.timelineWindows(
+      organisationId,
+      everyone.map((member) => member.id),
+      days[0].start,
+      days[days.length - 1].end,
+    );
+
+    const performanceOf = (member: Membership): MemberPerformance => {
+      const window = windows.get(member.id)!;
+      const recording =
+        member.id === target.id
+          ? activityStatus === 'recorded'
+          : resolveActivityTrackingEnabled(
+              defaults.activityTrackingEnabled,
+              member.activityTrackingEnabled,
+            );
+      const samples = recording ? window.samples : [];
+      return computeMemberPerformance({
+        days,
+        timeline: buildTimelineDays(
+          days,
+          window.entries,
+          window.pausesByEntry,
+          samples,
+          now,
+        ),
+        samples,
+        expectedWorkDays: member.expectedWorkDays ?? defaults.expectedWorkDays,
+        hoursPerDay: defaults.hoursPerDay,
+        todayKey,
+      });
+    };
+
+    const performances = new Map(
+      everyone.map((member) => [member.id, performanceOf(member)]),
+    );
+    const targetTeamIds = new Set(
+      (target.teamMemberships ?? []).map((link) => link.teamId),
+    );
+    const teamMembers = members.filter((member) =>
+      (member.teamMemberships ?? []).some((link) =>
+        targetTeamIds.has(link.teamId),
+      ),
+    );
+    const averageOf = (group: Membership[]) =>
+      this.withoutActivity(
+        averagePerformance(group.map((member) => performances.get(member.id)!)),
+        activityStatus === 'hidden',
+      );
+
+    const member = performances.get(target.id)!;
+    return {
+      membershipId: target.id,
+      timezone: defaults.timezone,
+      activityStatus,
+      member:
+        activityStatus === 'hidden'
+          ? { ...member, activity: null, focus: null }
+          : member,
+      averages: {
+        organisation: averageOf(members),
+        team: targetTeamIds.size > 0 ? averageOf(teamMembers) : null,
+      },
+      // Not built yet: core vs non-core needs apps and URLs labelled first
+      // (the Work time classification sub-task).
+      workTimeClassification: { status: 'not_set_up' },
+    };
+  }
+
+  /** A viewer who may not see their own activity doesn't get it as an average either. */
+  private withoutActivity(
+    averages: PerformanceAverages,
+    hide: boolean,
+  ): PerformanceAverages {
+    return hide
+      ? { ...averages, activityPercentage: null, focusSeconds: null }
+      : averages;
   }
 
   /**
