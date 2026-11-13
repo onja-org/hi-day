@@ -6,6 +6,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
+import { WorkClassificationModule } from '../../work-classification/modules/work-classification.module';
 import { InsightsController } from '../controllers/insights.controller';
 import { InsightsService } from '../services/insights.service';
 
@@ -15,6 +16,7 @@ import { InsightsService } from '../services/insights.service';
     JwtAuthModule,
     OrganisationsModule,
     TimeEntriesModule,
+    WorkClassificationModule,
   ],
   controllers: [InsightsController],
   providers: [InsightsService, RoleGuard],
