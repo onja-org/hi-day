@@ -36,7 +36,12 @@ export function ComparisonBars({ rows, max }: ComparisonBarsProps) {
                   width={row.span.end - row.span.start}
                   height={TRACK_HEIGHT}
                   fill="currentColor"
-                  className={clsx(row.highlight && "text-primary", !row.highlight && "text-secondary/50")}
+                  className={clsx(
+                    row.highlight && !row.tone && "text-primary",
+                    row.highlight && row.tone === "rise" && "text-volt-light",
+                    row.highlight && row.tone === "drop" && "text-punch",
+                    !row.highlight && "text-secondary/50",
+                  )}
                 />
               )}
             </svg>

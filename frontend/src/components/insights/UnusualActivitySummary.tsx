@@ -1,7 +1,8 @@
 import clsx from "clsx";
 import { formatHoursMinutes } from "@/lib/formatHoursMinutes";
 import type { UnusualActivitySummary as Summary, UnusualSeverity } from "@/types/unusualActivity";
-import { SEVERITY_LABELS } from "./SeverityBadge";
+import { SeverityBadge } from "./SeverityBadge";
+import { SeverityFilterChips } from "./SeverityFilterChips";
 
 type UnusualActivitySummaryProps = {
   summary: Summary;
@@ -12,41 +13,43 @@ type UnusualActivitySummaryProps = {
 const SEVERITIES: UnusualSeverity[] = ["highly_unusual", "unusual", "slightly_unusual"];
 
 /**
- * The counts per severity — each also a filter — and the time affected,
- * beside the same figure for the 60 days before. Both times follow the
- * selected severities.
+ * The severity filter, then the instances per severity, then the time
+ * affected beside the same figure for the 60 days before. Counts always
+ * cover every severity (a hidden one fades); both times follow the
+ * selected ones.
  */
 export function UnusualActivitySummary({ summary, selected, onToggle }: UnusualActivitySummaryProps) {
   return (
-    <section className="flex flex-col gap-4 rounded-brand-sm border border-input-border bg-white p-4">
-      <div className="flex flex-col gap-2 sm:flex-row" role="group" aria-label="Filter by severity">
+    <section className="flex flex-col gap-3">
+      <SeverityFilterChips selected={selected} onToggle={onToggle} />
+      {/* One row of five on desktop; three counts over the two times on a phone. */}
+      <dl className="grid grid-cols-6 gap-3 md:grid-cols-5">
         {SEVERITIES.map((severity) => (
-          <button
+          <div
             key={severity}
-            type="button"
-            aria-pressed={selected.includes(severity)}
-            onClick={() => onToggle(severity)}
             className={clsx(
-              "flex grow items-center justify-between gap-3 rounded-brand-sm border-2 px-3 py-2 text-left transition-colors duration-150",
-              selected.includes(severity) && "border-ink bg-cream",
-              !selected.includes(severity) && "border-input-border bg-white text-secondary hover:bg-cream",
+              "col-span-2 flex flex-col-reverse justify-end gap-2 rounded-brand-sm border border-input-border bg-white p-3 transition-opacity duration-150 md:col-span-1",
+              // Hidden by the filter: still counted, just not in the list or times.
+              !selected.includes(severity) && "opacity-50",
             )}
           >
-            <span className="text-sm font-semibold">{SEVERITY_LABELS[severity]}</span>
-            <span className="font-data text-xl">{summary.counts[severity]}</span>
-          </button>
+            {/* The badge names the figure, so it's the term; it shows under the number. */}
+            <dt>
+              <SeverityBadge severity={severity} />
+            </dt>
+            <dd className="flex items-baseline gap-1">
+              <span className="font-data text-2xl text-slate-900">{summary.counts[severity]}</span>
+              <span className="text-sm text-secondary">{summary.counts[severity] === 1 ? "instance" : "instances"}</span>
+            </dd>
+          </div>
         ))}
-      </div>
-      <dl className="grid grid-cols-2 gap-4">
-        <div>
-          <dt className="text-sm text-secondary">Time affected</dt>
+        <div className="col-span-3 flex flex-col-reverse justify-end gap-1 rounded-brand-sm border border-input-border bg-white p-3 md:col-span-1">
+          <dt className="text-sm text-secondary">Time affected (h:m)</dt>
           <dd className="font-data text-2xl text-slate-900">{formatHoursMinutes(summary.affectedSeconds)}</dd>
         </div>
-        <div>
-          <dt className="text-sm text-secondary">Previous 60 days</dt>
-          <dd className="font-data text-2xl text-slate-900">
-            {formatHoursMinutes(summary.previousAffectedSeconds)}
-          </dd>
+        <div className="col-span-3 flex flex-col-reverse justify-end gap-1 rounded-brand-sm border border-input-border bg-white p-3 md:col-span-1">
+          <dt className="text-sm text-secondary">Previous 60 days (h:m)</dt>
+          <dd className="font-data text-2xl text-slate-900">{formatHoursMinutes(summary.previousAffectedSeconds)}</dd>
         </div>
       </dl>
     </section>

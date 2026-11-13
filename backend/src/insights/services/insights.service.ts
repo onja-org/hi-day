@@ -242,8 +242,11 @@ export class InsightsService {
     };
   }
 
-  /** The target's own split only — averages would mean reading every member's app time. */
-  private async workTimeClassificationFor(
+  /**
+   * The target's own split only — averages would mean reading every
+   * member's app time. Highlights reads it per period with the same rules.
+   */
+  async workTimeClassificationFor(
     organisationId: string,
     target: Membership,
     organisationTracking: AppUrlTracking,
