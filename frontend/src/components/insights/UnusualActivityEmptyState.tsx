@@ -18,7 +18,7 @@ export function UnusualActivityEmptyState({ notCheckedYet }: UnusualActivityEmpt
       ) : (
         <>
           <p className="font-semibold text-slate-900">That&apos;s good news!</p>
-          <p className="text-sm text-secondary">No unusual activity was recorded.</p>
+          <p className="text-sm text-secondary">No unusual activity was recorded in the selected period.</p>
         </>
       )}
     </section>
