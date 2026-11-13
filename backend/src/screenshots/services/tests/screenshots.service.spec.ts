@@ -182,6 +182,60 @@ describe('ScreenshotsService', () => {
       ]);
     });
 
+    // A link to a moment (an Unusual activity instance) opens on it, not on
+    // whatever the day's newest hours happen to be.
+    it('serves the page holding a focused instant', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { pageSize: 2, focusAt: new Date('2026-03-10T07:20:00.000Z') },
+      );
+
+      expect(day.page).toBe(3);
+      expect(day.hours.map((hour) => hour.start)).toContain(
+        '2026-03-10T07:00:00.000Z',
+      );
+    });
+
+    it('lets an explicit page win over a focused instant', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        {
+          page: 1,
+          pageSize: 2,
+          focusAt: new Date('2026-03-10T07:20:00.000Z'),
+        },
+      );
+
+      expect(day.page).toBe(1);
+    });
+
+    it('serves page 1 when the focused instant has no tracked time', async () => {
+      const { service } = makeSlotsService();
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { pageSize: 2, focusAt: new Date('2026-03-10T20:00:00.000Z') },
+      );
+
+      expect(day.page).toBe(1);
+    });
+
     // Slots stay chronological inside an hour — six cells reading right to
     // left would help nobody.
     it('keeps slots chronological within an hour', async () => {

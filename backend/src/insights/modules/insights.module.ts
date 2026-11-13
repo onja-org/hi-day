@@ -7,7 +7,9 @@ import { Organisation } from '../../database/entities/organisation.entity';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { InsightsController } from '../controllers/insights.controller';
+import { UnusualActivityController } from '../controllers/unusual-activity.controller';
 import { InsightsService } from '../services/insights.service';
+import { UnusualActivityService } from '../services/unusual-activity.service';
 
 @Module({
   imports: [
@@ -16,7 +18,7 @@ import { InsightsService } from '../services/insights.service';
     OrganisationsModule,
     TimeEntriesModule,
   ],
-  controllers: [InsightsController],
-  providers: [InsightsService, RoleGuard],
+  controllers: [InsightsController, UnusualActivityController],
+  providers: [InsightsService, UnusualActivityService, RoleGuard],
 })
 export class InsightsModule {}

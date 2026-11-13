@@ -2,5 +2,5 @@ import type { InsightsPage } from "@/types/insights";
 
 /** Which page the member list leads to; a missing or unknown `?page=` means the Timeline. */
 export function parseInsightsPage(value: string | null): InsightsPage {
-  return value === "performance" ? "performance" : "timeline";
+  return value === "performance" || value === "unusual-activity" ? value : "timeline";
 }

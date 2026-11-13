@@ -342,7 +342,11 @@ export class MembershipsController {
       membershipId,
       query.date,
       { projectId: query.projectId },
-      { page: query.page, pageSize: query.pageSize },
+      {
+        page: query.page,
+        pageSize: query.pageSize,
+        focusAt: query.at ? new Date(query.at) : undefined,
+      },
     );
   }
 

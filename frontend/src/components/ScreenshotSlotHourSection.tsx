@@ -1,8 +1,10 @@
 "use client";
 
+import clsx from "clsx";
 import { formatElapsed } from "@/lib/formatElapsed";
 import { formatHourLabel } from "@/lib/formatHourLabel";
-import type { ScreenshotSlotHour } from "@/types/screenshot";
+import { isSlotHighlighted } from "@/lib/isSlotHighlighted";
+import type { ScreenshotHighlight, ScreenshotSlotHour } from "@/types/screenshot";
 import { ScreenshotSlotCell } from "./ScreenshotSlotCell";
 import { SegmentMeter } from "./SegmentMeter";
 
@@ -14,6 +16,8 @@ type ScreenshotSlotHourSectionProps = {
   hour: ScreenshotSlotHour;
   activityRecorded: boolean;
   screenshotsEnabled: boolean;
+  /** A stretch to point out — its slots get a ring. */
+  highlight: ScreenshotHighlight | null;
 };
 
 export function ScreenshotSlotHourSection({
@@ -21,6 +25,7 @@ export function ScreenshotSlotHourSection({
   hour,
   activityRecorded,
   screenshotsEnabled,
+  highlight,
 }: ScreenshotSlotHourSectionProps) {
   return (
     <section className="flex flex-col gap-3">
@@ -42,15 +47,24 @@ export function ScreenshotSlotHourSection({
           read. Cells stretch to their row's height, so an empty slot is
           the same size as a screenshot card beside it. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {hour.slots.map((slot) => (
-          <ScreenshotSlotCell
-            key={slot.start}
-            organisationId={organisationId}
-            slot={slot}
-            activityRecorded={activityRecorded}
-            screenshotsEnabled={screenshotsEnabled}
-          />
-        ))}
+        {hour.slots.map((slot) => {
+          const highlighted = isSlotHighlighted(slot, highlight);
+          // A one-cell grid, so the cell still stretches to its row's height.
+          return (
+            <div
+              key={slot.start}
+              data-highlighted={highlighted || undefined}
+              className={clsx("grid rounded-brand-sm", highlighted && "ring-2 ring-primary ring-offset-2")}
+            >
+              <ScreenshotSlotCell
+                organisationId={organisationId}
+                slot={slot}
+                activityRecorded={activityRecorded}
+                screenshotsEnabled={screenshotsEnabled}
+              />
+            </div>
+          );
+        })}
       </div>
     </section>
   );

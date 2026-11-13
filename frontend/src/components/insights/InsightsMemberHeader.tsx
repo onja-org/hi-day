@@ -59,6 +59,7 @@ export function InsightsMemberHeader({ organisationId, title, page }: InsightsMe
           defaultPreset={DEFAULT_INSIGHTS_PRESET}
           zone={zone}
           onChange={setRange}
+          align="end"
         />
       </div>
     </header>

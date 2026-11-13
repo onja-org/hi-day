@@ -16,6 +16,8 @@ export type GetScreenshotSlotsFilter = {
 export type ScreenshotSlotsPaging = {
   /** 1-based; defaults to 1. */
   page?: number;
+  /** With no `page`: open on the page holding this instant's hour. */
+  at?: string;
 };
 
 /** Hours per page — mirrors the backend's own default. */
@@ -54,7 +56,8 @@ export async function getScreenshotSlots(
   const params = new URLSearchParams();
   if (filter.date) params.set("date", filter.date);
   if (filter.projectId) params.set("projectId", filter.projectId);
-  params.set("page", String(paging.page ?? 1));
+  if (paging.page === undefined && paging.at) params.set("at", paging.at);
+  else params.set("page", String(paging.page ?? 1));
   params.set("pageSize", String(SLOT_HOURS_PAGE_SIZE));
 
   let response: Response;

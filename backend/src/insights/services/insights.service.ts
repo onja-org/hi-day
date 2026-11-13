@@ -240,7 +240,7 @@ export class InsightsService {
    * uses (see canViewMembership). No `targetMembershipId` means the
    * caller's own, which is how a member who can't list anyone else gets in.
    */
-  private async getViewableMembership(
+  async getViewableMembership(
     organisationId: string,
     callerUserId: string,
     targetMembershipId: string | undefined,
@@ -270,7 +270,7 @@ export class InsightsService {
     return { caller, target };
   }
 
-  private async activityStatusFor(
+  async activityStatusFor(
     organisationId: string,
     caller: Membership,
     target: Membership,
@@ -293,7 +293,7 @@ export class InsightsService {
   }
 
   /** Every calendar day from `from` to `to`, both included. */
-  private dayKeysBetween(from: string, to: string): string[] {
+  dayKeysBetween(from: string, to: string): string[] {
     if (from > to) {
       throw new BadRequestException('from must not be after to.');
     }
