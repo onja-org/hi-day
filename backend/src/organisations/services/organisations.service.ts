@@ -746,6 +746,7 @@ export class OrganisationsService {
     hoursPerDay: number;
     expectedWorkDays: number[];
     activityTrackingEnabled: boolean | undefined;
+    appUrlTracking: AppUrlTracking;
   }> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
@@ -759,6 +760,7 @@ export class OrganisationsService {
       expectedWorkDays:
         settings.expectedWorkDays ?? DEFAULT_WORK_TIME_LIMITS.expectedWorkDays,
       activityTrackingEnabled: settings.activityTrackingEnabled,
+      appUrlTracking: settings.appUrlTracking ?? DEFAULT_APP_URL_TRACKING,
     };
   }
 

@@ -1,3 +1,4 @@
+import type { WorkTimeClassification } from "./workClassification";
 import type { ApiResult } from "./api";
 
 export type TimelineSegmentKind = "tracked" | "manual" | "idle";
@@ -78,7 +79,7 @@ export type MemberPerformanceReport = {
     /** `null` when the member is on no team. */
     team: PerformanceAverages | null;
   };
-  workTimeClassification: { status: "not_set_up" };
+  workTimeClassification: WorkTimeClassification;
 };
 
 export type GetMemberPerformanceResult = ApiResult<{ report: MemberPerformanceReport }>;

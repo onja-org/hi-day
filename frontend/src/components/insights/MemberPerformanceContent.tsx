@@ -48,7 +48,10 @@ export function MemberPerformanceContent({ organisationId }: MemberPerformanceCo
             report={performanceQuery.data}
             memberLabel={memberLabel}
           />
-          <WorkTimeClassificationCard />
+          <WorkTimeClassificationCard
+            organisationId={organisationId}
+            classification={performanceQuery.data.workTimeClassification}
+          />
           {performanceQuery.data.activityStatus !== "hidden" && (
             <>
               <FocusTimeCard

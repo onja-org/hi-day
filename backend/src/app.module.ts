@@ -13,6 +13,7 @@ import { EntitlementsModule } from './entitlements/entitlements.module';
 import { ContactModule } from './contact/modules/contact.module';
 import { DashboardModule } from './dashboard/modules/dashboard.module';
 import { InsightsModule } from './insights/modules/insights.module';
+import { WorkClassificationModule } from './work-classification/modules/work-classification.module';
 import { ReportsModule } from './reports/modules/reports.module';
 import { SavedReportsModule } from './saved-reports/modules/saved-reports.module';
 import { DatabaseModule } from './database/database.module';
@@ -60,6 +61,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     DashboardModule,
     ReportsModule,
     InsightsModule,
+    WorkClassificationModule,
     SavedReportsModule,
     ContactModule,
   ],

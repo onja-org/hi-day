@@ -11,9 +11,12 @@ import { dateKeyInZone } from '../../common/calendar-week.util';
 import { addDaysToKey, startOfDayInZone } from '../../common/zoned-time.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
+import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
+import { WorkClassificationService } from '../../work-classification/services/work-classification.service';
+import type { WorkTimeSplit } from '../../work-classification/work-classification.util';
 import {
   averagePerformance,
   computeMemberPerformance,
@@ -43,6 +46,16 @@ export interface MemberTimeline {
   days: TimelineDay[];
 }
 
+/**
+ * Core vs non-core time. `not_available` while app/URL tracking is off for
+ * the member (or they may not see their own activity); `no_data` when no
+ * app time was tracked in the range.
+ */
+export type WorkTimeClassification =
+  | { status: 'not_available' }
+  | { status: 'no_data' }
+  | ({ status: 'available' } & WorkTimeSplit);
+
 export interface MemberPerformanceReport {
   membershipId: string;
   timezone: string;
@@ -54,7 +67,7 @@ export interface MemberPerformanceReport {
     /** `null` when the member is on no team. */
     team: PerformanceAverages | null;
   };
-  workTimeClassification: { status: 'not_set_up' };
+  workTimeClassification: WorkTimeClassification;
 }
 
 @Injectable()
@@ -64,6 +77,7 @@ export class InsightsService {
     private readonly memberships: Repository<Membership>,
     private readonly organisationsService: OrganisationsService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly workClassificationService: WorkClassificationService,
   ) {}
 
   async getTimeline(
@@ -218,10 +232,39 @@ export class InsightsService {
         organisation: averageOf(members),
         team: targetTeamIds.size > 0 ? averageOf(teamMembers) : null,
       },
-      // Not built yet: core vs non-core needs apps and URLs labelled first
-      // (the Work time classification sub-task).
-      workTimeClassification: { status: 'not_set_up' },
+      workTimeClassification: await this.workTimeClassificationFor(
+        organisationId,
+        target,
+        defaults.appUrlTracking,
+        activityStatus,
+        days,
+      ),
     };
+  }
+
+  /** The target's own split only — averages would mean reading every member's app time. */
+  private async workTimeClassificationFor(
+    organisationId: string,
+    target: Membership,
+    organisationTracking: AppUrlTracking,
+    activityStatus: ActivityStatus,
+    days: DayBounds[],
+  ): Promise<WorkTimeClassification> {
+    const tracking = target.appUrlTracking ?? organisationTracking;
+    if (tracking === 'off' || activityStatus === 'hidden') {
+      return { status: 'not_available' };
+    }
+    const split = await this.workClassificationService.splitForMember(
+      organisationId,
+      target.id,
+      days[0].start,
+      days[days.length - 1].end,
+    );
+    const total =
+      split.coreSeconds + split.nonCoreSeconds + split.unclassifiedSeconds;
+    return total === 0
+      ? { status: 'no_data' }
+      : { status: 'available', ...split };
   }
 
   /** A viewer who may not see their own activity doesn't get it as an average either. */
