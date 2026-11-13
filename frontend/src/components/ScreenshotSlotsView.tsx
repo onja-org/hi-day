@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useScreenshotSlots } from "@/hooks/useScreenshotSlots";
 import { SLOT_HOURS_PAGE_SIZE } from "@/lib/getScreenshotSlots";
+import type { ScreenshotHighlight } from "@/types/screenshot";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { Pagination } from "./Pagination";
 import { ScreenshotSlotHourSection } from "./ScreenshotSlotHourSection";
+import { ScreenshotSlotsHighlightNote } from "./ScreenshotSlotsHighlightNote";
 import { ScreenshotSlotsLegend } from "./ScreenshotSlotsLegend";
 import { ScreenshotSlotsSummary } from "./ScreenshotSlotsSummary";
 
@@ -14,6 +16,8 @@ type ScreenshotSlotsViewProps = {
   date: string;
   membershipId?: string;
   projectId?: string;
+  /** A stretch a link asked to point out: opened on, ringed and scrolled to. */
+  highlight: ScreenshotHighlight | null;
 };
 
 /**
@@ -26,23 +30,37 @@ export function ScreenshotSlotsView({
   date,
   membershipId,
   projectId,
+  highlight,
 }: ScreenshotSlotsViewProps) {
-  // Derived rather than reset in an effect, like the gallery.
+  // Derived rather than reset in an effect, like the gallery. No page picked
+  // yet means "wherever the highlight is", or page 1 without one.
   const dayKey = [date, membershipId, projectId].join("|");
-  const [paging, setPaging] = useState({ dayKey, page: 1 });
-  const requestedPage = paging.dayKey === dayKey ? paging.page : 1;
+  const [paging, setPaging] = useState<{ dayKey: string; page?: number }>({ dayKey });
+  const requestedPage = paging.dayKey === dayKey ? paging.page : undefined;
 
   const slotsQuery = useScreenshotSlots(
     organisationId,
     { date, membershipId, projectId },
-    { page: requestedPage },
+    { page: requestedPage, at: highlight?.from },
   );
 
   const day = slotsQuery.data;
   const hours = day?.hours ?? [];
 
+  // Once, when the highlighted stretch first appears — not on every poll.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrolledTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlight || scrolledTo.current === highlight.from) return;
+    const first = containerRef.current?.querySelector("[data-highlighted]");
+    if (!first) return;
+    scrolledTo.current = highlight.from;
+    first.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlight, day]);
+
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={containerRef} className="flex flex-col gap-6">
+      {highlight && <ScreenshotSlotsHighlightNote highlight={highlight} />}
       <ActivityQueryStatus
         isLoading={slotsQuery.isLoading}
         isError={slotsQuery.isError}
@@ -69,6 +87,7 @@ export function ScreenshotSlotsView({
           hour={hour}
           activityRecorded={day?.activityRecorded ?? true}
           screenshotsEnabled={day?.screenshotsEnabled ?? false}
+          highlight={highlight}
         />
       ))}
 

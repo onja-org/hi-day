@@ -5,6 +5,7 @@ import {
   BookmarkSimple,
   ChartBar,
   ChartLineUp,
+  Detective,
   Clock,
   Desktop,
   FolderSimple,
@@ -168,8 +169,7 @@ export function Sidebar({
       kind: "group",
       label: "Insights",
       icon: Lightbulb,
-      // Performance always first; the rest follow Hubstaff's order, which
-      // clients coming from it expect: Highlights, Timeline, Unusual activity.
+      // Performance always first, then Highlights, Timeline, Unusual activity.
       children: [
         {
           kind: "link",
@@ -182,6 +182,12 @@ export function Sidebar({
           label: "Timeline",
           ...insightsLink("timeline"),
           icon: Rows,
+        },
+        {
+          kind: "link",
+          label: "Unusual activity",
+          ...insightsLink("unusual-activity"),
+          icon: Detective,
         },
       ],
     },

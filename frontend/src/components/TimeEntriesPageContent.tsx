@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ClockIcon, FunnelIcon } from "@phosphor-icons/react";
 import clsx from "clsx";
+import { useSearchParams } from "next/navigation";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
 import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
@@ -14,6 +15,7 @@ import { useViewerTimezone } from "@/hooks/useViewerTimezone";
 import { useTimeEntries } from "@/hooks/useTimeEntries";
 import { entriesToCsv } from "@/lib/entriesToCsv";
 import { entriesToPdf } from "@/lib/entriesToPdf";
+import { parseTimesheetLink } from "@/lib/parseTimesheetLink";
 import { getCustomDateRange } from "@/lib/getCustomDateRange";
 import { dateKeyInZone, detectTimezone } from "@/lib/timezone";
 import type { TimezoneSource } from "@/lib/timezone";
@@ -59,25 +61,31 @@ const DEFAULT_DATE_PRESET: DateRangePreset = "today";
 export function TimeEntriesPageContent({
   organisationId,
 }: TimeEntriesPageContentProps) {
+  // A link in (e.g. from Insights → Unusual activity) only sets where the
+  // page starts: whose timesheet and which day. Its day is on the
+  // organisation's calendar, so it opens in the organisation's zone.
+  const link = parseTimesheetLink(useSearchParams());
   const [addingTime, setAddingTime] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   // Which zone the timesheet is read in; never changes a stored entry.
-  const [timezoneSource, setTimezoneSource] = useState<TimezoneSource>("viewer");
+  const [timezoneSource, setTimezoneSource] = useState<TimezoneSource>(
+    link.date ? "organisation" : "viewer",
+  );
   const [filters, setFilters] = useState<TimesheetFilters>(EMPTY_TIMESHEET_FILTERS);
   // "" means "my own timesheet" — the default for everyone, including
   // admins/managers.
-  const [viewingMembershipId, setViewingMembershipId] = useState("");
+  const [viewingMembershipId, setViewingMembershipId] = useState(link.membershipId);
   const [viewMode, setViewMode] = useState<TimesheetViewMode>("daily");
   const [datePreset, setDatePreset] = useState<DateRangePreset | null>(
-    DEFAULT_DATE_PRESET,
+    link.date ? null : DEFAULT_DATE_PRESET,
   );
   // Days rather than instants: a custom range means "these dates", so it
   // has to re-resolve when the viewing zone changes, exactly as a preset
   // does. Only read once a custom range has been applied — the initial
   // value just keeps it non-null.
   const [customDays, setCustomDays] = useState(() => {
-    const today = dateKeyInZone(new Date(), detectTimezone());
-    return { from: today, to: today };
+    const day = link.date ?? dateKeyInZone(new Date(), detectTimezone());
+    return { from: day, to: day };
   });
   const [weekOffset, setWeekOffset] = useState(0);
 

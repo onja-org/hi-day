@@ -52,6 +52,9 @@ export type ScreenshotSlot = {
   extraCount: number;
 };
 
+/** A stretch a link asked the Screenshots page to point out, as UTC instants. */
+export type ScreenshotHighlight = { from: string; to: string };
+
 export type ScreenshotSlotHour = {
   start: string;
   workedSeconds: number;

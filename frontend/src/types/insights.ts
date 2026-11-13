@@ -101,7 +101,7 @@ export type PerformanceCardInput = {
 };
 
 /** The per-member Insights pages, as they appear in URLs. */
-export type InsightsPage = "timeline" | "performance";
+export type InsightsPage = "timeline" | "performance" | "unusual-activity";
 
 /** Where an Insights link points: one member's page, or the member list on its way to a page. */
 export type InsightsDestination =

@@ -116,6 +116,10 @@ export interface ScreenshotSlotsPagination {
   /** 1-based. Past the last page serves the last page instead. */
   page?: number;
   pageSize?: number;
+  /** With no `page`: serve the page holding the hour this instant falls
+   * in, so a link to a moment opens on it. Page 1 if that hour has no
+   * tracked time. */
+  focusAt?: Date;
 }
 
 export interface ScreenshotsFilter {
@@ -462,6 +466,23 @@ export class ScreenshotsService {
     );
   }
 
+  /** The 1-based page whose hours include `at`; page 1 without one. */
+  private pageHolding(
+    at: Date | undefined,
+    hours: { slotIndexes: number[] }[],
+    slots: { bounds: { start: number; end: number } }[],
+    pageSize: number,
+  ): number {
+    if (!at) return 1;
+    const ms = at.getTime();
+    const index = hours.findIndex((hour) =>
+      hour.slotIndexes.some(
+        (slot) => ms >= slots[slot].bounds.start && ms < slots[slot].bounds.end,
+      ),
+    );
+    return index === -1 ? 1 : Math.floor(index / pageSize) + 1;
+  }
+
   /**
    * The day as 10-minute slots: what was captured, worked and measured in
    * each, grouped by hour, with the day's own totals on top.
@@ -528,7 +549,11 @@ export class ScreenshotsService {
       .reverse();
     const pageSize = pagination.pageSize ?? DEFAULT_SLOT_HOURS_PAGE_SIZE;
     const lastPage = Math.max(1, Math.ceil(withWork.length / pageSize));
-    const page = Math.min(pagination.page ?? 1, lastPage);
+    const page = Math.min(
+      pagination.page ??
+        this.pageHolding(pagination.focusAt, withWork, slots, pageSize),
+      lastPage,
+    );
     const onPage = withWork.slice((page - 1) * pageSize, page * pageSize);
 
     // Only now, and only across the served hours.
