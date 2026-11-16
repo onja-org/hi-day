@@ -64,6 +64,24 @@ export class ActivitySample {
   @Column({ type: 'smallint' })
   activePercentage: number;
 
+  /**
+   * How many key presses, mouse clicks and pixels of pointer travel the
+   * period saw — counts only, never which key, what was typed or where.
+   * All three `null` together when the agent couldn't count (Linux on
+   * Wayland, macOS without Input Monitoring / Accessibility, a hook blocked
+   * by antivirus) or predates counting: "not available", never 0. They sit
+   * beside `activePercentage`, which is still read off idle time and never
+   * from these.
+   */
+  @Column({ type: 'integer', nullable: true })
+  keystrokes: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  mouseClicks: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  mouseMovement: number | null;
+
   @Column({ type: 'timestamptz', precision: 3 })
   periodStart: Date;
 

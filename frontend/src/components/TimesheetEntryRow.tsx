@@ -7,6 +7,7 @@ import { activityCoverageLabel } from "@/lib/activityCoverageLabel";
 import { idleShareLabel } from "@/lib/idleShareLabel";
 import type { TimeEntryListItem } from "@/types/timeEntry";
 import { entryProjectColour, entryTitle } from "@/lib/entryProjectDisplay";
+import { InputCountsLine } from "./InputCountsLine";
 import { ProjectAvatar } from "./ProjectAvatar";
 import { RunningEntryDuration } from "./RunningEntryDuration";
 import { RunningEntryTimeRange } from "./RunningEntryTimeRange";
@@ -86,6 +87,7 @@ export function TimesheetEntryRow({
                 {coverageLabel}
               </span>
             )}
+            <InputCountsLine counts={entry.inputCounts} />
           </span>
         )}
       </td>

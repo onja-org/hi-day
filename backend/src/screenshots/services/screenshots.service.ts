@@ -1,4 +1,9 @@
 import {
+  InputCounts,
+  inputCountsIn,
+  sumInputCounts,
+} from '../../common/input-counts.util';
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -73,6 +78,9 @@ export interface ScreenshotSlot {
   activePercentage: number | null;
   /** How much of the slot an activity sample covers, for the day's average. */
   activityMeasuredSeconds: number;
+  /** Keystrokes, clicks and pointer travel in the slot; null when nothing
+   * in it could be counted — "not available", never 0. */
+  inputCounts: InputCounts | null;
   /** Every screenshot in the slot, up to `MAX_SLOT_SCREENSHOTS`. */
   screenshots: ScreenshotSummaryItem[];
   /** Anything past the bound. A count, not an expander. */
@@ -101,6 +109,8 @@ export interface ScreenshotSlotsDay {
   workedSeconds: number;
   /** Likewise the whole day, weighted by measured time. */
   activePercentage: number | null;
+  /** The whole day's counts, slots added up; null when none were counted. */
+  inputCounts: InputCounts | null;
   /** Whether activity is recorded for this member at all right now. */
   activityRecorded: boolean;
   /** Whether screenshots are captured for this member at all, so a slot
@@ -429,6 +439,7 @@ export class ScreenshotsService {
         totalHours: 0,
         workedSeconds: 0,
         activePercentage: null,
+        inputCounts: null,
         activityRecorded: false,
         screenshotsEnabled: false,
       };
@@ -536,6 +547,9 @@ export class ScreenshotsService {
         workedSeconds,
         activePercentage: activity.activePercentage,
         activityMeasuredSeconds: activity.measuredSeconds,
+        // Same rule as the percentage: nothing against untracked time.
+        inputCounts:
+          workedSeconds > 0 ? inputCountsIn(tracked.samples, bounds) : null,
       };
     });
 
@@ -600,6 +614,7 @@ export class ScreenshotsService {
               workedSeconds: slot.workedSeconds,
               activePercentage: slot.activePercentage,
               activityMeasuredSeconds: slot.activityMeasuredSeconds,
+              inputCounts: slot.inputCounts,
               screenshots: await Promise.all(
                 shown.map(async (row) => ({
                   id: row.id,
@@ -640,6 +655,7 @@ export class ScreenshotsService {
           measuredSeconds: slot.activityMeasuredSeconds,
         })),
       ),
+      inputCounts: sumInputCounts(slots.map((slot) => slot.inputCounts)),
       activityRecorded: captureState.activityRecorded,
       screenshotsEnabled: captureState.screenshotsEnabled,
     };

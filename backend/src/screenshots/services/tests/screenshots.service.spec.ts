@@ -9,6 +9,7 @@ import { MembershipRole } from '../../../database/entities/membership-role.enum'
 import { Screenshot } from '../../../database/entities/screenshot.entity';
 import type { OrganisationsService } from '../../../organisations/services/organisations.service';
 import type { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
+import type { SamplePeriod } from '../../screenshot-slots.util';
 import type { ScreenshotStorageService } from '../screenshot-storage.service';
 import { ScreenshotsService } from '../screenshots.service';
 
@@ -119,12 +120,15 @@ describe('ScreenshotsService', () => {
       projectId: 'project-1',
     };
 
-    function makeSlotsService(find = jest.fn().mockResolvedValue([])) {
+    function makeSlotsService(
+      find = jest.fn().mockResolvedValue([]),
+      samples: SamplePeriod[] = [],
+    ) {
       const timeEntriesService = {
         listCoveringWindow: jest.fn().mockResolvedValue([]),
         trackedDay: jest
           .fn()
-          .mockResolvedValue({ intervals: [SIX_HOURS], samples: [] }),
+          .mockResolvedValue({ intervals: [SIX_HOURS], samples }),
       } as unknown as TimeEntriesService;
 
       const service = new ScreenshotsService(
@@ -143,6 +147,54 @@ describe('ScreenshotsService', () => {
       );
       return { service, find };
     }
+
+    it('shows each slot its share of the counts, and the day their total', async () => {
+      const { service } = makeSlotsService(jest.fn().mockResolvedValue([]), [
+        // 11:03-11:13: seven tenths falls in the 11:00 slot, three in 11:10.
+        {
+          periodStart: new Date('2026-03-10T11:03:00.000Z'),
+          periodEnd: new Date('2026-03-10T11:13:00.000Z'),
+          activePercentage: 60,
+          inputCounts: {
+            keystrokes: 100,
+            mouseClicks: 10,
+            mouseMovement: 1000,
+          },
+        },
+        // Counted on a machine that couldn't: not available, not zero.
+        {
+          periodStart: new Date('2026-03-10T11:30:00.000Z'),
+          periodEnd: new Date('2026-03-10T11:40:00.000Z'),
+          activePercentage: 40,
+          inputCounts: null,
+        },
+      ]);
+
+      const day = await service.getSlotsForMembership(
+        'org-1',
+        'user-1',
+        'membership-1',
+        DAY,
+        {},
+        { page: 1, pageSize: 1 },
+      );
+
+      const slots = day.hours[0].slots;
+      expect(slots.map((slot) => slot.inputCounts)).toEqual([
+        { keystrokes: 70, mouseClicks: 7, mouseMovement: 700 },
+        { keystrokes: 30, mouseClicks: 3, mouseMovement: 300 },
+        null,
+        null,
+        null,
+        null,
+      ]);
+      expect(slots[3].activePercentage).toBe(40);
+      expect(day.inputCounts).toEqual({
+        keystrokes: 100,
+        mouseClicks: 10,
+        mouseMovement: 1000,
+      });
+    });
 
     // Page one should be the work somebody just did, not their breakfast.
     it('serves the newest hours first', async () => {
