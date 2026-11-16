@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useActivityScreenshots } from "@/hooks/useActivityScreenshots";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useDeleteScreenshots } from "@/hooks/useDeleteScreenshots";
 import { canDeleteShownScreenshots } from "@/lib/canDeleteShownScreenshots";
+import { parseScreenshotHighlight } from "@/lib/parseScreenshotHighlight";
 import { ActivityFilterToolbar } from "./ActivityFilterToolbar";
 import { ActivityQueryStatus } from "./ActivityQueryStatus";
 import { ScreenshotDeleteDialog } from "./ScreenshotDeleteDialog";
@@ -35,6 +37,8 @@ export function ScreenshotsPageContent({
   const { date, membershipId, projectId, canViewOthers } =
     useActivityDayFilters();
   const [view, setView] = useState<ScreenshotsView>("slots");
+  // Set by links to a moment, e.g. an Unusual activity instance.
+  const highlight = parseScreenshotHighlight(useSearchParams());
 
   // Back to page 1 whenever the gallery itself changes — derived rather
   // than reset in an effect, the same way the selection is below.
@@ -107,6 +111,7 @@ export function ScreenshotsPageContent({
           date={date}
           membershipId={membershipId}
           projectId={projectId}
+          highlight={highlight}
         />
       )}
 

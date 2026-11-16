@@ -20,6 +20,7 @@ export const SCREENSHOT_SLOTS_QUERY_KEY = (
   filter.membershipId ?? "self",
   filter.date ?? null,
   filter.projectId ?? "all",
+  paging.page === undefined ? (paging.at ?? null) : null,
   paging.page ?? 1,
 ];
 

@@ -34,6 +34,7 @@
     "node-gyp-build": "^4.8.4",
     "sql.js": "^1.14.2",
     "tldts": "^7.4.12",
+    "uiohook-napi": "1.5.4",
     "x11": "^4.2.1"
   },
   "devDependencies": {

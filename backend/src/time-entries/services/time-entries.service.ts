@@ -27,6 +27,11 @@ import {
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
+import {
+  inputCountsIn,
+  inputCountsOf,
+  InputCounts,
+} from '../../common/input-counts.util';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import type { TimeEntryCursor } from '../../common/time-entry-cursor.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
@@ -160,6 +165,13 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
+/** One member's entries, pauses and samples over a window — see `timelineWindow`. */
+export interface TimelineWindow {
+  entries: TimeEntry[];
+  pausesByEntry: Map<string, TimeEntryPause[]>;
+  samples: SlotSamplePeriod[];
+}
+
 export interface TimeEntrySummary {
   id: string;
   membershipId: string;
@@ -190,6 +202,13 @@ export interface TimeEntryListPage {
   entries: TimeEntryListItem[];
   /** Where the next (older) page starts; null on the last page. */
   nextCursor: TimeEntryCursor | null;
+}
+
+/** What one entry's activity samples add up to. */
+interface EntryActivity {
+  percentage: number;
+  coveredSeconds: number;
+  inputCounts: InputCounts | null;
 }
 
 export interface TimeEntryListItem extends TimeEntrySummary {
@@ -223,6 +242,13 @@ export interface TimeEntryListItem extends TimeEntrySummary {
    */
   activityCoveredSeconds: number | null;
   activityMeasurableSeconds: number | null;
+  /**
+   * Keystrokes, mouse clicks and pointer travel over the measured part of
+   * the entry, shared out of each sample by overlap like the percentage.
+   * `null` when nothing measured could count them — "not available", never
+   * 0 (Wayland, a missing macOS permission, a blocked hook, an older agent).
+   */
+  inputCounts: InputCounts | null;
   /**
    * Whether activity is being recorded for this entry's member *right now*
    * (the "Record activity" setting, their override else the org default).
@@ -1297,8 +1323,88 @@ export class TimeEntriesService {
         periodStart: sample.periodStart,
         periodEnd: sample.periodEnd,
         activePercentage: sample.activePercentage,
+        inputCounts: inputCountsOf(sample),
       })),
     };
+  }
+
+  /**
+   * What the Insights Timeline needs: every entry overlapping the window
+   * with its kind and pauses intact, plus the samples touching it. Unlike
+   * `trackedDay`, the entries keep their `type` and `idleSeconds`, because
+   * the Timeline colours tracked, manual and idle time apart. Here for the
+   * same reason as `trackedDay` — one place reads somebody's hours.
+   */
+  async timelineWindow(
+    organisationId: string,
+    membershipId: string,
+    from: Date,
+    to: Date,
+  ): Promise<TimelineWindow> {
+    const windows = await this.timelineWindows(
+      organisationId,
+      [membershipId],
+      from,
+      to,
+    );
+    return windows.get(membershipId)!;
+  }
+
+  /**
+   * `timelineWindow` for several members in two queries rather than two
+   * per member — what Insights Performance needs for its organisation and
+   * team averages. Every requested member gets an entry, empty or not.
+   */
+  async timelineWindows(
+    organisationId: string,
+    membershipIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, TimelineWindow>> {
+    const windows = new Map<string, TimelineWindow>(
+      membershipIds.map((id) => [
+        id,
+        { entries: [], pausesByEntry: new Map(), samples: [] },
+      ]),
+    );
+    if (membershipIds.length === 0) return windows;
+
+    const [entries, samples] = await Promise.all([
+      this.timeEntries
+        .createQueryBuilder('entry')
+        .where('entry.organisationId = :organisationId', { organisationId })
+        .andWhere('entry.membershipId IN (:...membershipIds)', {
+          membershipIds,
+        })
+        .andWhere('entry.startedAt < :to', { to })
+        .andWhere('(entry.endedAt IS NULL OR entry.endedAt > :from)', { from })
+        .getMany(),
+      this.activitySamples.find({
+        where: {
+          organisationId,
+          membershipId: In(membershipIds),
+          periodStart: LessThan(to),
+          periodEnd: MoreThan(from),
+        },
+      }),
+    ]);
+
+    const pausesByEntry = await this.pausesByEntry(entries);
+    for (const entry of entries) {
+      const window = windows.get(entry.membershipId)!;
+      window.entries.push(entry);
+      const pauses = pausesByEntry.get(entry.id);
+      if (pauses) window.pausesByEntry.set(entry.id, pauses);
+    }
+    for (const sample of samples) {
+      windows.get(sample.membershipId)!.samples.push({
+        periodStart: sample.periodStart,
+        periodEnd: sample.periodEnd,
+        activePercentage: sample.activePercentage,
+        inputCounts: inputCountsOf(sample),
+      });
+    }
+    return windows;
   }
 
   /**
@@ -2950,7 +3056,7 @@ export class TimeEntriesService {
   private async getActivityFor(
     membershipId: string,
     entries: TimeEntry[],
-  ): Promise<Map<string, { percentage: number; coveredSeconds: number }>> {
+  ): Promise<Map<string, EntryActivity>> {
     if (entries.length === 0) return new Map();
 
     // No end to weight against, so now stands in — which also trims the
@@ -2973,10 +3079,12 @@ export class TimeEntriesService {
     });
     if (samples.length === 0) return new Map();
 
-    const byEntry = new Map<
-      string,
-      { percentage: number; coveredSeconds: number }
-    >();
+    const counted = samples.map((sample) => ({
+      periodStart: sample.periodStart,
+      periodEnd: sample.periodEnd,
+      inputCounts: inputCountsOf(sample),
+    }));
+    const byEntry = new Map<string, EntryActivity>();
     for (const entry of entries) {
       let weighted = 0;
       let coveredMs = 0;
@@ -2992,6 +3100,12 @@ export class TimeEntriesService {
         byEntry.set(entry.id, {
           percentage: Math.round(weighted / coveredMs),
           coveredSeconds: Math.round(coveredMs / 1000),
+          // Shared out the same way: a period half inside the entry gives
+          // it half its counts.
+          inputCounts: inputCountsIn(counted, {
+            start: entry.startedAt.getTime(),
+            end: endMsOf(entry),
+          }),
         });
       }
     }
@@ -3772,7 +3886,7 @@ export class TimeEntriesService {
     viewerMembership: Membership,
     pauseState: PauseState,
     canModifyTime: boolean,
-    activity: { percentage: number; coveredSeconds: number } | undefined,
+    activity: EntryActivity | undefined,
     activityRecorded: boolean,
   ): TimeEntryListItem {
     // To now while still running, less paused and kept-idle time: the
@@ -3804,6 +3918,7 @@ export class TimeEntriesService {
       activePercentage: activity?.percentage ?? null,
       activityCoveredSeconds: activity ? activity.coveredSeconds : null,
       activityMeasurableSeconds: activity ? measurableSeconds : null,
+      inputCounts: activity?.inputCounts ?? null,
       activityRecorded,
       idleSeconds: entry.idleSeconds ?? null,
       durationSeconds: entry.endedAt

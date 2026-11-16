@@ -1,3 +1,5 @@
+import type { InputCounts } from './input-counter';
+
 export const SEGMENT_MS = 10_000;
 export const PERIOD_MS = 600_000; // Ten minutes — sixty segments.
 
@@ -7,6 +9,14 @@ export interface ActivitySample {
   activePercentage: number;
   periodStart: string;
   periodEnd: string;
+  /**
+   * Key presses, mouse clicks and pixels of pointer travel in the period.
+   * All `null` when they couldn't be counted (see `InputCountsUnavailableReason`)
+   * — "not available", never 0. Extra to the percentage, never its source.
+   */
+  keystrokes: number | null;
+  mouseClicks: number | null;
+  mouseMovement: number | null;
 }
 
 export type ActivitySampleSink = (
@@ -16,6 +26,9 @@ export type ActivitySampleSink = (
 export interface ActivitySamplerDeps {
   /** Seconds since the last keyboard or mouse input. */
   readIdleSeconds: () => Promise<number>;
+  /** This period's input counts, starting the next — see `InputCounter.take`.
+   * Absent means counting isn't wired at all, which reports null too. */
+  takeInputCounts?: () => InputCounts | null;
   now?: () => number;
 }
 
@@ -32,9 +45,15 @@ export interface ActivitySamplerDeps {
  *
  * Nothing is emitted until a period closes — there is no meaningful partial
  * answer, unlike the window sampler's per-tick reading.
+ *
+ * Keystroke, click and movement counts ride along on each period when an
+ * `InputCounter` supplies them. They need a global input hook, so they are
+ * extra information beside the percentage, which still comes from idle
+ * alone and keeps working exactly as before wherever counting can't.
  */
 export class ActivitySampler {
   private readonly readIdleSeconds: () => Promise<number>;
+  private readonly takeInputCounts: () => InputCounts | null;
   private readonly now: () => number;
 
   private periodStartMs: number | null = null;
@@ -46,6 +65,7 @@ export class ActivitySampler {
     deps: ActivitySamplerDeps,
   ) {
     this.readIdleSeconds = deps.readIdleSeconds;
+    this.takeInputCounts = deps.takeInputCounts ?? (() => null);
     this.now = deps.now ?? Date.now;
   }
 
@@ -88,12 +108,16 @@ export class ActivitySampler {
     const activePercentage = Math.round(
       (this.activeSegments / SEGMENTS_PER_PERIOD) * 100,
     );
+    const counts = this.takeInputCounts();
     this.reset();
 
     await this.sink({
       activePercentage,
       periodStart: new Date(periodStartMs).toISOString(),
       periodEnd: new Date(endMs).toISOString(),
+      keystrokes: counts?.keystrokes ?? null,
+      mouseClicks: counts?.mouseClicks ?? null,
+      mouseMovement: counts?.mouseMovement ?? null,
     });
   }
 

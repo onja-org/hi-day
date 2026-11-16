@@ -35,6 +35,15 @@ export const ACCESSIBILITY_COPY: PermissionCopy = {
     'Firefox will still show up in your activity, but without the specific page — just "Firefox" — until you allow this in System Settings → Privacy & Security → Accessibility.',
 };
 
+/** The same Accessibility permission, asked for activity counts. */
+export const INPUT_COUNTS_COPY: PermissionCopy = {
+  title: 'Let Hi Day count keystrokes and clicks',
+  unlocks:
+    'Counts how many keys you press, how often you click and how far the mouse moves while your timer runs. Never which keys, what you type or where you click.',
+  deniedGuidance:
+    'Keystroke, click and mouse-movement counts show as "not available" until you allow Hi Day in System Settings → Privacy & Security → Accessibility. Your activity % is recorded either way.',
+};
+
 export const PERMISSION_COPY: Record<SettingsPane, PermissionCopy> = {
   automation: AUTOMATION_COPY,
   accessibility: ACCESSIBILITY_COPY,

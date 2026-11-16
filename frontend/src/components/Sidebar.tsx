@@ -5,12 +5,17 @@ import {
   BookmarkSimple,
   ChartBar,
   ChartLineUp,
+  Detective,
   Clock,
   Desktop,
   FolderSimple,
   Gauge,
   Buildings,
   Gear,
+  Lightbulb,
+  Rows,
+  Sparkle,
+  TrendUp,
   SquaresFour,
   ListChecks,
   Star,
@@ -19,15 +24,18 @@ import {
   UsersThree,
 } from "@phosphor-icons/react";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { settingsHref, visibleSettingsGroups } from "@/lib/settingsNavigation";
 import { useBillingEnabled } from "@/hooks/useBillingEnabled";
 import { useCanViewOthers } from "@/hooks/useCanViewOthers";
 import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
 import { useFavouriteReports } from "@/hooks/useFavouriteReports";
 import { useSavedReports } from "@/hooks/useSavedReports";
+import { insightsNavHref } from "@/lib/insightsNavHref";
+import { parseInsightsPage } from "@/lib/parseInsightsPage";
 import { reportsFor } from "@/lib/reportCatalog";
 import type { Icon } from "@phosphor-icons/react";
+import type { InsightsPage } from "@/types/insights";
 import type { NavEntry, NavLink } from "@/types/navigation";
 
 /** Keyed to match SettingsCards and SettingsHeader, so a group wears the
@@ -53,6 +61,7 @@ export function Sidebar({
   onCloseMobile,
 }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const organisationQuery = useCurrentOrganisation();
   const { favouriteIds } = useFavouriteReports(organisationId);
   const { reports: savedReports } = useSavedReports(String(organisationId));
@@ -73,6 +82,18 @@ export function Sidebar({
     organisationQuery.data?.canViewOwnActivity ?? true;
   // Whoever runs a team sees its members; Devices stays admin-only here.
   const canSeeMembers = useCanViewOthers();
+
+  // Moving between Insights pages keeps whoever and whenever you're viewing.
+  const insightsBase = `/organisations/${organisationId}/insights`;
+  const insightsLink = (page: InsightsPage): Pick<NavLink, "href" | "activePrefix"> => ({
+    href: insightsNavHref(page, insightsBase, pathname, searchParams),
+    // The href may carry a query string, so highlight by path: the page
+    // itself, or the member list while it's on its way to this page.
+    activePrefix:
+      pathname === insightsBase && parseInsightsPage(searchParams.get("page")) === page
+        ? insightsBase
+        : `${insightsBase}/${page}`,
+  });
 
   const teamsLink: NavLink = {
     kind: "link",
@@ -145,6 +166,38 @@ export function Sidebar({
           },
         ]
       : []),
+    {
+      kind: "group",
+      label: "Insights",
+      icon: Lightbulb,
+      // Performance always first, then Highlights, Timeline, Unusual activity.
+      children: [
+        {
+          kind: "link",
+          label: "Performance",
+          ...insightsLink("performance"),
+          icon: TrendUp,
+        },
+        {
+          kind: "link",
+          label: "Highlights",
+          ...insightsLink("highlights"),
+          icon: Sparkle,
+        },
+        {
+          kind: "link",
+          label: "Timeline",
+          ...insightsLink("timeline"),
+          icon: Rows,
+        },
+        {
+          kind: "link",
+          label: "Unusual activity",
+          ...insightsLink("unusual-activity"),
+          icon: Detective,
+        },
+      ],
+    },
     ...(projectsManageable ? [projectManagementEntry] : []),
     {
       kind: "group",

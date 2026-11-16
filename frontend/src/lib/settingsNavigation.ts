@@ -48,6 +48,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { key: "timesheets", label: "Timesheets" },
       { key: "time", label: "Time & tracking" },
       { key: "screenshots", label: "Screenshots" },
+      { key: "work-time-classification", label: "Work time classification" },
     ],
   },
 ];

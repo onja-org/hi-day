@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { MAX_SLOT_HOURS_PAGE_SIZE } from '../services/screenshots.service';
 
 /**
@@ -30,4 +37,11 @@ export class ListScreenshotSlotsDto {
   @Min(1)
   @Max(MAX_SLOT_HOURS_PAGE_SIZE)
   pageSize?: number;
+
+  /** An instant to open on: with no `page`, the page holding its hour is
+   * served, so a link to a moment (e.g. an Unusual activity instance)
+   * lands on it rather than on the day's newest hours. */
+  @IsOptional()
+  @IsISO8601()
+  at?: string;
 }
