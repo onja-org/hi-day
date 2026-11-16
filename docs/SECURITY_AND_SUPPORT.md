@@ -26,6 +26,7 @@ Some other points worth knowing:
 - **Screenshots can't be opened just by guessing an address.** To view one, hiday creates a private link that stops working after 5 minutes.
 - **Screenshots are deleted automatically.** Each company chooses how long to keep them, and hiday removes them after that.
 - **A company can delete its account and all its data.** Data is removed after a waiting period, or straight away if the owner chooses.
+- **The database is backed up regularly.** If something went wrong, the data could be restored from a recent copy.
 - **Self-hosting is an option.** A company that wants complete control can run hiday on its own servers and storage instead of using hiday Cloud.
 
 ## Keeping accounts safe
@@ -92,7 +93,7 @@ Still to decide. We haven't published these yet, so please don't promise them:
 ## Common questions
 
 **Is my data safe?**
-Yes. Screenshots are stored with Wasabi and everything else with Railway. Both are established cloud providers that encrypt stored data and hold recognised security certifications. Passwords are never stored in readable form.
+Yes. Screenshots are stored with Wasabi and everything else with Railway. Both are established cloud providers that encrypt stored data and hold recognised security certifications. The database is also backed up regularly. Passwords are never stored in readable form.
 
 **Can my employer see what I type?**
 No. hiday only records whether the keyboard or mouse was in use, never which keys were pressed.
@@ -111,13 +112,3 @@ Not yet. Both are planned.
 
 **Are you SOC 2 certified?**
 hiday itself isn't. Our database host, Railway, holds SOC 2 Type II, and our storage provider, Wasabi, holds ISO/IEC 27001.
-
-## To confirm before publishing
-
-These are internal notes. Check them before using this guide in public:
-
-- Which country or region the Railway database and the Wasabi storage are in. European customers will ask because of GDPR.
-- Whether database backups are switched on in Railway, and how long they're kept.
-- Who on the team can access live customer data.
-- Whether we offer a data processing agreement (DPA) to customers who need one.
-- How we'd tell customers if there were ever a security incident.
