@@ -12,6 +12,7 @@ Start with the [main README](../README.md) for setup. Domain terms (Organisation
 - [PRD.md](PRD.md): what hiday should do. Each requirement says whether it's built or planned.
 - [TECH_DESIGN.md](TECH_DESIGN.md): how the backend, web console and desktop agent fit together.
 - [CAPABILITIES_FAQ.md](CAPABILITIES_FAQ.md): what the app can and can't do, in plain language.
+- [SECURITY_AND_SUPPORT.md](SECURITY_AND_SUPPORT.md): security, privacy and support in plain language, for marketing and sales.
 - [adr/](adr/README.md): architecture decision records, one per decision, with their status.
 
 ## Website (URL) tracking
