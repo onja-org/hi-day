@@ -1,4 +1,4 @@
-# hiday security and support, in plain words
+# hiday security and support
 
 This guide is for people who talk about hiday: marketing, sales, and anyone answering questions in forums or from customers. It explains how hiday keeps data safe, what it never does, and what isn't built yet, without the technical jargon.
 
