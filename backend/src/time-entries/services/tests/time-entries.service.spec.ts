@@ -4746,6 +4746,43 @@ describe('TimeEntriesService', () => {
       expect(result[0].activePercentage).toBe(50);
     });
 
+    it('adds up the keystrokes, clicks and movement inside the entry', async () => {
+      const result = await listWith(
+        [
+          {
+            ...makeSample('2026-01-05T08:50:00Z', '2026-01-05T09:10:00Z', 50),
+            keystrokes: 200,
+            mouseClicks: 20,
+            mouseMovement: 4000,
+          },
+          {
+            ...makeSample('2026-01-05T09:10:00Z', '2026-01-05T09:20:00Z', 50),
+            keystrokes: 30,
+            mouseClicks: 3,
+            mouseMovement: 600,
+          },
+        ],
+        {},
+      );
+
+      // Half of the first sample falls inside the entry, all of the second.
+      expect(result[0].inputCounts).toEqual({
+        keystrokes: 130,
+        mouseClicks: 13,
+        mouseMovement: 2600,
+      });
+    });
+
+    it('reports counts as null, not 0, when the agent could not count them', async () => {
+      const result = await listWith(
+        [makeSample('2026-01-05T09:00:00Z', '2026-01-05T09:10:00Z', 70)],
+        {},
+      );
+
+      expect(result[0].activePercentage).toBe(70);
+      expect(result[0].inputCounts).toBeNull();
+    });
+
     // Null, not 0 — "nothing was measured" is a different claim from "they
     // did nothing".
     it('reports null when no sample covers the entry', async () => {

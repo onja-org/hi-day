@@ -370,7 +370,7 @@ function RecordActivityPanel() {
       )}
       <OrgDefaultWithOverrides<ActivityTracking>
         title="Record activity"
-        description="Control whether keyboard and mouse activity is measured while a timer is running, giving each tracked period an activity %. Turning it off stops the measurement for that member; activity already recorded stays visible. Idle detection is unaffected."
+        description="Control whether keyboard and mouse activity is measured while a timer is running, giving each tracked period an activity % and keystroke, click and mouse-movement counts (never which keys, what was typed or where). Turning it off stops the measurement for that member; activity already recorded stays visible. Idle detection is unaffected."
         options={ACTIVITY_TRACKING_OPTIONS}
         orgValue={toActivityTracking(organisation.activityTrackingEnabled)}
         onOrgChange={(next) => orgMutation.mutate(next)}

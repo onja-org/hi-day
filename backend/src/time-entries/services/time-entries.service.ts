@@ -27,6 +27,11 @@ import {
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
+import {
+  inputCountsIn,
+  inputCountsOf,
+  InputCounts,
+} from '../../common/input-counts.util';
 import { TimeEntryCoverageWindow } from '../../common/time-entry-coverage.util';
 import type { TimeEntryCursor } from '../../common/time-entry-cursor.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
@@ -199,6 +204,13 @@ export interface TimeEntryListPage {
   nextCursor: TimeEntryCursor | null;
 }
 
+/** What one entry's activity samples add up to. */
+interface EntryActivity {
+  percentage: number;
+  coveredSeconds: number;
+  inputCounts: InputCounts | null;
+}
+
 export interface TimeEntryListItem extends TimeEntrySummary {
   projectName: string | null;
   projectColour: ProjectColour | null;
@@ -230,6 +242,13 @@ export interface TimeEntryListItem extends TimeEntrySummary {
    */
   activityCoveredSeconds: number | null;
   activityMeasurableSeconds: number | null;
+  /**
+   * Keystrokes, mouse clicks and pointer travel over the measured part of
+   * the entry, shared out of each sample by overlap like the percentage.
+   * `null` when nothing measured could count them — "not available", never
+   * 0 (Wayland, a missing macOS permission, a blocked hook, an older agent).
+   */
+  inputCounts: InputCounts | null;
   /**
    * Whether activity is being recorded for this entry's member *right now*
    * (the "Record activity" setting, their override else the org default).
@@ -1304,6 +1323,7 @@ export class TimeEntriesService {
         periodStart: sample.periodStart,
         periodEnd: sample.periodEnd,
         activePercentage: sample.activePercentage,
+        inputCounts: inputCountsOf(sample),
       })),
     };
   }
@@ -1381,6 +1401,7 @@ export class TimeEntriesService {
         periodStart: sample.periodStart,
         periodEnd: sample.periodEnd,
         activePercentage: sample.activePercentage,
+        inputCounts: inputCountsOf(sample),
       });
     }
     return windows;
@@ -3035,7 +3056,7 @@ export class TimeEntriesService {
   private async getActivityFor(
     membershipId: string,
     entries: TimeEntry[],
-  ): Promise<Map<string, { percentage: number; coveredSeconds: number }>> {
+  ): Promise<Map<string, EntryActivity>> {
     if (entries.length === 0) return new Map();
 
     // No end to weight against, so now stands in — which also trims the
@@ -3058,10 +3079,12 @@ export class TimeEntriesService {
     });
     if (samples.length === 0) return new Map();
 
-    const byEntry = new Map<
-      string,
-      { percentage: number; coveredSeconds: number }
-    >();
+    const counted = samples.map((sample) => ({
+      periodStart: sample.periodStart,
+      periodEnd: sample.periodEnd,
+      inputCounts: inputCountsOf(sample),
+    }));
+    const byEntry = new Map<string, EntryActivity>();
     for (const entry of entries) {
       let weighted = 0;
       let coveredMs = 0;
@@ -3077,6 +3100,12 @@ export class TimeEntriesService {
         byEntry.set(entry.id, {
           percentage: Math.round(weighted / coveredMs),
           coveredSeconds: Math.round(coveredMs / 1000),
+          // Shared out the same way: a period half inside the entry gives
+          // it half its counts.
+          inputCounts: inputCountsIn(counted, {
+            start: entry.startedAt.getTime(),
+            end: endMsOf(entry),
+          }),
         });
       }
     }
@@ -3857,7 +3886,7 @@ export class TimeEntriesService {
     viewerMembership: Membership,
     pauseState: PauseState,
     canModifyTime: boolean,
-    activity: { percentage: number; coveredSeconds: number } | undefined,
+    activity: EntryActivity | undefined,
     activityRecorded: boolean,
   ): TimeEntryListItem {
     // To now while still running, less paused and kept-idle time: the
@@ -3889,6 +3918,7 @@ export class TimeEntriesService {
       activePercentage: activity?.percentage ?? null,
       activityCoveredSeconds: activity ? activity.coveredSeconds : null,
       activityMeasurableSeconds: activity ? measurableSeconds : null,
+      inputCounts: activity?.inputCounts ?? null,
       activityRecorded,
       idleSeconds: entry.idleSeconds ?? null,
       durationSeconds: entry.endedAt

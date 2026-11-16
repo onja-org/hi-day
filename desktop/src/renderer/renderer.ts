@@ -1755,12 +1755,13 @@ async function refreshCapturePermissionBanner(): Promise<CapturePermissionStatus
   // No Linux equivalent of macOS's Screen Recording settings pane to open.
   screenRecordingSettingsButton.hidden = status.platform !== "macos";
 
-  // Accessibility serves Firefox's URLs only, so it's asked for only while
-  // URLs are tracked.
+  // Accessibility serves Firefox's URLs while URLs are tracked, and
+  // keystroke/click counts whenever activity is recorded; asked for only
+  // when something will use it.
   accessibilityBanner.hidden = !(
     status.platform === "macos" &&
-    status.appUrlTracking === "apps_urls" &&
-    !status.accessibilityGranted
+    ((status.appUrlTracking === "apps_urls" && !status.accessibilityGranted) ||
+      status.inputCountsNeedAccess)
   );
   accessibilityBannerMessage.textContent = status.accessibilityGuidance;
 

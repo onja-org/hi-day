@@ -1,3 +1,5 @@
+import type { InputCounts } from "./inputCounts";
+
 export type ScreenshotSummaryItem = {
   id: string;
   capturedAt: string;
@@ -44,6 +46,9 @@ export type ScreenshotSlot = {
   activePercentage: number | null;
   /** How much of the slot an activity sample covers. */
   activityMeasuredSeconds: number;
+  /** Keystrokes, clicks and pointer travel in the slot; null when not
+   * available. Optional so an older backend reads as not available. */
+  inputCounts?: InputCounts | null;
   /** Every screenshot in the slot, up to the server's cap of 3 — which is
    * also the most the frequency setting can produce in ten minutes. */
   screenshots: ScreenshotSummaryItem[];
@@ -74,6 +79,8 @@ export type ScreenshotSlotsDay = {
   workedSeconds: number;
   /** Weighted by measured time, so a brief slot cannot swing the day. */
   activePercentage: number | null;
+  /** The whole day's counts; null when none could be counted. */
+  inputCounts?: InputCounts | null;
   /** Whether activity is recorded for this member at all right now. */
   activityRecorded: boolean;
   /** Whether screenshots are being captured for this member at all right

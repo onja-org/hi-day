@@ -1,3 +1,4 @@
+import type { InputCounts } from "./inputCounts";
 import type { ApiResult } from "./api";
 import type { ProjectColour } from "./project";
 
@@ -55,6 +56,9 @@ export type TimeEntryListItem = TimeEntry & {
    */
   activityCoveredSeconds?: number | null;
   activityMeasurableSeconds?: number | null;
+  /** Keystrokes, clicks and pointer travel over the measured part of the
+   * entry; null when not available. */
+  inputCounts?: InputCounts | null;
   /**
    * Seconds at the start of this entry that were idle time the person chose
    * to keep when the desktop app asked. Pairs with `type: "resumed"`, which

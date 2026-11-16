@@ -126,6 +126,8 @@ declare global {
     waylandCaptureIsNoisy: boolean;
     /** macOS + Firefox only — the AX helper that reads Firefox's address bar. */
     accessibilityGranted: boolean;
+    /** macOS only: keystroke/click counts need Accessibility. */
+    inputCountsNeedAccess: boolean;
     /** Sent from main so permission-copy.ts stays the single source of wording. */
     accessibilityGuidance: string;
     waylandUnsupported: boolean;

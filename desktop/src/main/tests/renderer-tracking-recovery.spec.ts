@@ -384,6 +384,7 @@ function launch(scenario: Scenario) {
           platform: 'linux',
           screenRecordingGranted: true,
           accessibilityGranted: true,
+          inputCountsNeedAccess: false,
           accessibilityGuidance: '',
           waylandUnsupported: false,
         }),

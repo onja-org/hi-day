@@ -7,6 +7,7 @@ import { formatElapsed } from "@/lib/formatElapsed";
 import { formatHourLabel } from "@/lib/formatHourLabel";
 import { slotActivityLabel, slotWorkedMinutes } from "@/lib/slotActivityLabel";
 import type { ScreenshotSlot } from "@/types/screenshot";
+import { InputCountsLine } from "./InputCountsLine";
 import { ProjectNameOrUntracked } from "./ProjectNameOrUntracked";
 import { SegmentMeter } from "./SegmentMeter";
 
@@ -102,6 +103,13 @@ function ActivityReading({
   );
 }
 
+/** Beside a measured percentage only: counts say nothing about time that
+ * wasn't measured. */
+function SlotInputCounts({ slot }: { slot: ScreenshotSlot }) {
+  if (slot.activePercentage === null) return null;
+  return <InputCountsLine counts={slot.inputCounts} />;
+}
+
 export function ScreenshotSlotCell({
   organisationId,
   slot,
@@ -142,6 +150,7 @@ export function ScreenshotSlotCell({
           {slotWorkedMinutes(slot)} min
         </span>
         <ActivityReading slot={slot} activityRecorded={activityRecorded} />
+        <SlotInputCounts slot={slot} />
       </div>
     );
   }
@@ -154,6 +163,7 @@ export function ScreenshotSlotCell({
           so underneath they sat at a different height in every column. */}
       <SlotRange slot={slot} />
       <ActivityReading slot={slot} activityRecorded={activityRecorded} />
+      <SlotInputCounts slot={slot} />
       {/* Sized here — it sets none of its own and would inherit body copy.
           Renders nothing when the organisation doesn't track Projects,
           which is why it is used rather than the slot's id directly. */}

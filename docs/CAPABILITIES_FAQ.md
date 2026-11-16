@@ -50,6 +50,7 @@ When hiday can see that a browser is in front but can't read its address, it rec
 | Screenshots | Yes | Needs the desktop app. On a Mac it needs the screen-recording permission. |
 | Website tracking | Yes | Depends on the browser and system (see above). |
 | Activity level | Yes | Active vs. idle, never what was typed. |
+| Keystroke, click and mouse counts | Partly | Counts only, never which keys or where. Not available on Linux Wayland, or on a Mac until Accessibility is allowed. |
 | Location / GPS | No | Needs a phone app, which is planned for a later release. |
 
 ## How reliable is it, and why
@@ -67,6 +68,7 @@ Because the desktop app runs all day, it also restarts itself after a crash and 
 | Apps and windows | Electron + @paymoapp/active-window | High | The helper must match the app's Electron version. |
 | Screenshots | Electron's own screen capture | High | Needs the macOS screen-recording permission. |
 | Activity level | Electron's idle timer | High | Measures whether there was input, not how much. Same Linux limits as idle detection. |
+| Keystroke, click and mouse counts | uiohook-napi (global input hook) | Medium | Wayland blocks it, macOS needs Accessibility, and antivirus may refuse it on Windows; each shows as "not available". Must be re-tested on real machines after Electron updates. |
 | Website tracking | Small helper per system (C# on Windows, TypeScript on Mac and Linux) | Medium | Depends on each browser's accessibility support and on permissions. |
 
 ## Will it cope with lots of people at once?

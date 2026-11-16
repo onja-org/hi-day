@@ -19,6 +19,7 @@ This only happens in the desktop app, only while a timer is running, and each pa
 - Websites: the address of the page in front, read straight from the browser. No browser extension is needed.
 - Screenshots at a set interval, with a set retention period. Admins choose whether people can delete their own.
 - Activity level: the share of each 10 minutes with keyboard or mouse use. It never records what was typed.
+- Keystroke, click and mouse-movement counts per 10 minutes, beside the activity level. Counts only: never which keys, what was typed or where the mouse clicked. Shown as "not available" where the computer doesn't allow counting.
 
 ## Teams and projects
 
