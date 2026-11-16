@@ -14,6 +14,7 @@ import {
   Gear,
   Lightbulb,
   Rows,
+  Sparkle,
   TrendUp,
   SquaresFour,
   ListChecks,
@@ -176,6 +177,12 @@ export function Sidebar({
           label: "Performance",
           ...insightsLink("performance"),
           icon: TrendUp,
+        },
+        {
+          kind: "link",
+          label: "Highlights",
+          ...insightsLink("highlights"),
+          icon: Sparkle,
         },
         {
           kind: "link",

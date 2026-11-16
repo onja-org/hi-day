@@ -37,7 +37,9 @@ export function useSetWorkLabel(organisationId: string) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey });
+      // Core work on Performance and Highlights is read through the labels.
       void queryClient.invalidateQueries({ queryKey: ["insights", "performance"] });
+      void queryClient.invalidateQueries({ queryKey: ["insights", "highlights"] });
     },
   });
 }

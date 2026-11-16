@@ -92,6 +92,8 @@ export type ComparisonRow = {
   display: string;
   /** The member's own row, drawn in the brand colour; averages are muted. */
   highlight?: boolean;
+  /** Colours a highlighted bar by direction instead: a rise in light volt, a drop in punch. */
+  tone?: "rise" | "drop";
 };
 
 /** What every Performance card is rendered from. */
@@ -102,7 +104,7 @@ export type PerformanceCardInput = {
 };
 
 /** The per-member Insights pages, as they appear in URLs. */
-export type InsightsPage = "timeline" | "performance" | "unusual-activity";
+export type InsightsPage = "timeline" | "performance" | "highlights" | "unusual-activity";
 
 /** Where an Insights link points: one member's page, or the member list on its way to a page. */
 export type InsightsDestination =
