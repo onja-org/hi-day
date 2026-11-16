@@ -26,7 +26,7 @@ Some other points worth knowing:
 - **Screenshots can't be opened just by guessing an address.** To view one, hiday creates a private link that stops working after 5 minutes.
 - **Screenshots are deleted automatically.** Each company chooses how long to keep them, and hiday removes them after that.
 - **A company can delete its account and all its data.** Data is removed after a waiting period, or straight away if the owner chooses.
-- **The database is backed up regularly.** If something went wrong, the data could be restored from a recent copy.
+- **The database is backed up continuously.** It can be restored to any point in time, so if something went wrong we could bring the data back exactly as it was at a chosen moment, not just to the last daily copy.
 - **Self-hosting is an option.** A company that wants complete control can run hiday on its own servers and storage instead of using hiday Cloud.
 
 ## Keeping accounts safe
@@ -93,7 +93,7 @@ Still to decide. We haven't published these yet, so please don't promise them:
 ## Common questions
 
 **Is my data safe?**
-Yes. Screenshots are stored with Wasabi and everything else with Railway. Both are established cloud providers that encrypt stored data and hold recognised security certifications. The database is also backed up regularly. Passwords are never stored in readable form.
+Yes. Screenshots are stored with Wasabi and everything else with Railway. Both are established cloud providers that encrypt stored data and hold recognised security certifications. The database is also backed up continuously and can be restored to any point in time. Passwords are never stored in readable form.
 
 **Can my employer see what I type?**
 No. hiday only records whether the keyboard or mouse was in use, never which keys were pressed.
