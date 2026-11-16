@@ -126,6 +126,8 @@ export interface CapturePermissionStatus {
   waylandCaptureIsNoisy: boolean;
   /** macOS + Firefox only — see main.ts's CapturePermissionStatus. */
   accessibilityGranted: boolean;
+  /** macOS only: keystroke/click counts need Accessibility — see main.ts. */
+  inputCountsNeedAccess: boolean;
   accessibilityGuidance: string;
   waylandUnsupported: boolean;
 }

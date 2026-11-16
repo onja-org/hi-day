@@ -2,6 +2,7 @@
 
 import { formatElapsed } from "@/lib/formatElapsed";
 import type { ScreenshotSlotsDay } from "@/types/screenshot";
+import { InputCountsLine } from "./InputCountsLine";
 
 /** Worked time is the union across the day; activity is weighted by
  * measured time so a two-minute slot cannot swing it. */
@@ -29,6 +30,16 @@ export function ScreenshotSlotsSummary({ day }: { day: ScreenshotSlotsDay }) {
           )}
         </dd>
       </div>
+      {day.activePercentage !== null && (
+        <div className="flex flex-col gap-1">
+          <dt className="text-xs font-semibold tracking-wider text-slate-900/60 uppercase">
+            Keys · clicks · movement
+          </dt>
+          <dd>
+            <InputCountsLine counts={day.inputCounts} />
+          </dd>
+        </div>
+      )}
       {!day.activityRecorded && (
         <p className="self-center text-xs text-slate-900/60">
           Record activity is off for this member, so no new activity is

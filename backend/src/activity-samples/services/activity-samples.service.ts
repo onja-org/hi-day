@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { inputCountsOf } from '../../common/input-counts.util';
 import { ActivitySample } from '../../database/entities/activity-sample.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
@@ -67,16 +68,26 @@ export class ActivitySamplesService {
     }
 
     await this.activitySamples.save(
-      accepted.map((sample) =>
-        this.activitySamples.create({
+      accepted.map((sample) => {
+        // All three or none: a half-counted period would read as a real
+        // zero for whichever count is missing.
+        const counts = inputCountsOf({
+          keystrokes: sample.keystrokes ?? null,
+          mouseClicks: sample.mouseClicks ?? null,
+          mouseMovement: sample.mouseMovement ?? null,
+        });
+        return this.activitySamples.create({
           organisationId,
           membershipId: membership.id,
           deviceId,
           activePercentage: sample.activePercentage,
           periodStart: new Date(sample.periodStart),
           periodEnd: new Date(sample.periodEnd),
-        }),
-      ),
+          keystrokes: counts?.keystrokes ?? null,
+          mouseClicks: counts?.mouseClicks ?? null,
+          mouseMovement: counts?.mouseMovement ?? null,
+        });
+      }),
     );
   }
 }

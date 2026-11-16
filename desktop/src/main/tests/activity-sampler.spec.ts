@@ -5,9 +5,13 @@ import {
   SEGMENT_MS,
 } from '../activity-sampler';
 import type { ActivitySample } from '../activity-sampler';
+import type { InputCounts } from '../input-counter';
 
 describe('ActivitySampler', () => {
-  function makeSampler(idleSecondsPerTick: number[]) {
+  function makeSampler(
+    idleSecondsPerTick: number[],
+    takeInputCounts?: () => InputCounts | null,
+  ) {
     const samples: ActivitySample[] = [];
     let clock = Date.parse('2026-09-08T09:00:00.000Z');
     let tick = 0;
@@ -19,6 +23,7 @@ describe('ActivitySampler', () => {
       {
         readIdleSeconds: () =>
           Promise.resolve(idleSecondsPerTick[tick++] ?? 0),
+        takeInputCounts,
         now: () => clock,
       },
     );
@@ -103,5 +108,60 @@ describe('ActivitySampler', () => {
     await sampler.flush();
 
     expect(samples).toEqual([]);
+  });
+
+  it('sends the period\'s keystroke, click and movement counts beside the percentage', async () => {
+    const { samples, advance } = makeSampler(
+      (Array(SEGMENTS) as number[]).fill(0),
+      () => ({ keystrokes: 412, mouseClicks: 37, mouseMovement: 18400 }),
+    );
+
+    await advance(SEGMENTS);
+
+    expect(samples[0]).toEqual(
+      expect.objectContaining({
+        activePercentage: 100,
+        keystrokes: 412,
+        mouseClicks: 37,
+        mouseMovement: 18400,
+      }),
+    );
+  });
+
+  // The percentage is read off idle and must not change because counting
+  // couldn't run.
+  it('sends null counts, and the same percentage, when counting is not available', async () => {
+    const { samples, advance } = makeSampler(
+      (Array(SEGMENTS) as number[]).fill(0),
+      () => null,
+    );
+
+    await advance(SEGMENTS);
+
+    expect(samples[0]).toEqual(
+      expect.objectContaining({
+        activePercentage: 100,
+        keystrokes: null,
+        mouseClicks: null,
+        mouseMovement: null,
+      }),
+    );
+  });
+
+  it('hands over the counts when a stopped timer flushes a part-period', async () => {
+    let taken = 0;
+    const { sampler, samples, advance } = makeSampler(
+      (Array(SEGMENTS) as number[]).fill(0),
+      () => {
+        taken += 1;
+        return { keystrokes: 5, mouseClicks: 1, mouseMovement: 40 };
+      },
+    );
+
+    await advance(3);
+    await sampler.flush();
+
+    expect(taken).toBe(1);
+    expect(samples[0].keystrokes).toBe(5);
   });
 });

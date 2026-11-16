@@ -29,6 +29,7 @@ import { TeamMembership } from './entities/team-membership.entity';
 import { TimeEntry } from './entities/time-entry.entity';
 import { TimeEntryPause } from './entities/time-entry-pause.entity';
 import { TimesheetReason } from './entities/timesheet-reason.entity';
+import { WorkClassification } from './entities/work-classification.entity';
 import { UrlSession } from './entities/url-session.entity';
 import { User } from './entities/user.entity';
 
@@ -63,6 +64,7 @@ import { User } from './entities/user.entity';
           TimeEntry,
           TimeEntryPause,
           TimesheetReason,
+          WorkClassification,
           UrlSession,
           AppEvent,
           Screenshot,

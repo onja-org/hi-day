@@ -1,3 +1,4 @@
+import type { InputCounts } from '../common/input-counts.util';
 import type { Interval } from '../common/time-entry-union.util';
 import { mergeIntervals } from '../common/time-entry-union.util';
 
@@ -9,6 +10,8 @@ export interface SamplePeriod {
   periodStart: Date;
   periodEnd: Date;
   activePercentage: number;
+  /** Keystrokes, clicks and pointer travel; `null`/absent when not counted. */
+  inputCounts?: InputCounts | null;
 }
 
 /** Tracked time, pauses already netted out. */

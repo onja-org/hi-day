@@ -53,8 +53,74 @@ describe('ActivitySamplesService', () => {
         activePercentage: 75,
         periodStart: new Date(SAMPLE.periodStart),
         periodEnd: new Date(SAMPLE.periodEnd),
+        keystrokes: null,
+        mouseClicks: null,
+        mouseMovement: null,
       },
     ]);
+  });
+
+  it('stores the keystroke, click and movement counts beside the activity %', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(),
+    );
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [
+      { ...SAMPLE, keystrokes: 412, mouseClicks: 37, mouseMovement: 18400 },
+    ]);
+
+    expect(save).toHaveBeenCalledWith([
+      expect.objectContaining({
+        activePercentage: 75,
+        keystrokes: 412,
+        mouseClicks: 37,
+        mouseMovement: 18400,
+      }),
+    ]);
+  });
+
+  it('keeps counts the agent could not collect as not available, never 0', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(),
+    );
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [
+      { ...SAMPLE, keystrokes: null, mouseClicks: null, mouseMovement: null },
+      // A partial set is treated as not counted, so no count reads as 0.
+      { ...SAMPLE, keystrokes: 5, mouseClicks: null, mouseMovement: 10 },
+    ]);
+
+    const [[saved]] = save.mock.calls as [ActivitySample[]][];
+    for (const sample of saved) {
+      expect(sample).toEqual(
+        expect.objectContaining({
+          keystrokes: null,
+          mouseClicks: null,
+          mouseMovement: null,
+        }),
+      );
+    }
+  });
+
+  it('drops counts with the rest of the sample while Record activity is off', async () => {
+    const { repo, save } = makeActivitySamplesRepo();
+    const service = new ActivitySamplesService(
+      repo,
+      makeMembershipsRepo({ id: 'membership-1' }),
+      makeOrganisationsService(false),
+    );
+
+    await service.recordBatch('org-1', 'user-1', 'device-1', [
+      { ...SAMPLE, keystrokes: 412, mouseClicks: 37, mouseMovement: 18400 },
+    ]);
+
+    expect(save).not.toHaveBeenCalled();
   });
 
   // A shared machine's Device row reflects whoever signed in last, so the

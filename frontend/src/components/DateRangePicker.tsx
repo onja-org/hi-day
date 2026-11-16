@@ -34,6 +34,10 @@ type DateRangePickerProps = {
    * denotes are both read in it, not in the viewer's own. */
   zone: string;
   onChange: (range: DateRange, preset: DateRangePreset | null) => void;
+  /** Which edge of the trigger the popover lines up with. "end" is for a
+   * picker at the right of its row, so the popover opens leftwards instead
+   * of running off the screen; on phones, where rows stack, it stays "start". */
+  align?: "start" | "end";
 };
 
 /** The calendar days a range denotes in `zone`, as the local Dates the
@@ -66,6 +70,7 @@ export function DateRangePicker({
   defaultPreset,
   zone,
   onChange,
+  align = "start",
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RangeSelection>({
@@ -179,7 +184,10 @@ export function DateRangePicker({
         <div
           role="dialog"
           aria-label="Choose a date range"
-          className="absolute top-full left-0 z-20 mt-2 flex flex-col overflow-hidden rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm sm:flex-row"
+          className={clsx(
+            "absolute top-full left-0 z-20 mt-2 flex flex-col overflow-hidden rounded-brand-sm border-2 border-ink bg-white shadow-hard-sm sm:flex-row",
+            align === "end" && "md:right-0 md:left-auto",
+          )}
         >
           <div className="flex flex-col gap-4 p-3 sm:w-44">
             <DateRangePresetList value={draftPreset} onSelect={selectPreset} />
@@ -200,7 +208,10 @@ export function DateRangePicker({
               </button>
             </div>
           </div>
-          <div className="flex flex-col border-t border-input-border md:flex-row sm:border-t-0 sm:border-l">
+          {/* Side by side only once there's room for both months (about
+              760px with the presets) beside the sidebar; stacked below
+              that, so the popover never runs off the screen. */}
+          <div className="flex flex-col border-t border-input-border xl:flex-row sm:border-t-0 sm:border-l">
             <MonthCalendar
               month={viewMonth}
               selection={draft}
@@ -211,7 +222,7 @@ export function DateRangePicker({
               onNext={nextMonth}
               nextDisabled={nextDisabled}
             />
-            <div className="border-t border-input-border md:border-t-0 md:border-l">
+            <div className="border-t border-input-border xl:border-t-0 xl:border-l">
               <MonthCalendar
                 month={addMonths(viewMonth, 1)}
                 selection={draft}

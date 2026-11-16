@@ -28,6 +28,8 @@ import { ApiClient, isTransportFailure } from "./api-client";
 import { resolveApiBaseUrl } from "./api-base-url";
 import { ServerUrlSetting } from "./server-url";
 import { ActivitySampler, SEGMENT_MS } from "./activity-sampler";
+import { InputCounter } from "./input-counter";
+import { inputHookBlocker, loadUiohook } from "./input-hook";
 import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore, recentProjectIds } from "./auth-store";
@@ -124,6 +126,7 @@ import { startOfDay } from "./day-boundary";
 import type { BrowserRestartPrompt } from "../preload/preload";
 import {
   ACCESSIBILITY_COPY,
+  INPUT_COUNTS_COPY,
   SETTINGS_DEEP_LINKS,
 } from "./resolvers/darwin/permission-copy";
 import { InstalledBrowserDetector } from "./resolvers/darwin/installed-browsers";
@@ -284,6 +287,12 @@ interface CapturePermissionStatus {
    * nothing surfaced. `true` elsewhere so no other platform shows the banner.
    */
   accessibilityGranted: boolean;
+  /**
+   * macOS only: activity is recorded but this app lacks Accessibility, so
+   * keystroke, click and movement counts can't be collected and show "not
+   * available". Asked for with the same banner as Firefox's URLs.
+   */
+  inputCountsNeedAccess: boolean;
   /**
    * Sent rather than duplicated: the renderer cannot import main-process modules
    * (tsconfig.renderer.json pins rootDir to src/renderer), and permission-copy.ts
@@ -1362,8 +1371,22 @@ async function registerIpcHandlers(): Promise<void> {
     }
   }, (line) => console.log(line));
 
+  // Keystroke, click and movement counts — a global input hook, unlike the
+  // percentage, so where one can't run (Wayland, no macOS permission, a
+  // refused hook) periods carry null counts and the percentage is untouched.
+  const inputCounter = new InputCounter({
+    blocker: () =>
+      inputHookBlocker({
+        platform: process.platform,
+        isWayland: isWaylandSession(),
+        macInputTrusted: () => systemPreferences.isTrustedAccessibilityClient(false),
+      }),
+    loadHook: () => loadUiohook((line) => console.log(line)),
+    log: (line) => console.log(line),
+  });
   const activitySampler = new ActivitySampler(activitySampleUploader.enqueue, {
     readIdleSeconds,
+    takeInputCounts: () => inputCounter.take(),
   });
   let activityTicker: ReturnType<typeof setInterval> | null = null;
   let idleSampleTicker: ReturnType<typeof setInterval> | null = null;
@@ -1453,13 +1476,23 @@ async function registerIpcHandlers(): Promise<void> {
     // Rides neither app-capture setting — activity is not an app, a URL or
     // a window title — but does ride "Record activity".
     if (timerRunning && activityTrackingEnabled) {
-      activityTicker ??= setInterval(() => void activitySampler.tick(), SEGMENT_MS);
+      if (!activityTicker) {
+        // Counting follows Record activity exactly: nothing is counted
+        // unless a timer runs with it on.
+        inputCounter.start();
+        activityTicker = setInterval(() => void activitySampler.tick(), SEGMENT_MS);
+      }
     } else if (activityTicker) {
       clearInterval(activityTicker);
       activityTicker = null;
       // Emit the part-finished period rather than discarding minutes that
-      // were measured while recording was still on.
-      void activitySampler.flush().then(() => activitySampleUploader.flush());
+      // were measured while recording was still on. The flush takes the
+      // counts synchronously, before its first await, so stopping the hook
+      // straight after loses none and can't race a timer restarted
+      // meanwhile.
+      const flushed = activitySampler.flush();
+      inputCounter.stop();
+      void flushed.then(() => activitySampleUploader.flush());
     }
 
     // Deliberately NOT gated on `activityTrackingEnabled`, and kept apart
@@ -2716,6 +2749,12 @@ async function registerIpcHandlers(): Promise<void> {
       // (see recomputeSampling above) rather than issuing a second, redundant
       // GET /device/capture-settings on every renderer status check.
       const platform = toDevicePlatform(process.platform);
+      // Counting keystrokes and clicks needs Accessibility on macOS whenever
+      // activity is recorded — not only for Firefox, like the URL case.
+      const inputCountsNeedAccess =
+        platform === "macos" &&
+        activityTrackingEnabled &&
+        !systemPreferences.isTrustedAccessibilityClient(false);
 
       return {
         ok: true,
@@ -2758,7 +2797,10 @@ async function registerIpcHandlers(): Promise<void> {
               ? systemPreferences.isTrustedAccessibilityClient(false) ||
                 !(await isFirefoxInstalled())
               : true,
-          accessibilityGuidance: ACCESSIBILITY_COPY.deniedGuidance,
+          inputCountsNeedAccess,
+          accessibilityGuidance: inputCountsNeedAccess
+            ? INPUT_COUNTS_COPY.deniedGuidance
+            : ACCESSIBILITY_COPY.deniedGuidance,
         },
       };
     },

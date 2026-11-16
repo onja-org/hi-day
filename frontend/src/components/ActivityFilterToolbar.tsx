@@ -8,6 +8,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
 import { getDayRange } from "@/lib/getDayRange";
 import { DayNavigator } from "@/components/DayNavigator";
+import { SCREENSHOT_HIGHLIGHT_KEYS } from "@/lib/parseScreenshotHighlight";
 import { Label } from "@/components/ui/form/Label";
 import { SearchableSelect } from "@/components/SearchableSelect";
 
@@ -31,6 +32,8 @@ export function ActivityFilterToolbar({
 
   function updateParams(patch: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
+    // A highlighted stretch belongs to the day and member it was linked for.
+    for (const key of SCREENSHOT_HIGHLIGHT_KEYS) params.delete(key);
     for (const [key, value] of Object.entries(patch)) {
       if (value === null || value === "") {
         params.delete(key);

@@ -126,6 +126,11 @@ export function DisclosureDraftForm() {
           rows={10}
           required
         />
+        <p className="text-sm text-slate-900/70">
+          Say what is collected. With Record activity on, that includes an activity % and keystroke, click
+          and mouse-movement counts for every 10 minutes of tracked time. Counts only: never which keys,
+          what was typed or where the mouse clicked.
+        </p>
 
         <div className="flex gap-3">
           <button
