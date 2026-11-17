@@ -308,6 +308,39 @@ describe('DashboardService', () => {
     ]);
   });
 
+  it('compares against last week with its Devices merged too', async () => {
+    const thisWeekEntries = [
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 12, 0, 0), // 3h
+      }),
+    ];
+    // Last week 09:00-11:00 on two Devices at once: two hours, not four.
+    const lastWeekSameSpanEntries = [
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2025, 11, 31, 9, 0, 0),
+        endedAt: new Date(2025, 11, 31, 11, 0, 0),
+      }),
+      entry({
+        projectId: 'p-1',
+        startedAt: new Date(2025, 11, 31, 9, 0, 0),
+        endedAt: new Date(2025, 11, 31, 11, 0, 0),
+      }),
+    ];
+    const service = new DashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, [], lastWeekSameSpanEntries),
+      makePausesRepo(),
+      makeMembershipsRepo(),
+      makeOrganisationsService(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(summary.workedThisWeekDeltaSeconds).toBe(1 * 3600);
+  });
+
   it('rejects when the caller has no active membership in the organisation', async () => {
     const service = new DashboardService(
       makeTimeEntriesRepo([], [], []),

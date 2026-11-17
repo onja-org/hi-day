@@ -4,11 +4,11 @@ import { Between, In, IsNull, Repository } from 'typeorm';
 import { SAMPLE_INTERVAL_SECONDS } from '../../app-events/services/app-events.service';
 import { calendarWeekAt, dateKeyInZone } from '../../common/calendar-week.util';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
+import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
-  buildPauseStates,
-  computeActiveSeconds,
-  PauseState,
-} from '../../common/time-entry-active-seconds.util';
+  groupPausesByEntry,
+  unionActiveSeconds,
+} from '../../common/time-entry-union.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
@@ -193,55 +193,73 @@ export class TeamDashboardService {
         }),
       ]);
 
-    const pauseStates = await this.getPauseStatesFor([
-      ...thisWeekEntries,
-      ...lastWeekSameSpanEntries,
-    ]);
+    const pausesByEntry = await this.getPausesFor(
+      membershipIds,
+      lastWeekStart,
+      weekEnd,
+    );
 
-    const projectSeconds = new Map<string, DashboardProjectTime>();
+    // Each member's hours are the *union* of their entries, not the sum: a
+    // Membership may track on several Devices at once, and shared wall-clock
+    // time counts once (ADR-0022) — the same figures their own dashboard
+    // shows. Different people's time does add up, so the team's totals are
+    // the sum of those per-member unions.
+    const thisWeekByMember = groupByMember(thisWeekEntries);
     const memberTodaySeconds = new Map<string, number>();
     const memberWeekSeconds = new Map<string, number>();
+    const projectSeconds = new Map<string, DashboardProjectTime>();
     let workedThisWeekSeconds = 0;
 
-    for (const entry of thisWeekEntries) {
-      const seconds = computeActiveSeconds(entry, pauseStates, now);
-      workedThisWeekSeconds += seconds;
-      memberWeekSeconds.set(
-        entry.membershipId,
-        (memberWeekSeconds.get(entry.membershipId) ?? 0) + seconds,
+    for (const [membershipId, entries] of thisWeekByMember) {
+      const weekSeconds = unionActiveSeconds(entries, pausesByEntry, now);
+      memberWeekSeconds.set(membershipId, weekSeconds);
+      workedThisWeekSeconds += weekSeconds;
+      memberTodaySeconds.set(
+        membershipId,
+        unionActiveSeconds(
+          entries.filter(
+            (entry) => dateKeyInZone(entry.startedAt, timezone) === todayKey,
+          ),
+          pausesByEntry,
+          now,
+        ),
       );
-      if (dateKeyInZone(entry.startedAt, timezone) === todayKey) {
-        memberTodaySeconds.set(
-          entry.membershipId,
-          (memberTodaySeconds.get(entry.membershipId) ?? 0) + seconds,
-        );
+
+      // Attributed within each member, then added across members: two of
+      // one person's Devices on different Projects at once credit the shared
+      // stretch to one of them, so the Projects never total more than the
+      // hours above them (ADR-0022, as on the personal dashboard).
+      const attribution = attributeProjectSeconds(entries, pausesByEntry, now);
+      for (const entry of entries) {
+        if (entry.projectId === null || !entry.project) continue;
+        if (!projectSeconds.has(entry.projectId)) {
+          projectSeconds.set(entry.projectId, {
+            projectId: entry.projectId,
+            projectName: entry.project.name,
+            projectColour: entry.project.colour,
+            seconds: 0,
+          });
+        }
       }
-
-      if (entry.projectId === null || !entry.project) continue;
-
-      const existingProject = projectSeconds.get(entry.projectId);
-      if (existingProject) {
-        existingProject.seconds += seconds;
-      } else {
-        projectSeconds.set(entry.projectId, {
-          projectId: entry.projectId,
-          projectName: entry.project.name,
-          projectColour: entry.project.colour,
-          seconds,
-        });
+      for (const [projectId, seconds] of attribution) {
+        const total = projectSeconds.get(projectId);
+        if (total) total.seconds += seconds;
       }
     }
 
     let workedLastWeekSameSpanSeconds = 0;
-    const lastWeekProjectIds = new Set<string>();
-    for (const entry of lastWeekSameSpanEntries) {
-      workedLastWeekSameSpanSeconds += computeActiveSeconds(
-        entry,
-        pauseStates,
+    for (const entries of groupByMember(lastWeekSameSpanEntries).values()) {
+      workedLastWeekSameSpanSeconds += unionActiveSeconds(
+        entries,
+        pausesByEntry,
         now,
       );
-      if (entry.projectId !== null) lastWeekProjectIds.add(entry.projectId);
     }
+    const lastWeekProjectIds = new Set(
+      lastWeekSameSpanEntries.flatMap((entry) =>
+        entry.projectId === null ? [] : [entry.projectId],
+      ),
+    );
 
     const runningByMembershipId = new Map(
       runningEntries.map((entry) => [entry.membershipId, entry]),
@@ -421,17 +439,35 @@ export class TeamDashboardService {
       .slice(0, APPS_AND_SITES_LIMIT);
   }
 
-  private async getPauseStatesFor(
-    entries: TimeEntry[],
-  ): Promise<Map<string, PauseState>> {
-    const timeEntryIds = entries.map((entry) => entry.id);
-    if (timeEntryIds.length === 0) {
-      return new Map();
-    }
-
-    const pauses = await this.timeEntryPauses.find({
-      where: { timeEntryId: In(timeEntryIds) },
-    });
-    return buildPauseStates(pauses);
+  /**
+   * The pauses of every scoped member's entries started in [from, to],
+   * found by joining to their entries rather than listing entry ids: one
+   * bind parameter per entry ran past Postgres's 65,535 limit for a large
+   * organisation's fortnight of entries. A few pauses from entries outside
+   * the dashboard's windows may come back too; nothing looks them up.
+   */
+  private async getPausesFor(
+    membershipIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, TimeEntryPause[]>> {
+    const pauses = await this.timeEntryPauses
+      .createQueryBuilder('pause')
+      .innerJoin('pause.timeEntry', 'entry')
+      .where('entry.membershipId IN (:...membershipIds)', { membershipIds })
+      .andWhere('entry.startedAt BETWEEN :from AND :to', { from, to })
+      .getMany();
+    return groupPausesByEntry(pauses);
   }
+}
+
+function groupByMember(entries: TimeEntry[]): Map<string, TimeEntry[]> {
+  const byMember = new Map<string, TimeEntry[]>();
+  for (const entry of entries) {
+    byMember.set(entry.membershipId, [
+      ...(byMember.get(entry.membershipId) ?? []),
+      entry,
+    ]);
+  }
+  return byMember;
 }
