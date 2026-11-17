@@ -22,10 +22,12 @@ import {
   MoreThan,
   MoreThanOrEqual,
   Not,
+  Raw,
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
+import { isValidTimezone } from '../../common/timezone.util';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import {
   inputCountsIn,
@@ -1429,28 +1431,49 @@ export class TimeEntriesService {
     await this.closeWebEntriesThatWentAway();
 
     const now = new Date();
-    // The widest possible boundary, so the query cannot miss an entry whose
-    // own Organisation sits in a later timezone; each is then split against
-    // its own.
-    const earliestTodayStart = this.startOfDayInZone(now, 'UTC');
+    // One pass per timezone, each against that zone's own midnight. A single
+    // cut-off for everyone can't work: UTC's midnight came 8 hours before
+    // Los Angeles's, so an entry started there at 21:00 wasn't picked up
+    // until the *next* UTC midnight — split 16 hours late, with the daily
+    // limit and every per-day total wrong until then. There are only ever a
+    // handful of zones, and each query selects only entries that really
+    // cross their organisation's midnight, oldest first, so a batch is never
+    // spent on entries that aren't due.
+    for (const configured of await this.timezonesInUse()) {
+      // A zone Intl can't read would throw and stop every other zone's
+      // split; UTC is what such an Organisation's days were cut at anyway.
+      const zone = isValidTimezone(configured) ? configured : 'UTC';
+      const todayStart = this.startOfDayInZone(now, zone);
+      const running = await this.timeEntries.find({
+        where: {
+          endedAt: IsNull(),
+          startedAt: LessThan(todayStart),
+          organisationId: Raw(
+            (column) =>
+              `${column} IN (SELECT "id" FROM "organisations" WHERE COALESCE("settings"->>'timezone', 'UTC') = :zone)`,
+            { zone: configured },
+          ),
+        },
+        order: { startedAt: 'ASC' },
+        take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
+      });
 
-    const running = await this.timeEntries.find({
-      where: { endedAt: IsNull(), startedAt: LessThan(earliestTodayStart) },
-      take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
-    });
-
-    const zonesThisBatch = new Map<string, string>();
-    for (const entry of running) {
-      const zone = await this.organisationTimezone(
-        entry.organisationId,
-        zonesThisBatch,
-      );
-      await this.splitAcrossDayBoundaries(
-        entry.id,
-        this.startOfDayInZone(now, zone),
-        zone,
-      );
+      for (const entry of running) {
+        await this.splitAcrossDayBoundaries(entry.id, todayStart, zone);
+      }
     }
+  }
+
+  /** Every timezone an Organisation is set to, as stored — UTC for none. */
+  private async timezonesInUse(): Promise<string[]> {
+    const rows = await this.organisations
+      .createQueryBuilder('organisation')
+      .select(
+        "DISTINCT COALESCE(organisation.settings->>'timezone', 'UTC')",
+        'zone',
+      )
+      .getRawMany<{ zone: string }>();
+    return rows.map((row) => row.zone);
   }
 
   /**
