@@ -56,6 +56,12 @@ export class InviteLink {
   @Column({ default: true })
   enabled: boolean;
 
+  /** Whoever made the link agreed to extra seats being charged as people
+   * join through it, if the seats are full by then (ADR 0033). Copied onto
+   * each invitation the link sends. */
+  @Column({ default: false })
+  seatChargeConsent: boolean;
+
   /**
    * Kept in plain text (unlike invitation tokens) so the link can be copied
    * again later. Acceptable because the token alone never grants

@@ -58,6 +58,8 @@ export function InviteMemberForm({ organisationId }: InviteMemberFormProps) {
           teamIds: variables.teamIds,
           projectIds: variables.projectIds,
         })),
+        // Only a consent the form actually asked for and got.
+        { seatChargeConsent: consent.required && consent.agreed },
       ),
     onSuccess: (result) => {
       if (result.ok) {

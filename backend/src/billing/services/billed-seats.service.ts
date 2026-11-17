@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Organisation } from '../../database/entities/organisation.entity';
@@ -41,6 +41,7 @@ export class BilledSeatsService {
     @InjectRepository(Organisation)
     private readonly organisations: Repository<Organisation>,
     private readonly stripeService: StripeService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -90,8 +91,9 @@ export class BilledSeatsService {
       { purchasedSeats: seats },
     );
     // Pushes the resulting `max(purchased, members)` to Stripe, with the
-    // proration each cycle needs — see `pushQuantity`.
-    await this.syncToProvider(organisationId);
+    // proration each cycle needs — see `pushQuantity`. Buying seats is the
+    // admin's own act on the Billing page, so a rise is charged at once.
+    await this.syncToProvider(organisationId, { chargeNow: true });
     return this.forOrganisation(organisationId);
   }
 
@@ -112,26 +114,66 @@ export class BilledSeatsService {
    * lowered the bill, against "Deactivated Memberships are not billed". Left
    * alone, a departure takes the quantity back down to the purchase.
    *
+   * A rise is charged on the spot only with `chargeNow` — an admin's
+   * consent, given in the invite forms or by buying seats (ADR 0033).
+   * Without it the rise is billed on the next invoice, still prorated from
+   * today, so nobody is charged at once for a seat they did not agree to,
+   * and the seat is not free either. An invitation sent while seats were
+   * still free, and accepted after they filled, is the common case.
+   *
    * Never throws. A seat count that failed to reach Stripe is a billing
    * discrepancy worth logging and retrying; it is not a reason to fail the
    * invitation someone just accepted.
+   *
+   * One at a time per Organisation, under the same lock checkout takes.
+   * Counting the members, reading Stripe's quantity and writing the new one
+   * are separate steps, so two people joining at once could interleave
+   * them: the sync that counted 11 could write after the one that counted
+   * 12, leaving Stripe billing a seat short — and crediting it back at once.
+   * The count is taken only once the lock is held, so whichever sync runs
+   * last sees every join committed before it.
    */
-  async syncToProvider(organisationId: string): Promise<void> {
+  async syncToProvider(
+    organisationId: string,
+    { chargeNow = false }: { chargeNow?: boolean } = {},
+  ): Promise<void> {
     if (!this.stripeService.isConfigured) return;
 
-    const subscription = await this.subscriptions.findOne({
-      where: { organisationId },
-    });
-    if (!subscription) return;
-
     try {
-      const { count } = await this.forOrganisation(organisationId);
-      await this.pushQuantity(subscription, count);
+      await this.underBillingLock(organisationId, async () => {
+        const subscription = await this.subscriptions.findOne({
+          where: { organisationId },
+        });
+        if (!subscription) return;
+        const { count } = await this.forOrganisation(organisationId);
+        await this.pushQuantity(subscription, count, chargeNow);
+      });
     } catch (error) {
       this.logger.error(
         `Failed to sync seat count for organisation ${organisationId}: ${String(error)}`,
       );
     }
+  }
+
+  /**
+   * Runs `work` holding the Organisation's billing lock — the same
+   * transaction-scoped advisory lock as `CheckoutService.underBillingLock`,
+   * by the same key, so a seat sync also waits for a checkout in progress.
+   * The transaction stays open across the Stripe calls: a second or two.
+   *
+   * Never call this from inside that lock: it is taken on a new connection,
+   * so a caller already holding it would wait for itself.
+   */
+  private underBillingLock(
+    organisationId: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `billing:${organisationId}`,
+      ]);
+      await work();
+    });
   }
 
   /**
@@ -141,8 +183,9 @@ export class BilledSeatsService {
    * The two directions are deliberately not symmetric (ADR 0033):
    *
    * - **Up** — `always_invoice`, so the seat is paid for as the person
-   *   arrives rather than at a renewal weeks away. An admin ticked a box in
-   *   the invite form saying this would happen.
+   *   arrives rather than at a renewal weeks away, when an admin agreed to
+   *   that (`chargeNow`). Otherwise `create_prorations`: the same prorated
+   *   amount, on the next invoice.
    * - **Down** — per cycle, as before. Monthly `none`, so the smaller count
    *   lands whole on the next invoice instead of as mid-period credits to
    *   reconcile; annual `create_prorations`, leaving the credit against it.
@@ -156,6 +199,7 @@ export class BilledSeatsService {
   private async pushQuantity(
     subscription: Subscription,
     count: number,
+    chargeNow: boolean,
   ): Promise<void> {
     if (!subscription.stripeSubscriptionId) {
       this.logger.log(
@@ -196,7 +240,9 @@ export class BilledSeatsService {
       {
         items: [{ id: item.id, quantity: count }],
         proration_behavior: growing
-          ? 'always_invoice'
+          ? chargeNow
+            ? 'always_invoice'
+            : 'create_prorations'
           : annual
             ? 'create_prorations'
             : 'none',
@@ -212,7 +258,7 @@ export class BilledSeatsService {
     );
     this.logger.log(
       `Organisation ${subscription.organisationId} now bills ${count} seat(s)` +
-        `${growing ? ', charged now' : ''}.`,
+        `${growing ? (chargeNow ? ', charged now' : ', on the next invoice') : ''}.`,
     );
   }
 }
