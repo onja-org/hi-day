@@ -3408,16 +3408,23 @@ export class TimeEntriesService {
       if (!target) {
         throw new NotFoundException('Membership not found.');
       }
-      // A project manager reaches everyone on their Project — the target's
-      // own access is checked just below. Otherwise it's the same bound as
-      // editing: writing to someone's timesheet is never wider than being
-      // able to read it.
-      if (
-        reach === 'team' &&
-        !(await this.canSeeMembership(caller, organisationId, target.id))
-      ) {
+      // Either reach will do. An org admin/manager writes to whoever they
+      // can see — the same bound as editing, so writing to someone's
+      // timesheet is never wider than reading it. A project manager writes
+      // to the people *on their Project* (`isOnProjectForItsManager`).
+      const seen =
+        reach.team &&
+        (await this.canSeeMembership(caller, organisationId, target.id));
+      const onProject =
+        !seen &&
+        reach.project &&
+        projectId !== null &&
+        (await this.isOnProjectForItsManager(target, projectId));
+      if (!seen && !onProject) {
         throw new ForbiddenException(
-          "You do not have access to this member's timesheet.",
+          reach.team
+            ? "You do not have access to this member's timesheet."
+            : 'A project manager can only add time for members of their project.',
         );
       }
       if (projectId !== null) await this.assertProjectAccess(target, projectId);
@@ -3456,33 +3463,62 @@ export class TimeEntriesService {
 
   /**
    * Whether `caller` may attribute a manual entry to someone else on this
-   * Project, and whom: a direct `manager`-tier ProjectMembership reaches
-   * everyone on the Project (`'project'`); otherwise an org admin/manager
-   * reaches whoever they can see (`'team'` — see `canSeeMembership`). A
-   * project role only ever *adds* access (see ProjectRoleGuard). Team-derived
-   * project access carries no role tier of its own, so it doesn't unlock
-   * this — only a direct ProjectMembership does.
+   * Project, and through which reach: a direct `manager`-tier
+   * ProjectMembership reaches the members of the Project (`project` — see
+   * `isOnProjectForItsManager`); an org admin/manager reaches whoever they
+   * can see (`team` — see `canSeeMembership`). Someone can hold both — an
+   * admin who also manages a Project — and keeps both: a project role only
+   * ever *adds* access (see ProjectRoleGuard). Team-derived project access
+   * carries no role tier of its own, so it doesn't unlock this — only a
+   * direct ProjectMembership does.
    */
   private async assertCanLogTimeForOthers(
     caller: Membership,
     projectId: string | null,
-  ): Promise<'project' | 'team'> {
+  ): Promise<{ project: boolean; team: boolean }> {
     const callerProjectMembership =
       projectId === null
         ? null
         : await this.projectMemberships.findOne({
             where: { projectId, membershipId: caller.id },
           });
-    if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
-      return 'project';
-    }
-    if (ORG_WIDE_ROLES.includes(caller.role)) {
-      return 'team';
-    }
+    const reach = {
+      project: callerProjectMembership?.role === ProjectMembershipRole.MANAGER,
+      team: ORG_WIDE_ROLES.includes(caller.role),
+    };
+    if (reach.project || reach.team) return reach;
 
     throw new ForbiddenException(
       'Only a project manager, or an org admin/manager, can log time for someone else.',
     );
+  }
+
+  /**
+   * Whether a project manager may put hours on `target`'s timesheet: they
+   * have to be *on* the Project, directly in a time-tracking role or through
+   * a Team, and not an org admin or manager.
+   *
+   * `assertProjectAccess` alone isn't enough here, because it lets any org
+   * admin/manager track on any Project. Through that, a plain member who
+   * manages one Project could add hours to an admin's timesheet, even an
+   * admin with no connection to the Project at all. Running a Project is
+   * authority over the people on it, never over the people who run the
+   * Organisation — the same rule that keeps them out of a manager's view.
+   */
+  private async isOnProjectForItsManager(
+    target: Membership,
+    projectId: string,
+  ): Promise<boolean> {
+    if (ORG_WIDE_ROLES.includes(target.role)) return false;
+    const projectMembership = await this.projectMemberships.findOne({
+      where: { projectId, membershipId: target.id },
+    });
+    // Same two routes as `assertProjectAccess`: a viewer row doesn't track,
+    // but a Team on the Project still can.
+    if (projectMembership && isTimeTrackingRole(projectMembership.role)) {
+      return true;
+    }
+    return hasTeamProjectAccess(this.projectTeams, projectId, target.id);
   }
 
   /**
