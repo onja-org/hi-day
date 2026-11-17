@@ -218,6 +218,7 @@ describe('InvitationsService', () => {
       teamsRepo?: Repository<Team>;
       projectsRepo?: Repository<Project>;
       inviteLinksRepo?: Repository<InviteLink>;
+      syncSeats?: jest.Mock;
     } = {},
   ) {
     return new InvitationsService(
@@ -241,7 +242,10 @@ describe('InvitationsService', () => {
           findOne: jest.fn().mockResolvedValue(null),
         } as unknown as Repository<InviteLink>),
       // Entitlements: Cloud reaches Stripe here, self-hosted does nothing.
-      { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        syncSeats:
+          overrides.syncSeats ?? jest.fn().mockResolvedValue(undefined),
+      } as never,
     );
   }
 
@@ -334,6 +338,28 @@ describe('InvitationsService', () => {
       expect(create).toHaveBeenCalledTimes(1);
       expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
     });
+
+    // Asked once per submission in the forms (ADR 0033), so it is stored on
+    // every invitation the submission sends.
+    it.each([true, false])(
+      "stores the admin's answer on the charge (%s) on the invitation",
+      async (seatChargeConsent) => {
+        const { dataSource, create } = makeDataSource();
+        const service = makeService({ dataSource });
+
+        await service.createMany(
+          'org-1',
+          'admin-1',
+          [{ email: 'new@acme.test', role: MembershipRole.MEMBER }],
+          { seatChargeConsent },
+        );
+
+        expect(create).toHaveBeenCalledWith(
+          Invitation,
+          expect.objectContaining({ seatChargeConsent }),
+        );
+      },
+    );
 
     it("rejects a team that isn't in the inviting organisation", async () => {
       const teamsCount = jest.fn().mockResolvedValue(1);
@@ -821,6 +847,32 @@ describe('InvitationsService', () => {
       };
     }
 
+    // An invitation sent while seats were free carries no consent, so filling
+    // an extra seat must not be charged on the spot (ADR 0033).
+    it.each([true, false])(
+      "bills the seat on the spot only with the sender's consent (%s)",
+      async (seatChargeConsent) => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue(pendingInvitation({ seatChargeConsent })),
+        });
+        const syncSeats = jest.fn().mockResolvedValue(undefined);
+        const service = makeService({ invitationsRepo, syncSeats });
+
+        await service.accept(
+          'the-token',
+          { password: 'Password1', firstName: 'Jane', lastName: 'Doe' },
+          makeRequest(),
+          makeResponse().response,
+        );
+
+        expect(syncSeats).toHaveBeenCalledWith('org-1', {
+          chargeNow: seatChargeConsent,
+        });
+      },
+    );
+
     it('rejects an invalid or expired token', async () => {
       const invitationsRepo = makeInvitationsRepo({
         findOne: jest.fn().mockResolvedValue(null),
@@ -1106,6 +1158,21 @@ describe('InvitationsService', () => {
         expect.objectContaining({ action: 'invitation.requested_via_link' }),
       );
       expect(sendInvitationEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("carries the link's answer on the charge onto the invitation", async () => {
+      const { dataSource, create } = makeDataSource();
+      const service = makeService({ dataSource });
+
+      await service.requestViaInviteLink(
+        { ...link, seatChargeConsent: true },
+        'new@acme.test',
+      );
+
+      expect(create).toHaveBeenCalledWith(
+        Invitation,
+        expect.objectContaining({ seatChargeConsent: true }),
+      );
     });
 
     it('does nothing for an invalid email or an existing member', async () => {

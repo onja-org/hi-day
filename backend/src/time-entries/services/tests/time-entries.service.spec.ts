@@ -209,6 +209,43 @@ describe('TimeEntriesService', () => {
           projectsEnabled,
         },
       }),
+      // The day-boundary splitter asks which timezones are in use.
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([{ zone: timezone }]),
+      })),
+    } as unknown as Repository<Organisation>;
+  }
+
+  type SplitQuery = {
+    where: { startedAt?: { value: Date } };
+    order?: Record<string, string>;
+  };
+
+  /** The splitter's own candidate queries — the abandoned-web-timer sweep
+   * that runs first uses `find` too, unordered. */
+  function splitQueries(find: jest.Mock): SplitQuery[] {
+    return (find.mock.calls as [SplitQuery][])
+      .map(([options]) => options)
+      .filter((options) => options.order?.startedAt === 'ASC');
+  }
+
+  /** Each split query's cut-off instant, in order. */
+  function splitCutOffs(find: jest.Mock): string[] {
+    return splitQueries(find).map((options) =>
+      options.where.startedAt!.value.toISOString(),
+    );
+  }
+
+  /** Organisations spread over several timezones, for the splitter. */
+  function makeZonesRepo(zones: string[]): Repository<Organisation> {
+    return {
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest
+          .fn()
+          .mockResolvedValue(zones.map((zone) => ({ zone }))),
+      })),
     } as unknown as Repository<Organisation>;
   }
 
@@ -2163,6 +2200,165 @@ describe('TimeEntriesService', () => {
       await expect(start(service)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    describe('switching', () => {
+      // The web timer: on the web, `deviceId` is null.
+      const webTimer = {
+        id: 'web-timer',
+        membershipId: 'm-1',
+        deviceId: null,
+        projectId: 'project-1',
+        taskId: null,
+        startedAt: new Date(Date.now() - 60 * 1000),
+        endedAt: null,
+      } as unknown as TimeEntry;
+
+      /** `running` answers the running lookup; `worked` the limit's own,
+       * the only one that filters `startedAt`. */
+      function makeSwitchRepo(
+        running: TimeEntry[],
+        worked: Partial<TimeEntry>[] = [],
+      ) {
+        return makeTimeEntriesRepo({
+          find: jest.fn((options: { where?: Record<string, unknown> }) =>
+            Promise.resolve(
+              options.where && 'startedAt' in options.where ? worked : running,
+            ),
+          ),
+        });
+      }
+
+      function switchTo(
+        service: ReturnType<typeof makeService>,
+        projectId = 'project-1',
+        options: { startOperationId?: string } = {},
+      ) {
+        return service.switchTo(
+          'org-1',
+          'user-1',
+          projectId,
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+          options,
+        );
+      }
+
+      it('refuses to start tracking on a day tracking is switched off', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([]),
+          dataSource,
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('refuses a switch to another project once the daily limit is reached, leaving the timer running', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ dailyLimitHours: 1 }),
+          timeEntriesRepo: makeSwitchRepo([webTimer], twoHoursToday),
+          dataSource,
+        });
+
+        await expect(switchTo(service, 'project-2')).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('refuses once the weekly limit is reached', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ weeklyLimitHours: 1 }),
+          timeEntriesRepo: makeSwitchRepo([webTimer], twoHoursToday),
+          dataSource,
+        });
+
+        await expect(switchTo(service, 'project-2')).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('treats another Task on the same Project as new tracking', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([{ ...webTimer, taskId: 'task-1' }]),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('lets this Device continue its own timer — the split the agent makes at midnight', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([webTimer]),
+          dataSource,
+        });
+
+        await switchTo(service);
+
+        expect(transaction).toHaveBeenCalled();
+      });
+
+      it('checks a switch that resumes a paused timer', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([webTimer]),
+          timeEntryPausesRepo: makeTimeEntryPausesRepo({
+            findOne: jest.fn().mockResolvedValue({
+              timeEntryId: 'web-timer',
+              pausedAt: new Date(),
+              resumedAt: null,
+            }),
+          }),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('checks the same Project when it is running only on another Device', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([
+            { ...webTimer, deviceId: 'device-1' },
+          ]),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('answers a replayed switch with what it wrote, even on a day tracking is off', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue({ ...webTimer }),
+          }),
+          dataSource,
+        });
+
+        const result = await switchTo(service, 'project-1', {
+          startOperationId: 'op-1',
+        });
+
+        expect(result.id).toBe('web-timer');
+        expect(transaction).not.toHaveBeenCalled();
+      });
+    });
+
     describe('where the weekly limit counts from', () => {
       // The week start used to be read in the server's timezone, so it only
       // went wrong when that differed from the organisation's. Tests run
@@ -2577,6 +2773,117 @@ describe('TimeEntriesService', () => {
         );
 
         expect(result.membershipId).toBe('m-2');
+      });
+
+      describe('a project manager who is a plain member', () => {
+        const projectManager = {
+          id: 'm-pm',
+          role: MembershipRole.MEMBER,
+          timesheetModifyTime: 'add_edit',
+        } as const;
+
+        /** The caller manages project-1; `rows` gives everyone else's. */
+        function projectMembershipsFor(rows: Record<string, string>) {
+          return makeProjectMembershipsRepo({
+            findOne: jest.fn((options: { where: { membershipId: string } }) => {
+              const id = options.where.membershipId;
+              if (id === 'm-pm') {
+                return Promise.resolve({ id: 'pm-pm', role: 'manager' });
+              }
+              return Promise.resolve(
+                rows[id] ? { id: `pm-${id}`, role: rows[id] } : null,
+              );
+            }),
+          });
+        }
+
+        function addFor(
+          target: { id: string; role: MembershipRole },
+          options: {
+            projectRoles?: Record<string, string>;
+            onProjectTeam?: boolean;
+          } = {},
+        ) {
+          const service = makeService({
+            membershipsRepo: makeMembershipsRepoFor(projectManager, target),
+            projectMembershipsRepo: projectMembershipsFor(
+              options.projectRoles ?? {},
+            ),
+            projectTeamsRepo: makeProjectTeamsRepo(
+              jest
+                .fn()
+                .mockResolvedValue(
+                  options.onProjectTeam ? { id: 'project-team-1' } : null,
+                ),
+            ),
+          });
+          return service.createManual('org-1', 'user-1', 'project-1', {
+            membershipId: target.id,
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          });
+        }
+
+        // The ticket's case: an admin may track on any Project, which used
+        // to be all it took — even with no connection to this one.
+        it("can't add time to an org admin's timesheet", async () => {
+          await expect(
+            addFor({ id: 'm-admin', role: MembershipRole.ADMIN }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it("can't add time to an org manager's timesheet, even one on the project", async () => {
+          await expect(
+            addFor(
+              { id: 'm-manager', role: MembershipRole.MANAGER },
+              { projectRoles: { 'm-manager': 'member' } },
+            ),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it("can't add time for a member who isn't on the project", async () => {
+          await expect(
+            addFor({ id: 'm-elsewhere', role: MembershipRole.MEMBER }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it('can add time for a member on the project through a team', async () => {
+          const result = await addFor(
+            { id: 'm-team', role: MembershipRole.MEMBER },
+            { onProjectTeam: true },
+          );
+
+          expect(result.membershipId).toBe('m-team');
+        });
+      });
+
+      // Holding both reaches keeps both: managing a Project must not narrow
+      // what an admin could already do.
+      it('lets an admin who also manages the project add time for another admin', async () => {
+        const service = makeService({
+          membershipsRepo: makeMembershipsRepoFor(
+            { id: 'm-admin', role: MembershipRole.ADMIN },
+            { id: 'm-admin-2', role: MembershipRole.ADMIN } as never,
+          ),
+          projectMembershipsRepo: makeProjectMembershipsRepo({
+            findOne: jest
+              .fn()
+              .mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+          }),
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'admin-1',
+          'project-1',
+          {
+            membershipId: 'm-admin-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-admin-2');
       });
 
       // How an admin fills an untracked gap on a member's timesheet: the
@@ -5548,6 +5855,70 @@ describe('TimeEntriesService', () => {
         (e) => e.id !== 'entry-orig',
       )!;
       expect(next.startedAt.toISOString()).toBe('2026-01-05T21:00:00.000Z');
+    });
+
+    it("splits a west-of-UTC organisation's timer at its own midnight, not the next UTC one", async () => {
+      // 01:00 on Tue 17 Nov in Los Angeles — UTC's midnight was 9 hours ago.
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-17T09:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        // 21:00 on Mon 16 Nov in LA, after UTC's midnight: the old single
+        // UTC cut-off never selected it until the next UTC midnight.
+        startedAt: new Date('2026-11-17T05:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const find = jest.fn().mockResolvedValue([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeOrganisationsRepo('America/Los_Angeles'),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      // Oldest first, so a batch is never spent on entries that aren't due.
+      expect(splitCutOffs(find)).toEqual(['2026-11-17T08:00:00.000Z']);
+      expect(fake.entries.get('entry-orig')!.endedAt).toEqual(
+        new Date('2026-11-17T08:00:00.000Z'),
+      );
+    });
+
+    it('selects each timezone against its own midnight', async () => {
+      // 22:00 UTC: already Tuesday in Nairobi, still Monday in UTC and LA.
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-16T22:00:00.000Z'));
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeZonesRepo([
+          'Africa/Nairobi',
+          'UTC',
+          'America/Los_Angeles',
+        ]),
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(splitCutOffs(find)).toEqual([
+        '2026-11-16T21:00:00.000Z',
+        '2026-11-16T00:00:00.000Z',
+        '2026-11-16T08:00:00.000Z',
+      ]);
+    });
+
+    it("falls back to UTC for a timezone Intl can't read, without stopping the others", async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-17T10:00:00.000Z'));
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeZonesRepo(['Not/AZone', 'Africa/Nairobi']),
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(splitCutOffs(find)).toEqual([
+        '2026-11-17T00:00:00.000Z',
+        '2026-11-16T21:00:00.000Z',
+      ]);
     });
 
     // Pausing ends an entry now, so no open pause can reach midnight. The

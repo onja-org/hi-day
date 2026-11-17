@@ -74,6 +74,10 @@ export function InviteLinkFormModal({ organisationId, link, onClose }: InviteLin
           expiresAt: toInviteLinkExpiry(expiryDate),
           usageCap: usageCap ? Number(usageCap) : null,
           enabled,
+          // Creation only, and only a consent the form asked for and got.
+          ...(!link && seatsConsent.required && seatsConsent.agreed
+            ? { seatChargeConsent: true }
+            : {}),
         },
         link?.id,
       ),

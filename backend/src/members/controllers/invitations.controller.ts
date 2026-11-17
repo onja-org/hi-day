@@ -47,6 +47,7 @@ export class InvitationsController {
       request.organisationId!,
       request.userId,
       dto.invitations,
+      { seatChargeConsent: dto.seatChargeConsent ?? false },
     );
     return { results, message: 'Invitations sent' };
   }

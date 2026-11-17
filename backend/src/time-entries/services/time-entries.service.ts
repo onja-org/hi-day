@@ -22,10 +22,12 @@ import {
   MoreThan,
   MoreThanOrEqual,
   Not,
+  Raw,
   Repository,
 } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { CaptureCleanupService } from '../../captures/services/capture-cleanup.service';
+import { isValidTimezone } from '../../common/timezone.util';
 import type { PrunedCaptures } from '../../captures/services/capture-cleanup.service';
 import {
   inputCountsIn,
@@ -927,6 +929,18 @@ export class TimeEntriesService {
    * It starts a timer either way, so it answers to Allowed apps just as
    * `start` does — a running timer the setting disallows was already ended
    * when the setting changed (`stopEntriesDisallowedByApps`).
+   *
+   * It answers to the work-time limits and tracking-disabled days as `start`
+   * does too, whenever it starts tracking that wasn't already happening: a
+   * different Project or Task, nothing running on this Device, or a paused
+   * entry (a switch on one resumes it). Without that, switching was a way
+   * round both — and a disabled day is only ever enforced at the start, so
+   * that bypass was permanent. The one switch left unchecked is a
+   * *continuation*: the same Project and Task this Device is already
+   * tracking, which is how the agent splits its running entry at midnight
+   * and when a capture setting changes. That adds no tracking, the polls
+   * still stop it at a limit, and refusing it would only leave the entry
+   * unsplit while the agent retried on every poll.
    */
   async switchTo(
     organisationId: string,
@@ -962,6 +976,13 @@ export class TimeEntriesService {
       where: { membershipId: membership.id, endedAt: IsNull() },
     });
     await this.assertAppAllowed(membership, organisationId, source);
+    if (!(await this.continuesThisDevice(running, deviceId, projectId, task))) {
+      await this.assertWithinWorkTimeLimits(
+        membership,
+        organisationId,
+        new Date(),
+      );
+    }
     await this.assertWebMatchesDevices(running, deviceId, projectId);
 
     const saved = await this.dataSource.transaction(async (manager) => {
@@ -1021,6 +1042,35 @@ export class TimeEntriesService {
     });
 
     return await this.toSummary(saved);
+  }
+
+  /**
+   * Whether a switch only continues what this Device is already tracking —
+   * same Project, same Task, not paused — so it splits the entry rather than
+   * starting any tracking. Matched exactly as `runningForDevice` matches it,
+   * the web counting as one Device: the same Project running somewhere else
+   * is new tracking here.
+   */
+  private async continuesThisDevice(
+    running: TimeEntry[],
+    deviceId: string | null,
+    projectId: string | null,
+    task: Task | null | undefined,
+  ): Promise<boolean> {
+    const onThisDevice = running.find((entry) =>
+      deviceId === null ? entry.deviceId === null : entry.deviceId === deviceId,
+    );
+    if (
+      !onThisDevice ||
+      onThisDevice.projectId !== projectId ||
+      onThisDevice.taskId !== (task?.id ?? null)
+    ) {
+      return false;
+    }
+    const openPause = await this.timeEntryPauses.findOne({
+      where: { timeEntryId: onThisDevice.id, resumedAt: IsNull() },
+    });
+    return openPause === null;
   }
 
   async current(
@@ -1429,28 +1479,49 @@ export class TimeEntriesService {
     await this.closeWebEntriesThatWentAway();
 
     const now = new Date();
-    // The widest possible boundary, so the query cannot miss an entry whose
-    // own Organisation sits in a later timezone; each is then split against
-    // its own.
-    const earliestTodayStart = this.startOfDayInZone(now, 'UTC');
+    // One pass per timezone, each against that zone's own midnight. A single
+    // cut-off for everyone can't work: UTC's midnight came 8 hours before
+    // Los Angeles's, so an entry started there at 21:00 wasn't picked up
+    // until the *next* UTC midnight — split 16 hours late, with the daily
+    // limit and every per-day total wrong until then. There are only ever a
+    // handful of zones, and each query selects only entries that really
+    // cross their organisation's midnight, oldest first, so a batch is never
+    // spent on entries that aren't due.
+    for (const configured of await this.timezonesInUse()) {
+      // A zone Intl can't read would throw and stop every other zone's
+      // split; UTC is what such an Organisation's days were cut at anyway.
+      const zone = isValidTimezone(configured) ? configured : 'UTC';
+      const todayStart = this.startOfDayInZone(now, zone);
+      const running = await this.timeEntries.find({
+        where: {
+          endedAt: IsNull(),
+          startedAt: LessThan(todayStart),
+          organisationId: Raw(
+            (column) =>
+              `${column} IN (SELECT "id" FROM "organisations" WHERE COALESCE("settings"->>'timezone', 'UTC') = :zone)`,
+            { zone: configured },
+          ),
+        },
+        order: { startedAt: 'ASC' },
+        take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
+      });
 
-    const running = await this.timeEntries.find({
-      where: { endedAt: IsNull(), startedAt: LessThan(earliestTodayStart) },
-      take: DAY_BOUNDARY_SPLIT_BATCH_SIZE,
-    });
-
-    const zonesThisBatch = new Map<string, string>();
-    for (const entry of running) {
-      const zone = await this.organisationTimezone(
-        entry.organisationId,
-        zonesThisBatch,
-      );
-      await this.splitAcrossDayBoundaries(
-        entry.id,
-        this.startOfDayInZone(now, zone),
-        zone,
-      );
+      for (const entry of running) {
+        await this.splitAcrossDayBoundaries(entry.id, todayStart, zone);
+      }
     }
+  }
+
+  /** Every timezone an Organisation is set to, as stored — UTC for none. */
+  private async timezonesInUse(): Promise<string[]> {
+    const rows = await this.organisations
+      .createQueryBuilder('organisation')
+      .select(
+        "DISTINCT COALESCE(organisation.settings->>'timezone', 'UTC')",
+        'zone',
+      )
+      .getRawMany<{ zone: string }>();
+    return rows.map((row) => row.zone);
   }
 
   /**
@@ -3337,16 +3408,23 @@ export class TimeEntriesService {
       if (!target) {
         throw new NotFoundException('Membership not found.');
       }
-      // A project manager reaches everyone on their Project — the target's
-      // own access is checked just below. Otherwise it's the same bound as
-      // editing: writing to someone's timesheet is never wider than being
-      // able to read it.
-      if (
-        reach === 'team' &&
-        !(await this.canSeeMembership(caller, organisationId, target.id))
-      ) {
+      // Either reach will do. An org admin/manager writes to whoever they
+      // can see — the same bound as editing, so writing to someone's
+      // timesheet is never wider than reading it. A project manager writes
+      // to the people *on their Project* (`isOnProjectForItsManager`).
+      const seen =
+        reach.team &&
+        (await this.canSeeMembership(caller, organisationId, target.id));
+      const onProject =
+        !seen &&
+        reach.project &&
+        projectId !== null &&
+        (await this.isOnProjectForItsManager(target, projectId));
+      if (!seen && !onProject) {
         throw new ForbiddenException(
-          "You do not have access to this member's timesheet.",
+          reach.team
+            ? "You do not have access to this member's timesheet."
+            : 'A project manager can only add time for members of their project.',
         );
       }
       if (projectId !== null) await this.assertProjectAccess(target, projectId);
@@ -3385,33 +3463,62 @@ export class TimeEntriesService {
 
   /**
    * Whether `caller` may attribute a manual entry to someone else on this
-   * Project, and whom: a direct `manager`-tier ProjectMembership reaches
-   * everyone on the Project (`'project'`); otherwise an org admin/manager
-   * reaches whoever they can see (`'team'` — see `canSeeMembership`). A
-   * project role only ever *adds* access (see ProjectRoleGuard). Team-derived
-   * project access carries no role tier of its own, so it doesn't unlock
-   * this — only a direct ProjectMembership does.
+   * Project, and through which reach: a direct `manager`-tier
+   * ProjectMembership reaches the members of the Project (`project` — see
+   * `isOnProjectForItsManager`); an org admin/manager reaches whoever they
+   * can see (`team` — see `canSeeMembership`). Someone can hold both — an
+   * admin who also manages a Project — and keeps both: a project role only
+   * ever *adds* access (see ProjectRoleGuard). Team-derived project access
+   * carries no role tier of its own, so it doesn't unlock this — only a
+   * direct ProjectMembership does.
    */
   private async assertCanLogTimeForOthers(
     caller: Membership,
     projectId: string | null,
-  ): Promise<'project' | 'team'> {
+  ): Promise<{ project: boolean; team: boolean }> {
     const callerProjectMembership =
       projectId === null
         ? null
         : await this.projectMemberships.findOne({
             where: { projectId, membershipId: caller.id },
           });
-    if (callerProjectMembership?.role === ProjectMembershipRole.MANAGER) {
-      return 'project';
-    }
-    if (ORG_WIDE_ROLES.includes(caller.role)) {
-      return 'team';
-    }
+    const reach = {
+      project: callerProjectMembership?.role === ProjectMembershipRole.MANAGER,
+      team: ORG_WIDE_ROLES.includes(caller.role),
+    };
+    if (reach.project || reach.team) return reach;
 
     throw new ForbiddenException(
       'Only a project manager, or an org admin/manager, can log time for someone else.',
     );
+  }
+
+  /**
+   * Whether a project manager may put hours on `target`'s timesheet: they
+   * have to be *on* the Project, directly in a time-tracking role or through
+   * a Team, and not an org admin or manager.
+   *
+   * `assertProjectAccess` alone isn't enough here, because it lets any org
+   * admin/manager track on any Project. Through that, a plain member who
+   * manages one Project could add hours to an admin's timesheet, even an
+   * admin with no connection to the Project at all. Running a Project is
+   * authority over the people on it, never over the people who run the
+   * Organisation — the same rule that keeps them out of a manager's view.
+   */
+  private async isOnProjectForItsManager(
+    target: Membership,
+    projectId: string,
+  ): Promise<boolean> {
+    if (ORG_WIDE_ROLES.includes(target.role)) return false;
+    const projectMembership = await this.projectMemberships.findOne({
+      where: { projectId, membershipId: target.id },
+    });
+    // Same two routes as `assertProjectAccess`: a viewer row doesn't track,
+    // but a Team on the Project still can.
+    if (projectMembership && isTimeTrackingRole(projectMembership.role)) {
+      return true;
+    }
+    return hasTeamProjectAccess(this.projectTeams, projectId, target.id);
   }
 
   /**

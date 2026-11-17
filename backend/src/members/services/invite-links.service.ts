@@ -108,6 +108,7 @@ export class InviteLinksService {
           expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
           usageCap: dto.usageCap ?? null,
           enabled: dto.enabled ?? true,
+          seatChargeConsent: dto.seatChargeConsent ?? false,
           token: this.tokenService.generateToken(),
           createdByUserId: callerUserId,
         }),

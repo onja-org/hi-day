@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { differenceInCalendarDays } from "date-fns";
 import { useActiveMembers } from "@/hooks/useActiveMembers";
+import { useActivityDayFilters } from "@/hooks/useActivityDayFilters";
 import { useMyProfile } from "@/hooks/useMyProfile";
 import { useProjects } from "@/hooks/useProjects";
 import { useProjectsEnabled } from "@/hooks/useProjectsEnabled";
-import { getDayRange } from "@/lib/getDayRange";
+import { daysBetweenKeys } from "@/lib/daysBetweenKeys";
+import { keyAsLocalDate, localDateToKey } from "@/lib/timezone";
 import { DayNavigator } from "@/components/DayNavigator";
 import { SCREENSHOT_HIGHLIGHT_KEYS } from "@/lib/parseScreenshotHighlight";
 import { Label } from "@/components/ui/form/Label";
@@ -45,7 +46,9 @@ export function ActivityFilterToolbar({
     router.push(query ? `${pathname}?${query}` : pathname);
   }
 
-  const dayOffset = Number(searchParams.get("day") ?? "0") || 0;
+  // The day on the organisation's calendar, shown as a local date only so
+  // the picker can lay it out: the label is the day the data is read for.
+  const { date, todayKey } = useActivityDayFilters();
   const membershipId = searchParams.get("membershipId") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
 
@@ -58,9 +61,10 @@ export function ActivityFilterToolbar({
     <div className="flex flex-wrap items-end gap-3">
       <DayNavigator
         label="Activity day"
-        value={getDayRange(new Date(), dayOffset).start}
-        onChange={(date) => {
-          const offset = differenceInCalendarDays(date, new Date());
+        value={keyAsLocalDate(date)}
+        today={keyAsLocalDate(todayKey)}
+        onChange={(picked) => {
+          const offset = daysBetweenKeys(todayKey, localDateToKey(picked));
           updateParams({ day: offset === 0 ? null : String(offset) });
         }}
       />

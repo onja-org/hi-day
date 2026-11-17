@@ -61,10 +61,21 @@ describe('TeamDashboardService', () => {
     return { find } as unknown as Repository<TimeEntry>;
   }
 
-  function makePausesRepo(): Repository<TimeEntryPause> {
+  // Pauses are read through a join to their entries, never by listing
+  // entry ids, so the mock is a query builder (exposed for assertions).
+  function makePausesRepo(pauses: Partial<TimeEntryPause>[] = []) {
+    const queryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(pauses),
+    };
     return {
-      find: jest.fn().mockResolvedValue([]),
-    } as unknown as Repository<TimeEntryPause>;
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      __queryBuilder: queryBuilder,
+    } as unknown as Repository<TimeEntryPause> & {
+      __queryBuilder: typeof queryBuilder;
+    };
   }
 
   // Both repos are only ever queried via a grouped createQueryBuilder(...)
@@ -283,6 +294,158 @@ describe('TeamDashboardService', () => {
         workedThisWeekSeconds: 1 * 3600,
       }),
     ]);
+  });
+
+  it('counts time a member tracked on two Devices at once only once', async () => {
+    const members = [member({ id: 'm-1' }), member({ id: 'm-2' })];
+    const thisWeekEntries = [
+      // m-1 on a laptop and a desktop, overlapping 10:00-11:00: three hours
+      // worked, not four.
+      entry({
+        id: 'laptop',
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 11, 0, 0),
+      }),
+      entry({
+        id: 'desktop',
+        membershipId: 'm-1',
+        projectId: 'p-2',
+        startedAt: new Date(2026, 0, 7, 10, 0, 0),
+        endedAt: new Date(2026, 0, 7, 12, 0, 0),
+      }),
+      // m-2 at the same time: different people's hours do add up.
+      entry({
+        membershipId: 'm-2',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 10, 0, 0),
+        endedAt: new Date(2026, 0, 7, 11, 0, 0),
+      }),
+    ];
+    const lastWeekSameSpanEntries = [
+      entry({
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date(2025, 11, 31, 9, 0, 0),
+        endedAt: new Date(2025, 11, 31, 11, 0, 0),
+      }),
+      entry({
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date(2025, 11, 31, 9, 0, 0),
+        endedAt: new Date(2025, 11, 31, 11, 0, 0),
+      }),
+    ];
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, lastWeekSameSpanEntries, []),
+      makePausesRepo(),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      makeScreenshotsService(),
+      makeTeamsRepo([{ id: 't-1', name: 'Team', memberIds: ['m-1'] }]),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(summary.members).toEqual([
+      expect.objectContaining({
+        membershipId: 'm-1',
+        workedTodaySeconds: 3 * 3600,
+        workedThisWeekSeconds: 3 * 3600,
+      }),
+      expect.objectContaining({
+        membershipId: 'm-2',
+        workedThisWeekSeconds: 1 * 3600,
+      }),
+    ]);
+    expect(summary.workedThisWeekSeconds).toBe(4 * 3600);
+    // Last week m-1 tracked 09:00-11:00 on two Devices: two hours, not four.
+    expect(summary.workedThisWeekDeltaSeconds).toBe(2 * 3600);
+    expect(summary.teamsThisWeek).toEqual([
+      { teamId: 't-1', teamName: 'Team', seconds: 3 * 3600 },
+    ]);
+    // m-1's shared hour goes to one Project, so the Projects add up to the
+    // team's hours rather than past them.
+    const projectTotal = summary.projectsThisWeek.reduce(
+      (sum, project) => sum + project.seconds,
+      0,
+    );
+    expect(projectTotal).toBe(summary.workedThisWeekSeconds);
+  });
+
+  it("nets each entry's pauses off before merging", async () => {
+    const members = [member({ id: 'm-1' })];
+    const thisWeekEntries = [
+      entry({
+        id: 'paused',
+        membershipId: 'm-1',
+        projectId: 'p-1',
+        startedAt: new Date(2026, 0, 7, 9, 0, 0),
+        endedAt: new Date(2026, 0, 7, 12, 0, 0),
+      }),
+    ];
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo(thisWeekEntries, [], []),
+      makePausesRepo([
+        {
+          timeEntryId: 'paused',
+          pausedAt: new Date(2026, 0, 7, 10, 0, 0),
+          resumedAt: new Date(2026, 0, 7, 11, 0, 0),
+        },
+      ]),
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    const summary = await service.getSummary('org-1', 'user-1');
+
+    expect(summary.workedThisWeekSeconds).toBe(2 * 3600);
+  });
+
+  it("finds pauses by joining to the members' entries, not by listing entry ids", async () => {
+    const members = [member({ id: 'm-1' }), member({ id: 'm-2' })];
+    const pauses = makePausesRepo();
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo([], [], []),
+      pauses,
+      makeAppEventsRepo(),
+      makeUrlSessionsRepo(),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
+    );
+
+    await service.getSummary('org-1', 'user-1');
+
+    const queryBuilder = pauses.__queryBuilder;
+    expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+      'pause.timeEntry',
+      'entry',
+    );
+    expect(queryBuilder.where).toHaveBeenCalledWith(
+      'entry.membershipId IN (:...membershipIds)',
+      { membershipIds: ['m-1', 'm-2'] },
+    );
+    // Last week's start to this week's end: a date range, so the number of
+    // bind parameters no longer grows with the number of entries.
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'entry.startedAt BETWEEN :from AND :to',
+      {
+        from: new Date(2025, 11, 29),
+        to: new Date(2026, 0, 12),
+      },
+    );
   });
 
   it('marks a member with an open entry as working and surfaces their current project', async () => {

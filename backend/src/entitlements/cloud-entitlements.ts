@@ -20,7 +20,10 @@ export class CloudEntitlements implements Entitlements {
     await this.trials.startTrial(manager, organisationId);
   }
 
-  async syncSeats(organisationId: string): Promise<void> {
-    await this.seats.syncToProvider(organisationId);
+  async syncSeats(
+    organisationId: string,
+    options: { chargeNow?: boolean } = {},
+  ): Promise<void> {
+    await this.seats.syncToProvider(organisationId, options);
   }
 }

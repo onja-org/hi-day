@@ -18,7 +18,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const SCREENSHOT_CONTENT_TYPE = 'image/jpeg';
 
 /** S3-compatible `DeleteObjects` accepts at most 1000 keys per call. */
-const MAX_DELETE_BATCH_SIZE = 1000;
+export const MAX_DELETE_BATCH_SIZE = 1000;
+
+/**
+ * How many times `deleteByPrefix` tries one key before giving up on the
+ * whole prefix. A key the store keeps refusing would otherwise be listed
+ * and refused again forever.
+ */
+const MAX_PREFIX_DELETE_ATTEMPTS = 3;
 
 /**
  * Wraps the Wasabi (S3-compatible) client used for screenshots — see
@@ -160,17 +167,35 @@ export class ScreenshotStorageService {
     );
   }
 
-  /** Used by the retention cleanup job — deletes the underlying objects once their DB rows expire. */
-  async deleteObjects(storageKeys: string[]): Promise<void> {
+  /**
+   * Deletes these objects and returns the keys the store refused.
+   *
+   * `DeleteObjects` succeeds as a request even when some of its keys fail:
+   * those come back in `Errors`, not as a thrown error. Ignoring that
+   * array is how a caller came to delete the row behind an object that was
+   * still there. A key that doesn't exist counts as deleted, as S3 itself
+   * reports it. Every refusal is logged here, so a caller with nothing to
+   * do about one may ignore the result.
+   */
+  async deleteObjects(storageKeys: string[]): Promise<string[]> {
+    const failed: string[] = [];
     for (let i = 0; i < storageKeys.length; i += MAX_DELETE_BATCH_SIZE) {
       const batch = storageKeys.slice(i, i + MAX_DELETE_BATCH_SIZE);
-      await this.s3.send(
+      const result = await this.s3.send(
         new DeleteObjectsCommand({
           Bucket: this.bucket,
           Delete: { Objects: batch.map((key) => ({ Key: key })) },
         }),
       );
+      for (const error of result.Errors ?? []) {
+        if (!error.Key) continue;
+        failed.push(error.Key);
+        this.logger.warn(
+          `Could not delete ${error.Key}: ${error.Code ?? 'unknown'} ${error.Message ?? ''}`.trim(),
+        );
+      }
     }
+    return failed;
   }
 
   /**
@@ -178,16 +203,35 @@ export class ScreenshotStorageService {
    * removed — used by account purge, where "nothing left behind" has to hold
    * even for objects no DB row points at any more (an orphan from a failed
    * upload, say). Re-listing until empty rather than trusting one pass.
+   *
+   * A refused key is listed again on the next pass and retried, but only
+   * `MAX_PREFIX_DELETE_ATTEMPTS` times: one the store refuses for good used
+   * to keep this looping forever, and with it the purge that called it.
+   * Throwing instead lets the purge fail, be logged, and retry next hour.
    */
   async deleteByPrefix(prefix: string): Promise<number> {
     let deleted = 0;
+    const attempts = new Map<string, number>();
     for (;;) {
       const keys = await this.listKeys(prefix);
       if (keys.length === 0) {
         return deleted;
       }
-      await this.deleteObjects(keys);
-      deleted += keys.length;
+      const failed = await this.deleteObjects(keys);
+      deleted += keys.length - failed.length;
+
+      const exhausted: string[] = [];
+      for (const key of failed) {
+        const tries = (attempts.get(key) ?? 0) + 1;
+        attempts.set(key, tries);
+        if (tries >= MAX_PREFIX_DELETE_ATTEMPTS) exhausted.push(key);
+      }
+      if (exhausted.length > 0) {
+        throw new Error(
+          `Could not delete ${exhausted.length} object(s) under ${prefix} after ` +
+            `${MAX_PREFIX_DELETE_ATTEMPTS} attempts, e.g. ${exhausted[0]}`,
+        );
+      }
     }
   }
 

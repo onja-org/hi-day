@@ -183,9 +183,19 @@ export class StripeWebhookService {
     });
   }
 
+  /**
+   * Records what Stripe says about a subscription *now*, not what the event
+   * carried. Stripe does not deliver events in order, and each one holds a
+   * snapshot from when it fired: a late `created` (still `incomplete`), or
+   * an older `updated`, landing after `updated` (`active`) used to write its
+   * stale status and period end over the live ones — a paying Organisation's
+   * card turned amber and its grace dates moved. Fetching the subscription
+   * makes every event, early or late, write the same current state.
+   */
   private async onSubscriptionChanged(
-    subscription: Stripe.Subscription,
+    reported: Stripe.Subscription,
   ): Promise<void> {
+    const subscription = await this.currentStateOf(reported);
     const organisationId =
       subscription.metadata?.[ORGANISATION_METADATA_KEY] ?? null;
 
@@ -480,6 +490,24 @@ export class StripeWebhookService {
     const storedCanCharge =
       stored.status !== 'incomplete' && !hasEnded(stored.status);
     return !(incoming.status === 'incomplete' && storedCanCharge);
+  }
+
+  /**
+   * The subscription as Stripe holds it now. Falls back to the event's own
+   * copy only when Stripe no longer has it — then the event is the last
+   * word there is. Any other failure throws, and Stripe retries the event.
+   */
+  private async currentStateOf(
+    reported: Stripe.Subscription,
+  ): Promise<Stripe.Subscription> {
+    try {
+      return await this.stripeService.stripe.subscriptions.retrieve(
+        reported.id,
+      );
+    } catch (error) {
+      if (isStripeMissing(error)) return reported;
+      throw error;
+    }
   }
 
   private async isGone(organisationId: string): Promise<boolean> {

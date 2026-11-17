@@ -8,6 +8,12 @@ import type {
 export async function inviteMembers(
   organisationId: string,
   invitations: InviteEntryInput[],
+  /**
+   * The admin ticked "I understand my bill will change". Only then is an
+   * extra seat charged the moment someone accepts; without it the seat goes
+   * on the next invoice (ADR 0033).
+   */
+  options: { seatChargeConsent?: boolean } = {},
 ): Promise<InviteMembersResult> {
   let response: Response;
   try {
@@ -17,7 +23,10 @@ export async function inviteMembers(
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invitations }),
+        body: JSON.stringify({
+          invitations,
+          ...(options.seatChargeConsent ? { seatChargeConsent: true } : {}),
+        }),
       },
     );
   } catch {

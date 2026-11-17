@@ -28,6 +28,9 @@ export type InviteLinkInput = {
   expiresAt: string | null;
   usageCap: number | null;
   enabled: boolean;
+  /** Sent on creation only, when the admin ticked the consent: joins
+   * through the link are then charged on the spot (ADR 0033). */
+  seatChargeConsent?: boolean;
 };
 
 export type InviteLinkPreview = {

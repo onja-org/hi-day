@@ -79,8 +79,14 @@ describe('UrlSessionsService', () => {
 
   function makeOrganisationsService(
     overrides: Partial<CaptureSettings> = {},
+    timezone = 'UTC',
   ): OrganisationsService {
     return {
+      // UTC by default, so the fixed timestamps below describe the day they
+      // always did; the day itself is the organisation's, not the server's.
+      getWeekCalendar: jest
+        .fn()
+        .mockResolvedValue({ weekStartsOn: 'monday', timezone }),
       getCaptureSettings: jest.fn().mockResolvedValue({
         windowTrackingEnabled: true,
         appUrlTracking: 'apps_urls',
@@ -628,6 +634,33 @@ describe('UrlSessionsService', () => {
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(find).not.toHaveBeenCalled();
+    });
+
+    it("reads the day from the organisation's midnight, not UTC's", async () => {
+      const listCoveringWindow = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        timeEntriesService: {
+          listCoveringWindow,
+        } as unknown as TimeEntriesService,
+        organisationsService: makeOrganisationsService({}, 'Africa/Nairobi'),
+      });
+
+      const day = await service.getDayGroupedByUrl(
+        'org-1',
+        'user-1',
+        '2026-11-02',
+      );
+
+      expect(day.date).toBe('2026-11-02');
+      expect(listCoveringWindow).toHaveBeenCalledWith(
+        'org-1',
+        'membership-1',
+        new Date('2026-11-01T21:00:00.000Z'),
+        new Date('2026-11-02T21:00:00.000Z'),
+      );
     });
 
     it('rejects a malformed date', async () => {

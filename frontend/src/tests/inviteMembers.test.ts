@@ -41,6 +41,39 @@ describe("inviteMembers", () => {
     });
   });
 
+  it("sends the admin's consent to an extra seat being charged on arrival", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ results: [], message: "Invitations sent" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await inviteMembers("org-1", [{ email: "a@b.test", role: "member" }], {
+      seatChargeConsent: true,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      invitations: [{ email: "a@b.test", role: "member" }],
+      seatChargeConsent: true,
+    });
+  });
+
+  it("sends no consent the admin didn't give", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ results: [], message: "Invitations sent" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await inviteMembers("org-1", [{ email: "a@b.test", role: "member" }]);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      invitations: [{ email: "a@b.test", role: "member" }],
+    });
+  });
+
   it("surfaces the backend's error message on failure", async () => {
     vi.stubGlobal(
       "fetch",

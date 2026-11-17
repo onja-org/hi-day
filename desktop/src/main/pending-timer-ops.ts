@@ -604,8 +604,10 @@ export class PendingTimerOps {
    * Splits the running entry at this instant on the same Project and Task —
    * `reconcileDayBoundary` already does this at midnight. Through
    * `switchTo`, so the stop and start are one transaction carrying paired
-   * operation ids, and unlike `start` it is not re-checked against
-   * work-time limits, so it can never leave somebody with no timer.
+   * operation ids. The server checks a switch against work-time limits like
+   * a start, except one that continues the same Project and Task on this
+   * Device — exactly what this sends — so a split is never refused and can
+   * never leave somebody with no timer.
    * `null` when there is nothing to split; a paused entry is already closed.
    */
   async splitRunning(

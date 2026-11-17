@@ -7,11 +7,16 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Between, In, LessThan, Repository } from 'typeorm';
+import { Between, In, Repository } from 'typeorm';
+import {
+  activityDayIn,
+  type ActivityDay,
+} from '../../common/activity-day.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
@@ -27,19 +32,26 @@ import {
 } from '../screenshot-slots.util';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
-import { ScreenshotStorageService } from './screenshot-storage.service';
+import {
+  MAX_DELETE_BATCH_SIZE,
+  ScreenshotStorageService,
+} from './screenshot-storage.service';
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
- * Caps how many expired rows one retention sweep processes — keeps a
- * single cron tick fast and bounded even behind a large backlog (e.g. an
- * org that just shortened its retention). The next hourly run picks up
- * wherever this one left off, so nothing is ever skipped, just spread out.
+ * Expired rows read per batch of a retention run: as many as one storage
+ * `DeleteObjects` call takes, so each batch is one request to the store.
  */
-const RETENTION_CLEANUP_BATCH_SIZE = 500;
+const RETENTION_CLEANUP_BATCH_SIZE = MAX_DELETE_BATCH_SIZE;
+
+/**
+ * How long one hourly retention run may keep deleting. Well inside the
+ * hour, so runs never overlap; at a batch every second or two it clears
+ * hundreds of thousands of screenshots, far beyond what a day adds.
+ */
+const RETENTION_CLEANUP_TIME_BUDGET_MS = 15 * 60 * 1000;
 
 /**
  * The agent caps captures per ten minutes, but per **Device** — a person
@@ -186,6 +198,8 @@ function groupIndexesByHour(
 
 @Injectable()
 export class ScreenshotsService {
+  private readonly logger = new Logger(ScreenshotsService.name);
+
   constructor(
     @InjectRepository(Screenshot)
     private readonly screenshots: Repository<Screenshot>,
@@ -280,7 +294,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -307,7 +321,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       target.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -331,7 +345,7 @@ export class ScreenshotsService {
       callerUserId,
       targetMembershipId,
     );
-    const { start, end } = this.dayBounds(this.todayUtc());
+    const { start, end } = await this.resolveDay(organisationId);
     const coveringEntries = await this.timeEntriesService.listCoveringWindow(
       organisationId,
       target.id,
@@ -448,7 +462,7 @@ export class ScreenshotsService {
     return this.listSlotsForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -471,7 +485,7 @@ export class ScreenshotsService {
     return this.listSlotsForMembershipId(
       organisationId,
       target.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -505,12 +519,10 @@ export class ScreenshotsService {
   private async listSlotsForMembershipId(
     organisationId: string,
     membershipId: string,
-    date: string,
+    { start, end }: ActivityDay,
     filter: ScreenshotsFilter,
     pagination: ScreenshotSlotsPagination,
   ): Promise<ScreenshotSlotsDay> {
-    const { start, end } = this.dayBounds(date);
-
     // Day-wide but small: a handful of entries and at most one sample per
     // ten minutes. The screenshots wait until the page is known..
     const [tracked, captureState] = await Promise.all([
@@ -686,12 +698,10 @@ export class ScreenshotsService {
   private async listForMembershipId(
     organisationId: string,
     membershipId: string,
-    date: string,
+    { start, end }: ActivityDay,
     filter: ScreenshotsFilter,
     pagination: ScreenshotsPagination,
   ): Promise<ScreenshotsPage> {
-    const { start, end } = this.dayBounds(date);
-
     const [rows, coveringEntries] = await Promise.all([
       this.screenshots.find({
         select: { id: true, capturedAt: true, storageKey: true },
@@ -748,31 +758,72 @@ export class ScreenshotsService {
    * `screenshotRetentionDays` setting then in effect (see Screenshot
    * entity's own comment) — this job never re-reads the org's *current*
    * setting, it just honours what was already computed.
+   *
+   * Works through every expired screenshot, oldest first, until none are
+   * left or the time budget runs out. One batch an hour used to be the
+   * limit: 500 an hour is 12,000 a day, and at the default frequency about
+   * 250 people tracking all day add more than that, so the backlog grew for
+   * ever and screenshots outlived their retention.
+   *
+   * A row is deleted only once its object is. One the store refused keeps
+   * its row, so it is retried next hour rather than left behind in storage
+   * with nothing pointing at it. Batches are read from a cursor, not from
+   * the top, so a refused row isn't read again and again within one run.
    */
   @Cron(CronExpression.EVERY_HOUR)
-  async deleteExpired(): Promise<void> {
-    const expired = await this.screenshots.find({
-      where: { keptUntil: LessThan(new Date()) },
-      take: RETENTION_CLEANUP_BATCH_SIZE,
-    });
-    if (expired.length === 0) return;
+  async deleteExpired(
+    timeBudgetMs = RETENTION_CLEANUP_TIME_BUDGET_MS,
+  ): Promise<{ deleted: number; failed: number }> {
+    const startedAt = Date.now();
+    const now = new Date();
+    let cursor: { keptUntil: Date; id: string } | null = null;
+    let deleted = 0;
+    let failed = 0;
 
-    await this.storage.deleteObjects(expired.map((row) => row.storageKey));
-    await this.screenshots.delete({
-      id: In(expired.map((row) => row.id)),
-    });
-  }
+    while (Date.now() - startedAt < timeBudgetMs) {
+      const query = this.screenshots
+        .createQueryBuilder('screenshot')
+        .select([
+          'screenshot.id',
+          'screenshot.storageKey',
+          'screenshot.keptUntil',
+        ])
+        .where('screenshot.keptUntil < :now', { now })
+        .orderBy('screenshot.keptUntil', 'ASC')
+        .addOrderBy('screenshot.id', 'ASC')
+        .limit(RETENTION_CLEANUP_BATCH_SIZE);
+      if (cursor) {
+        query.andWhere(
+          '(screenshot.keptUntil, screenshot.id) > (:cursorKeptUntil, :cursorId)',
+          { cursorKeptUntil: cursor.keptUntil, cursorId: cursor.id },
+        );
+      }
+      const expired = await query.getMany();
+      if (expired.length === 0) break;
 
-  /**
-   * UTC midnight to UTC midnight, matching the Apps, URLs and Notes tabs
-   * beside it (see `getDayRange.ts`). Known consequence: Timesheets groups
-   * its days on the organisation's calendar, so outside UTC the two
-   * describe different windows and their totals will not agree — fixing
-   * that means moving the whole Activities section, not this page alone.
-   */
-  private dayBounds(date: string): { start: Date; end: Date } {
-    const start = new Date(`${date}T00:00:00.000Z`);
-    return { start, end: new Date(start.getTime() + MS_PER_DAY) };
+      const refused = new Set(
+        await this.storage.deleteObjects(expired.map((row) => row.storageKey)),
+      );
+      const gone = expired.filter((row) => !refused.has(row.storageKey));
+      if (gone.length > 0) {
+        await this.screenshots.delete({ id: In(gone.map((row) => row.id)) });
+      }
+      deleted += gone.length;
+      failed += expired.length - gone.length;
+
+      // The store refused the whole batch: it is down, or refusing
+      // everything, and the next batch would fare no better.
+      if (gone.length === 0) break;
+      const last = expired[expired.length - 1];
+      cursor = { keptUntil: last.keptUntil, id: last.id };
+    }
+
+    if (failed > 0) {
+      this.logger.warn(
+        `Screenshot retention: deleted ${deleted}, kept ${failed} whose stored object could not be deleted; they will be retried next hour.`,
+      );
+    }
+    return { deleted, failed };
   }
 
   /** For explaining an empty slot, never for gating one. */
@@ -791,24 +842,18 @@ export class ScreenshotsService {
     return { activityRecorded: activityTrackingEnabled, screenshotsEnabled };
   }
 
-  /** Today's UTC calendar date, for the callers that mean "now" rather than
-   * a date somebody picked — the same day the client computes and sends. */
-  private todayUtc(): string {
-    return new Date().toISOString().slice(0, 10);
-  }
-
   /**
-   * The caller's `?date=`, or today — both the UTC calendar `dayBounds`
-   * resolves against and the client sends.
+   * The caller's `?date=`, or today, on the organisation's calendar — the
+   * same days the Apps, URLs and Notes tabs beside it and Timesheets use,
+   * so their totals describe the same window.
    */
-  private resolveDayKey(date?: string): string {
-    if (date === undefined) {
-      return this.todayUtc();
-    }
-    if (!DATE_PATTERN.test(date)) {
-      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
-    }
-    return date;
+  private async resolveDay(
+    organisationId: string,
+    date?: string,
+  ): Promise<ActivityDay> {
+    const { timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    return activityDayIn(date, timezone);
   }
 
   /**

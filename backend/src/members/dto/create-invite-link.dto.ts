@@ -62,4 +62,15 @@ export class CreateInviteLinkDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+
+  /**
+   * The admin ticked "I understand my bill will change" — sent only while
+   * the seats are full. Joins through the link are then charged on the
+   * spot; without it they are billed on the next invoice (ADR 0033). Not
+   * on `UpdateInviteLinkDto`: editing a link asks no consent, so it can
+   * grant none.
+   */
+  @IsOptional()
+  @IsBoolean()
+  seatChargeConsent?: boolean;
 }

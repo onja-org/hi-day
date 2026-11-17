@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -7,13 +6,13 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import { activityDayIn } from '../../common/activity-day.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { Membership } from '../../database/entities/membership.entity';
 import { MembershipStatus } from '../../database/entities/membership-status.enum';
 import { Note } from '../../database/entities/note.entity';
+import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { CreateNoteDto } from '../dto/create-note.dto';
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface NoteEntry {
   id: string;
@@ -33,6 +32,7 @@ export class NotesService {
     private readonly memberships: Repository<Membership>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    private readonly organisationsService: OrganisationsService,
   ) {}
 
   /**
@@ -79,7 +79,7 @@ export class NotesService {
     return this.listForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDate(date),
+      await this.resolveDate(organisationId, date),
       projectId,
     );
   }
@@ -122,7 +122,7 @@ export class NotesService {
     return this.listForMembershipId(
       organisationId,
       target.id,
-      this.resolveDate(date),
+      await this.resolveDate(organisationId, date),
       projectId,
     );
   }
@@ -179,14 +179,15 @@ export class NotesService {
     return entries.map((entry) => this.toEntry(entry));
   }
 
-  private resolveDate(date?: string): string {
-    if (date === undefined) {
-      return new Date().toISOString().slice(0, 10);
-    }
-    if (!DATE_PATTERN.test(date)) {
-      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
-    }
-    return date;
+  /** The caller's `?date=`, or today on the organisation's calendar — the
+   * same day the Apps, URLs and Screenshots tabs beside it default to. */
+  private async resolveDate(
+    organisationId: string,
+    date?: string,
+  ): Promise<string> {
+    const { timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    return activityDayIn(date, timezone).date;
   }
 
   private toEntry(note: Note): NoteEntry {
