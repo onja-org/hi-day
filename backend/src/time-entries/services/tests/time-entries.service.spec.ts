@@ -209,6 +209,43 @@ describe('TimeEntriesService', () => {
           projectsEnabled,
         },
       }),
+      // The day-boundary splitter asks which timezones are in use.
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([{ zone: timezone }]),
+      })),
+    } as unknown as Repository<Organisation>;
+  }
+
+  type SplitQuery = {
+    where: { startedAt?: { value: Date } };
+    order?: Record<string, string>;
+  };
+
+  /** The splitter's own candidate queries — the abandoned-web-timer sweep
+   * that runs first uses `find` too, unordered. */
+  function splitQueries(find: jest.Mock): SplitQuery[] {
+    return (find.mock.calls as [SplitQuery][])
+      .map(([options]) => options)
+      .filter((options) => options.order?.startedAt === 'ASC');
+  }
+
+  /** Each split query's cut-off instant, in order. */
+  function splitCutOffs(find: jest.Mock): string[] {
+    return splitQueries(find).map((options) =>
+      options.where.startedAt!.value.toISOString(),
+    );
+  }
+
+  /** Organisations spread over several timezones, for the splitter. */
+  function makeZonesRepo(zones: string[]): Repository<Organisation> {
+    return {
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest
+          .fn()
+          .mockResolvedValue(zones.map((zone) => ({ zone }))),
+      })),
     } as unknown as Repository<Organisation>;
   }
 
@@ -5707,6 +5744,70 @@ describe('TimeEntriesService', () => {
         (e) => e.id !== 'entry-orig',
       )!;
       expect(next.startedAt.toISOString()).toBe('2026-01-05T21:00:00.000Z');
+    });
+
+    it("splits a west-of-UTC organisation's timer at its own midnight, not the next UTC one", async () => {
+      // 01:00 on Tue 17 Nov in Los Angeles — UTC's midnight was 9 hours ago.
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-17T09:00:00.000Z'));
+      const original = makeRunningEntry({
+        id: 'entry-orig',
+        // 21:00 on Mon 16 Nov in LA, after UTC's midnight: the old single
+        // UTC cut-off never selected it until the next UTC midnight.
+        startedAt: new Date('2026-11-17T05:00:00.000Z'),
+      });
+      const fake = makeFakeDataSource([original]);
+      const find = jest.fn().mockResolvedValue([original]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeOrganisationsRepo('America/Los_Angeles'),
+        dataSource: fake.dataSource,
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      // Oldest first, so a batch is never spent on entries that aren't due.
+      expect(splitCutOffs(find)).toEqual(['2026-11-17T08:00:00.000Z']);
+      expect(fake.entries.get('entry-orig')!.endedAt).toEqual(
+        new Date('2026-11-17T08:00:00.000Z'),
+      );
+    });
+
+    it('selects each timezone against its own midnight', async () => {
+      // 22:00 UTC: already Tuesday in Nairobi, still Monday in UTC and LA.
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-16T22:00:00.000Z'));
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeZonesRepo([
+          'Africa/Nairobi',
+          'UTC',
+          'America/Los_Angeles',
+        ]),
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(splitCutOffs(find)).toEqual([
+        '2026-11-16T21:00:00.000Z',
+        '2026-11-16T00:00:00.000Z',
+        '2026-11-16T08:00:00.000Z',
+      ]);
+    });
+
+    it("falls back to UTC for a timezone Intl can't read, without stopping the others", async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-17T10:00:00.000Z'));
+      const find = jest.fn().mockResolvedValue([]);
+      const service = makeService({
+        timeEntriesRepo: makeTimeEntriesRepo({ find }),
+        organisationsRepo: makeZonesRepo(['Not/AZone', 'Africa/Nairobi']),
+      });
+
+      await service.splitRunningEntriesAcrossDayBoundary();
+
+      expect(splitCutOffs(find)).toEqual([
+        '2026-11-17T00:00:00.000Z',
+        '2026-11-16T21:00:00.000Z',
+      ]);
     });
 
     // Pausing ends an entry now, so no open pause can reach midnight. The
