@@ -1,11 +1,14 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
+import {
+  activityDayIn,
+  type ActivityDay,
+} from '../../common/activity-day.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
@@ -15,8 +18,6 @@ import { OrganisationsService } from '../../organisations/services/organisations
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { AppEventItemDto } from '../dto/app-event-item.dto';
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
@@ -135,7 +136,7 @@ export class AppEventsService {
       ))
     ) {
       return {
-        date: this.resolveDate(date),
+        date: (await this.resolveDay(organisationId, date)).date,
         totalSecondsSpent: 0,
         buckets: [],
       };
@@ -144,7 +145,7 @@ export class AppEventsService {
     return this.buildDayForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDate(date),
+      await this.resolveDay(organisationId, date),
       filter,
     );
   }
@@ -189,7 +190,7 @@ export class AppEventsService {
     return this.buildDayForMembershipId(
       organisationId,
       target.id,
-      this.resolveDate(date),
+      await this.resolveDay(organisationId, date),
       filter,
     );
   }
@@ -197,12 +198,9 @@ export class AppEventsService {
   private async buildDayForMembershipId(
     organisationId: string,
     membershipId: string,
-    date: string,
+    { date, start, end }: ActivityDay,
     filter: AppActivityFilter,
   ): Promise<AppActivityDay> {
-    const start = new Date(`${date}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + MS_PER_DAY);
-
     const [rows, coveringEntries] = await Promise.all([
       this.appEvents.find({
         where: {
@@ -292,14 +290,14 @@ export class AppEventsService {
     return { date, totalSecondsSpent, buckets };
   }
 
-  private resolveDate(date?: string): string {
-    if (date === undefined) {
-      return new Date().toISOString().slice(0, 10);
-    }
-    if (!DATE_PATTERN.test(date)) {
-      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
-    }
-    return date;
+  /** The caller's `?date=`, or today, on the organisation's calendar. */
+  private async resolveDay(
+    organisationId: string,
+    date?: string,
+  ): Promise<ActivityDay> {
+    const { timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    return activityDayIn(date, timezone);
   }
 
   private async getActiveMembership(

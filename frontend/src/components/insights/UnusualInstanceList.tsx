@@ -34,6 +34,7 @@ export function UnusualInstanceList({ organisationId, membershipId, instances, t
           start: instance.start,
           end: instance.end,
           date: instance.date,
+          timezone,
           now,
         });
         const [reason, ...moreReasons] = instance.reasons;

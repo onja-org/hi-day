@@ -6,6 +6,7 @@ import { MembershipRole } from '../../../database/entities/membership-role.enum'
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { Note } from '../../../database/entities/note.entity';
 import { NotesService } from '../notes.service';
+import type { OrganisationsService } from '../../../organisations/services/organisations.service';
 
 describe('NotesService', () => {
   function makeNotesRepo(overrides: Partial<Repository<Note>> = {}) {
@@ -54,13 +55,21 @@ describe('NotesService', () => {
       membershipsRepo?: Repository<Membership>;
       dataSource?: unknown;
       auditLogService?: AuditLogService;
+      timezone?: string;
     } = {},
   ) {
+    const organisationsService = {
+      getWeekCalendar: jest.fn().mockResolvedValue({
+        weekStartsOn: 'monday',
+        timezone: overrides.timezone ?? 'UTC',
+      }),
+    } as unknown as OrganisationsService;
     return new NotesService(
       overrides.notesRepo ?? makeNotesRepo(),
       overrides.membershipsRepo ?? makeMembershipsRepo(),
       (overrides.dataSource ?? makeDataSource().dataSource) as never,
       overrides.auditLogService ?? makeAuditLogService().auditLogService,
+      organisationsService,
     );
   }
 
@@ -176,6 +185,30 @@ describe('NotesService', () => {
           },
         }),
       );
+    });
+
+    it("defaults to today on the organisation's calendar", async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-02T22:30:00.000Z') });
+      try {
+        const find = jest.fn().mockResolvedValue([]);
+        const service = makeService({
+          membershipsRepo: makeMembershipsRepo({
+            findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+          }),
+          notesRepo: makeNotesRepo({ find }),
+          timezone: 'Africa/Nairobi',
+        });
+
+        await service.listMineForDay('org-1', 'user-1', undefined);
+
+        // 01:30 on Tuesday in Nairobi, still Monday in UTC.
+        const [options] = find.mock.calls[0] as [unknown];
+        expect(options).toMatchObject({
+          where: { noteDate: '2026-11-03' },
+        });
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('rejects a malformed date', async () => {

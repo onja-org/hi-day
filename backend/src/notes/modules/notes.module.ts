@@ -7,6 +7,7 @@ import { Membership } from '../../database/entities/membership.entity';
 import { Note } from '../../database/entities/note.entity';
 import { Organisation } from '../../database/entities/organisation.entity';
 import { Project } from '../../database/entities/project.entity';
+import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { NotesController } from '../controllers/notes.controller';
 import { NotesService } from '../services/notes.service';
 
@@ -15,6 +16,7 @@ import { NotesService } from '../services/notes.service';
     TypeOrmModule.forFeature([Note, Membership, Organisation, Project]),
     AuditLogModule,
     JwtAuthModule,
+    OrganisationsModule,
   ],
   controllers: [NotesController],
   providers: [NotesService, RoleGuard],

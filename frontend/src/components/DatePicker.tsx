@@ -19,6 +19,8 @@ type DatePickerProps = {
   onChange: (date: Date) => void;
   label: string;
   embedded?: boolean;
+  /** The last selectable day; the viewer's own today unless given. */
+  today?: Date;
 };
 
 export function DatePicker({
@@ -26,6 +28,7 @@ export function DatePicker({
   onChange,
   label,
   embedded = false,
+  today: todayInput,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(value));
@@ -33,7 +36,7 @@ export function DatePicker({
   const close = useCallback(() => setOpen(false), []);
   useDismissOnOutsideClick(containerRef, open, close);
 
-  const today = startOfDay(new Date());
+  const today = startOfDay(todayInput ?? new Date());
   const selectedDay = startOfDay(value);
   const isToday = isSameDay(selectedDay, today);
 
