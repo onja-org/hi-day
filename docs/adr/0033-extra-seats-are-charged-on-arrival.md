@@ -26,6 +26,13 @@ reason the issuer gave, and Stripe's Smart Retries own the recovery.
 A seat count going **down** is unchanged: a monthly drop lands whole on the
 next invoice, an annual one leaves a credit against it.
 
+The charge moves the Stripe quantity only. `purchasedSeats` — what the admin
+bought — is never written up to the charged count. It once was, so the
+Subscription tab would stop showing a paid-for arrival as "1 over"; but that
+made the floor rise with every arrival, and a deactivated extra member then
+went on being billed at every renewal. The "over" figure now reads alongside
+the line that extra seats are charged as people join, which is true.
+
 ## Why
 
 This was asked for directly, after the case against it was put and

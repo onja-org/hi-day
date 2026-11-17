@@ -248,42 +248,135 @@ describe('pushing the quantity to Stripe', () => {
 });
 
 /**
- * The seats an Organisation *owns*, once a join has been charged for. Without
- * this the Subscription tab sat on "9 of 8 seats in use — 1 over" and went on
- * offering to cover the ninth "on your next payment", after the $41.90 for it
- * had already been taken.
+ * Somebody joining past the purchase is charged through the Stripe quantity
+ * alone. The purchase used to be written up to the charged count, so the
+ * floor rose with every arrival and deactivating anyone never lowered the
+ * bill again — against "Deactivated Memberships are not billed".
  */
-describe('owning the seats a charge paid for', () => {
-  it('writes the purchase up to the charged count when somebody joins', async () => {
-    const { service, update, subscriptionsUpdate } = serviceFor(9, 8, {
-      interval: 'year',
-      currentQuantity: 8,
+describe('extra seats charged on arrival', () => {
+  it('charges the extra seat without raising the purchase', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(6, 5, {
+      interval: 'month',
+      currentQuantity: 5,
     });
 
     await service.syncToProvider('org-1');
 
     expect(subscriptionsUpdate).toHaveBeenCalledWith(
       'sub_1',
-      expect.objectContaining({ proration_behavior: 'always_invoice' }),
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 6 }],
+        proration_behavior: 'always_invoice',
+      }),
     );
-    expect(update).toHaveBeenCalledWith({ id: 'org-1' }, { purchasedSeats: 9 });
+    expect(update).not.toHaveBeenCalled();
   });
 
-  // Seats bought ahead are a floor. Somebody leaving must not quietly hand
-  // back a seat that was paid to be held open.
-  it('leaves the purchase alone when the count falls', async () => {
-    const { service, update } = serviceFor(6, 9, {
-      interval: 'year',
-      currentQuantity: 9,
+  // The ticket's case: 5 bought, a 6th joins and is charged, then is
+  // deactivated. Stripe used to go on billing 6 at every renewal.
+  it('takes the bill back down to the purchase when the extra person is deactivated', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(5, 5, {
+      interval: 'month',
+      currentQuantity: 6,
     });
 
     await service.syncToProvider('org-1');
 
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 5 }],
+        proration_behavior: 'none',
+      }),
+    );
     expect(update).not.toHaveBeenCalled();
   });
 
-  // A join filling a seat already bought changes no money, so it owns nothing new.
-  it('leaves the purchase alone when a bought seat is simply filled', async () => {
+  // The whole sequence against one Organisation and one Stripe item, which
+  // is where the old behaviour went wrong: the arrival wrote the purchase up
+  // to 6, so the deactivation found max(6, 5) = 6 and changed nothing.
+  it('bills the bought seats again after an extra arrival is deactivated', async () => {
+    let members = 5;
+    let purchasedSeats: number | null = 5;
+    let quantity = 5;
+    const subscriptionsUpdate = jest.fn(
+      (_id: string, params: { items: { quantity: number }[] }) => {
+        quantity = params.items[0].quantity;
+        return Promise.resolve({});
+      },
+    );
+    const service = new BilledSeatsService(
+      { count: jest.fn(() => Promise.resolve(members)) } as never,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          organisationId: 'org-1',
+          stripeSubscriptionId: 'sub_1',
+        }),
+      } as never,
+      {
+        findOne: jest.fn(() =>
+          Promise.resolve({ id: 'org-1', purchasedSeats }),
+        ),
+        update: jest.fn(
+          (_where: unknown, patch: { purchasedSeats: number }) => {
+            purchasedSeats = patch.purchasedSeats;
+            return Promise.resolve({});
+          },
+        ),
+      } as never,
+      {
+        isConfigured: true,
+        stripe: {
+          subscriptions: {
+            retrieve: jest.fn(() =>
+              Promise.resolve({
+                status: 'active',
+                items: {
+                  data: [
+                    {
+                      id: 'si_1',
+                      quantity,
+                      price: { recurring: { interval: 'month' } },
+                    },
+                  ],
+                },
+              }),
+            ),
+            update: subscriptionsUpdate,
+          },
+        },
+      } as never,
+    );
+
+    members = 6; // a sixth person accepts
+    await service.syncToProvider('org-1');
+    expect(quantity).toBe(6);
+
+    members = 5; // and is deactivated
+    await service.syncToProvider('org-1');
+
+    expect(quantity).toBe(5);
+    expect(purchasedSeats).toBe(5);
+  });
+
+  // Seats bought ahead are a floor. Somebody leaving must not quietly hand
+  // back a seat that was paid to be held open.
+  it('never drops below the seats bought when people leave', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(3, 5, {
+      interval: 'month',
+      currentQuantity: 6,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({ items: [{ id: 'si_1', quantity: 5 }] }),
+    );
+  });
+
+  // A join filling a seat already bought changes no money.
+  it('leaves Stripe alone when a bought seat is simply filled', async () => {
     const { service, update, subscriptionsUpdate } = serviceFor(5, 8, {
       interval: 'year',
       currentQuantity: 8,
@@ -295,7 +388,6 @@ describe('owning the seats a charge paid for', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  // Nothing was charged, so nothing is owned — the figure would be a lie.
   it('leaves the purchase alone where there is no provider subscription', async () => {
     const { service, update } = serviceFor(9, 8);
 

@@ -105,9 +105,12 @@ export class BilledSeatsService {
    * at all), or the Organisation has no subscription with the provider, which
    * is every Organisation until checkout completes.
    *
-   * Where the count **rose** the seats were charged for on the spot, so the
-   * purchase is written up to match — otherwise the Organisation stays
-   * permanently "1 over" on a bill it has already paid.
+   * Where the count **rose** the extra seats are charged for on the spot,
+   * through the quantity alone: `purchasedSeats` stays what the admin bought.
+   * It used to be written up to the charged count, which made every arrival
+   * permanent — the floor rose with each one, so deactivating somebody never
+   * lowered the bill, against "Deactivated Memberships are not billed". Left
+   * alone, a departure takes the quantity back down to the purchase.
    *
    * Never throws. A seat count that failed to reach Stripe is a billing
    * discrepancy worth logging and retrying; it is not a reason to fail the
@@ -122,21 +125,8 @@ export class BilledSeatsService {
     if (!subscription) return;
 
     try {
-      const { count, purchasedSeats } =
-        await this.forOrganisation(organisationId);
-      const charged = await this.pushQuantity(subscription, count);
-
-      // Only on a rise, and only once the charge is away. Lowering the count
-      // must not quietly give back seats somebody paid to hold.
-      if (charged && count > (purchasedSeats ?? 0)) {
-        await this.organisations.update(
-          { id: organisationId },
-          { purchasedSeats: count },
-        );
-        this.logger.log(
-          `Organisation ${organisationId} now owns ${count} seat(s), charged on arrival.`,
-        );
-      }
+      const { count } = await this.forOrganisation(organisationId);
+      await this.pushQuantity(subscription, count);
     } catch (error) {
       this.logger.error(
         `Failed to sync seat count for organisation ${organisationId}: ${String(error)}`,
@@ -161,18 +151,17 @@ export class BilledSeatsService {
    * is too long to leave any proration this path did not invoice unbilled.
    *
    * A decline does **not** throw — `invoice.payment_failed` arrives moments
-   * later and emails whoever pays the bill. Answers whether a charge was
-   * raised, which tells the caller the seats are now owned.
+   * later and emails whoever pays the bill.
    */
   private async pushQuantity(
     subscription: Subscription,
     count: number,
-  ): Promise<boolean> {
+  ): Promise<void> {
     if (!subscription.stripeSubscriptionId) {
       this.logger.log(
         `Organisation ${subscription.organisationId} bills ${count} seat(s); no provider subscription to update yet.`,
       );
-      return false;
+      return;
     }
 
     const remote = await this.stripeService.stripe.subscriptions.retrieve(
@@ -187,16 +176,16 @@ export class BilledSeatsService {
       this.logger.log(
         `Organisation ${subscription.organisationId} bills ${count} seat(s); its subscription is ${remote.status}, so nothing to update.`,
       );
-      return false;
+      return;
     }
     const item = remote.items.data[0];
     if (!item) {
       this.logger.error(
         `Stripe subscription ${subscription.stripeSubscriptionId} has no items to set a quantity on.`,
       );
-      return false;
+      return;
     }
-    if (item.quantity === count) return false;
+    if (item.quantity === count) return;
 
     // Null quantity means Stripe never recorded one, which can only be
     // fewer seats than any count that reaches here — so treat it as a rise.
@@ -225,6 +214,5 @@ export class BilledSeatsService {
       `Organisation ${subscription.organisationId} now bills ${count} seat(s)` +
         `${growing ? ', charged now' : ''}.`,
     );
-    return growing;
   }
 }
