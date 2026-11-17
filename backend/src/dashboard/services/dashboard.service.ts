@@ -4,11 +4,6 @@ import { Between, In, Repository } from 'typeorm';
 import { calendarWeekAt, dateKeyInZone } from '../../common/calendar-week.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
 import {
-  buildPauseStates,
-  computeActiveSeconds,
-  PauseState,
-} from '../../common/time-entry-active-seconds.util';
-import {
   groupPausesByEntry,
   unionActiveSeconds,
 } from '../../common/time-entry-union.util';
@@ -117,12 +112,6 @@ export class DashboardService {
         }),
       ]);
 
-    const pauseStates = await this.getPauseStatesFor([
-      ...thisWeekEntries,
-      ...yesterdaySameSpanEntries,
-      ...lastWeekSameSpanEntries,
-    ]);
-
     const todayKey = week.todayKey;
     const byDay: DashboardWeekDay[] = week.dayKeys.map((date) => ({
       date,
@@ -141,6 +130,7 @@ export class DashboardService {
     const pausesByEntry = await this.getPausesFor([
       ...thisWeekEntries,
       ...yesterdaySameSpanEntries,
+      ...lastWeekSameSpanEntries,
     ]);
     const unionOf = (entries: TimeEntry[]): number =>
       unionActiveSeconds(entries, pausesByEntry, now);
@@ -150,8 +140,6 @@ export class DashboardService {
     const todayEntriesByProject = new Map<string, TimeEntry[]>();
 
     for (const entry of thisWeekEntries) {
-      const seconds = computeActiveSeconds(entry, pauseStates, now);
-
       const key = dateKeyInZone(entry.startedAt, timezone);
       entriesByDay.set(key, [...(entriesByDay.get(key) ?? []), entry]);
       // A Project breakdown is only about entries that have one.
@@ -185,7 +173,6 @@ export class DashboardService {
           seconds: 0,
         });
       }
-      void seconds;
     }
 
     workedThisWeekSeconds = unionOf(thisWeekEntries);
@@ -217,16 +204,14 @@ export class DashboardService {
 
     const workedYesterdaySameSpanSeconds = unionOf(yesterdaySameSpanEntries);
 
-    let workedLastWeekSameSpanSeconds = 0;
-    const lastWeekProjectIds = new Set<string>();
-    for (const entry of lastWeekSameSpanEntries) {
-      workedLastWeekSameSpanSeconds += computeActiveSeconds(
-        entry,
-        pauseStates,
-        now,
-      );
-      if (entry.projectId !== null) lastWeekProjectIds.add(entry.projectId);
-    }
+    // Unioned like this week's figure, or two Devices last week would
+    // inflate the comparison this week is measured against.
+    const workedLastWeekSameSpanSeconds = unionOf(lastWeekSameSpanEntries);
+    const lastWeekProjectIds = new Set(
+      lastWeekSameSpanEntries.flatMap((entry) =>
+        entry.projectId === null ? [] : [entry.projectId],
+      ),
+    );
 
     const workingHoursPolicy =
       await this.organisationsService.getWorkingHoursPolicy(organisationId);
@@ -266,23 +251,9 @@ export class DashboardService {
     return membership;
   }
 
-  private async getPauseStatesFor(
-    entries: TimeEntry[],
-  ): Promise<Map<string, PauseState>> {
-    const timeEntryIds = entries.map((entry) => entry.id);
-    if (timeEntryIds.length === 0) {
-      return new Map();
-    }
-
-    const pauses = await this.timeEntryPauses.find({
-      where: { timeEntryId: In(timeEntryIds) },
-    });
-    return buildPauseStates(pauses);
-  }
-
   /**
-   * The same pause rows, ungrouped — the union needs each pause's shape, not
-   * the netted total `PauseState` carries.
+   * The pause rows, grouped by entry — the union needs each pause's shape,
+   * not a netted total.
    */
   private async getPausesFor(
     entries: TimeEntry[],
