@@ -85,6 +85,8 @@ export function ImportMembersModal({ organisationId, onClose }: ImportMembersMod
         const result = await inviteMembers(
           organisationId,
           validEntries.slice(start, start + INVITES_PER_REQUEST),
+          // Only a consent the form actually asked for and got.
+          { seatChargeConsent: consent.required && consent.agreed },
         );
         if (!result.ok) {
           if (collected.length > 0) setResults(collected);

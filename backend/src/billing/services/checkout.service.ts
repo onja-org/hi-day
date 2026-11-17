@@ -52,6 +52,8 @@ export interface SubscriptionIntent {
 interface ReadyToCharge {
   organisation: Organisation;
   seats: number;
+  /** What the admin bought; null where the seat counter was never set. */
+  purchasedSeats: number | null;
   /** The stored Stripe customer id, not yet checked against Stripe. */
   storedCustomerId: string | null;
   /**
@@ -152,8 +154,13 @@ export class CheckoutService {
     period: BillingPeriod,
     expectedSeats: number | undefined,
   ): Promise<SubscriptionIntent> {
-    const { organisation, seats, storedCustomerId, awaitingFirstPayment } =
-      await this.readyToCharge(subscriptions, organisationId, period);
+    const {
+      organisation,
+      seats,
+      purchasedSeats,
+      storedCustomerId,
+      awaitingFirstPayment,
+    } = await this.readyToCharge(subscriptions, organisationId, period);
 
     if (expectedSeats !== undefined && expectedSeats !== seats) {
       throw new BadRequestException(
@@ -163,6 +170,7 @@ export class CheckoutService {
 
     // Only once every check has passed, so a refusal leaves nothing behind
     // in Stripe.
+    await this.recordSeatsBought(organisationId, purchasedSeats, seats);
     const customerId = await this.customerFor(
       subscriptions,
       organisation,
@@ -371,11 +379,12 @@ export class CheckoutService {
     // `count` is already max(purchased, members) — buying ten seats for a
     // team of four charges for ten, and a team of fourteen charges for
     // fourteen. See `billedSeatCount`.
-    const { count } =
+    const { count, purchasedSeats } =
       await this.billedSeatsService.forOrganisation(organisationId);
     return {
       organisation,
       seats: count,
+      purchasedSeats,
       storedCustomerId: row?.stripeCustomerId ?? null,
       awaitingFirstPayment: stored?.status === 'incomplete' ? stored : null,
     };
@@ -409,6 +418,26 @@ export class CheckoutService {
       { stripeCustomerId: customer.id },
     );
     return customer.id;
+  }
+
+  /**
+   * An admin who never touched the seat counter is still buying `seats` at
+   * checkout, so that becomes the purchase. Left null, `seatsAreFull` read
+   * false for a paying Organisation — so the invite forms asked no consent —
+   * while the next person to join was charged on the spot all the same.
+   * A purchase already set is left alone: it is what the admin chose, and
+   * `seats` is never below it.
+   */
+  private async recordSeatsBought(
+    organisationId: string,
+    purchasedSeats: number | null,
+    seats: number,
+  ): Promise<void> {
+    if (purchasedSeats !== null) return;
+    await this.organisations.update(
+      { id: organisationId },
+      { purchasedSeats: seats },
+    );
   }
 
   /** Null for no id, or one Stripe no longer has. Other errors throw. */
@@ -466,9 +495,11 @@ export class CheckoutService {
     const {
       organisation,
       seats: count,
+      purchasedSeats,
       storedCustomerId,
       awaitingFirstPayment,
     } = await this.readyToCharge(subscriptions, organisationId, period);
+    await this.recordSeatsBought(organisationId, purchasedSeats, count);
     const customerId = await this.customerFor(
       subscriptions,
       organisation,

@@ -1,5 +1,41 @@
 import { BilledSeatsService } from '../billed-seats.service';
 
+/**
+ * A DataSource whose transactions really do wait for the advisory lock:
+ * each one runs only after the previous one under the same key has
+ * finished, as Postgres's `pg_advisory_xact_lock` makes them.
+ */
+function lockingDataSource() {
+  const locks = new Map<string, Promise<void>>();
+  const lockKeys: string[] = [];
+  const transaction = jest.fn(
+    async (work: (manager: unknown) => Promise<unknown>) => {
+      let release!: () => void;
+      let held: Promise<void> = Promise.resolve();
+      const manager = {
+        query: jest.fn(async (_sql: string, [key]: [string]) => {
+          lockKeys.push(key);
+          const before = locks.get(key) ?? Promise.resolve();
+          held = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          locks.set(
+            key,
+            before.then(() => held),
+          );
+          await before;
+        }),
+      };
+      try {
+        return await work(manager);
+      } finally {
+        release?.();
+      }
+    },
+  );
+  return { dataSource: { transaction }, transaction, lockKeys };
+}
+
 /** Only the repository calls `forOrganisation` makes. */
 function serviceFor(
   memberCount: number,
@@ -48,6 +84,7 @@ function serviceFor(
         },
       },
     } as never,
+    lockingDataSource().dataSource as never,
   );
   return { service, update, subscriptionsUpdate };
 }
@@ -260,7 +297,7 @@ describe('extra seats charged on arrival', () => {
       currentQuantity: 5,
     });
 
-    await service.syncToProvider('org-1');
+    await service.syncToProvider('org-1', { chargeNow: true });
 
     expect(subscriptionsUpdate).toHaveBeenCalledWith(
       'sub_1',
@@ -270,6 +307,58 @@ describe('extra seats charged on arrival', () => {
       }),
     );
     expect(update).not.toHaveBeenCalled();
+  });
+
+  // An invitation sent while seats were still free, accepted after they
+  // filled: nobody agreed to a charge on the spot, so the seat goes on the
+  // next invoice — prorated from today, so it is not free either.
+  it('bills an extra seat nobody agreed to on the next invoice, not at once', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(6, 5, {
+      interval: 'month',
+      currentQuantity: 5,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 6 }],
+        proration_behavior: 'create_prorations',
+      }),
+    );
+  });
+
+  it('keeps the monthly invoice interval on an annual plan for a deferred seat', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(6, 5, {
+      interval: 'year',
+      currentQuantity: 5,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        proration_behavior: 'create_prorations',
+        pending_invoice_item_interval: { interval: 'month', interval_count: 1 },
+      }),
+    );
+  });
+
+  // Buying seats on the Billing page is the admin's own act and consent.
+  it('charges seats an admin buys straight away', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(4, 8, {
+      interval: 'month',
+      currentQuantity: 5,
+    });
+
+    await service.setPurchasedSeats('org-1', 8);
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({ proration_behavior: 'always_invoice' }),
+    );
   });
 
   // The ticket's case: 5 bought, a 6th joins and is charged, then is
@@ -346,6 +435,7 @@ describe('extra seats charged on arrival', () => {
           },
         },
       } as never,
+      lockingDataSource().dataSource as never,
     );
 
     members = 6; // a sixth person accepts
@@ -394,5 +484,93 @@ describe('extra seats charged on arrival', () => {
     await service.syncToProvider('org-1');
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Counting the members, reading Stripe and writing the quantity are three
+ * steps. Two people joining at once used to interleave them: the sync that
+ * counted 11 could write after the one that counted 12, leaving Stripe a
+ * seat short and crediting it back at once.
+ */
+describe('two people joining at once', () => {
+  function raceService(counts: number[], firstRetrieveDelayMs: number) {
+    let quantity = 10;
+    let retrieves = 0;
+    const count = jest.fn(() => Promise.resolve(counts.shift()!));
+    const locking = lockingDataSource();
+    const service = new BilledSeatsService(
+      { count } as never,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          organisationId: 'org-1',
+          stripeSubscriptionId: 'sub_1',
+        }),
+      } as never,
+      {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'org-1', purchasedSeats: 10 }),
+        update: jest.fn(),
+      } as never,
+      {
+        isConfigured: true,
+        stripe: {
+          subscriptions: {
+            // The first sync's Stripe read is the slow one, so without a
+            // lock its write lands last.
+            retrieve: jest.fn(async () => {
+              retrieves += 1;
+              const current = quantity;
+              if (retrieves === 1) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, firstRetrieveDelayMs),
+                );
+              }
+              return {
+                status: 'active',
+                items: {
+                  data: [
+                    {
+                      id: 'si_1',
+                      quantity: current,
+                      price: { recurring: { interval: 'month' } },
+                    },
+                  ],
+                },
+              };
+            }),
+            update: jest.fn(
+              (_id: string, params: { items: { quantity: number }[] }) => {
+                quantity = params.items[0].quantity;
+                return Promise.resolve({});
+              },
+            ),
+          },
+        },
+      } as never,
+      locking.dataSource as never,
+    );
+    return { service, quantity: () => quantity, ...locking };
+  }
+
+  it('ends with Stripe billing everyone, whichever sync finishes last', async () => {
+    // The 11th joins, then the 12th, and both syncs start together.
+    const { service, quantity } = raceService([11, 12], 20);
+
+    await Promise.all([
+      service.syncToProvider('org-1'),
+      service.syncToProvider('org-1'),
+    ]);
+
+    expect(quantity()).toBe(12);
+  });
+
+  it("takes the organisation's billing lock, the one checkout takes", async () => {
+    const { service, lockKeys } = raceService([11], 0);
+
+    await service.syncToProvider('org-1');
+
+    expect(lockKeys).toEqual(['billing:org-1']);
   });
 });

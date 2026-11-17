@@ -124,6 +124,9 @@ export class InvitationsService {
     organisationId: string,
     actorUserId: string,
     entries: CreateInvitationEntryDto[],
+    /** Whether the admin agreed that an extra seat may be charged on the
+     * spot — see `Invitation.seatChargeConsent`. */
+    options: { seatChargeConsent?: boolean } = {},
   ): Promise<InvitationEntryResult[]> {
     const organisation = await this.organisations.findOneOrFail({
       where: { id: organisationId },
@@ -153,7 +156,12 @@ export class InvitationsService {
         continue;
       }
       results.push(
-        await this.upsertInvitation(organisation, actorUserId, entry),
+        await this.upsertInvitation(
+          organisation,
+          actorUserId,
+          entry,
+          options.seatChargeConsent ?? false,
+        ),
       );
     }
 
@@ -503,8 +511,12 @@ export class InvitationsService {
     }
 
     // A new Membership puts someone on the bill. After the transaction, so a
-    // failed sync can never undo the acceptance itself.
-    await this.entitlements.syncSeats(invitation.organisationId);
+    // failed sync can never undo the acceptance itself. Charged on the spot
+    // only if whoever sent the invitation agreed to that; otherwise an
+    // extra seat waits for the next invoice (ADR 0033).
+    await this.entitlements.syncSeats(invitation.organisationId, {
+      chargeNow: invitation.seatChargeConsent,
+    });
 
     return { message: `Welcome to ${invitation.organisation.name}.` };
   }
@@ -513,6 +525,7 @@ export class InvitationsService {
     organisation: Organisation,
     actorUserId: string,
     entry: CreateInvitationEntryDto,
+    seatChargeConsent: boolean,
   ): Promise<InvitationEntryResult> {
     const email = entry.email.trim().toLowerCase();
 
@@ -581,8 +594,9 @@ export class InvitationsService {
       teamIds,
       projectIds,
       actorUserId,
-      // An admin/manager inviting directly takes over from any link.
-      { inviteLinkId: null },
+      // An admin/manager inviting directly takes over from any link, and
+      // their answer on the charge replaces whatever the row carried.
+      { inviteLinkId: null, seatChargeConsent },
     );
   }
 
@@ -636,7 +650,11 @@ export class InvitationsService {
       link.teamIds,
       link.projectIds,
       link.createdByUserId,
-      { inviteLinkId: link.id, auditAction: 'invitation.requested_via_link' },
+      {
+        inviteLinkId: link.id,
+        auditAction: 'invitation.requested_via_link',
+        seatChargeConsent: link.seatChargeConsent,
+      },
     );
   }
 
@@ -699,13 +717,19 @@ export class InvitationsService {
        * (clearing any link a reused row had), omitted to leave it as is. */
       inviteLinkId?: string | null;
       auditAction?: string;
+      /** Omitted to leave a reused row's answer as it is (a resend). */
+      seatChargeConsent?: boolean;
     } = {},
   ): Promise<InvitationEntryResult> {
     const isResend = invitationId !== null;
-    const linkFields =
-      options.inviteLinkId === undefined
+    const linkFields = {
+      ...(options.inviteLinkId === undefined
         ? {}
-        : { inviteLinkId: options.inviteLinkId };
+        : { inviteLinkId: options.inviteLinkId }),
+      ...(options.seatChargeConsent === undefined
+        ? {}
+        : { seatChargeConsent: options.seatChargeConsent }),
+    };
     const token = this.tokenService.generateToken();
     const expiresAt = new Date(Date.now() + this.invitationTtlMs());
     const tokenHash = hashToken(token);

@@ -8,7 +8,15 @@ import type { EntityManager } from 'typeorm';
 export interface Entitlements {
   readonly billingEnabled: boolean;
   startTrial(manager: EntityManager, organisationId: string): Promise<void>;
-  syncSeats(organisationId: string): Promise<void>;
+  /**
+   * Bills the Organisation for its current seat count. `chargeNow` says
+   * whether a rise may be invoiced on the spot (ADR 0033), which needs an
+   * admin's consent; without it a rise is billed on the next invoice.
+   */
+  syncSeats(
+    organisationId: string,
+    options?: { chargeNow?: boolean },
+  ): Promise<void>;
 }
 
 export const ENTITLEMENTS = Symbol('ENTITLEMENTS');

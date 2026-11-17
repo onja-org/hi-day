@@ -65,6 +65,13 @@ export class Invitation {
   @Column({ type: 'uuid', nullable: true })
   inviteLinkId: string | null;
 
+  /** Whoever sent this agreed that, if the seats are full when it is
+   * accepted, the extra seat is charged on the spot (ADR 0033). Without it
+   * the seat is billed on the next invoice instead. A link-requested
+   * invitation carries its link's answer. */
+  @Column({ default: false })
+  seatChargeConsent: boolean;
+
   @ManyToOne(() => InviteLink, {
     nullable: true,
     onDelete: 'SET NULL',

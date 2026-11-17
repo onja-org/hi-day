@@ -133,6 +133,8 @@ describe('InviteLinksService', () => {
           enabled: true,
           usageCap: null,
           expiresAt: null,
+          // No consent sent, so joins through it wait for the next invoice.
+          seatChargeConsent: false,
         }),
       );
       expect(record).toHaveBeenCalledWith(
@@ -140,6 +142,19 @@ describe('InviteLinksService', () => {
         expect.objectContaining({ action: 'invite_link.created' }),
       );
       expect(summary.status).toBe('active');
+    });
+
+    it('keeps the consent an admin gave to extra seats being charged as people join', async () => {
+      const { service, save } = makeService();
+
+      await service.create('org-1', 'admin-1', {
+        ...createDto,
+        seatChargeConsent: true,
+      });
+
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ seatChargeConsent: true }),
+      );
     });
 
     it("rejects a team that isn't in the organisation", async () => {
