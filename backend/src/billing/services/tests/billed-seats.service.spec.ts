@@ -1,5 +1,41 @@
 import { BilledSeatsService } from '../billed-seats.service';
 
+/**
+ * A DataSource whose transactions really do wait for the advisory lock:
+ * each one runs only after the previous one under the same key has
+ * finished, as Postgres's `pg_advisory_xact_lock` makes them.
+ */
+function lockingDataSource() {
+  const locks = new Map<string, Promise<void>>();
+  const lockKeys: string[] = [];
+  const transaction = jest.fn(
+    async (work: (manager: unknown) => Promise<unknown>) => {
+      let release!: () => void;
+      let held: Promise<void> = Promise.resolve();
+      const manager = {
+        query: jest.fn(async (_sql: string, [key]: [string]) => {
+          lockKeys.push(key);
+          const before = locks.get(key) ?? Promise.resolve();
+          held = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          locks.set(
+            key,
+            before.then(() => held),
+          );
+          await before;
+        }),
+      };
+      try {
+        return await work(manager);
+      } finally {
+        release?.();
+      }
+    },
+  );
+  return { dataSource: { transaction }, transaction, lockKeys };
+}
+
 /** Only the repository calls `forOrganisation` makes. */
 function serviceFor(
   memberCount: number,
@@ -48,6 +84,7 @@ function serviceFor(
         },
       },
     } as never,
+    lockingDataSource().dataSource as never,
   );
   return { service, update, subscriptionsUpdate };
 }
@@ -248,42 +285,188 @@ describe('pushing the quantity to Stripe', () => {
 });
 
 /**
- * The seats an Organisation *owns*, once a join has been charged for. Without
- * this the Subscription tab sat on "9 of 8 seats in use — 1 over" and went on
- * offering to cover the ninth "on your next payment", after the $41.90 for it
- * had already been taken.
+ * Somebody joining past the purchase is charged through the Stripe quantity
+ * alone. The purchase used to be written up to the charged count, so the
+ * floor rose with every arrival and deactivating anyone never lowered the
+ * bill again — against "Deactivated Memberships are not billed".
  */
-describe('owning the seats a charge paid for', () => {
-  it('writes the purchase up to the charged count when somebody joins', async () => {
-    const { service, update, subscriptionsUpdate } = serviceFor(9, 8, {
-      interval: 'year',
-      currentQuantity: 8,
+describe('extra seats charged on arrival', () => {
+  it('charges the extra seat without raising the purchase', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(6, 5, {
+      interval: 'month',
+      currentQuantity: 5,
+    });
+
+    await service.syncToProvider('org-1', { chargeNow: true });
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 6 }],
+        proration_behavior: 'always_invoice',
+      }),
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  // An invitation sent while seats were still free, accepted after they
+  // filled: nobody agreed to a charge on the spot, so the seat goes on the
+  // next invoice — prorated from today, so it is not free either.
+  it('bills an extra seat nobody agreed to on the next invoice, not at once', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(6, 5, {
+      interval: 'month',
+      currentQuantity: 5,
     });
 
     await service.syncToProvider('org-1');
 
     expect(subscriptionsUpdate).toHaveBeenCalledWith(
       'sub_1',
-      expect.objectContaining({ proration_behavior: 'always_invoice' }),
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 6 }],
+        proration_behavior: 'create_prorations',
+      }),
     );
-    expect(update).toHaveBeenCalledWith({ id: 'org-1' }, { purchasedSeats: 9 });
   });
 
-  // Seats bought ahead are a floor. Somebody leaving must not quietly hand
-  // back a seat that was paid to be held open.
-  it('leaves the purchase alone when the count falls', async () => {
-    const { service, update } = serviceFor(6, 9, {
+  it('keeps the monthly invoice interval on an annual plan for a deferred seat', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(6, 5, {
       interval: 'year',
-      currentQuantity: 9,
+      currentQuantity: 5,
     });
 
     await service.syncToProvider('org-1');
 
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        proration_behavior: 'create_prorations',
+        pending_invoice_item_interval: { interval: 'month', interval_count: 1 },
+      }),
+    );
+  });
+
+  // Buying seats on the Billing page is the admin's own act and consent.
+  it('charges seats an admin buys straight away', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(4, 8, {
+      interval: 'month',
+      currentQuantity: 5,
+    });
+
+    await service.setPurchasedSeats('org-1', 8);
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({ proration_behavior: 'always_invoice' }),
+    );
+  });
+
+  // The ticket's case: 5 bought, a 6th joins and is charged, then is
+  // deactivated. Stripe used to go on billing 6 at every renewal.
+  it('takes the bill back down to the purchase when the extra person is deactivated', async () => {
+    const { service, update, subscriptionsUpdate } = serviceFor(5, 5, {
+      interval: 'month',
+      currentQuantity: 6,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({
+        items: [{ id: 'si_1', quantity: 5 }],
+        proration_behavior: 'none',
+      }),
+    );
     expect(update).not.toHaveBeenCalled();
   });
 
-  // A join filling a seat already bought changes no money, so it owns nothing new.
-  it('leaves the purchase alone when a bought seat is simply filled', async () => {
+  // The whole sequence against one Organisation and one Stripe item, which
+  // is where the old behaviour went wrong: the arrival wrote the purchase up
+  // to 6, so the deactivation found max(6, 5) = 6 and changed nothing.
+  it('bills the bought seats again after an extra arrival is deactivated', async () => {
+    let members = 5;
+    let purchasedSeats: number | null = 5;
+    let quantity = 5;
+    const subscriptionsUpdate = jest.fn(
+      (_id: string, params: { items: { quantity: number }[] }) => {
+        quantity = params.items[0].quantity;
+        return Promise.resolve({});
+      },
+    );
+    const service = new BilledSeatsService(
+      { count: jest.fn(() => Promise.resolve(members)) } as never,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          organisationId: 'org-1',
+          stripeSubscriptionId: 'sub_1',
+        }),
+      } as never,
+      {
+        findOne: jest.fn(() =>
+          Promise.resolve({ id: 'org-1', purchasedSeats }),
+        ),
+        update: jest.fn(
+          (_where: unknown, patch: { purchasedSeats: number }) => {
+            purchasedSeats = patch.purchasedSeats;
+            return Promise.resolve({});
+          },
+        ),
+      } as never,
+      {
+        isConfigured: true,
+        stripe: {
+          subscriptions: {
+            retrieve: jest.fn(() =>
+              Promise.resolve({
+                status: 'active',
+                items: {
+                  data: [
+                    {
+                      id: 'si_1',
+                      quantity,
+                      price: { recurring: { interval: 'month' } },
+                    },
+                  ],
+                },
+              }),
+            ),
+            update: subscriptionsUpdate,
+          },
+        },
+      } as never,
+      lockingDataSource().dataSource as never,
+    );
+
+    members = 6; // a sixth person accepts
+    await service.syncToProvider('org-1');
+    expect(quantity).toBe(6);
+
+    members = 5; // and is deactivated
+    await service.syncToProvider('org-1');
+
+    expect(quantity).toBe(5);
+    expect(purchasedSeats).toBe(5);
+  });
+
+  // Seats bought ahead are a floor. Somebody leaving must not quietly hand
+  // back a seat that was paid to be held open.
+  it('never drops below the seats bought when people leave', async () => {
+    const { service, subscriptionsUpdate } = serviceFor(3, 5, {
+      interval: 'month',
+      currentQuantity: 6,
+    });
+
+    await service.syncToProvider('org-1');
+
+    expect(subscriptionsUpdate).toHaveBeenCalledWith(
+      'sub_1',
+      expect.objectContaining({ items: [{ id: 'si_1', quantity: 5 }] }),
+    );
+  });
+
+  // A join filling a seat already bought changes no money.
+  it('leaves Stripe alone when a bought seat is simply filled', async () => {
     const { service, update, subscriptionsUpdate } = serviceFor(5, 8, {
       interval: 'year',
       currentQuantity: 8,
@@ -295,12 +478,99 @@ describe('owning the seats a charge paid for', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  // Nothing was charged, so nothing is owned — the figure would be a lie.
   it('leaves the purchase alone where there is no provider subscription', async () => {
     const { service, update } = serviceFor(9, 8);
 
     await service.syncToProvider('org-1');
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Counting the members, reading Stripe and writing the quantity are three
+ * steps. Two people joining at once used to interleave them: the sync that
+ * counted 11 could write after the one that counted 12, leaving Stripe a
+ * seat short and crediting it back at once.
+ */
+describe('two people joining at once', () => {
+  function raceService(counts: number[], firstRetrieveDelayMs: number) {
+    let quantity = 10;
+    let retrieves = 0;
+    const count = jest.fn(() => Promise.resolve(counts.shift()!));
+    const locking = lockingDataSource();
+    const service = new BilledSeatsService(
+      { count } as never,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          organisationId: 'org-1',
+          stripeSubscriptionId: 'sub_1',
+        }),
+      } as never,
+      {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'org-1', purchasedSeats: 10 }),
+        update: jest.fn(),
+      } as never,
+      {
+        isConfigured: true,
+        stripe: {
+          subscriptions: {
+            // The first sync's Stripe read is the slow one, so without a
+            // lock its write lands last.
+            retrieve: jest.fn(async () => {
+              retrieves += 1;
+              const current = quantity;
+              if (retrieves === 1) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, firstRetrieveDelayMs),
+                );
+              }
+              return {
+                status: 'active',
+                items: {
+                  data: [
+                    {
+                      id: 'si_1',
+                      quantity: current,
+                      price: { recurring: { interval: 'month' } },
+                    },
+                  ],
+                },
+              };
+            }),
+            update: jest.fn(
+              (_id: string, params: { items: { quantity: number }[] }) => {
+                quantity = params.items[0].quantity;
+                return Promise.resolve({});
+              },
+            ),
+          },
+        },
+      } as never,
+      locking.dataSource as never,
+    );
+    return { service, quantity: () => quantity, ...locking };
+  }
+
+  it('ends with Stripe billing everyone, whichever sync finishes last', async () => {
+    // The 11th joins, then the 12th, and both syncs start together.
+    const { service, quantity } = raceService([11, 12], 20);
+
+    await Promise.all([
+      service.syncToProvider('org-1'),
+      service.syncToProvider('org-1'),
+    ]);
+
+    expect(quantity()).toBe(12);
+  });
+
+  it("takes the organisation's billing lock, the one checkout takes", async () => {
+    const { service, lockKeys } = raceService([11], 0);
+
+    await service.syncToProvider('org-1');
+
+    expect(lockKeys).toEqual(['billing:org-1']);
   });
 });

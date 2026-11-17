@@ -26,6 +26,13 @@ reason the issuer gave, and Stripe's Smart Retries own the recovery.
 A seat count going **down** is unchanged: a monthly drop lands whole on the
 next invoice, an annual one leaves a credit against it.
 
+The charge moves the Stripe quantity only. `purchasedSeats` — what the admin
+bought — is never written up to the charged count. It once was, so the
+Subscription tab would stop showing a paid-for arrival as "1 over"; but that
+made the floor rise with every arrival, and a deactivated extra member then
+went on being billed at every renewal. The "over" figure now reads alongside
+the line that extra seats are charged as people join, which is true.
+
 ## Why
 
 This was asked for directly, after the case against it was put and
@@ -77,13 +84,24 @@ still beats no email.
 link adds no seat, and needing to consent to a charge before you can *close*
 a link would be backwards. Only creation is held.
 
-**The gate is the interface, not the endpoint.** Nothing server-side checks
-that consent was given, so an admin driving the API directly bypasses it.
-Accepted because the consent exists to inform a human before they act, and
-the endpoint is admin-only — whoever bypasses it is the person it would be
-protecting. If consent ever needs to be an auditable record rather than an
-interface courtesy, it belongs on the endpoint for all three forms at once,
-not just whichever one is in hand.
+**The consent travels with the invitation.** Each of the three forms sends
+the tick (`seatChargeConsent`), and it is stored on the invitation, or on the
+invite link and copied onto every invitation the link sends. When somebody
+accepts, the extra seat is charged on the spot only if their invitation
+carries it. One that doesn't — sent while seats were still free and accepted
+after they filled, which is the common case, or made before this existed —
+still adds the seat, but `create_prorations` puts the same prorated amount on
+the next invoice instead. Nobody is charged on the spot for a seat nobody
+agreed to, and the seat is not free either.
+
+An admin driving the API can still send the flag without reading anything.
+Accepted for the same reason as before: the endpoints are admin-only, and
+whoever does it is the person the consent would be protecting.
+
+**An Organisation that never touched the seat counter** has the seats it
+pays for at checkout recorded as its purchase. Left null, `seatsAreFull`
+read false for a paying Organisation, so the forms asked nothing while the
+next arrival was charged on the spot.
 
 ## What would change our mind
 

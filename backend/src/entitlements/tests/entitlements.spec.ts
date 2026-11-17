@@ -27,11 +27,11 @@ describe('Hi Day Cloud entitlements', () => {
     const { entitlements, startTrial, syncToProvider } = cloud();
 
     await entitlements.startTrial(MANAGER, 'org-1');
-    await entitlements.syncSeats('org-1');
+    await entitlements.syncSeats('org-1', { chargeNow: true });
 
     expect(entitlements.billingEnabled).toBe(true);
     expect(startTrial).toHaveBeenCalledWith(MANAGER, 'org-1');
-    expect(syncToProvider).toHaveBeenCalledWith('org-1');
+    expect(syncToProvider).toHaveBeenCalledWith('org-1', { chargeNow: true });
   });
 });
 
