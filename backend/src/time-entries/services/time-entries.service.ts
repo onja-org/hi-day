@@ -927,6 +927,18 @@ export class TimeEntriesService {
    * It starts a timer either way, so it answers to Allowed apps just as
    * `start` does — a running timer the setting disallows was already ended
    * when the setting changed (`stopEntriesDisallowedByApps`).
+   *
+   * It answers to the work-time limits and tracking-disabled days as `start`
+   * does too, whenever it starts tracking that wasn't already happening: a
+   * different Project or Task, nothing running on this Device, or a paused
+   * entry (a switch on one resumes it). Without that, switching was a way
+   * round both — and a disabled day is only ever enforced at the start, so
+   * that bypass was permanent. The one switch left unchecked is a
+   * *continuation*: the same Project and Task this Device is already
+   * tracking, which is how the agent splits its running entry at midnight
+   * and when a capture setting changes. That adds no tracking, the polls
+   * still stop it at a limit, and refusing it would only leave the entry
+   * unsplit while the agent retried on every poll.
    */
   async switchTo(
     organisationId: string,
@@ -962,6 +974,13 @@ export class TimeEntriesService {
       where: { membershipId: membership.id, endedAt: IsNull() },
     });
     await this.assertAppAllowed(membership, organisationId, source);
+    if (!(await this.continuesThisDevice(running, deviceId, projectId, task))) {
+      await this.assertWithinWorkTimeLimits(
+        membership,
+        organisationId,
+        new Date(),
+      );
+    }
     await this.assertWebMatchesDevices(running, deviceId, projectId);
 
     const saved = await this.dataSource.transaction(async (manager) => {
@@ -1021,6 +1040,35 @@ export class TimeEntriesService {
     });
 
     return await this.toSummary(saved);
+  }
+
+  /**
+   * Whether a switch only continues what this Device is already tracking —
+   * same Project, same Task, not paused — so it splits the entry rather than
+   * starting any tracking. Matched exactly as `runningForDevice` matches it,
+   * the web counting as one Device: the same Project running somewhere else
+   * is new tracking here.
+   */
+  private async continuesThisDevice(
+    running: TimeEntry[],
+    deviceId: string | null,
+    projectId: string | null,
+    task: Task | null | undefined,
+  ): Promise<boolean> {
+    const onThisDevice = running.find((entry) =>
+      deviceId === null ? entry.deviceId === null : entry.deviceId === deviceId,
+    );
+    if (
+      !onThisDevice ||
+      onThisDevice.projectId !== projectId ||
+      onThisDevice.taskId !== (task?.id ?? null)
+    ) {
+      return false;
+    }
+    const openPause = await this.timeEntryPauses.findOne({
+      where: { timeEntryId: onThisDevice.id, resumedAt: IsNull() },
+    });
+    return openPause === null;
   }
 
   async current(
