@@ -1,6 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useCurrentOrganisation } from "@/hooks/useCurrentOrganisation";
+import { activityDayKey } from "@/lib/activityDayKey";
 import { differsOnlyByPage } from "@/lib/differsOnlyByPage";
 import { getScreenshotSlots } from "@/lib/getScreenshotSlots";
 import type {
@@ -34,10 +36,11 @@ export function useScreenshotSlots(
   options: { enabled?: boolean } = {},
 ) {
   const queryKey = SCREENSHOT_SLOTS_QUERY_KEY(organisationId, filter, paging);
-  // A past day's slots are settled and cannot move.
+  // A past day's slots are settled and cannot move. Today is the
+  // organisation's, the calendar the day itself is read on.
+  const zone = useCurrentOrganisation().data?.timezone ?? "UTC";
   const isToday =
-    filter.date === undefined ||
-    filter.date === new Date().toISOString().slice(0, 10);
+    filter.date === undefined || filter.date === activityDayKey(new Date(), zone);
 
   return useQuery({
     queryKey,

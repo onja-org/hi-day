@@ -7,6 +7,10 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Between, DataSource, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
+import {
+  activityDayIn,
+  type ActivityDay,
+} from '../../common/activity-day.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { Membership } from '../../database/entities/membership.entity';
@@ -17,8 +21,6 @@ import { OrganisationsService } from '../../organisations/services/organisations
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UrlSessionEntryDto } from '../dto/url-session-entry.dto';
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 function isUrlUnknown(session: Pick<UrlSession, 'confidence'>): boolean {
@@ -286,7 +288,11 @@ export class UrlSessionsService {
       membership,
       targetMembershipId,
     );
-    const resolvedDate = this.resolveDate(date);
+    const {
+      date: resolvedDate,
+      start,
+      end,
+    } = await this.resolveDay(organisationId, date);
     // Self view only: a member blocked from seeing their own activity gets
     // an empty day, indistinguishable from "nothing tracked" — not a 403,
     // which would reveal the data exists. Viewing another member's day is
@@ -301,8 +307,6 @@ export class UrlSessionsService {
     ) {
       return { date: resolvedDate, totalActiveMs: 0, buckets: [] };
     }
-    const start = new Date(`${resolvedDate}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + MS_PER_DAY);
 
     const [rows, coveringEntries] = await Promise.all([
       this.urlSessions.find({
@@ -468,14 +472,14 @@ export class UrlSessionsService {
     return target.id;
   }
 
-  private resolveDate(date?: string): string {
-    if (date === undefined) {
-      return new Date().toISOString().slice(0, 10);
-    }
-    if (!DATE_PATTERN.test(date)) {
-      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
-    }
-    return date;
+  /** The caller's `?date=`, or today, on the organisation's calendar. */
+  private async resolveDay(
+    organisationId: string,
+    date?: string,
+  ): Promise<ActivityDay> {
+    const { timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    return activityDayIn(date, timezone);
   }
 
   private async getActiveMembership(

@@ -1,6 +1,6 @@
+import { activityDayKey } from "./activityDayKey";
+import { daysBetweenKeys } from "./daysBetweenKeys";
 import { SCREENSHOT_HIGHLIGHT_KEYS } from "./parseScreenshotHighlight";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 type InstanceLinkInput = {
   organisationId: string;
@@ -11,22 +11,25 @@ type InstanceLinkInput = {
   end: string;
   /** The instance's day on the organisation's calendar. */
   date: string;
+  /** The organisation's timezone, whose calendar `date` is on. */
+  timezone: string;
   now: Date;
 };
 
 /**
  * Where to check an instance: the member's Screenshots for that day, opened
- * on the instance's stretch and highlighting it, and their Timesheet for it. Screenshots navigates in UTC days back from today
- * (see `getDayRangeDateString`), so its offset comes from the instance's
- * own start time; the Timesheet takes the organisation-calendar day.
+ * on the instance's stretch and highlighting it, and their Timesheet for it.
+ * Both read days on the organisation's calendar: Screenshots counts back
+ * from today there (see `activityDayKey`), the Timesheet takes the day.
  */
 export function buildUnusualInstanceLinks(input: InstanceLinkInput): {
   screenshots: string;
   timesheet: string;
 } {
-  const utcDay = (instant: Date) =>
-    Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate());
-  const dayOffset = Math.round((utcDay(new Date(input.start)) - utcDay(input.now)) / DAY_MS);
+  const dayOffset = daysBetweenKeys(
+    activityDayKey(input.now, input.timezone),
+    input.date,
+  );
 
   const screenshots = new URLSearchParams();
   if (input.membershipId) screenshots.set("membershipId", input.membershipId);

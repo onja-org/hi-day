@@ -58,8 +58,14 @@ describe('AppEventsService', () => {
 
   function makeOrganisationsService(
     overrides: Partial<CaptureSettings> = {},
+    timezone = 'UTC',
   ): OrganisationsService {
     return {
+      // UTC by default, so the fixed timestamps below describe the day they
+      // always did; the day itself is the organisation's, not the server's.
+      getWeekCalendar: jest
+        .fn()
+        .mockResolvedValue({ weekStartsOn: 'monday', timezone }),
       getCaptureSettings: jest.fn().mockResolvedValue({
         windowTrackingEnabled: true,
         appUrlTracking: 'apps_urls',
@@ -436,6 +442,53 @@ describe('AppEventsService', () => {
 
       expect(day.buckets).toEqual([]);
       expect(day.totalSecondsSpent).toBe(0);
+    });
+
+    it("reads the day from the organisation's midnight, not UTC's", async () => {
+      const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+      const find = jest.fn().mockResolvedValue([]);
+      const listCoveringWindow = jest.fn().mockResolvedValue([]);
+      const service = new AppEventsService(
+        { find } as unknown as Repository<AppEvent>,
+        makeMembershipsRepo({ findOne }),
+        { listCoveringWindow } as unknown as TimeEntriesService,
+        makeOrganisationsService({}, 'Africa/Nairobi'),
+      );
+
+      await service.getMyDay('org-1', 'user-1', '2026-11-02');
+
+      const start = new Date('2026-11-01T21:00:00.000Z');
+      const end = new Date('2026-11-02T21:00:00.000Z');
+      const [{ where }] = find.mock.calls[0] as [
+        { where: { sampledAt: { value: Date[] } } },
+      ];
+      expect(where.sampledAt.value).toEqual([start, end]);
+      expect(listCoveringWindow).toHaveBeenCalledWith(
+        'org-1',
+        'membership-1',
+        start,
+        end,
+      );
+    });
+
+    it("defaults to today on the organisation's calendar", async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-02T22:30:00.000Z') });
+      try {
+        const findOne = jest.fn().mockResolvedValue({ id: 'membership-1' });
+        const service = new AppEventsService(
+          makeAppEventsRepo().repo,
+          makeMembershipsRepo({ findOne }),
+          makeTimeEntriesService(),
+          makeOrganisationsService({}, 'Africa/Nairobi'),
+        );
+
+        const day = await service.getMyDay('org-1', 'user-1', undefined);
+
+        // 01:30 on Tuesday in Nairobi, still Monday in UTC.
+        expect(day.date).toBe('2026-11-03');
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('defaults to today when no date is given', async () => {

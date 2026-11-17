@@ -9,10 +9,12 @@ type DayNavigatorProps = {
   value: Date;
   onChange: (date: Date) => void;
   label: string;
+  /** The last selectable day; the viewer's own today unless given. */
+  today?: Date;
 };
 
-export function DayNavigator({ value, onChange, label }: DayNavigatorProps) {
-  const isToday = !isBefore(startOfDay(value), startOfDay(new Date()));
+export function DayNavigator({ value, onChange, label, today = new Date() }: DayNavigatorProps) {
+  const isToday = !isBefore(startOfDay(value), startOfDay(today));
 
   return (
     <div className="flex flex-col gap-1">
@@ -24,7 +26,7 @@ export function DayNavigator({ value, onChange, label }: DayNavigatorProps) {
         onNext={() => onChange(addDays(value, 1))}
         nextDisabled={isToday}
       >
-        <DatePicker value={value} onChange={onChange} label={label} embedded />
+        <DatePicker value={value} onChange={onChange} label={label} today={today} embedded />
       </StepNavigator>
     </div>
   );

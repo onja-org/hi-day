@@ -58,7 +58,7 @@ describe('ScreenshotsService', () => {
       }),
       // UTC, so these tests' fixed timestamps still describe the day they
       // always did — the day bounds are the organisation's now, not the
-      // server's (see `dayBounds`).
+      // server's (see `resolveDay`).
       getWeekCalendar: jest
         .fn()
         .mockResolvedValue({ weekStartsOn: 'monday', timezone: 'UTC' }),
@@ -513,6 +513,33 @@ describe('ScreenshotsService', () => {
       });
       expect(createViewUrl).toHaveBeenCalledWith(
         'screenshots/org-1/device-1/123-uuid.jpg',
+      );
+    });
+
+    it("reads the day from the organisation's midnight, not UTC's", async () => {
+      const listCoveringWindow = jest.fn().mockResolvedValue([]);
+      const service = new ScreenshotsService(
+        makeScreenshotsRepo().repo,
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        makeOrganisationsService({
+          getWeekCalendar: jest.fn().mockResolvedValue({
+            weekStartsOn: 'monday',
+            timezone: 'Africa/Nairobi',
+          }),
+        }),
+        makeStorage().storage,
+        { listCoveringWindow } as unknown as TimeEntriesService,
+      );
+
+      await service.getMyScreenshots('org-1', 'user-1', '2026-11-02');
+
+      expect(listCoveringWindow).toHaveBeenCalledWith(
+        'org-1',
+        'membership-1',
+        new Date('2026-11-01T21:00:00.000Z'),
+        new Date('2026-11-02T21:00:00.000Z'),
       );
     });
 

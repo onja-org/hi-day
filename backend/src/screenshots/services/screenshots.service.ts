@@ -12,6 +12,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Between, In, LessThan, Repository } from 'typeorm';
+import {
+  activityDayIn,
+  type ActivityDay,
+} from '../../common/activity-day.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { Membership } from '../../database/entities/membership.entity';
@@ -29,7 +33,6 @@ import { OrganisationsService } from '../../organisations/services/organisations
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { ScreenshotStorageService } from './screenshot-storage.service';
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
@@ -280,7 +283,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -307,7 +310,7 @@ export class ScreenshotsService {
     return this.listForMembershipId(
       organisationId,
       target.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -331,7 +334,7 @@ export class ScreenshotsService {
       callerUserId,
       targetMembershipId,
     );
-    const { start, end } = this.dayBounds(this.todayUtc());
+    const { start, end } = await this.resolveDay(organisationId);
     const coveringEntries = await this.timeEntriesService.listCoveringWindow(
       organisationId,
       target.id,
@@ -448,7 +451,7 @@ export class ScreenshotsService {
     return this.listSlotsForMembershipId(
       organisationId,
       membership.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -471,7 +474,7 @@ export class ScreenshotsService {
     return this.listSlotsForMembershipId(
       organisationId,
       target.id,
-      this.resolveDayKey(date),
+      await this.resolveDay(organisationId, date),
       filter,
       pagination,
     );
@@ -505,12 +508,10 @@ export class ScreenshotsService {
   private async listSlotsForMembershipId(
     organisationId: string,
     membershipId: string,
-    date: string,
+    { start, end }: ActivityDay,
     filter: ScreenshotsFilter,
     pagination: ScreenshotSlotsPagination,
   ): Promise<ScreenshotSlotsDay> {
-    const { start, end } = this.dayBounds(date);
-
     // Day-wide but small: a handful of entries and at most one sample per
     // ten minutes. The screenshots wait until the page is known..
     const [tracked, captureState] = await Promise.all([
@@ -686,12 +687,10 @@ export class ScreenshotsService {
   private async listForMembershipId(
     organisationId: string,
     membershipId: string,
-    date: string,
+    { start, end }: ActivityDay,
     filter: ScreenshotsFilter,
     pagination: ScreenshotsPagination,
   ): Promise<ScreenshotsPage> {
-    const { start, end } = this.dayBounds(date);
-
     const [rows, coveringEntries] = await Promise.all([
       this.screenshots.find({
         select: { id: true, capturedAt: true, storageKey: true },
@@ -763,18 +762,6 @@ export class ScreenshotsService {
     });
   }
 
-  /**
-   * UTC midnight to UTC midnight, matching the Apps, URLs and Notes tabs
-   * beside it (see `getDayRange.ts`). Known consequence: Timesheets groups
-   * its days on the organisation's calendar, so outside UTC the two
-   * describe different windows and their totals will not agree — fixing
-   * that means moving the whole Activities section, not this page alone.
-   */
-  private dayBounds(date: string): { start: Date; end: Date } {
-    const start = new Date(`${date}T00:00:00.000Z`);
-    return { start, end: new Date(start.getTime() + MS_PER_DAY) };
-  }
-
   /** For explaining an empty slot, never for gating one. */
   private async captureStateFor(
     organisationId: string,
@@ -791,24 +778,18 @@ export class ScreenshotsService {
     return { activityRecorded: activityTrackingEnabled, screenshotsEnabled };
   }
 
-  /** Today's UTC calendar date, for the callers that mean "now" rather than
-   * a date somebody picked — the same day the client computes and sends. */
-  private todayUtc(): string {
-    return new Date().toISOString().slice(0, 10);
-  }
-
   /**
-   * The caller's `?date=`, or today — both the UTC calendar `dayBounds`
-   * resolves against and the client sends.
+   * The caller's `?date=`, or today, on the organisation's calendar — the
+   * same days the Apps, URLs and Notes tabs beside it and Timesheets use,
+   * so their totals describe the same window.
    */
-  private resolveDayKey(date?: string): string {
-    if (date === undefined) {
-      return this.todayUtc();
-    }
-    if (!DATE_PATTERN.test(date)) {
-      throw new BadRequestException('date must be formatted as YYYY-MM-DD.');
-    }
-    return date;
+  private async resolveDay(
+    organisationId: string,
+    date?: string,
+  ): Promise<ActivityDay> {
+    const { timezone } =
+      await this.organisationsService.getWeekCalendar(organisationId);
+    return activityDayIn(date, timezone);
   }
 
   /**
