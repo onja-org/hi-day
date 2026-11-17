@@ -7,11 +7,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Between, In, LessThan, Repository } from 'typeorm';
+import { Between, In, Repository } from 'typeorm';
 import {
   activityDayIn,
   type ActivityDay,
@@ -31,18 +32,26 @@ import {
 } from '../screenshot-slots.util';
 import { OrganisationsService } from '../../organisations/services/organisations.service';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
-import { ScreenshotStorageService } from './screenshot-storage.service';
+import {
+  MAX_DELETE_BATCH_SIZE,
+  ScreenshotStorageService,
+} from './screenshot-storage.service';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 /**
- * Caps how many expired rows one retention sweep processes — keeps a
- * single cron tick fast and bounded even behind a large backlog (e.g. an
- * org that just shortened its retention). The next hourly run picks up
- * wherever this one left off, so nothing is ever skipped, just spread out.
+ * Expired rows read per batch of a retention run: as many as one storage
+ * `DeleteObjects` call takes, so each batch is one request to the store.
  */
-const RETENTION_CLEANUP_BATCH_SIZE = 500;
+const RETENTION_CLEANUP_BATCH_SIZE = MAX_DELETE_BATCH_SIZE;
+
+/**
+ * How long one hourly retention run may keep deleting. Well inside the
+ * hour, so runs never overlap; at a batch every second or two it clears
+ * hundreds of thousands of screenshots, far beyond what a day adds.
+ */
+const RETENTION_CLEANUP_TIME_BUDGET_MS = 15 * 60 * 1000;
 
 /**
  * The agent caps captures per ten minutes, but per **Device** — a person
@@ -189,6 +198,8 @@ function groupIndexesByHour(
 
 @Injectable()
 export class ScreenshotsService {
+  private readonly logger = new Logger(ScreenshotsService.name);
+
   constructor(
     @InjectRepository(Screenshot)
     private readonly screenshots: Repository<Screenshot>,
@@ -747,19 +758,72 @@ export class ScreenshotsService {
    * `screenshotRetentionDays` setting then in effect (see Screenshot
    * entity's own comment) — this job never re-reads the org's *current*
    * setting, it just honours what was already computed.
+   *
+   * Works through every expired screenshot, oldest first, until none are
+   * left or the time budget runs out. One batch an hour used to be the
+   * limit: 500 an hour is 12,000 a day, and at the default frequency about
+   * 250 people tracking all day add more than that, so the backlog grew for
+   * ever and screenshots outlived their retention.
+   *
+   * A row is deleted only once its object is. One the store refused keeps
+   * its row, so it is retried next hour rather than left behind in storage
+   * with nothing pointing at it. Batches are read from a cursor, not from
+   * the top, so a refused row isn't read again and again within one run.
    */
   @Cron(CronExpression.EVERY_HOUR)
-  async deleteExpired(): Promise<void> {
-    const expired = await this.screenshots.find({
-      where: { keptUntil: LessThan(new Date()) },
-      take: RETENTION_CLEANUP_BATCH_SIZE,
-    });
-    if (expired.length === 0) return;
+  async deleteExpired(
+    timeBudgetMs = RETENTION_CLEANUP_TIME_BUDGET_MS,
+  ): Promise<{ deleted: number; failed: number }> {
+    const startedAt = Date.now();
+    const now = new Date();
+    let cursor: { keptUntil: Date; id: string } | null = null;
+    let deleted = 0;
+    let failed = 0;
 
-    await this.storage.deleteObjects(expired.map((row) => row.storageKey));
-    await this.screenshots.delete({
-      id: In(expired.map((row) => row.id)),
-    });
+    while (Date.now() - startedAt < timeBudgetMs) {
+      const query = this.screenshots
+        .createQueryBuilder('screenshot')
+        .select([
+          'screenshot.id',
+          'screenshot.storageKey',
+          'screenshot.keptUntil',
+        ])
+        .where('screenshot.keptUntil < :now', { now })
+        .orderBy('screenshot.keptUntil', 'ASC')
+        .addOrderBy('screenshot.id', 'ASC')
+        .limit(RETENTION_CLEANUP_BATCH_SIZE);
+      if (cursor) {
+        query.andWhere(
+          '(screenshot.keptUntil, screenshot.id) > (:cursorKeptUntil, :cursorId)',
+          { cursorKeptUntil: cursor.keptUntil, cursorId: cursor.id },
+        );
+      }
+      const expired = await query.getMany();
+      if (expired.length === 0) break;
+
+      const refused = new Set(
+        await this.storage.deleteObjects(expired.map((row) => row.storageKey)),
+      );
+      const gone = expired.filter((row) => !refused.has(row.storageKey));
+      if (gone.length > 0) {
+        await this.screenshots.delete({ id: In(gone.map((row) => row.id)) });
+      }
+      deleted += gone.length;
+      failed += expired.length - gone.length;
+
+      // The store refused the whole batch: it is down, or refusing
+      // everything, and the next batch would fare no better.
+      if (gone.length === 0) break;
+      const last = expired[expired.length - 1];
+      cursor = { keptUntil: last.keptUntil, id: last.id };
+    }
+
+    if (failed > 0) {
+      this.logger.warn(
+        `Screenshot retention: deleted ${deleted}, kept ${failed} whose stored object could not be deleted; they will be retried next hour.`,
+      );
+    }
+    return { deleted, failed };
   }
 
   /** For explaining an empty slot, never for gating one. */
