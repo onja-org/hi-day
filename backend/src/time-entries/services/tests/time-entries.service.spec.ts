@@ -2163,6 +2163,165 @@ describe('TimeEntriesService', () => {
       await expect(start(service)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    describe('switching', () => {
+      // The web timer: on the web, `deviceId` is null.
+      const webTimer = {
+        id: 'web-timer',
+        membershipId: 'm-1',
+        deviceId: null,
+        projectId: 'project-1',
+        taskId: null,
+        startedAt: new Date(Date.now() - 60 * 1000),
+        endedAt: null,
+      } as unknown as TimeEntry;
+
+      /** `running` answers the running lookup; `worked` the limit's own,
+       * the only one that filters `startedAt`. */
+      function makeSwitchRepo(
+        running: TimeEntry[],
+        worked: Partial<TimeEntry>[] = [],
+      ) {
+        return makeTimeEntriesRepo({
+          find: jest.fn((options: { where?: Record<string, unknown> }) =>
+            Promise.resolve(
+              options.where && 'startedAt' in options.where ? worked : running,
+            ),
+          ),
+        });
+      }
+
+      function switchTo(
+        service: ReturnType<typeof makeService>,
+        projectId = 'project-1',
+        options: { startOperationId?: string } = {},
+      ) {
+        return service.switchTo(
+          'org-1',
+          'user-1',
+          projectId,
+          undefined,
+          TimeEntrySource.WEB,
+          null,
+          options,
+        );
+      }
+
+      it('refuses to start tracking on a day tracking is switched off', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([]),
+          dataSource,
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('refuses a switch to another project once the daily limit is reached, leaving the timer running', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ dailyLimitHours: 1 }),
+          timeEntriesRepo: makeSwitchRepo([webTimer], twoHoursToday),
+          dataSource,
+        });
+
+        await expect(switchTo(service, 'project-2')).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('refuses once the weekly limit is reached', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ weeklyLimitHours: 1 }),
+          timeEntriesRepo: makeSwitchRepo([webTimer], twoHoursToday),
+          dataSource,
+        });
+
+        await expect(switchTo(service, 'project-2')).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it('treats another Task on the same Project as new tracking', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([{ ...webTimer, taskId: 'task-1' }]),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('lets this Device continue its own timer — the split the agent makes at midnight', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([webTimer]),
+          dataSource,
+        });
+
+        await switchTo(service);
+
+        expect(transaction).toHaveBeenCalled();
+      });
+
+      it('checks a switch that resumes a paused timer', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([webTimer]),
+          timeEntryPausesRepo: makeTimeEntryPausesRepo({
+            findOne: jest.fn().mockResolvedValue({
+              timeEntryId: 'web-timer',
+              pausedAt: new Date(),
+              resumedAt: null,
+            }),
+          }),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('checks the same Project when it is running only on another Device', async () => {
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeSwitchRepo([
+            { ...webTimer, deviceId: 'device-1' },
+          ]),
+        });
+
+        await expect(switchTo(service)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('answers a replayed switch with what it wrote, even on a day tracking is off', async () => {
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          organisationsRepo: makeOrgRepo({ trackingDisabledDays: [TODAY] }),
+          timeEntriesRepo: makeTimeEntriesRepo({
+            findOne: jest.fn().mockResolvedValue({ ...webTimer }),
+          }),
+          dataSource,
+        });
+
+        const result = await switchTo(service, 'project-1', {
+          startOperationId: 'op-1',
+        });
+
+        expect(result.id).toBe('web-timer');
+        expect(transaction).not.toHaveBeenCalled();
+      });
+    });
+
     describe('where the weekly limit counts from', () => {
       // The week start used to be read in the server's timezone, so it only
       // went wrong when that differed from the organisation's. Tests run
