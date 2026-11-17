@@ -13,11 +13,22 @@ const STORED_CREATED = 2_000;
 
 function serviceFor(storedId: string | null, storedStatus = 'active') {
   const update = jest.fn();
-  const retrieve = jest.fn().mockResolvedValue({
-    id: storedId,
-    created: STORED_CREATED,
-    status: storedStatus,
-  });
+  // The stored subscription is the only one Stripe answers for. Asked about
+  // the incoming one, it has nothing newer than the event itself, so the
+  // handler goes by the event (see `currentStateOf`).
+  const retrieve = jest.fn((id: string) =>
+    id === storedId
+      ? Promise.resolve({
+          id: storedId,
+          created: STORED_CREATED,
+          status: storedStatus,
+        })
+      : Promise.reject(
+          Object.assign(new Error('No such subscription'), {
+            code: 'resource_missing',
+          }),
+        ),
+  );
   const service = new StripeWebhookService(
     {
       findOne: jest.fn().mockResolvedValue({
@@ -144,7 +155,8 @@ describe('a subscription replaced by a newer one', () => {
   });
 
   it('records the stored subscription ending as usual', async () => {
-    const { service, update } = serviceFor('sub_1');
+    // Stripe agrees: the subscription it holds has ended.
+    const { service, update } = serviceFor('sub_1', 'canceled');
 
     await service.handle(
       subscriptionEvent('sub_1', 'canceled', STORED_CREATED),

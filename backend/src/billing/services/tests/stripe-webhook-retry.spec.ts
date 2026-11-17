@@ -21,7 +21,20 @@ function serviceFor({
   const service = new StripeWebhookService(
     { findOne: jest.fn().mockResolvedValue(subscription), update } as never,
     { findOne: jest.fn().mockResolvedValue(organisation) } as never,
-    { isFree: () => isFree, isConfigured: true } as never,
+    {
+      isFree: () => isFree,
+      isConfigured: true,
+      // Nothing newer than each event: the handler goes by the event.
+      stripe: {
+        subscriptions: {
+          retrieve: jest.fn().mockRejectedValue(
+            Object.assign(new Error('No such subscription'), {
+              code: 'resource_missing',
+            }),
+          ),
+        },
+      },
+    } as never,
     { sendInvoiceEmail: jest.fn() } as never,
     { get: () => 'whsec_test' } as never,
   );
