@@ -2775,6 +2775,117 @@ describe('TimeEntriesService', () => {
         expect(result.membershipId).toBe('m-2');
       });
 
+      describe('a project manager who is a plain member', () => {
+        const projectManager = {
+          id: 'm-pm',
+          role: MembershipRole.MEMBER,
+          timesheetModifyTime: 'add_edit',
+        } as const;
+
+        /** The caller manages project-1; `rows` gives everyone else's. */
+        function projectMembershipsFor(rows: Record<string, string>) {
+          return makeProjectMembershipsRepo({
+            findOne: jest.fn((options: { where: { membershipId: string } }) => {
+              const id = options.where.membershipId;
+              if (id === 'm-pm') {
+                return Promise.resolve({ id: 'pm-pm', role: 'manager' });
+              }
+              return Promise.resolve(
+                rows[id] ? { id: `pm-${id}`, role: rows[id] } : null,
+              );
+            }),
+          });
+        }
+
+        function addFor(
+          target: { id: string; role: MembershipRole },
+          options: {
+            projectRoles?: Record<string, string>;
+            onProjectTeam?: boolean;
+          } = {},
+        ) {
+          const service = makeService({
+            membershipsRepo: makeMembershipsRepoFor(projectManager, target),
+            projectMembershipsRepo: projectMembershipsFor(
+              options.projectRoles ?? {},
+            ),
+            projectTeamsRepo: makeProjectTeamsRepo(
+              jest
+                .fn()
+                .mockResolvedValue(
+                  options.onProjectTeam ? { id: 'project-team-1' } : null,
+                ),
+            ),
+          });
+          return service.createManual('org-1', 'user-1', 'project-1', {
+            membershipId: target.id,
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          });
+        }
+
+        // The ticket's case: an admin may track on any Project, which used
+        // to be all it took — even with no connection to this one.
+        it("can't add time to an org admin's timesheet", async () => {
+          await expect(
+            addFor({ id: 'm-admin', role: MembershipRole.ADMIN }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it("can't add time to an org manager's timesheet, even one on the project", async () => {
+          await expect(
+            addFor(
+              { id: 'm-manager', role: MembershipRole.MANAGER },
+              { projectRoles: { 'm-manager': 'member' } },
+            ),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it("can't add time for a member who isn't on the project", async () => {
+          await expect(
+            addFor({ id: 'm-elsewhere', role: MembershipRole.MEMBER }),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it('can add time for a member on the project through a team', async () => {
+          const result = await addFor(
+            { id: 'm-team', role: MembershipRole.MEMBER },
+            { onProjectTeam: true },
+          );
+
+          expect(result.membershipId).toBe('m-team');
+        });
+      });
+
+      // Holding both reaches keeps both: managing a Project must not narrow
+      // what an admin could already do.
+      it('lets an admin who also manages the project add time for another admin', async () => {
+        const service = makeService({
+          membershipsRepo: makeMembershipsRepoFor(
+            { id: 'm-admin', role: MembershipRole.ADMIN },
+            { id: 'm-admin-2', role: MembershipRole.ADMIN } as never,
+          ),
+          projectMembershipsRepo: makeProjectMembershipsRepo({
+            findOne: jest
+              .fn()
+              .mockResolvedValue({ id: 'pm-1', role: 'manager' }),
+          }),
+        });
+
+        const result = await service.createManual(
+          'org-1',
+          'admin-1',
+          'project-1',
+          {
+            membershipId: 'm-admin-2',
+            startedAt: '2026-01-01T09:00:00.000Z',
+            endedAt: '2026-01-01T10:00:00.000Z',
+          },
+        );
+
+        expect(result.membershipId).toBe('m-admin-2');
+      });
+
       // How an admin fills an untracked gap on a member's timesheet: the
       // entry is attributed to that member, while the audit row records
       // the admin as the actor.
