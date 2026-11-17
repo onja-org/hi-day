@@ -1269,44 +1269,142 @@ describe('ScreenshotsService', () => {
   });
 
   describe('deleteExpired', () => {
-    it('does nothing when there are no expired screenshots', async () => {
-      const { repo } = makeScreenshotsRepo([]);
-      const { storage, deleteObjects } = makeStorage();
-      const service = new ScreenshotsService(
+    function expiredRow(n: number): Screenshot {
+      return {
+        id: `screenshot-${n}`,
+        storageKey: `screenshots/org-1/device-1/${n}.jpg`,
+        keptUntil: new Date(Date.UTC(2026, 0, 1, 0, 0, n)),
+      } as Screenshot;
+    }
+
+    /** Hands out `batches` one `getMany` at a time, then nothing. */
+    function makeExpiredRepo(batches: Screenshot[][]) {
+      const queries: { andWhere: jest.Mock }[] = [];
+      const deleteFn = jest.fn().mockResolvedValue(undefined);
+      let next = 0;
+      const repo = {
+        createQueryBuilder: jest.fn(() => {
+          const query = {
+            select: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnThis(),
+            addOrderBy: jest.fn().mockReturnThis(),
+            limit: jest.fn().mockReturnThis(),
+            getMany: jest.fn(() => Promise.resolve(batches[next++] ?? [])),
+          };
+          queries.push(query);
+          return query;
+        }),
+        delete: deleteFn,
+      } as unknown as Repository<Screenshot>;
+      return { repo, delete: deleteFn, queries };
+    }
+
+    function serviceWith(
+      repo: Repository<Screenshot>,
+      deleteObjects: jest.Mock,
+    ) {
+      return new ScreenshotsService(
         repo,
         makeMembershipsRepo(),
         makeOrganisationsService(),
-        storage,
+        makeStorage({
+          deleteObjects,
+        }).storage,
         makeTimeEntriesService(),
       );
+    }
 
-      await service.deleteExpired();
+    it('does nothing when there are no expired screenshots', async () => {
+      const { repo } = makeExpiredRepo([]);
+      const deleteObjects = jest.fn().mockResolvedValue([]);
+
+      await serviceWith(repo, deleteObjects).deleteExpired();
 
       expect(deleteObjects).not.toHaveBeenCalled();
     });
 
-    it('deletes the storage objects and the DB rows for expired screenshots', async () => {
-      const expired = [
-        { id: 'screenshot-1', storageKey: 'screenshots/org-1/device-1/a.jpg' },
-        { id: 'screenshot-2', storageKey: 'screenshots/org-1/device-1/b.jpg' },
-      ] as Screenshot[];
-      const { repo, delete: deleteFn } = makeScreenshotsRepo(expired);
-      const { storage, deleteObjects } = makeStorage();
-      const service = new ScreenshotsService(
-        repo,
-        makeMembershipsRepo(),
-        makeOrganisationsService(),
-        storage,
-        makeTimeEntriesService(),
-      );
-
-      await service.deleteExpired();
-
-      expect(deleteObjects).toHaveBeenCalledWith([
-        'screenshots/org-1/device-1/a.jpg',
-        'screenshots/org-1/device-1/b.jpg',
+    it('keeps going batch after batch until the backlog is cleared', async () => {
+      const { repo, delete: deleteFn } = makeExpiredRepo([
+        [expiredRow(1), expiredRow(2)],
+        [expiredRow(3)],
       ]);
-      expect(deleteFn).toHaveBeenCalled();
+      const deleteObjects = jest.fn().mockResolvedValue([]);
+
+      const result = await serviceWith(repo, deleteObjects).deleteExpired();
+
+      expect(result).toEqual({ deleted: 3, failed: 0 });
+      expect(deleteObjects).toHaveBeenCalledTimes(2);
+      expect(deleteFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('reads each batch after the last one, never from the top again', async () => {
+      const { repo, queries } = makeExpiredRepo([
+        [expiredRow(1), expiredRow(2)],
+        [],
+      ]);
+
+      await serviceWith(repo, jest.fn().mockResolvedValue([])).deleteExpired();
+
+      expect(queries[0].andWhere).not.toHaveBeenCalled();
+      expect(queries[1].andWhere).toHaveBeenCalledWith(
+        '(screenshot.keptUntil, screenshot.id) > (:cursorKeptUntil, :cursorId)',
+        {
+          cursorKeptUntil: expiredRow(2).keptUntil,
+          cursorId: 'screenshot-2',
+        },
+      );
+    });
+
+    it('keeps the row of a screenshot whose stored object could not be deleted', async () => {
+      const { repo, delete: deleteFn } = makeExpiredRepo([
+        [expiredRow(1), expiredRow(2), expiredRow(3)],
+      ]);
+      const deleteObjects = jest
+        .fn()
+        .mockResolvedValue([expiredRow(2).storageKey]);
+
+      const result = await serviceWith(repo, deleteObjects).deleteExpired();
+
+      expect(result).toEqual({ deleted: 2, failed: 1 });
+      const [{ id }] = deleteFn.mock.calls[0] as [{ id: { value: string[] } }];
+      expect(id.value).toEqual(['screenshot-1', 'screenshot-3']);
+    });
+
+    it('stops when the store refuses a whole batch', async () => {
+      const { repo, delete: deleteFn } = makeExpiredRepo([
+        [expiredRow(1)],
+        [expiredRow(2)],
+      ]);
+      const deleteObjects = jest
+        .fn()
+        .mockImplementation((keys: string[]) => Promise.resolve(keys));
+
+      const result = await serviceWith(repo, deleteObjects).deleteExpired();
+
+      expect(result).toEqual({ deleted: 0, failed: 1 });
+      expect(deleteObjects).toHaveBeenCalledTimes(1);
+      expect(deleteFn).not.toHaveBeenCalled();
+    });
+
+    it('stops once its time budget is spent, leaving the rest for the next run', async () => {
+      const { repo } = makeExpiredRepo([
+        [expiredRow(1)],
+        [expiredRow(2)],
+        [expiredRow(3)],
+      ]);
+      let clock = 0;
+      jest.spyOn(Date, 'now').mockImplementation(() => clock);
+      const deleteObjects = jest.fn(() => {
+        clock += 600;
+        return Promise.resolve([]);
+      });
+
+      const result = await serviceWith(repo, deleteObjects).deleteExpired(1000);
+
+      expect(result).toEqual({ deleted: 2, failed: 0 });
+      jest.restoreAllMocks();
     });
   });
 });
