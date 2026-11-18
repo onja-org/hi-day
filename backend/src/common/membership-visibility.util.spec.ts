@@ -157,7 +157,7 @@ describe('canViewMembership', () => {
     expect(canViewMembership(manager, peerManager)).toBe(false);
   });
 
-  it('denies a manager viewing a manager who is only a member of their team', () => {
+  it('allows a manager to view a manager of another team who is only a member of theirs', () => {
     const manager = makeMembership({
       id: 'manager-1',
       role: MembershipRole.MANAGER,
@@ -172,7 +172,28 @@ describe('canViewMembership', () => {
       ],
     } as Partial<Membership>);
 
-    expect(canViewMembership(manager, otherTeamsManager)).toBe(false);
+    expect(canViewMembership(manager, otherTeamsManager)).toBe(true);
+  });
+
+  it('allows a co-manager who is also a plain member of another managed team', () => {
+    const manager = makeMembership({
+      id: 'manager-1',
+      role: MembershipRole.MANAGER,
+      teamMemberships: [
+        { teamId: 'team-1', isManager: true },
+        { teamId: 'team-2', isManager: true },
+      ],
+    } as Partial<Membership>);
+    const coLead = makeMembership({
+      id: 'manager-2',
+      role: MembershipRole.MANAGER,
+      teamMemberships: [
+        { teamId: 'team-1', isManager: false },
+        { teamId: 'team-2', isManager: true },
+      ],
+    } as Partial<Membership>);
+
+    expect(canViewMembership(manager, coLead)).toBe(true);
   });
 
   it('denies a manager viewing a member on a different team', () => {
