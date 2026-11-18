@@ -500,14 +500,14 @@
       },
       {
         "person": "lucas",
-        "dayOffset": -9,
+        "dayOffset": -2,
         "action": "edit",
         "note": "stopped the timer 40 min late; trimmed the end",
         "reason": "Fixing a mistake"
       },
       {
         "person": "hery",
-        "dayOffset": -3,
+        "dayOffset": -1,
         "action": "add",
         "from": "08:00",
         "to": "09:15",
@@ -516,31 +516,35 @@
       }
     ],
     "oddDays": {
-      "_why": "So Unusual activity and Highlights aren't empty (ticket requirement).",
+      "_why": "So Unusual activity and Highlights aren't empty (ticket requirement). Tuned to the app's rules in backend/src/insights/unusual-activity.util.ts: only 'same activity for 40+ min' and '95%+ activity for 30+ min' raise an instance; 'no break for 5 h' and '80%+ for 5 h' only show alongside one of those. Insights opens on the last 7 days, so the two flagged days sit inside it.",
       "items": [
         {
-          "person": "lucas",
-          "dayOffset": -12,
-          "kind": "long stretch without a break",
-          "detail": "08:30 to 19:45 in one entry, no lunch, activity stays 60–80%"
+          "person": "sofia",
+          "dayOffset": -3,
+          "kind": "suspiciously flat activity",
+          "detail": "10:00–13:00 at exactly 50% every 10 minutes, same window title the whole time",
+          "flags": "Same activity (consistent_activity)"
         },
         {
-          "person": "sofia",
-          "dayOffset": -8,
-          "kind": "suspiciously flat activity",
-          "detail": "3 hours at exactly 50% every 10 minutes, same window title the whole time"
+          "person": "lucas",
+          "dayOffset": -4,
+          "kind": "long stretch without a break",
+          "detail": "08:30 to 19:45 in one entry, no lunch, activity 60–80%, with 14:00–14:50 at 95–99%",
+          "flags": "Very high activity, plus No break and (supporting)"
         },
         {
           "person": "hery",
           "dayOffset": -5,
           "kind": "very late finish",
-          "detail": "starts 08:00 as usual, last entry ends 23:10"
+          "detail": "starts as usual, last entry ends 23:10",
+          "flags": "Nothing: not an unusual-activity rule. Shows on his Timeline only."
         },
         {
           "person": "lucas",
           "dayOffset": -27,
           "kind": "weekend work",
-          "detail": "Saturday, 3 h on Harbour Café: Website redesign"
+          "detail": "Saturday, 3 h on Harbour Café: Website redesign",
+          "flags": "Nothing: shows on Timeline and timesheets only."
         }
       ]
     },
@@ -549,7 +553,154 @@
       "person": "hery",
       "fromDayOffset": -14,
       "detail": "starts around 10:00 instead of 08:00 and focus time drops by about a third"
-    }
+    },
+    "people": {
+      "_about": "Exact numbers the script uses. start/end are local times in the organisation's time zone; jitterMinutes moves them a little each day. sources: share of entries from the desktop app (agent) vs the web timer. Only desktop-app time has activity, apps and websites.",
+      "nadia": {
+        "start": "10:00",
+        "end": "13:00",
+        "jitterMinutes": 30,
+        "sources": {
+          "web": 1.0
+        },
+        "activity": [
+          0,
+          0
+        ],
+        "apps": {},
+        "sites": {}
+      },
+      "tiana": {
+        "start": "08:30",
+        "end": "17:00",
+        "jitterMinutes": 15,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          55,
+          85
+        ],
+        "apps": {
+          "Figma": 0.55,
+          "Slack": 0.15,
+          "Google Chrome": 0.3
+        },
+        "sites": {
+          "figma.com": 0.35,
+          "fonts.google.com": 0.2,
+          "mail.google.com": 0.35,
+          "unsplash.com": 0.1
+        }
+      },
+      "lucas": {
+        "start": "09:00",
+        "end": "17:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          45,
+          80
+        ],
+        "apps": {
+          "Figma": 0.45,
+          "Adobe Illustrator": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25,
+          "Spotify": 0.05
+        },
+        "sites": {
+          "figma.com": 0.25,
+          "fonts.google.com": 0.15,
+          "unsplash.com": 0.25,
+          "mail.google.com": 0.15,
+          "youtube.com": 0.1,
+          "facebook.com": 0.1
+        }
+      },
+      "hery": {
+        "start": "08:00",
+        "end": "16:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 0.8,
+          "web": 0.2
+        },
+        "activity": [
+          40,
+          80
+        ],
+        "apps": {
+          "Visual Studio Code": 0.5,
+          "Terminal": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25
+        },
+        "sites": {
+          "github.com": 0.35,
+          "developer.mozilla.org": 0.3,
+          "mail.google.com": 0.2,
+          "youtube.com": 0.15
+        }
+      },
+      "sofia": {
+        "start": "10:00",
+        "end": "18:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          40,
+          75
+        ],
+        "apps": {
+          "Visual Studio Code": 0.45,
+          "Terminal": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25,
+          "Spotify": 0.05
+        },
+        "sites": {
+          "github.com": 0.35,
+          "developer.mozilla.org": 0.3,
+          "mail.google.com": 0.2,
+          "youtube.com": 0.15
+        }
+      }
+    },
+    "siteTitles": {
+      "figma.com": [
+        "Harbour Café – Menu page – Figma",
+        "Lumo – Booking flow v3 – Figma"
+      ],
+      "fonts.google.com": [
+        "Browse Fonts - Google Fonts"
+      ],
+      "unsplash.com": [
+        "Coffee shop photos | Unsplash"
+      ],
+      "mail.google.com": [
+        "Inbox - studio@brightline.example"
+      ],
+      "github.com": [
+        "brightline/harbour-cafe-site: Pull requests",
+        "brightline/lumo-prototype"
+      ],
+      "developer.mozilla.org": [
+        "<form>: The Form element - HTML | MDN",
+        "CSS Grid Layout - CSS | MDN"
+      ],
+      "youtube.com": [
+        "Lo-fi beats to code to - YouTube"
+      ],
+      "facebook.com": [
+        "Facebook"
+      ]
+    },
+    "randomSeed": 20261118
   },
   "notes": [
     {

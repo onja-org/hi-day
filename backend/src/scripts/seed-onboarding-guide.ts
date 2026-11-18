@@ -23,6 +23,11 @@ import { TimesheetReason } from '../database/entities/timesheet-reason.entity';
 import { User } from '../database/entities/user.entity';
 import { WorkClassification } from '../database/entities/work-classification.entity';
 import { generateSlug } from '../organisations/slug.util';
+import {
+  HistorySeed,
+  SeedContext,
+  seedHistory,
+} from './onboarding-guide/history';
 
 /**
  * Builds the example company for the "Getting Started" guide screenshots
@@ -36,8 +41,9 @@ import { generateSlug } from '../organisations/slug.util';
  * `--clean` removes every organisation any seed person belongs to, with all
  * its data, then the seed people themselves.
  *
- * Part 1: organisation, people, teams, projects, tasks, settings and work
- * time labels. The two months of history come in part 2.
+ * Part 1 (this file): organisation, people, teams, projects, tasks,
+ * settings and work time labels. Part 2 (`onboarding-guide/history.ts`):
+ * about two months of work history.
  *
  * Excluded from the production build (see tsconfig.build.json) and refuses
  * to run against production or a non-local database: every seed person
@@ -71,7 +77,7 @@ type SeedProject = {
   tasks: SeedTask[];
 };
 
-type Seed = {
+type Seed = HistorySeed & {
   organisation: {
     name: string;
     address: string;
@@ -232,7 +238,10 @@ async function clean(seed: Seed): Promise<void> {
   }
 }
 
-async function create(manager: EntityManager, seed: Seed): Promise<void> {
+async function create(
+  manager: EntityManager,
+  seed: Seed,
+): Promise<SeedContext> {
   const passwordHash = await argon2.hash(PASSWORD);
   const now = new Date();
 
@@ -330,6 +339,7 @@ async function create(manager: EntityManager, seed: Seed): Promise<void> {
     );
   }
 
+  const projects: SeedContext['projects'] = new Map();
   for (const seedProject of seed.projects) {
     const project = await manager.save(
       manager.create(Project, {
@@ -375,7 +385,7 @@ async function create(manager: EntityManager, seed: Seed): Promise<void> {
       );
     }
 
-    await manager.save(
+    const tasks = await manager.save(
       seedProject.tasks.map((task) =>
         manager.create(Task, {
           name: task.name,
@@ -389,6 +399,13 @@ async function create(manager: EntityManager, seed: Seed): Promise<void> {
         }),
       ),
     );
+    projects.set(seedProject.name, {
+      id: project.id,
+      tasks: tasks.map((task, index) => ({
+        id: task.id,
+        assignee: seedProject.tasks[index].assignee,
+      })),
+    });
   }
 
   // Unclassified is the absence of a label, so it gets no row.
@@ -410,6 +427,20 @@ async function create(manager: EntityManager, seed: Seed): Promise<void> {
     console.log(`  ${person.orgRole.padEnd(8)} ${person.email}`);
   }
   console.log(`Password for all of them: ${PASSWORD}`);
+
+  return {
+    organisationId,
+    people: new Map(
+      seed.people.map((person) => [
+        person.key,
+        {
+          membershipId: membershipOf(person.key).id,
+          userId: users.get(person.key)!.id,
+        },
+      ]),
+    ),
+    projects,
+  };
 }
 
 async function main(): Promise<void> {
@@ -433,7 +464,11 @@ async function main(): Promise<void> {
       );
     }
 
-    await dataSource.transaction((manager) => create(manager, seed));
+    await dataSource.transaction(async (manager) => {
+      const now = new Date();
+      const context = await create(manager, seed);
+      await seedHistory(manager, seed, context, now);
+    });
   } finally {
     await dataSource.destroy();
   }

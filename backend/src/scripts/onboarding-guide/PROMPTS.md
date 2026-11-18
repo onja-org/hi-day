@@ -39,16 +39,23 @@ Changes made by hand after generating:
   Sofia, Clara) so the notes and screenshots match.
 - Development has no team manager on purpose: it shows that a manager oversees only the teams
   they manage.
+- Odd days tuned to the app's unusual-activity rules (`backend/src/insights/unusual-activity.util.ts`)
+  and moved inside Insights' default "last 7 days": Sofia's flat day and Lucas's long day with a
+  45-minute burst at 95–99%. A late finish and weekend work aren't rules; they only show on Timeline.
+- Exact hours, activity levels, app mix and website titles added under `history.people` and
+  `history.siteTitles`, with a fixed `randomSeed`, so a re-run gives the same story.
 
 ## 2. Seed two months of history (local only)
 
 > Using `seed.json`, write a script for the hi-day repo that creates this organisation in the
 > local database and fills in the history: time entries, activity samples every 10 minutes,
-> app and website usage, screenshots for desktop-app time, idle stretches, manual edits with
-> reasons, notes and work time labels. Dates are relative to the day the script runs.
+> app and website usage, idle stretches, manual edits with reasons, notes and work time labels.
+> No screenshots: they live in object storage; real ones come from a paired desktop app on the day. Dates are relative to the day the script runs.
 > Local only: refuse to run unless `DATABASE_URL` points at localhost.
 
-(To be written in plan step 4.)
+Result: `backend/src/scripts/seed-onboarding-guide.ts` (part 1) and
+`backend/src/scripts/onboarding-guide/history.ts` (part 2). Run with
+`pnpm --filter backend seed:onboarding-guide` (add `--clean` to remove it again).
 
 ## 3. Take the screenshots
 
