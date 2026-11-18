@@ -189,15 +189,19 @@ export class MembershipsService {
         .andWhere('membership.status = :status', {
           status: MembershipStatus.ACTIVE,
         })
-        // canViewMembership in SQL: no admin, nobody who manages a team of
-        // their own, themselves excepted — this list is also how a manager
-        // reaches their own row.
+        // canViewMembership in SQL, themselves excepted: this list is also
+        // how a manager reaches their own row.
         .andWhere(
-          `(membership.id = :callerId OR (membership.role = :memberRole AND NOT EXISTS (
-             SELECT 1 FROM team_memberships mgr
-             WHERE mgr."membershipId" = membership.id AND mgr."isManager"
+          `(membership.id = :callerId OR (membership.role != :adminRole AND EXISTS (
+             SELECT 1 FROM team_memberships plain
+             WHERE plain."membershipId" = membership.id AND NOT plain."isManager"
+               AND plain."teamId" IN (:...scopeTeamIds)
            )))`,
-          { memberRole: MembershipRole.MEMBER, callerId: caller.id },
+          {
+            adminRole: MembershipRole.ADMIN,
+            callerId: caller.id,
+            scopeTeamIds,
+          },
         )
         .orderBy('membership.createdAt', 'ASC')
         .getMany();

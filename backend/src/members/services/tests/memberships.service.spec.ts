@@ -204,6 +204,34 @@ describe('MembershipsService', () => {
       );
     });
 
+    it('hides admins and anyone whose every scoped team they co-manage', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        id: 'caller-1',
+        role: MembershipRole.MANAGER,
+        teamMemberships: [{ teamId: 'team-1', isManager: true }],
+      });
+      const queryBuilder = makeQueryBuilder([]);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne, queryBuilder }),
+      });
+
+      await service.listActiveForOrganisation('org-1', 'caller-1');
+
+      // The hand-written mirror of canViewMembership, which can drift.
+      const exclusion = (
+        queryBuilder.andWhere.mock.calls as [string, unknown][]
+      ).find(([clause]) => clause.includes('EXISTS'));
+      const [sql, params] = exclusion ?? ['', undefined];
+      expect(sql).toContain('membership.role != :adminRole');
+      expect(sql).toContain('NOT plain."isManager"');
+      expect(sql).toContain('plain."teamId" IN (:...scopeTeamIds)');
+      expect(params).toEqual({
+        adminRole: MembershipRole.ADMIN,
+        callerId: 'caller-1',
+        scopeTeamIds: ['team-1'],
+      });
+    });
+
     it('includes every team a returned member belongs to, not just the scoping team', async () => {
       const findOne = jest.fn().mockResolvedValue({
         role: MembershipRole.MANAGER,
