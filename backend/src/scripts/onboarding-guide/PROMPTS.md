@@ -64,11 +64,20 @@ Result: `backend/src/scripts/seed-onboarding-guide.ts` (part 1) and
 > where it differs: admin settings, the manager's team dashboard, a member's personal view,
 > the viewer on a project, and Insights as a manager and as a member. Don't blur anything.
 
-Result: `screenshot-script/` in the notes folder (Playwright with the installed Google Chrome,
-1440×900 at 2×). Run order: `phaseA.mjs` on an empty database (sign-up shots), then the seed, then
-`phaseB.mjs` (web shots), `phaseC-05c.mjs`, `phaseC.mjs`, `phaseC-07e.mjs`, and `phaseD.mjs` last
-(billing pays with the Stripe test card). Desktop-app shots (05b, 05c2, 05d, 06c, 06e) are taken by
-hand with Alt + Print Screen.
+Result: `screenshots/` next to this file (Playwright driving the installed Google Chrome,
+1440×900 at 2×). Images go to `backend/guide-screenshots/` (gitignored), or `GUIDE_SCREENSHOT_DIR`.
+Needs the frontend and backend running locally and `psql` on the PATH. From
+`backend/src/scripts/onboarding-guide/screenshots/`, run in this order:
+1. `pnpm --filter backend seed:onboarding-guide --clean`, then `node phaseA.mjs` (sign-up shots on an
+   empty database).
+2. `pnpm --filter backend seed:onboarding-guide --clean`, then `pnpm --filter backend seed:onboarding-guide`.
+3. `node phaseB.mjs` (web shots; pass ids like `04a 07g` to retake only those).
+4. Pair a desktop app as Lucas, then `node phaseC-05c.mjs`, `node phaseC.mjs`,
+   `node fake-screens.mjs` and `node phaseC-07e.mjs`.
+5. `node phaseD.mjs` last: it pays with the Stripe test card, which ends the trial
+   (`phaseD-10d.mjs` retakes only 10d on an org that has already paid).
+
+Desktop-app shots (05b, 05c2, 05d, 06c, 06e) are taken by hand with Alt + Print Screen.
 
 07e uses made-up screens: local screenshot uploads to storage failed, so `fake-screens.mjs` renders
 three design-tool screens (Harbour Café menu page and homepage, Lumo booking flow) and

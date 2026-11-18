@@ -28,3 +28,6 @@ temp/
 
 # env
 .env
+
+# Getting Started guide screenshots (src/scripts/onboarding-guide/screenshots)
+guide-screenshots/
