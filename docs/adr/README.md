@@ -15,7 +15,7 @@ To add one, take the next free number (0037) and a short kebab-case file name th
 | 0005 | [Role checks re-read the database, not the JWT](0005-role-checks-reresolve-from-database-not-jwt.md) | Accepted |
 | 0006 | [Server-authoritative timer, one running per Membership](0006-time-entries-single-running-timer-server-authoritative.md) | Partly superseded by 0022 |
 | 0007 | [Manual time entries and idle handling](0007-manual-time-entries-and-idle-handling.md) | Partly superseded by 0028, 0035 |
-| 0008 | [Manager scope from `Membership.teamId`](0008-manager-scope-uses-membership-team-id.md) | Superseded (Teams join table, no ADR) |
+| 0008 | [Manager scope from `Membership.teamId`](0008-manager-scope-uses-membership-team-id.md) | Superseded (Teams join table; scoping refined by 0037) |
 | 0009 | [Desktop signs in by pairing with the web](0009-desktop-device-pairing-replaces-password-login.md) | Partly superseded by 0017 |
 | 0009 | [Pause and resume as a gap ledger](0009-manual-pause-resume-via-gap-ledger.md) | Superseded (pause now ends the entry, no ADR) |
 | 0009 | [Window tracking with `get-windows`](0009-window-tracking-capture-settings-and-get-windows-integration.md) | Partly superseded by 0011, 0016, 0026 |
@@ -47,3 +47,4 @@ To add one, take the next free number (0037) and a short kebab-case file name th
 | 0034 | [Deleting an Organisation stops its subscription](0034-deleting-an-organisation-stops-its-subscription.md) | Accepted |
 | 0035 | [Running entries can be edited](0035-running-entries-can-be-edited.md) | Accepted |
 | 0036 | [Overlapping time can be merged, and a typed range can be cut out of an entry](0036-overlapping-time-can-be-merged-and-ranges-cut-out.md) | Accepted |
+| 0037 | [Managing is judged per team, not per person](0037-managing-is-judged-per-team-not-per-person.md) | Accepted |

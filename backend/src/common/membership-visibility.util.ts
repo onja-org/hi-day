@@ -4,10 +4,9 @@ import { actsAsManager, getManagerScopeTeamIds } from './manager-scope.util';
 
 /**
  * Whether `caller` may view data belonging to `target`: always themselves,
- * an admin everyone, and whoever manages a team the plain members of that
- * team — never another manager or an admin. Managing a team is the grant,
- * not the org `manager` role (see `actsAsManager`). Both need
- * `teamMemberships` loaded.
+ * an admin everyone, and whoever manages a team its ordinary members. The
+ * manager test is per-team, so running one team doesn't hide you on
+ * another where you're simply a member. Both need `teamMemberships` loaded.
  */
 export function canViewMembership(
   caller: Membership,
@@ -25,16 +24,17 @@ export function canViewMembership(
     return false;
   }
 
-  // Only plain members are visible: an admin or anyone *labelled* manager
-  // stays hidden even where they manage nothing, so the answer never
-  // contradicts the role shown beside their name.
-  if (target.role !== MembershipRole.MEMBER || actsAsManager(target)) {
+  // Before team scope, so joining a team never makes an admin watchable.
+  if (target.role === MembershipRole.ADMIN) {
     return false;
   }
 
   const scopeTeamIds = getManagerScopeTeamIds(caller);
-  const targetTeamIds = (target.teamMemberships ?? []).map(
-    (teamMembership) => teamMembership.teamId,
+  const shared = (target.teamMemberships ?? []).filter((teamMembership) =>
+    scopeTeamIds.includes(teamMembership.teamId),
   );
-  return targetTeamIds.some((teamId) => scopeTeamIds.includes(teamId));
+
+  // Co-managers are hidden from each other only where running a team
+  // together is the whole of their overlap.
+  return shared.some((teamMembership) => !teamMembership.isManager);
 }
