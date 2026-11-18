@@ -1,0 +1,743 @@
+{
+  "_about": "Example company for the Getting Started guide screenshots. All people, emails, clients and content are made up. Emails use the reserved .example domain. Dates are relative: dayOffset 0 = the day screenshots are taken, -1 = the day before, and so on. Generated with Claude from PROMPTS.md.",
+  "_version": 1,
+  "organisation": {
+    "name": "Brightline Studio",
+    "address": "12 Rue des Jacarandas, Antananarivo 101, Madagascar",
+    "website": "https://brightline.example",
+    "timezone": "Indian/Antananarivo",
+    "about": "A small design and web studio. Five people make brands, websites and app screens for local clients.",
+    "defaultTeam": "General (created automatically with the organisation; leave it as is)"
+  },
+  "settings": {
+    "_path": "Settings → Activity & tracking → …",
+    "activity": {
+      "trackAppsAndUrls": true,
+      "windowTitles": true,
+      "recordActivity": true,
+      "membersCanSeeTheirOwnActivity": true
+    },
+    "screenshots": {
+      "frequency": "1 per 10 minutes",
+      "deleteScreenshots": "members can't delete their screenshots"
+    },
+    "timeAndTracking": {
+      "idleTimeoutMinutes": 5,
+      "keepIdleTime": "Ask the person"
+    },
+    "timesheets": {
+      "modifyTime": "Add & edit",
+      "requireReason": true,
+      "reasons": [
+        "Forgot to start timer",
+        "Forgot to stop timer",
+        "Client meeting",
+        "Worked offline",
+        "Fixing a mistake"
+      ],
+      "_note": "The first three are the app's defaults for every new organisation; the last two are added."
+    },
+    "projects": {
+      "trackTimeAgainstProjects": true
+    },
+    "workTimeClassification": "see apps[].label"
+  },
+  "people": [
+    {
+      "key": "nadia",
+      "firstName": "Nadia",
+      "lastName": "Rakoto",
+      "email": "nadia@brightline.example",
+      "orgRole": "admin",
+      "jobTitle": "Studio lead (founder)",
+      "teams": [],
+      "joinedBy": "signs up and creates the organisation (guide step 1)",
+      "tracksTime": "light: 1–3 h most days, mostly meetings and reviews"
+    },
+    {
+      "key": "tiana",
+      "firstName": "Tiana",
+      "lastName": "Andria",
+      "email": "tiana@brightline.example",
+      "orgRole": "manager",
+      "jobTitle": "Design lead",
+      "teams": [
+        {
+          "team": "Design",
+          "teamRole": "Team manager"
+        }
+      ],
+      "joinedBy": "email invite (Add members)",
+      "tracksTime": "steady: 7–8 h, 08:30–17:00, high focus"
+    },
+    {
+      "key": "lucas",
+      "firstName": "Lucas",
+      "lastName": "Moreau",
+      "email": "lucas@brightline.example",
+      "orgRole": "member",
+      "jobTitle": "Designer",
+      "teams": [
+        {
+          "team": "Design",
+          "teamRole": "Member"
+        }
+      ],
+      "joinedBy": "email invite",
+      "desktopApp": "paired (the device shown on the Devices page)",
+      "tracksTime": "7–8 h, 09:00–17:30, desktop app"
+    },
+    {
+      "key": "hery",
+      "firstName": "Hery",
+      "lastName": "Rabe",
+      "email": "hery@brightline.example",
+      "orgRole": "member",
+      "jobTitle": "Front-end developer",
+      "teams": [
+        {
+          "team": "Development",
+          "teamRole": "Member"
+        }
+      ],
+      "joinedBy": "email invite",
+      "tracksTime": "7–8 h, 08:00–16:30, mix of desktop app and web timer; adds time by hand now and then"
+    },
+    {
+      "key": "sofia",
+      "firstName": "Sofia",
+      "lastName": "Mendes",
+      "email": "sofia@brightline.example",
+      "orgRole": "member",
+      "jobTitle": "Developer",
+      "teams": [
+        {
+          "team": "Development",
+          "teamRole": "Member"
+        }
+      ],
+      "joinedBy": "invite link (Invite links → Create link)",
+      "tracksTime": "7–8 h, 10:00–18:30 (later starter)"
+    },
+    {
+      "key": "clara",
+      "firstName": "Clara",
+      "lastName": "Bennett",
+      "email": "clara@lumohealth.example",
+      "orgRole": "member",
+      "jobTitle": "Product owner at Lumo Health (the client)",
+      "teams": [],
+      "projectRoles": [
+        {
+          "project": "Lumo Health: Patient app UI",
+          "role": "Viewer"
+        }
+      ],
+      "joinedBy": "email invite, then set to Viewer on the project",
+      "tracksTime": "none (viewers can't track time)"
+    }
+  ],
+  "teams": [
+    {
+      "name": "Design",
+      "members": [
+        "tiana",
+        "lucas"
+      ],
+      "teamManager": "tiana"
+    },
+    {
+      "name": "Development",
+      "members": [
+        "hery",
+        "sofia"
+      ],
+      "teamManager": null
+    }
+  ],
+  "projects": [
+    {
+      "name": "Harbour Café: Website redesign",
+      "description": "New website for a local café",
+      "colour": "pink",
+      "teams": [
+        "Design",
+        "Development"
+      ],
+      "members": [],
+      "tasks": [
+        {
+          "name": "Homepage wireframes",
+          "assignee": "lucas",
+          "stage": "Done",
+          "estimateHours": 6
+        },
+        {
+          "name": "Menu page design",
+          "assignee": "lucas",
+          "stage": "In progress",
+          "estimateHours": 8
+        },
+        {
+          "name": "Photo selection with the café",
+          "assignee": "tiana",
+          "stage": "Done",
+          "estimateHours": 3
+        },
+        {
+          "name": "Build homepage",
+          "assignee": "hery",
+          "stage": "In progress",
+          "estimateHours": 12
+        },
+        {
+          "name": "Build contact form",
+          "assignee": "sofia",
+          "stage": "To do",
+          "estimateHours": 5
+        },
+        {
+          "name": "Opening hours widget",
+          "assignee": "sofia",
+          "stage": "To do",
+          "estimateHours": 4
+        }
+      ]
+    },
+    {
+      "name": "Lumo Health: Patient app UI",
+      "description": "Screens for a patient booking app",
+      "colour": "amber",
+      "teams": [
+        "Design",
+        "Development"
+      ],
+      "members": [
+        {
+          "person": "clara",
+          "role": "Viewer"
+        }
+      ],
+      "tasks": [
+        {
+          "name": "Booking flow screens",
+          "assignee": "tiana",
+          "stage": "Done",
+          "estimateHours": 16
+        },
+        {
+          "name": "Appointment reminders",
+          "assignee": "lucas",
+          "stage": "In progress",
+          "estimateHours": 10
+        },
+        {
+          "name": "Design system: buttons and forms",
+          "assignee": "tiana",
+          "stage": "In progress",
+          "estimateHours": 12
+        },
+        {
+          "name": "Clickable prototype for user tests",
+          "assignee": "hery",
+          "stage": "To do",
+          "estimateHours": 8
+        },
+        {
+          "name": "Accessibility review",
+          "assignee": "sofia",
+          "stage": "To do",
+          "estimateHours": 6
+        }
+      ]
+    },
+    {
+      "name": "Brightline: Brand refresh",
+      "description": "Internal: new logo and colours",
+      "colour": "blue",
+      "teams": [
+        "Design"
+      ],
+      "members": [
+        {
+          "person": "nadia",
+          "role": "Manager"
+        }
+      ],
+      "tasks": [
+        {
+          "name": "Logo sketches",
+          "assignee": "lucas",
+          "stage": "Done",
+          "estimateHours": 4
+        },
+        {
+          "name": "Colour palette",
+          "assignee": "tiana",
+          "stage": "In progress",
+          "estimateHours": 3
+        },
+        {
+          "name": "Update studio website",
+          "assignee": "hery",
+          "stage": "To do",
+          "estimateHours": 6
+        }
+      ]
+    }
+  ],
+  "apps": [
+    {
+      "name": "Figma",
+      "kind": "app",
+      "label": "Core",
+      "usedBy": [
+        "tiana",
+        "lucas"
+      ]
+    },
+    {
+      "name": "Adobe Illustrator",
+      "kind": "app",
+      "label": "Core",
+      "usedBy": [
+        "lucas"
+      ]
+    },
+    {
+      "name": "Visual Studio Code",
+      "kind": "app",
+      "label": "Core",
+      "usedBy": [
+        "hery",
+        "sofia"
+      ]
+    },
+    {
+      "name": "Terminal",
+      "kind": "app",
+      "label": "Core",
+      "usedBy": [
+        "hery",
+        "sofia"
+      ]
+    },
+    {
+      "name": "Slack",
+      "kind": "app",
+      "label": "Core",
+      "usedBy": [
+        "everyone"
+      ]
+    },
+    {
+      "name": "Google Chrome",
+      "kind": "app",
+      "label": "Unclassified",
+      "usedBy": [
+        "everyone"
+      ],
+      "_note": "a browser: its websites are labelled instead"
+    },
+    {
+      "name": "Spotify",
+      "kind": "app",
+      "label": "Non-core",
+      "usedBy": [
+        "lucas",
+        "sofia"
+      ]
+    },
+    {
+      "name": "figma.com",
+      "kind": "site",
+      "label": "Core",
+      "usedBy": [
+        "tiana",
+        "lucas"
+      ]
+    },
+    {
+      "name": "github.com",
+      "kind": "site",
+      "label": "Core",
+      "usedBy": [
+        "hery",
+        "sofia"
+      ]
+    },
+    {
+      "name": "developer.mozilla.org",
+      "kind": "site",
+      "label": "Core",
+      "usedBy": [
+        "hery",
+        "sofia"
+      ]
+    },
+    {
+      "name": "fonts.google.com",
+      "kind": "site",
+      "label": "Core",
+      "usedBy": [
+        "lucas",
+        "tiana"
+      ]
+    },
+    {
+      "name": "mail.google.com",
+      "kind": "site",
+      "label": "Core",
+      "usedBy": [
+        "everyone"
+      ]
+    },
+    {
+      "name": "unsplash.com",
+      "kind": "site",
+      "label": "Unclassified",
+      "usedBy": [
+        "lucas"
+      ]
+    },
+    {
+      "name": "youtube.com",
+      "kind": "site",
+      "label": "Non-core",
+      "usedBy": [
+        "hery",
+        "sofia",
+        "lucas"
+      ]
+    },
+    {
+      "name": "facebook.com",
+      "kind": "site",
+      "label": "Non-core",
+      "usedBy": [
+        "lucas"
+      ]
+    }
+  ],
+  "windowTitles": {
+    "_note": "Fake document names so screenshots and the Apps tab look real. Never real files.",
+    "Figma": [
+      "Harbour Café – Menu page",
+      "Lumo – Booking flow v3",
+      "Brightline logo sketches"
+    ],
+    "Visual Studio Code": [
+      "HomePage.tsx — harbour-cafe-site",
+      "ContactForm.tsx — harbour-cafe-site",
+      "README.md — lumo-prototype"
+    ],
+    "Adobe Illustrator": [
+      "brightline-logo-v4.ai"
+    ],
+    "Slack": [
+      "#harbour-cafe | Brightline Studio",
+      "#lumo-health | Brightline Studio",
+      "#general | Brightline Studio"
+    ]
+  },
+  "history": {
+    "range": {
+      "fromDayOffset": -60,
+      "toDayOffset": 0
+    },
+    "workDays": "Monday to Friday; nobody works weekends except the odd day listed below",
+    "publicHolidays": "none",
+    "normalDay": {
+      "split": "2 to 4 time entries a day, a 45–60 min lunch break around 12:30, short 5–15 min breaks",
+      "activityPercent": "varies naturally between 35 and 85 per 10 minutes; designers higher in Figma, lower in meetings",
+      "idle": "1–3 short idle stretches (5–15 min) a week per person, mostly kept as 'Discard'",
+      "screenshots": "1 per 10 minutes for desktop-app time, showing the window titles above",
+      "projectMix": {
+        "tiana": {
+          "Lumo Health: Patient app UI": 0.5,
+          "Harbour Café: Website redesign": 0.3,
+          "Brightline: Brand refresh": 0.2
+        },
+        "lucas": {
+          "Harbour Café: Website redesign": 0.5,
+          "Lumo Health: Patient app UI": 0.35,
+          "Brightline: Brand refresh": 0.15
+        },
+        "hery": {
+          "Harbour Café: Website redesign": 0.6,
+          "Lumo Health: Patient app UI": 0.3,
+          "Brightline: Brand refresh": 0.1
+        },
+        "sofia": {
+          "Harbour Café: Website redesign": 0.4,
+          "Lumo Health: Patient app UI": 0.6
+        },
+        "nadia": {
+          "Brightline: Brand refresh": 0.5,
+          "Lumo Health: Patient app UI": 0.25,
+          "Harbour Café: Website redesign": 0.25
+        }
+      }
+    },
+    "manualEdits": [
+      {
+        "person": "hery",
+        "dayOffset": -40,
+        "action": "add",
+        "from": "09:00",
+        "to": "11:30",
+        "project": "Harbour Café: Website redesign",
+        "reason": "Worked offline"
+      },
+      {
+        "person": "sofia",
+        "dayOffset": -22,
+        "action": "add",
+        "from": "14:00",
+        "to": "15:00",
+        "project": "Lumo Health: Patient app UI",
+        "reason": "Client meeting"
+      },
+      {
+        "person": "lucas",
+        "dayOffset": -2,
+        "action": "edit",
+        "note": "stopped the timer 40 min late; trimmed the end",
+        "reason": "Fixing a mistake"
+      },
+      {
+        "person": "hery",
+        "dayOffset": -1,
+        "action": "add",
+        "from": "08:00",
+        "to": "09:15",
+        "project": "Harbour Café: Website redesign",
+        "reason": "Forgot to start timer"
+      }
+    ],
+    "oddDays": {
+      "_why": "So Unusual activity and Highlights aren't empty (ticket requirement). Tuned to the app's rules in backend/src/insights/unusual-activity.util.ts: only 'same activity for 40+ min' and '95%+ activity for 30+ min' raise an instance; 'no break for 5 h' and '80%+ for 5 h' only show alongside one of those. Insights opens on the last 7 days, so the two flagged days sit inside it.",
+      "items": [
+        {
+          "person": "sofia",
+          "dayOffset": -3,
+          "kind": "suspiciously flat activity",
+          "detail": "10:00–13:00 at exactly 50% every 10 minutes, same window title the whole time",
+          "flags": "Same activity (consistent_activity)"
+        },
+        {
+          "person": "lucas",
+          "dayOffset": -4,
+          "kind": "long stretch without a break",
+          "detail": "08:30 to 19:45 in one entry, no lunch, activity 60–80%, with 14:00–14:50 at 95–99%",
+          "flags": "Very high activity, plus No break and (supporting)"
+        },
+        {
+          "person": "hery",
+          "dayOffset": -5,
+          "kind": "very late finish",
+          "detail": "starts as usual, last entry ends 23:10",
+          "flags": "Nothing: not an unusual-activity rule. Shows on his Timeline only."
+        },
+        {
+          "person": "lucas",
+          "dayOffset": -27,
+          "kind": "weekend work",
+          "detail": "Saturday, 3 h on Harbour Café: Website redesign",
+          "flags": "Nothing: shows on Timeline and timesheets only."
+        }
+      ]
+    },
+    "behaviourChange": {
+      "_why": "So Highlights → Changes in behaviour has something to show.",
+      "person": "hery",
+      "fromDayOffset": -14,
+      "detail": "starts around 10:00 instead of 08:00 and focus time drops by about a third"
+    },
+    "people": {
+      "_about": "Exact numbers the script uses. start/end are local times in the organisation's time zone; jitterMinutes moves them a little each day. sources: share of entries from the desktop app (agent) vs the web timer. Only desktop-app time has activity, apps and websites.",
+      "nadia": {
+        "start": "10:00",
+        "end": "13:00",
+        "jitterMinutes": 30,
+        "sources": {
+          "web": 1.0
+        },
+        "activity": [
+          0,
+          0
+        ],
+        "apps": {},
+        "sites": {}
+      },
+      "tiana": {
+        "start": "08:30",
+        "end": "17:00",
+        "jitterMinutes": 15,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          55,
+          85
+        ],
+        "apps": {
+          "Figma": 0.55,
+          "Slack": 0.15,
+          "Google Chrome": 0.3
+        },
+        "sites": {
+          "figma.com": 0.35,
+          "fonts.google.com": 0.2,
+          "mail.google.com": 0.35,
+          "unsplash.com": 0.1
+        }
+      },
+      "lucas": {
+        "start": "09:00",
+        "end": "17:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          45,
+          80
+        ],
+        "apps": {
+          "Figma": 0.45,
+          "Adobe Illustrator": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25,
+          "Spotify": 0.05
+        },
+        "sites": {
+          "figma.com": 0.25,
+          "fonts.google.com": 0.15,
+          "unsplash.com": 0.25,
+          "mail.google.com": 0.15,
+          "youtube.com": 0.1,
+          "facebook.com": 0.1
+        }
+      },
+      "hery": {
+        "start": "08:00",
+        "end": "16:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 0.8,
+          "web": 0.2
+        },
+        "activity": [
+          40,
+          80
+        ],
+        "apps": {
+          "Visual Studio Code": 0.5,
+          "Terminal": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25
+        },
+        "sites": {
+          "github.com": 0.35,
+          "developer.mozilla.org": 0.3,
+          "mail.google.com": 0.2,
+          "youtube.com": 0.15
+        }
+      },
+      "sofia": {
+        "start": "10:00",
+        "end": "18:30",
+        "jitterMinutes": 20,
+        "sources": {
+          "agent": 1.0
+        },
+        "activity": [
+          40,
+          75
+        ],
+        "apps": {
+          "Visual Studio Code": 0.45,
+          "Terminal": 0.15,
+          "Slack": 0.1,
+          "Google Chrome": 0.25,
+          "Spotify": 0.05
+        },
+        "sites": {
+          "github.com": 0.35,
+          "developer.mozilla.org": 0.3,
+          "mail.google.com": 0.2,
+          "youtube.com": 0.15
+        }
+      }
+    },
+    "siteTitles": {
+      "figma.com": [
+        "Harbour Café – Menu page – Figma",
+        "Lumo – Booking flow v3 – Figma"
+      ],
+      "fonts.google.com": [
+        "Browse Fonts - Google Fonts"
+      ],
+      "unsplash.com": [
+        "Coffee shop photos | Unsplash"
+      ],
+      "mail.google.com": [
+        "Inbox - studio@brightline.example"
+      ],
+      "github.com": [
+        "brightline/harbour-cafe-site: Pull requests",
+        "brightline/lumo-prototype"
+      ],
+      "developer.mozilla.org": [
+        "<form>: The Form element - HTML | MDN",
+        "CSS Grid Layout - CSS | MDN"
+      ],
+      "youtube.com": [
+        "Lo-fi beats to code to - YouTube"
+      ],
+      "facebook.com": [
+        "Facebook"
+      ]
+    },
+    "randomSeed": 20261118
+  },
+  "notes": [
+    {
+      "person": "lucas",
+      "dayOffset": -1,
+      "project": "Harbour Café: Website redesign",
+      "content": "Menu page: second version with bigger photos, sent to Tiana for review."
+    },
+    {
+      "person": "hery",
+      "dayOffset": -1,
+      "project": "Harbour Café: Website redesign",
+      "content": "Homepage hero and menu section built. Contact form next."
+    },
+    {
+      "person": "sofia",
+      "dayOffset": -2,
+      "project": "Lumo Health: Patient app UI",
+      "content": "Read through the booking screens; listed contrast issues for the accessibility review."
+    },
+    {
+      "person": "tiana",
+      "dayOffset": -2,
+      "project": "Lumo Health: Patient app UI",
+      "content": "Call with Clara: reminders should be opt-in. Updated the booking flow."
+    },
+    {
+      "person": "lucas",
+      "dayOffset": -4,
+      "project": "Brightline: Brand refresh",
+      "content": "Three logo directions ready for Friday."
+    }
+  ],
+  "screenshotDay": {
+    "_note": "What's happening on dayOffset 0 when screenshots are taken.",
+    "lucas": "desktop timer running on Harbour Café: Website redesign → Menu page design, Figma open on 'Harbour Café – Menu page'",
+    "hery": "web timer running on Harbour Café: Website redesign → Build homepage",
+    "others": "a normal morning already tracked"
+  }
+}
