@@ -64,4 +64,13 @@ Result: `backend/src/scripts/seed-onboarding-guide.ts` (part 1) and
 > where it differs: admin settings, the manager's team dashboard, a member's personal view,
 > the viewer on a project, and Insights as a manager and as a member. Don't blur anything.
 
-(To be used in plan step 7.)
+Result: `screenshot-script/` in the notes folder (Playwright with the installed Google Chrome,
+1440×900 at 2×). Run order: `phaseA.mjs` on an empty database (sign-up shots), then the seed, then
+`phaseB.mjs` (web shots), `phaseC-05c.mjs`, `phaseC.mjs`, `phaseC-07e.mjs`, and `phaseD.mjs` last
+(billing pays with the Stripe test card). Desktop-app shots (05b, 05c2, 05d, 06c, 06e) are taken by
+hand with Alt + Print Screen.
+
+07e uses made-up screens: local screenshot uploads to storage failed, so `fake-screens.mjs` renders
+three design-tool screens (Harbour Café menu page and homepage, Lumo booking flow) and
+`phaseC-07e.mjs` adds local screenshot rows for Lucas and serves those images to the browser in
+place of storage. Nothing is uploaded.
