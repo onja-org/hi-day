@@ -7,7 +7,7 @@ export default function SecuritySettingsPage() {
   return (
     <SettingsEmptySection
       title="Security & log in"
-      description="Two-factor authentication and single sign-on will live here. Nothing to configure yet."
+      description="Each person can turn on two-step login for their own account from their account page. A setting to require it for everyone will live here."
     />
   );
 }

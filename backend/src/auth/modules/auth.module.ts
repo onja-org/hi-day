@@ -5,17 +5,21 @@ import { AuditLogModule } from '../../audit-log/modules/audit-log.module';
 import { DevicesModule } from '../../devices/modules/devices.module';
 import { Membership } from '../../database/entities/membership.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
+import { TwoFactorRecoveryCode } from '../../database/entities/two-factor-recovery-code.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
 import { TimeEntriesModule } from '../../time-entries/modules/time-entries.module';
 import { AuthController } from '../controllers/auth.controller';
+import { TwoFactorController } from '../controllers/two-factor.controller';
 import { AuthService } from '../services/auth.service';
 import { CaptchaService } from '../services/captcha.service';
 import { LoginAttemptTracker } from '../services/login-attempt-tracker.service';
 import { PasswordService } from '../services/password.service';
 import { RefreshTokenService } from '../services/refresh-token.service';
 import { TokenService } from '../services/token.service';
+import { TwoFactorSecretCipher } from '../services/two-factor-secret-cipher.service';
+import { TwoFactorService } from '../services/two-factor.service';
 import {
   bodyTokenTracker,
   emailTracker,
@@ -25,7 +29,12 @@ import { JwtAuthModule } from './jwt-auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, RefreshToken, Membership]),
+    TypeOrmModule.forFeature([
+      User,
+      RefreshToken,
+      Membership,
+      TwoFactorRecoveryCode,
+    ]),
     EmailModule,
     OrganisationsModule,
     AuditLogModule,
@@ -57,7 +66,7 @@ import { JwtAuthModule } from './jwt-auth.module';
       },
     ]),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, TwoFactorController],
   providers: [
     AuthService,
     PasswordService,
@@ -65,7 +74,15 @@ import { JwtAuthModule } from './jwt-auth.module';
     RefreshTokenService,
     LoginAttemptTracker,
     CaptchaService,
+    TwoFactorService,
+    TwoFactorSecretCipher,
   ],
-  exports: [AuthService, PasswordService, TokenService, RefreshTokenService],
+  exports: [
+    AuthService,
+    PasswordService,
+    TokenService,
+    RefreshTokenService,
+    TwoFactorService,
+  ],
 })
 export class AuthModule {}

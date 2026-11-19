@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -112,6 +113,29 @@ export class MembershipsController {
       `Password reset email sent to ${sent} ${sent === 1 ? 'member' : 'members'}` +
       (skipped > 0 ? `; ${skipped} skipped` : '');
     return { results, message };
+  }
+
+  /**
+   * For a member who lost both their phone and their recovery codes.
+   * Admins only: it takes a protection off someone else's account.
+   */
+  @Post(':membershipId/two-factor-reset')
+  @RequireRole(MembershipRole.ADMIN)
+  @HttpCode(200)
+  async resetTwoFactor(
+    @Param('membershipId', ParseUUIDPipe) membershipId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ member: ActiveMemberSummary; message: string }> {
+    const member = await this.membershipsService.resetTwoFactor(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+    );
+    return {
+      member,
+      message:
+        'Two-step login reset. They can log in with just their password.',
+    };
   }
 
   @Patch(':membershipId')

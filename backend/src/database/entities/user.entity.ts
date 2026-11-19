@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -73,6 +74,41 @@ export class User {
    */
   @Column({ type: 'integer', default: 0 })
   sessionVersion: number;
+
+  /**
+   * Two-step login. Set only once the person has confirmed a code from
+   * their authenticator app; null means it is off. See ADR 0038.
+   */
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  twoFactorEnabledAt: Date | null;
+
+  /** The authenticator secret, encrypted by `TwoFactorSecretCipher`. */
+  @Column({ type: 'text', nullable: true })
+  twoFactorSecret: string | null;
+
+  /**
+   * A secret shown as a QR code but not yet confirmed with a code. Kept
+   * apart from `twoFactorSecret` so starting setup again, or abandoning it,
+   * never touches a secret that is already in use. Encrypted the same way.
+   */
+  @Column({ type: 'text', nullable: true })
+  twoFactorPendingSecret: string | null;
+
+  /** The last 30-second step a code was accepted for, so it can't be replayed. */
+  @Column({ type: 'integer', nullable: true })
+  twoFactorLastUsedStep: number | null;
+
+  /**
+   * Hash of the short-lived token that says "this browser got the password
+   * right and still owes a code". The raw token lives only in the browser's
+   * cookie, the same way refresh tokens are stored.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  @Index({ unique: true })
+  twoFactorChallengeHash: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  twoFactorChallengeExpiresAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

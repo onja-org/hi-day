@@ -6,4 +6,8 @@ export type LoginInput = {
   captchaToken?: string;
 };
 
-export type LoginResult = ApiResult<object, { captchaRequired?: boolean }>;
+export type LoginResult = ApiResult<
+  /** The password was right; the code step comes next. */
+  { twoFactorRequired?: boolean },
+  { captchaRequired?: boolean }
+>;
