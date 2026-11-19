@@ -6,6 +6,7 @@ import type { FormEvent } from "react";
 import { setPassword } from "@/lib/setPassword";
 import { detectTimezone } from "@/lib/timezone";
 import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT } from "@/lib/passwordRules";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { Spinner } from "@/components/Spinner";
 
@@ -43,13 +44,11 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
     >
       <PasswordField
         label="Password"
-        hint="At least 6 characters, including a letter and a number."
+        hint={PASSWORD_RULES_HINT}
         name="password"
         autoComplete="new-password"
         required
-        minLength={6}
-        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-        title="At least 6 characters, including a letter and a number"
+        minLength={PASSWORD_MIN_LENGTH}
         disabled={mutation.data?.ok}
       />
 

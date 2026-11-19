@@ -1,16 +1,15 @@
-import { IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength, Validate } from 'class-validator';
 import {
-  PASSWORD_COMPLEXITY_MESSAGE,
-  PASSWORD_COMPLEXITY_PATTERN,
-} from '../../auth/dto/password-complexity';
+  IsNotCommonPassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_TOO_SHORT_MESSAGE,
+} from '../../auth/dto/password-policy';
 
 export class AcceptInvitationDto {
   @IsOptional()
   @IsString()
-  @MinLength(6)
-  @Matches(PASSWORD_COMPLEXITY_PATTERN, {
-    message: PASSWORD_COMPLEXITY_MESSAGE,
-  })
+  @MinLength(PASSWORD_MIN_LENGTH, { message: PASSWORD_TOO_SHORT_MESSAGE })
+  @Validate(IsNotCommonPassword)
   password?: string;
 
   @IsOptional()

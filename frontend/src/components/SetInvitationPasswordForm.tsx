@@ -3,6 +3,7 @@ import type {
   AcceptInvitationInput,
   AcceptInvitationResult,
 } from "@/types/invitation";
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT } from "@/lib/passwordRules";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { TextField } from "@/components/ui/form/TextField";
 import { Spinner } from "@/components/Spinner";
@@ -61,13 +62,11 @@ export function SetInvitationPasswordForm({
 
       <PasswordField
         label="Password"
-        hint="At least 6 characters, including a letter and a number."
+        hint={PASSWORD_RULES_HINT}
         name="password"
         autoComplete="new-password"
         required
-        minLength={6}
-        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-        title="At least 6 characters, including a letter and a number"
+        minLength={PASSWORD_MIN_LENGTH}
         disabled={result?.ok}
       />
 

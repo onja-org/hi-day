@@ -1,8 +1,9 @@
-import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, MinLength, Validate } from 'class-validator';
 import {
-  PASSWORD_COMPLEXITY_MESSAGE,
-  PASSWORD_COMPLEXITY_PATTERN,
-} from './password-complexity';
+  IsNotCommonPassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_TOO_SHORT_MESSAGE,
+} from './password-policy';
 
 export class ResetPasswordDto {
   @IsString()
@@ -10,9 +11,7 @@ export class ResetPasswordDto {
   token: string;
 
   @IsString()
-  @MinLength(6)
-  @Matches(PASSWORD_COMPLEXITY_PATTERN, {
-    message: PASSWORD_COMPLEXITY_MESSAGE,
-  })
+  @MinLength(PASSWORD_MIN_LENGTH, { message: PASSWORD_TOO_SHORT_MESSAGE })
+  @Validate(IsNotCommonPassword)
   password: string;
 }
