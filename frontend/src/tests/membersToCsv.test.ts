@@ -12,6 +12,7 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
     teamIds: ["t-1", "t-hidden"],
     status: "active",
     joinedAt: "2026-02-19T10:00:00.000Z",
+    twoFactorEnabled: false,
     disclosureRegion: null,
     timezone: null,
     appUrlTracking: null,

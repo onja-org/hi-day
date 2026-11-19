@@ -24,13 +24,16 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   const data = (await response.json().catch(() => null)) as {
     message?: string[] | string;
     captchaRequired?: boolean;
+    twoFactorRequired?: boolean;
   } | null;
   const message = Array.isArray(data?.message)
     ? data.message[0]
     : data?.message;
 
   if (response.ok) {
-    return { ok: true, message: message ?? "Logged in." };
+    return data?.twoFactorRequired === true
+      ? { ok: true, message: message ?? "Logged in.", twoFactorRequired: true }
+      : { ok: true, message: message ?? "Logged in." };
   }
 
   return {

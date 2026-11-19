@@ -12,6 +12,7 @@ import { MembershipRole } from '../../../database/entities/membership-role.enum'
 import { MembershipStatus } from '../../../database/entities/membership-status.enum';
 import { MembershipsService } from '../memberships.service';
 import { AuthService } from '../../../auth/services/auth.service';
+import { TwoFactorService } from '../../../auth/services/two-factor.service';
 import { User } from '../../../database/entities/user.entity';
 
 describe('MembershipsService', () => {
@@ -84,6 +85,16 @@ describe('MembershipsService', () => {
     };
   }
 
+  function makeTwoFactorService() {
+    const clear = jest.fn().mockResolvedValue(undefined);
+    const twoFactorService = {
+      isEnabled: (user: { twoFactorEnabledAt: Date | null }) =>
+        user.twoFactorEnabledAt != null,
+      clear,
+    } as unknown as TwoFactorService;
+    return { twoFactorService, clear };
+  }
+
   function makeService(
     overrides: {
       membershipsRepo?: Repository<Membership>;
@@ -92,6 +103,7 @@ describe('MembershipsService', () => {
       devicesService?: DevicesService;
       authService?: AuthService;
       timeEntriesService?: TimeEntriesService;
+      twoFactorService?: TwoFactorService;
     } = {},
   ) {
     return new MembershipsService(
@@ -104,6 +116,7 @@ describe('MembershipsService', () => {
         ({
           stopEntriesDisallowedByApps: jest.fn().mockResolvedValue(0),
         } as unknown as TimeEntriesService),
+      overrides.twoFactorService ?? makeTwoFactorService().twoFactorService,
       // Entitlements: Cloud reaches Stripe here, self-hosted does nothing.
       { syncSeats: jest.fn().mockResolvedValue(undefined) } as never,
     );
@@ -165,6 +178,7 @@ describe('MembershipsService', () => {
           teamIds: ['team-2'],
           status: MembershipStatus.ACTIVE,
           joinedAt: new Date('2026-01-01'),
+          twoFactorEnabled: false,
           projectIds: ['project-1', 'project-2'],
           expectedWorkDays: null,
           trackingDisabledDays: null,
@@ -1746,6 +1760,109 @@ describe('MembershipsService', () => {
         ['an-admin', 'skipped'],
         ['other-team', 'skipped'],
       ]);
+    });
+  });
+
+  describe('resetTwoFactor', () => {
+    function target(overrides: Partial<Membership> = {}) {
+      return {
+        id: 'membership-2',
+        userId: 'user-2',
+        organisationId: 'org-1',
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.ACTIVE,
+        createdAt: new Date('2026-01-01'),
+        teamMemberships: [],
+        user: {
+          id: 'user-2',
+          email: 'sam@acme.test',
+          name: 'Sam',
+          twoFactorEnabledAt: new Date('2026-02-01'),
+        },
+        ...overrides,
+      } as unknown as Membership;
+    }
+
+    it('turns it off for the member and records who did it', async () => {
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const { twoFactorService, clear } = makeTwoFactorService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(target()),
+        }),
+        dataSource,
+        auditLogService,
+        twoFactorService,
+      });
+
+      const result = await service.resetTwoFactor(
+        'org-1',
+        'admin-user',
+        'membership-2',
+      );
+
+      expect(clear).toHaveBeenCalledWith(expect.anything(), 'user-2');
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'membership.two_factor_reset',
+          organisationId: 'org-1',
+          actorUserId: 'admin-user',
+          metadata: { membershipId: 'membership-2', userId: 'user-2' },
+        }),
+      );
+      expect(result.twoFactorEnabled).toBe(false);
+    });
+
+    it('only looks for the member inside this organisation', async () => {
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ findOne }),
+      });
+
+      await expect(
+        service.resetTwoFactor('org-1', 'admin-user', 'membership-9'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'membership-9',
+            organisationId: 'org-1',
+          }) as unknown,
+        }),
+      );
+    });
+
+    it("refuses an admin's own account", async () => {
+      const { twoFactorService, clear } = makeTwoFactorService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue(target({ userId: 'admin-user' })),
+        }),
+        twoFactorService,
+      });
+
+      await expect(
+        service.resetTwoFactor('org-1', 'admin-user', 'membership-2'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(clear).not.toHaveBeenCalled();
+    });
+
+    it('says so when it is already off', async () => {
+      const off = target();
+      off.user.twoFactorEnabledAt = null;
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue(off),
+        }),
+      });
+
+      await expect(
+        service.resetTwoFactor('org-1', 'admin-user', 'membership-2'),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

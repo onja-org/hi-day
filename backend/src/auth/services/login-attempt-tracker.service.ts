@@ -27,6 +27,20 @@ export class LoginAttemptTracker {
     });
   }
 
+  /**
+   * Leaves exactly one attempt before the captcha is needed again. For a
+   * two-step login account whose password was just right behind a solved
+   * captcha: the count isn't cleared until a code is right, but the code
+   * step still needs one try, or the person could never get back in until
+   * the window ran out. One guess per captcha, as with passwords.
+   */
+  allowOneMoreAttempt(email: string): void {
+    this.attempts.set(this.normalize(email), {
+      count: CAPTCHA_REQUIRED_AFTER - 1,
+      lastAttemptAt: Date.now(),
+    });
+  }
+
   reset(email: string): void {
     this.attempts.delete(this.normalize(email));
   }

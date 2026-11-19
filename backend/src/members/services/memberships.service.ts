@@ -13,6 +13,7 @@ import {
 } from '../../entitlements/entitlements';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { AuthService } from '../../auth/services/auth.service';
+import { TwoFactorService } from '../../auth/services/two-factor.service';
 import { DevicesService } from '../../devices/services/devices.service';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { Membership } from '../../database/entities/membership.entity';
@@ -69,6 +70,8 @@ export interface ActiveMemberSummary {
   teamIds: string[];
   status: MembershipStatus;
   joinedAt: Date;
+  /** Whether they log in with a code as well as their password. */
+  twoFactorEnabled: boolean;
   disclosureRegion: string | null;
   /** Their own IANA zone; null until a client has reported one. */
   timezone: string | null;
@@ -135,6 +138,7 @@ export class MembershipsService {
     private readonly devicesService: DevicesService,
     private readonly authService: AuthService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly twoFactorService: TwoFactorService,
     @Inject(ENTITLEMENTS)
     private readonly entitlements: Entitlements,
   ) {}
@@ -520,6 +524,53 @@ export class MembershipsService {
   }
 
   /** The non-throwing form of `assertManagerCanModify`. */
+  /**
+   * Turns two-step login off for a member who has lost both their phone
+   * and their recovery codes, so they can log in with their password and
+   * set it up again. Admin-only (the route says so), never for yourself —
+   * you'd use a recovery code — and recorded in the audit log, since it
+   * takes a protection off someone else's account.
+   */
+  async resetTwoFactor(
+    organisationId: string,
+    actorUserId: string,
+    membershipId: string,
+  ): Promise<ActiveMemberSummary> {
+    const target = await this.memberships.findOne({
+      where: {
+        id: membershipId,
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { user: true, teamMemberships: true },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Member not found.');
+    }
+    if (target.userId === actorUserId) {
+      throw new ForbiddenException(
+        "You can't reset your own two-step login. Use a recovery code to log in, then turn it off from your account.",
+      );
+    }
+    if (!this.twoFactorService.isEnabled(target.user)) {
+      throw new ConflictException('Two-step login is already off for them.');
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.twoFactorService.clear(manager, target.userId);
+      await this.auditLogService.record(manager, {
+        action: 'membership.two_factor_reset',
+        organisationId,
+        actorUserId,
+        metadata: { membershipId, userId: target.userId },
+      });
+    });
+
+    target.user.twoFactorEnabledAt = null;
+    return this.toSummary(target);
+  }
+
   private managerCanModify(
     caller: Membership,
     target: Membership,
@@ -608,6 +659,8 @@ export class MembershipsService {
       ),
       status: membership.status,
       joinedAt: membership.createdAt,
+      // `!= null`: a partially-selected row leaves this undefined.
+      twoFactorEnabled: membership.user.twoFactorEnabledAt != null,
       disclosureRegion: membership.disclosureRegion,
       appUrlTracking: membership.appUrlTracking,
       // `?? null`: a partially-selected row leaves this undefined.

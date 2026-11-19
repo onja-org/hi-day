@@ -68,4 +68,17 @@ describe('LoginAttemptTracker', () => {
 
     expect(tracker.requiresCaptcha('jane@acme.test')).toBe(false);
   });
+
+  it('can leave exactly one attempt before the captcha is needed again', () => {
+    const tracker = new LoginAttemptTracker();
+    for (let i = 0; i < 7; i++) {
+      tracker.recordFailure('jane@acme.test');
+    }
+
+    tracker.allowOneMoreAttempt('jane@acme.test');
+    expect(tracker.requiresCaptcha('jane@acme.test')).toBe(false);
+
+    tracker.recordFailure('jane@acme.test');
+    expect(tracker.requiresCaptcha('jane@acme.test')).toBe(true);
+  });
 });

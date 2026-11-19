@@ -20,6 +20,7 @@ import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { ProjectTeam } from './entities/project-team.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { TwoFactorRecoveryCode } from './entities/two-factor-recovery-code.entity';
 import { SavedReport } from './entities/saved-report.entity';
 import { Screenshot } from './entities/screenshot.entity';
 import { Subscription } from './entities/subscription.entity';
@@ -56,6 +57,7 @@ import { User } from './entities/user.entity';
           InviteLink,
           AuditLog,
           RefreshToken,
+          TwoFactorRecoveryCode,
           Device,
           DevicePairingRequest,
           DeviceSession,

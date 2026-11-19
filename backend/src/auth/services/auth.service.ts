@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -11,7 +13,10 @@ import type { Request, Response } from 'express';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
-import { readCookie } from '../../common/cookies.util';
+import {
+  buildSessionCookieOptions,
+  readCookie,
+} from '../../common/cookies.util';
 import {
   clearSessionCookies,
   setSessionCookies,
@@ -29,6 +34,7 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import { TwoFactorCodeDto } from '../dto/two-factor-code.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
@@ -43,6 +49,7 @@ import {
   REFRESH_TOKEN_COOKIE,
   TokenService,
 } from './token.service';
+import { TwoFactorService } from './two-factor.service';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -56,6 +63,18 @@ const DEACTIVATED_MESSAGE =
   'Your account has been deactivated. Contact an admin of your organisation if you believe this is a mistake.';
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
 const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
+const TWO_FACTOR_REQUIRED_MESSAGE =
+  'Enter the 6-digit code from your authenticator app.';
+const TWO_FACTOR_CHALLENGE_EXPIRED_MESSAGE =
+  'Your log in timed out. Enter your email and password again.';
+const TWO_FACTOR_WRONG_CODE_MESSAGE =
+  "That code didn't work. Check your app and try again.";
+const TWO_FACTOR_TOO_MANY_WRONG_CODES_MESSAGE =
+  'Too many wrong codes. Enter your email and password again.';
+const TWO_FACTOR_DESKTOP_PASSWORD_LOGIN_MESSAGE =
+  'Two-step login is on for this account. Update the Hi Day app and sign in through your browser.';
+export const TWO_FACTOR_CHALLENGE_COOKIE = 'two_factor_challenge';
+const TWO_FACTOR_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$EdLgXk5ViQoSXTFItKblvQ$/dRGHQlCkWNFJX/M1z2MfiETG+HUWqdGGuZBfni0RRk';
@@ -91,6 +110,7 @@ export class AuthService {
     private readonly captchaService: CaptchaService,
     private readonly deviceSessionService: DeviceSessionService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   async signUp(dto: CreateAccountDto): Promise<{ message: string }> {
@@ -238,8 +258,14 @@ export class AuthService {
   async login(
     dto: LoginDto,
     response: Response,
-  ): Promise<{ message: string; deviceId?: string; deviceToken?: string }> {
-    if (this.loginAttemptTracker.requiresCaptcha(dto.email)) {
+  ): Promise<{
+    message: string;
+    deviceId?: string;
+    deviceToken?: string;
+    twoFactorRequired?: boolean;
+  }> {
+    const captchaSolved = this.loginAttemptTracker.requiresCaptcha(dto.email);
+    if (captchaSolved) {
       const captchaValid = await this.captchaService.verify(dto.captchaToken);
 
       if (!captchaValid) {
@@ -267,15 +293,26 @@ export class AuthService {
       });
     }
 
-    this.loginAttemptTracker.reset(dto.email);
+    const twoFactorEnabled = this.twoFactorService.isEnabled(user);
 
-    const hasActiveMembership = await this.memberships.exists({
-      where: { userId: user.id, status: MembershipStatus.ACTIVE },
-    });
+    // With two-step login on, the password alone proves nothing yet: the
+    // count of wrong attempts carries on into the code step and is only
+    // cleared once a code is right, so guessing codes costs the same
+    // captchas guessing passwords does. Behind a solved captcha the code
+    // step gets one try; a wrong one asks for the captcha again.
+    if (!twoFactorEnabled) {
+      this.loginAttemptTracker.reset(dto.email);
+    } else if (captchaSolved) {
+      this.loginAttemptTracker.allowOneMoreAttempt(dto.email);
+    }
 
-    if (!hasActiveMembership) {
-      recordAnalyticsEvent('login_blocked_deactivated', { userId: user.id });
-      throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    await this.assertHasActiveMembership(user.id);
+
+    // The desktop app's old password form, kept for builds that predate
+    // pairing (ADR-0009), has no code step. Pairing is approved from a
+    // browser that already passed two-step login, so it stays the way in.
+    if (dto.deviceFingerprint && twoFactorEnabled) {
+      throw new ForbiddenException(TWO_FACTOR_DESKTOP_PASSWORD_LOGIN_MESSAGE);
     }
 
     if (dto.deviceFingerprint) {
@@ -305,20 +342,151 @@ export class AuthService {
       return { message: 'Logged in.', deviceId, deviceToken };
     }
 
-    const accessToken = await this.accessTokenService.sign(user.id);
+    if (twoFactorEnabled) {
+      const challenge = await this.twoFactorService.startChallenge(user.id);
+      response.cookie(
+        TWO_FACTOR_CHALLENGE_COOKIE,
+        challenge,
+        buildSessionCookieOptions(
+          TWO_FACTOR_CHALLENGE_TTL_MS,
+          this.configService,
+        ),
+      );
+      return { message: TWO_FACTOR_REQUIRED_MESSAGE, twoFactorRequired: true };
+    }
+
+    await this.startWebSession(user.id, response, {});
+
+    return { message: 'Logged in.' };
+  }
+
+  /**
+   * The second half of a log in with two-step login on: the browser
+   * carries the challenge cookie `login` set, plus a code from the app or
+   * a recovery code. Wrong codes count against the same per-email tracker
+   * as wrong passwords; once that wants a captcha the challenge is thrown
+   * away and the person starts again from the password, captcha and all.
+   */
+  async verifyTwoFactorLogin(
+    dto: TwoFactorCodeDto,
+    request: Request,
+    response: Response,
+  ): Promise<{ message: string }> {
+    const challenge = readCookie(request, TWO_FACTOR_CHALLENGE_COOKIE);
+    const user = challenge
+      ? await this.twoFactorService.findChallengeOwner(challenge)
+      : null;
+
+    if (!user) {
+      this.clearTwoFactorChallengeCookie(response);
+      throw new UnauthorizedException({
+        message: TWO_FACTOR_CHALLENGE_EXPIRED_MESSAGE,
+        restart: true,
+      });
+    }
+
+    if (this.loginAttemptTracker.requiresCaptcha(user.email)) {
+      await this.abandonTwoFactorChallenge(user.id, response);
+    }
+
+    const check = await this.twoFactorService.checkCode(user, dto.code);
+
+    if (!check.ok) {
+      this.loginAttemptTracker.recordFailure(user.email);
+      recordAnalyticsEvent('login_two_factor_failed', { userId: user.id });
+      if (this.loginAttemptTracker.requiresCaptcha(user.email)) {
+        await this.abandonTwoFactorChallenge(user.id, response);
+      }
+      throw new UnauthorizedException({
+        message: TWO_FACTOR_WRONG_CODE_MESSAGE,
+      });
+    }
+
+    this.loginAttemptTracker.reset(user.email);
+    await this.twoFactorService.endChallenge(user.id);
+    this.clearTwoFactorChallengeCookie(response);
+
+    // Five minutes is long enough for an admin to have deactivated them.
+    await this.assertHasActiveMembership(user.id);
+    await this.startWebSession(user.id, response, {
+      twoFactor: true,
+      usedRecoveryCode: check.usedRecoveryCode,
+    });
+
+    return { message: 'Logged in.' };
+  }
+
+  /**
+   * Signs every other browser out and keeps this one signed in, for a
+   * change to how the account logs in (turning two-step login on or
+   * off). Paired devices are left alone, as with ordinary logout
+   * (ADR-0017): they were approved from a signed-in browser, and nothing
+   * about them changed.
+   */
+  async restartWebSession(userId: string, response: Response): Promise<void> {
+    let refreshToken = '';
+    await this.dataSource.transaction(async (manager) => {
+      await this.refreshTokenService.revokeAll(manager, userId);
+      await this.accessTokenService.endAllSessions(manager, userId);
+      refreshToken = await this.refreshTokenService.issue(manager, userId);
+    });
+
+    // After the commit, so it carries the bumped session version.
+    const accessToken = await this.accessTokenService.sign(userId);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
+  }
+
+  private async startWebSession(
+    userId: string,
+    response: Response,
+    auditMetadata: Record<string, unknown>,
+  ): Promise<void> {
+    const accessToken = await this.accessTokenService.sign(userId);
     const refreshToken = await this.refreshTokenService.issue(
       this.dataSource.manager,
-      user.id,
+      userId,
     );
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     await this.auditLogService.record(this.dataSource.manager, {
       action: 'login',
-      actorUserId: user.id,
+      actorUserId: userId,
+      ...(Object.keys(auditMetadata).length > 0
+        ? { metadata: auditMetadata }
+        : {}),
     });
-    recordAnalyticsEvent('login_succeeded', { userId: user.id });
+    recordAnalyticsEvent('login_succeeded', { userId });
+  }
 
-    return { message: 'Logged in.' };
+  private async assertHasActiveMembership(userId: string): Promise<void> {
+    const hasActiveMembership = await this.memberships.exists({
+      where: { userId, status: MembershipStatus.ACTIVE },
+    });
+
+    if (!hasActiveMembership) {
+      recordAnalyticsEvent('login_blocked_deactivated', { userId });
+      throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    }
+  }
+
+  private async abandonTwoFactorChallenge(
+    userId: string,
+    response: Response,
+  ): Promise<never> {
+    await this.twoFactorService.endChallenge(userId);
+    this.clearTwoFactorChallengeCookie(response);
+    throw new HttpException(
+      {
+        message: TWO_FACTOR_TOO_MANY_WRONG_CODES_MESSAGE,
+        captchaRequired: true,
+        restart: true,
+      },
+      HttpStatus.UNAUTHORIZED,
+    );
+  }
+
+  private clearTwoFactorChallengeCookie(response: Response): void {
+    response.clearCookie(TWO_FACTOR_CHALLENGE_COOKIE, { path: '/' });
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
@@ -368,7 +536,7 @@ export class AuthService {
   async resetPassword(
     dto: ResetPasswordDto,
     response: Response,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; twoFactorRequired?: boolean }> {
     const user = await this.users.findOne({
       where: { passwordResetToken: dto.token },
     });
@@ -382,6 +550,10 @@ export class AuthService {
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);
+    // The reset link proves only access to the inbox, which is exactly
+    // what two-step login is there to not be enough. Such a person sets
+    // their new password here and then logs in, code and all.
+    const twoFactorEnabled = this.twoFactorService.isEnabled(user);
     let refreshToken = '';
 
     await this.dataSource.transaction(async (manager) => {
@@ -396,7 +568,9 @@ export class AuthService {
       // carries the bumped version and this browser stays signed in.
       await this.refreshTokenService.revokeAll(manager, user.id);
       await this.accessTokenService.endAllSessions(manager, user.id);
-      refreshToken = await this.refreshTokenService.issue(manager, user.id);
+      if (!twoFactorEnabled) {
+        refreshToken = await this.refreshTokenService.issue(manager, user.id);
+      }
 
       await this.auditLogService.record(manager, {
         action: 'password_reset',
@@ -405,10 +579,18 @@ export class AuthService {
     });
 
     await this.signOutAllDevices(user.id);
+    recordAnalyticsEvent('password_reset_completed', { userId: user.id });
+
+    if (twoFactorEnabled) {
+      clearSessionCookies(response);
+      return {
+        message: 'Password reset. Log in with your new password.',
+        twoFactorRequired: true,
+      };
+    }
 
     const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
-    recordAnalyticsEvent('password_reset_completed', { userId: user.id });
 
     return { message: 'Password reset. You are now signed in.' };
   }
