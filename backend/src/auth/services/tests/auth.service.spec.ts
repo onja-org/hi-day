@@ -19,6 +19,7 @@ import { AccessTokenService } from '../access-token.service';
 import { AuthService } from '../auth.service';
 import { CaptchaService } from '../captcha.service';
 import { LoginAttemptTracker } from '../login-attempt-tracker.service';
+import { PASSWORD_CONTAINS_EMAIL_MESSAGE } from '../../dto/password-policy';
 import { PasswordService } from '../password.service';
 import { RefreshTokenService } from '../refresh-token.service';
 import { TokenService } from '../token.service';
@@ -542,6 +543,31 @@ describe('AuthService', () => {
         ),
       ).rejects.toBeInstanceOf(UnprocessableEntityException);
     });
+
+    it('refuses a password that contains the email address, without saving it', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'Jane.Doe@acme.test',
+        emailVerificationToken: 'valid-token',
+        emailVerificationExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const hash = jest.fn();
+      const service = makeService({
+        usersRepo,
+        passwordService: makePasswordService({ hash }),
+      });
+
+      await expect(
+        service.setPassword(
+          { token: 'valid-token', password: 'jane.doe@acme.test!!' },
+          makeResponse().response,
+        ),
+      ).rejects.toThrow(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+      expect(hash).not.toHaveBeenCalled();
+    });
   });
 
   describe('login', () => {
@@ -1061,6 +1087,31 @@ describe('AuthService', () => {
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    });
+
+    it('refuses a password that contains the email address, without saving it', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'Jane.Doe@acme.test',
+        passwordResetToken: 'valid-token',
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const hash = jest.fn();
+      const service = makeService({
+        usersRepo,
+        passwordService: makePasswordService({ hash }),
+      });
+
+      await expect(
+        service.resetPassword(
+          { token: 'valid-token', password: 'jane.doe@acme.test!!' },
+          makeResponse().response,
+        ),
+      ).rejects.toThrow(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+      expect(hash).not.toHaveBeenCalled();
     });
   });
 
