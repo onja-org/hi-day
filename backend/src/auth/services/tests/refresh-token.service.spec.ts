@@ -160,7 +160,7 @@ describe('RefreshTokenService', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('rotates the still-unused successor instead of revoking everything when a just-rotated token is reused within the grace window', async () => {
+  it('reports a race, issuing and revoking nothing, when a just-rotated token is reused within the grace window', async () => {
     const successorHash = 'successor-hash';
     const existing = {
       id: 'rt-1',
@@ -188,22 +188,72 @@ describe('RefreshTokenService', () => {
 
     const result = await service.rotate(manager, 'raced');
 
-    // The second (concurrent) request rotates the successor forward, not
-    // the stale row it was actually presented — and nothing gets revoked
-    // wholesale (a single, targeted update call, not revokeAll's
-    // where-clause update).
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(update).toHaveBeenCalledWith(
-      RefreshToken,
-      'rt-2',
-      expect.objectContaining({ revokedAt: expect.any(Date) as Date }),
-    );
-    expect(save).toHaveBeenCalled();
-    expect(result).toEqual({
-      outcome: 'rotated',
+    // The successor is the one live token, already on its way to the
+    // browser in the winning request's response. Rotating it again would
+    // revoke it, so a third concurrent request would read as theft.
+    expect(result).toEqual({ outcome: 'raced', userId: 'user-1' });
+    expect(update).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('keeps reporting a race for every concurrent request, since none of them moves the successor on', async () => {
+    const successorHash = 'successor-hash';
+    const existing = {
+      id: 'rt-1',
       userId: 'user-1',
-      token: 'token-1',
-    });
+      revokedAt: new Date(),
+      replacedByTokenHash: successorHash,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const successor = {
+      id: 'rt-2',
+      userId: 'user-1',
+      tokenHash: successorHash,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const findOne = jest.fn((_entity: unknown, options: { where: object }) =>
+      Promise.resolve(
+        'tokenHash' in options.where &&
+          options.where.tokenHash === successorHash
+          ? successor
+          : existing,
+      ),
+    );
+    const { manager } = makeManager({ findOne });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    for (let i = 0; i < 3; i++) {
+      await expect(service.rotate(manager, 'raced')).resolves.toEqual({
+        outcome: 'raced',
+        userId: 'user-1',
+      });
+    }
+  });
+
+  it('locks the presented row, so concurrent requests take turns instead of each rotating it', async () => {
+    const existing = {
+      id: 'rt-1',
+      userId: 'user-1',
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 1000),
+    };
+    const findOne = jest.fn().mockResolvedValue(existing);
+    const { manager } = makeManager({ findOne });
+    const service = new RefreshTokenService(
+      makeConfigService(),
+      makeTokenService(),
+    );
+
+    await service.rotate(manager, 'valid');
+
+    expect(findOne).toHaveBeenCalledWith(
+      RefreshToken,
+      expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
+    );
   });
 
   it('rejects rotate() when the token has expired', async () => {
