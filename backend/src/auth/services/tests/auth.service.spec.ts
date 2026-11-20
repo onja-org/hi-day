@@ -45,7 +45,7 @@ describe('AuthService', () => {
   }
 
   function makeDataSource() {
-    const update = jest.fn();
+    const update = jest.fn().mockResolvedValue({ affected: 1 });
     const manager = { update } as unknown as EntityManager;
     const transaction = jest.fn(
       (fn: (manager: EntityManager) => Promise<unknown>) => fn(manager),
@@ -509,9 +509,57 @@ describe('AuthService', () => {
       // The same report is this person's own zone too.
       expect(update).toHaveBeenCalledWith(
         expect.anything(),
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.objectContaining({ timezone: 'Indian/Antananarivo' }),
       );
+    });
+
+    /**
+     * A double-click sends two requests that both find the user by the
+     * token before either one clears it. Only the request that actually
+     * clears the token may found the organisation; the other must stop.
+     */
+    it('founds no second organisation when the token was already used by a concurrent request', async () => {
+      const user = {
+        id: 'user-1',
+        emailVerificationToken: 'valid-token',
+        emailVerificationExpiresAt: new Date(Date.now() + 60_000),
+        pendingOrganisationName: 'Acme Inc',
+        pendingOrganisationAddress: null,
+        pendingOrganisationWebsite: null,
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const { organisationsService, createForUser } =
+        makeOrganisationsService();
+      const { refreshTokenService, issue } = makeRefreshTokenService();
+      const { dataSource, update } = makeDataSource();
+      update.mockResolvedValue({ affected: 0 });
+      const service = makeService({
+        usersRepo,
+        organisationsService,
+        refreshTokenService,
+        dataSource,
+      });
+      const { response, cookie } = makeResponse();
+
+      await expect(
+        service.setPassword(
+          { token: 'valid-token', password: 'correct-horse' },
+          response,
+        ),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+
+      // The update is conditional on the token still being there.
+      expect(update).toHaveBeenCalledWith(
+        expect.anything(),
+        { id: 'user-1', emailVerificationToken: 'valid-token' },
+        expect.anything(),
+      );
+      expect(createForUser).not.toHaveBeenCalled();
+      expect(issue).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown token', async () => {
@@ -944,6 +992,46 @@ describe('AuthService', () => {
         expect.objectContaining({ httpOnly: true }),
       );
       expect(result.message).toContain('signed in');
+    });
+
+    it('rotates no sessions when the token was already used by a concurrent request', async () => {
+      const user = {
+        id: 'user-1',
+        passwordResetToken: 'valid-token',
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const usersRepo = makeUsersRepo({
+        findOne: jest.fn().mockResolvedValue(user),
+      });
+      const { refreshTokenService, issue, revokeAll } =
+        makeRefreshTokenService();
+      const { auditLogService, record } = makeAuditLogService();
+      const { dataSource, update } = makeDataSource();
+      update.mockResolvedValue({ affected: 0 });
+      const service = makeService({
+        usersRepo,
+        refreshTokenService,
+        auditLogService,
+        dataSource,
+      });
+      const { response, cookie } = makeResponse();
+
+      await expect(
+        service.resetPassword(
+          { token: 'valid-token', password: 'correct-horse' },
+          response,
+        ),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+
+      expect(update).toHaveBeenCalledWith(
+        expect.anything(),
+        { id: 'user-1', passwordResetToken: 'valid-token' },
+        expect.anything(),
+      );
+      expect(revokeAll).not.toHaveBeenCalled();
+      expect(issue).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
     });
 
     it('signs the new access token only after the session version is bumped and committed, so this browser stays signed in', async () => {
