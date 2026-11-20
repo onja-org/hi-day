@@ -2,18 +2,27 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { emailColumnTransformer } from '../../common/email.util';
 import { Membership } from './membership.entity';
 
 @Entity({ name: 'users' })
+// Case-insensitive uniqueness on top of the plain UNIQUE constraint, so a
+// writer that bypasses the column transformer (raw SQL, a script) still
+// can't create a second account for `Jane@corp.com`. Expression indexes
+// can't be described to TypeORM, so it's created in
+// 1791180000000-NormalizeEmailCase and left alone by schema sync.
+@Index('UQ_users_email_lower', { synchronize: false })
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  /** Always stored trimmed and lowercased — see `normalizeEmail`. */
+  @Column({ unique: true, transformer: emailColumnTransformer })
   email: string;
 
   @Column({ type: 'varchar', nullable: true })
