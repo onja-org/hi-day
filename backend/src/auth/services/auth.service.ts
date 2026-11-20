@@ -207,17 +207,29 @@ export class AuthService {
     let refreshToken = '';
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(User, user.id, {
-        passwordHash,
-        emailVerifiedAt: new Date(),
-        emailVerificationToken: null,
-        emailVerificationExpiresAt: null,
-        pendingOrganisationName: null,
-        pendingOrganisationAddress: null,
-        pendingOrganisationWebsite: null,
-        // The same report serves this person and the organisation below.
-        ...(dto.timezone ? { timezone: dto.timezone } : {}),
-      });
+      // Consume the token in the same statement that checks it. A
+      // double-submit sends two requests that both pass the lookup above;
+      // the second one waits on this row, then finds the token gone and
+      // stops here instead of founding a second organisation.
+      const consumed = await manager.update(
+        User,
+        { id: user.id, emailVerificationToken: dto.token },
+        {
+          passwordHash,
+          emailVerifiedAt: new Date(),
+          emailVerificationToken: null,
+          emailVerificationExpiresAt: null,
+          pendingOrganisationName: null,
+          pendingOrganisationAddress: null,
+          pendingOrganisationWebsite: null,
+          // The same report serves this person and the organisation below.
+          ...(dto.timezone ? { timezone: dto.timezone } : {}),
+        },
+      );
+
+      if (consumed.affected !== 1) {
+        throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+      }
 
       await this.organisationsService.createForUser(manager, user.id, {
         name: user.pendingOrganisationName!,
@@ -385,11 +397,21 @@ export class AuthService {
     let refreshToken = '';
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(User, user.id, {
-        passwordHash,
-        passwordResetToken: null,
-        passwordResetExpiresAt: null,
-      });
+      // Same guard as setPassword: only the request that clears the token
+      // goes on to rotate sessions; a concurrent duplicate stops here.
+      const consumed = await manager.update(
+        User,
+        { id: user.id, passwordResetToken: dto.token },
+        {
+          passwordHash,
+          passwordResetToken: null,
+          passwordResetExpiresAt: null,
+        },
+      );
+
+      if (consumed.affected !== 1) {
+        throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+      }
 
       // Ends every session, including access tokens that haven't expired.
       // The new access token below is signed after this commits, so it
