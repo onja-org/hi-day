@@ -1161,6 +1161,33 @@ describe('AuthService', () => {
       );
     });
 
+    it('renews only the access cookie when a concurrent refresh already rotated the token', async () => {
+      const { refreshTokenService, rotate, revokeAll } =
+        makeRefreshTokenService();
+      rotate.mockResolvedValue({ outcome: 'raced', userId: 'user-1' });
+      const service = makeService({ refreshTokenService });
+      const { response, cookie, clearCookie } = makeResponse();
+      const request = makeRequest('refresh_token=raced-refresh-token');
+
+      const result = await service.refresh(request, response);
+
+      expect(cookie).toHaveBeenCalledWith(
+        'access_token',
+        'signed.jwt.token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      // The winning request's response sets the refresh cookie; a second
+      // one here could land after it and leave the browser a dead token.
+      expect(cookie).not.toHaveBeenCalledWith(
+        'refresh_token',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(clearCookie).not.toHaveBeenCalled();
+      expect(revokeAll).not.toHaveBeenCalled();
+      expect(result.message).toContain('refreshed');
+    });
+
     it('clears the session cookies when there is no refresh-token cookie', async () => {
       const service = makeService();
       const { response, clearCookie } = makeResponse();

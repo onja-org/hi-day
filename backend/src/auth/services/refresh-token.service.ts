@@ -10,16 +10,25 @@ const DEFAULT_REFRESH_TOKEN_TTL_DAYS = 30;
 const INVALID_REFRESH_TOKEN_MESSAGE = 'Session expired. Please log in again.';
 // Refresh tokens are single-use/rotating, and more than one request can
 // legitimately present the same (about-to-be-stale) cookie at once — e.g.
-// two requests fired by one page load, or two tabs, right at the access
-// token's expiry boundary. Reusing an already-rotated token within this
-// window, while its replacement is still untouched, is treated as that
-// race rather than theft. Reuse outside the window, or once the
-// replacement has itself been used, still revokes every session for the
-// user — that's the actual theft signal.
+// every request a page load fires right after the access cookie expired,
+// each refreshing through the frontend proxy, or two tabs. Reusing an
+// already-rotated token within this window, while its replacement is still
+// untouched, is treated as that race rather than theft. Reuse outside the
+// window, or once the replacement has itself been used, still revokes
+// every session for the user — that's the actual theft signal.
 const REUSE_GRACE_MS = 5_000;
 
 export type RefreshTokenRotation =
   | { outcome: 'rotated'; userId: string; token: string }
+  /**
+   * A just-rotated token came back inside the race window, from a request
+   * that ran alongside the one that rotated it. Nothing new is issued: that
+   * other request's response already carries the one live refresh token,
+   * and handing out another would revoke it — failing every racer after
+   * this one, and leaving whichever Set-Cookie lands last in the browser.
+   * The caller renews the access token only.
+   */
+  | { outcome: 'raced'; userId: string }
   /**
    * An already-rotated token came back outside the race window: the
    * theft signal. Nothing is revoked here — the caller ends the user's
@@ -59,8 +68,13 @@ export class RefreshTokenService {
     manager: EntityManager,
     presentedToken: string,
   ): Promise<RefreshTokenRotation> {
+    // Locked, so requests presenting the same token take turns: without it
+    // they can all read the row as live and each rotate it, forking the
+    // session into several live tokens. Behind the lock, the later ones see
+    // the row already rotated and take the race path below.
     const existing = await manager.findOne(RefreshToken, {
       where: { tokenHash: hashToken(presentedToken) },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!existing) {
@@ -68,9 +82,8 @@ export class RefreshTokenService {
     }
 
     if (existing.revokedAt) {
-      const successor = await this.resolveRaceSuccessor(manager, existing);
-      if (successor) {
-        return this.rotateRow(manager, successor);
+      if (await this.isBenignRace(manager, existing)) {
+        return { outcome: 'raced', userId: existing.userId };
       }
 
       // Reported, not acted on: revoking here and then throwing would roll
@@ -93,25 +106,23 @@ export class RefreshTokenService {
    * recently enough to plausibly be the other half of a concurrent pair of
    * requests, not a since-forgotten cookie resurfacing.
    */
-  private async resolveRaceSuccessor(
+  private async isBenignRace(
     manager: EntityManager,
     existing: RefreshToken,
-  ): Promise<RefreshToken | null> {
+  ): Promise<boolean> {
     if (!existing.replacedByTokenHash || !existing.revokedAt) {
-      return null;
+      return false;
     }
     if (Date.now() - existing.revokedAt.getTime() > REUSE_GRACE_MS) {
-      return null;
+      return false;
     }
 
     const successor = await manager.findOne(RefreshToken, {
       where: { tokenHash: existing.replacedByTokenHash },
     });
-    if (!successor || successor.revokedAt || successor.expiresAt < new Date()) {
-      return null;
-    }
-
-    return successor;
+    return Boolean(
+      successor && !successor.revokedAt && successor.expiresAt >= new Date(),
+    );
   }
 
   private async rotateRow(
