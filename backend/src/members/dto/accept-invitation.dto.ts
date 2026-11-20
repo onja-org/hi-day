@@ -13,6 +13,16 @@ export class AcceptInvitationDto {
   })
   password?: string;
 
+  /**
+   * The existing account's password, for someone who can't log in first —
+   * a deactivated former member being re-invited. Not held to today's
+   * complexity rules: it was set under whatever rules applied then.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  currentPassword?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(1)

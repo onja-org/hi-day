@@ -87,7 +87,9 @@ export function AcceptInvitationForm({ token }: AcceptInvitationFormProps) {
     return <ErrorMessage message={invalidLinkMessage(preview.status)} />;
   }
 
+  // The account-exists view shows this itself, alongside its password field.
   if (
+    !preview.accountAlreadyExists &&
     acceptMutation.data &&
     !acceptMutation.data.ok &&
     acceptMutation.data.accountExists
@@ -111,7 +113,7 @@ export function AcceptInvitationForm({ token }: AcceptInvitationFormProps) {
         organisationName={organisationName}
         result={acceptMutation.data}
         isPending={acceptMutation.isPending}
-        onJoin={() => acceptMutation.mutate({})}
+        onJoin={(input) => acceptMutation.mutate(input)}
       />
     );
   }
