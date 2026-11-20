@@ -61,6 +61,8 @@ export type GetInvitationPreviewResult =
 
 export type AcceptInvitationInput = {
   password?: string;
+  /** An existing account's password, for someone who can't log in first. */
+  currentPassword?: string;
   firstName?: string;
   lastName?: string;
 };
