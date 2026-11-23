@@ -34,8 +34,11 @@ export function ResetTwoFactorDialog({
 
   return (
     <ConfirmDialog
-      title="Reset two-step login"
-      message={`Turn off two-step login for ${memberLabel}? Do this only if they've lost both their phone and their recovery codes, and you're sure it's really them asking. They'll log in with just their password until they turn it on again. This is recorded in the audit log.`}
+      title={`Reset two-step login for ${memberLabel}?`}
+      message={[
+        "Do this only if they've lost both their phone and their recovery codes, and you're sure it's really them asking.",
+        "Until they turn it back on, they'll log in with just their password. Their recovery codes and remembered browsers stop working.",
+      ].join("\n\n")}
       confirmLabel="Reset two-step login"
       isDangerous
       isPending={mutation.isPending}

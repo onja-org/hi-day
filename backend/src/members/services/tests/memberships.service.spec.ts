@@ -1865,4 +1865,94 @@ describe('MembershipsService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
+
+  describe('resetTwoFactorMany', () => {
+    function member(
+      id: string,
+      userId: string,
+      twoFactorEnabledAt: Date | null,
+    ) {
+      return {
+        id,
+        userId,
+        organisationId: 'org-1',
+        status: MembershipStatus.ACTIVE,
+        user: { id: userId, email: `${userId}@acme.test`, twoFactorEnabledAt },
+      } as unknown as Membership;
+    }
+
+    it('resets everyone who has it on and skips who it does not apply to', async () => {
+      const find = jest
+        .fn()
+        .mockResolvedValue([
+          member('m-admin', 'admin-user', new Date()),
+          member('m-2', 'user-2', new Date()),
+          member('m-3', 'user-3', null),
+          member('m-4', 'user-4', new Date()),
+        ]);
+      const { dataSource } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const { twoFactorService, clear } = makeTwoFactorService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ find }),
+        dataSource,
+        auditLogService,
+        twoFactorService,
+      });
+
+      const results = await service.resetTwoFactorMany('org-1', 'admin-user', [
+        'm-admin',
+        'm-2',
+        'm-3',
+        'm-4',
+        'm-gone',
+        'm-2',
+      ]);
+
+      expect(results.map((r) => [r.membershipId, r.outcome])).toEqual([
+        ['m-admin', 'skipped'],
+        ['m-2', 'reset'],
+        ['m-3', 'skipped'],
+        ['m-4', 'reset'],
+        ['m-gone', 'skipped'],
+      ]);
+      expect(clear).toHaveBeenCalledTimes(2);
+      expect(clear).toHaveBeenCalledWith(expect.anything(), 'user-2');
+      expect(clear).toHaveBeenCalledWith(expect.anything(), 'user-4');
+      expect(record).toHaveBeenCalledTimes(2);
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'membership.two_factor_reset',
+          organisationId: 'org-1',
+          actorUserId: 'admin-user',
+          metadata: { membershipId: 'm-4', userId: 'user-4' },
+        }),
+      );
+    });
+
+    it('only looks for members inside this organisation', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const { twoFactorService, clear } = makeTwoFactorService();
+      const service = makeService({
+        membershipsRepo: makeMembershipsRepo({ find }),
+        twoFactorService,
+      });
+
+      const results = await service.resetTwoFactorMany('org-1', 'admin-user', [
+        'm-elsewhere',
+      ]);
+
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organisationId: 'org-1',
+            status: MembershipStatus.ACTIVE,
+          }) as unknown,
+        }),
+      );
+      expect(results[0].outcome).toBe('skipped');
+      expect(clear).not.toHaveBeenCalled();
+    });
+  });
 });

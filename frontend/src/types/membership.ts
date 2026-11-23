@@ -66,6 +66,15 @@ export type PasswordResetResult = {
 
 export type SendPasswordResetsResult = ApiResult<{ results: PasswordResetResult[] }>;
 
+export type TwoFactorResetResult = {
+  membershipId: string;
+  email: string | null;
+  outcome: "reset" | "skipped";
+  message?: string;
+};
+
+export type ResetMembersTwoFactorResult = ApiResult<{ results: TwoFactorResetResult[] }>;
+
 export type GetActiveMembersResult =
   | { ok: true; members: ActiveMemberListItem[] }
   | { ok: false; message: string };

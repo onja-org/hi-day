@@ -111,6 +111,13 @@ export interface ActiveMemberListItem extends ActiveMemberSummary {
   projectIds: string[];
 }
 
+export interface TwoFactorResetResult {
+  membershipId: string;
+  email: string | null;
+  outcome: 'reset' | 'skipped';
+  message?: string;
+}
+
 export interface PasswordResetResult {
   membershipId: string;
   email: string | null;
@@ -523,7 +530,6 @@ export class MembershipsService {
     return results;
   }
 
-  /** The non-throwing form of `assertManagerCanModify`. */
   /**
    * Turns two-step login off for a member who has lost both their phone
    * and their recovery codes, so they can log in with their password and
@@ -557,19 +563,85 @@ export class MembershipsService {
       throw new ConflictException('Two-step login is already off for them.');
     }
 
+    await this.clearTwoFactor(organisationId, actorUserId, target);
+
+    target.user.twoFactorEnabledAt = null;
+    return this.toSummary(target);
+  }
+
+  /**
+   * `resetTwoFactor` for many members at once, e.g. everyone, after the
+   * organisation's authenticator setup went wrong for all of them. The same
+   * rules hold per member, but someone they don't apply to is skipped
+   * rather than failing the batch: yourself, a member with it already off,
+   * and anyone not in this organisation. Each reset is its own audit row.
+   */
+  async resetTwoFactorMany(
+    organisationId: string,
+    actorUserId: string,
+    membershipIds: string[],
+  ): Promise<TwoFactorResetResult[]> {
+    const ids = [...new Set(membershipIds)];
+    const targets = await this.memberships.find({
+      where: {
+        id: In(ids),
+        organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+      relations: { user: true },
+    });
+    const targetsById = new Map(targets.map((target) => [target.id, target]));
+
+    const results: TwoFactorResetResult[] = [];
+    for (const membershipId of ids) {
+      const target = targetsById.get(membershipId);
+      if (!target) {
+        results.push({
+          membershipId,
+          email: null,
+          outcome: 'skipped',
+          message: 'Member not found.',
+        });
+        continue;
+      }
+
+      const email = target.user.email;
+      const skip = (message: string) =>
+        results.push({ membershipId, email, outcome: 'skipped', message });
+
+      if (target.userId === actorUserId) {
+        skip('Use a recovery code to log in, then turn it off yourself.');
+        continue;
+      }
+      if (!this.twoFactorService.isEnabled(target.user)) {
+        skip('Two-step login is already off for them.');
+        continue;
+      }
+
+      await this.clearTwoFactor(organisationId, actorUserId, target);
+      results.push({ membershipId, email, outcome: 'reset' });
+    }
+
+    return results;
+  }
+
+  private async clearTwoFactor(
+    organisationId: string,
+    actorUserId: string,
+    target: Membership,
+  ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       await this.twoFactorService.clear(manager, target.userId);
       await this.auditLogService.record(manager, {
         action: 'membership.two_factor_reset',
         organisationId,
         actorUserId,
-        metadata: { membershipId, userId: target.userId },
+        metadata: { membershipId: target.id, userId: target.userId },
       });
     });
-
-    target.user.twoFactorEnabledAt = null;
-    return this.toSummary(target);
   }
+
+  /** The non-throwing form of `assertManagerCanModify`. */
 
   private managerCanModify(
     caller: Membership,

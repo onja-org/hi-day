@@ -2,8 +2,9 @@
 
 import { useEffect } from "react";
 import type { FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
+import { TWO_FACTOR_STATUS_QUERY_KEY } from "@/hooks/useTwoFactorStatus";
 import { disableTwoFactor, renewRecoveryCodes } from "@/lib/twoFactorApi";
 import type { ApiResult } from "@/types/api";
 import { ErrorMessage } from "./ErrorMessage";
@@ -22,10 +23,16 @@ type TwoFactorCodeModalProps = {
 /** Turning it off, or making new recovery codes, asks for a current code first. */
 export function TwoFactorCodeModal({ action, email, onClose }: TwoFactorCodeModalProps) {
   const disable = action === "disable";
+  const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (code: string): Promise<ApiResult<{ recoveryCodes?: string[] }>> =>
       disable ? disableTwoFactor(code) : renewRecoveryCodes(code),
     meta: { inlineErrors: true },
+    // The page may be out of date: an admin can reset it from elsewhere
+    // ("already off"). Re-check, so the page behind shows what's true.
+    onSuccess: (result) => {
+      if (!result.ok) queryClient.invalidateQueries({ queryKey: TWO_FACTOR_STATUS_QUERY_KEY });
+    },
   });
   const result = mutation.data;
   const recoveryCodes = (result?.ok && result.recoveryCodes) || null;

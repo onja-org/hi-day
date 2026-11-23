@@ -34,11 +34,13 @@ import { ScreenshotsService } from '../../screenshots/services/screenshots.servi
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
+import { ResetTwoFactorsDto } from '../dto/reset-two-factors.dto';
 import { SendPasswordResetsDto } from '../dto/send-password-resets.dto';
 import type {
   ActiveMemberListItem,
   ActiveMemberSummary,
   PasswordResetResult,
+  TwoFactorResetResult,
 } from '../services/memberships.service';
 import { MembershipsService } from '../services/memberships.service';
 
@@ -111,6 +113,31 @@ export class MembershipsController {
     const skipped = results.length - sent;
     const message =
       `Password reset email sent to ${sent} ${sent === 1 ? 'member' : 'members'}` +
+      (skipped > 0 ? `; ${skipped} skipped` : '');
+    return { results, message };
+  }
+
+  /**
+   * Resets two-step login for every listed member at once (e.g. "everyone").
+   * Admins only, like the single reset below. Ineligible members come back
+   * "skipped" rather than failing the batch.
+   */
+  @Post('two-factor-resets')
+  @RequireRole(MembershipRole.ADMIN)
+  @HttpCode(200)
+  async resetTwoFactorMany(
+    @Body() dto: ResetTwoFactorsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ results: TwoFactorResetResult[]; message: string }> {
+    const results = await this.membershipsService.resetTwoFactorMany(
+      request.organisationId!,
+      request.userId,
+      dto.membershipIds,
+    );
+    const reset = results.filter((result) => result.outcome === 'reset').length;
+    const skipped = results.length - reset;
+    const message =
+      `Two-step login reset for ${reset} ${reset === 1 ? 'member' : 'members'}` +
       (skipped > 0 ? `; ${skipped} skipped` : '');
     return { results, message };
   }
