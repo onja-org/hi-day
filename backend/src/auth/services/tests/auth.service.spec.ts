@@ -600,7 +600,7 @@ describe('AuthService', () => {
         passwordService: makePasswordService({ verify }),
         membershipsRepo: makeMembershipsRepo({
           exists: jest.fn().mockResolvedValue(true),
-          findOne: jest.fn().mockResolvedValue({ organisationId: 'org-1' }),
+          find: jest.fn().mockResolvedValue([{ organisationId: 'org-1' }]),
         }),
         deviceSessionService,
       });
@@ -634,6 +634,47 @@ describe('AuthService', () => {
           deviceToken: 'device-token',
         }),
       );
+    });
+
+    it('refuses a desktop password login for someone in more than one organisation, rather than guessing which', async () => {
+      const user = {
+        id: 'user-1',
+        passwordHash: 'stored-hash',
+      } as User;
+      const { deviceSessionService, upsertOnLogin } =
+        makeDeviceSessionService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue(user),
+        }),
+        passwordService: makePasswordService({
+          verify: jest.fn().mockResolvedValue(true),
+        }),
+        membershipsRepo: makeMembershipsRepo({
+          exists: jest.fn().mockResolvedValue(true),
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { organisationId: 'org-a' },
+              { organisationId: 'org-b' },
+            ]),
+        }),
+        deviceSessionService,
+      });
+      const { response } = makeResponse();
+
+      await expect(
+        service.login(
+          {
+            email: 'jane@acme.test',
+            password: 'correct-horse',
+            deviceFingerprint: 'fingerprint-1',
+            platform: DevicePlatform.MACOS,
+          },
+          response,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(upsertOnLogin).not.toHaveBeenCalled();
     });
 
     it('rejects a user with no active membership anywhere, without issuing a session', async () => {

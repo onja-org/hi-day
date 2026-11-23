@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -23,6 +24,9 @@ const ORGANISATION_SUSPENDED_MESSAGE =
   'Your account is suspended because your organisation was deleted, so you can no longer log in to the desktop app. Contact the organisation owner if this is a mistake.';
 const PAIRING_NOT_FOUND_MESSAGE =
   'This pairing link is invalid or has expired.';
+const CHOOSE_ORGANISATION_MESSAGE =
+  'Choose which organisation to link this device to.';
+const NOT_A_MEMBER_MESSAGE = "You can't link a device to that organisation.";
 
 export interface DevicePairingStarted {
   code: string;
@@ -34,6 +38,12 @@ export interface DevicePairingSummary {
   platform: DevicePlatform;
   hostname: string | null;
   requestedAt: Date;
+  /**
+   * Where the approver can link this device: their active Memberships in
+   * Organisations that aren't suspended. With more than one, the web app
+   * makes them pick — approve() won't guess.
+   */
+  organisations: { id: string; name: string }[];
 }
 
 export type DevicePairingPollResult =
@@ -96,33 +106,36 @@ export class DevicePairingService {
     return { code, approvalUrl, expiresAt };
   }
 
-  async getPendingByCode(code: string): Promise<DevicePairingSummary> {
+  async getPendingByCode(
+    code: string,
+    userId: string,
+  ): Promise<DevicePairingSummary> {
     const request = await this.findPending(code);
+    const { usable } = await this.findPairableMemberships(userId);
     return {
       platform: request.platform,
       hostname: request.hostname,
       requestedAt: request.createdAt,
+      organisations: usable.map((membership) => ({
+        id: membership.organisation.id,
+        name: membership.organisation.name,
+      })),
     };
   }
 
-  async approve(code: string, userId: string): Promise<void> {
+  /**
+   * Someone in more than one Organisation must say which one the device
+   * belongs to: picking one for them would put a freelancer's screenshots
+   * and time in whichever employer the database happened to list first.
+   */
+  async approve(
+    code: string,
+    userId: string,
+    organisationId?: string,
+  ): Promise<void> {
     const request = await this.findPending(code);
-    const activeMemberships = await this.memberships.find({
-      where: { userId, status: MembershipStatus.ACTIVE },
-      relations: { organisation: true },
-    });
-    // A suspended organisation can't be paired into: its sessions would be
-    // refused on first use anyway, so say why now instead of "logged in".
-    const membership = activeMemberships.find(
-      (candidate) => !candidate.organisation.suspendedAt,
-    );
-
-    if (!membership) {
-      if (activeMemberships.length > 0) {
-        throw new ForbiddenException(ORGANISATION_SUSPENDED_MESSAGE);
-      }
-      throw new NotFoundException(PAIRING_NOT_FOUND_MESSAGE);
-    }
+    const { active, usable } = await this.findPairableMemberships(userId);
+    const membership = this.chooseMembership(active, usable, organisationId);
 
     await this.pairingRequests.update(request.id, {
       approvedByUserId: userId,
@@ -225,6 +238,56 @@ export class DevicePairingService {
       name: issued.name,
       organisationName: issued.organisationName,
     };
+  }
+
+  private async findPairableMemberships(
+    userId: string,
+  ): Promise<{ active: Membership[]; usable: Membership[] }> {
+    const active = await this.memberships.find({
+      where: { userId, status: MembershipStatus.ACTIVE },
+      relations: { organisation: true },
+    });
+    // A suspended organisation can't be paired into: its sessions would be
+    // refused on first use anyway.
+    const usable = active.filter(
+      (membership) => !membership.organisation.suspendedAt,
+    );
+    return { active, usable };
+  }
+
+  private chooseMembership(
+    active: Membership[],
+    usable: Membership[],
+    organisationId: string | undefined,
+  ): Membership {
+    if (organisationId !== undefined) {
+      const chosen = usable.find(
+        (membership) => membership.organisationId === organisationId,
+      );
+      if (!chosen) {
+        const suspended = active.some(
+          (membership) => membership.organisationId === organisationId,
+        );
+        throw new ForbiddenException(
+          suspended ? ORGANISATION_SUSPENDED_MESSAGE : NOT_A_MEMBER_MESSAGE,
+        );
+      }
+      return chosen;
+    }
+
+    if (usable.length === 1) {
+      return usable[0];
+    }
+
+    if (usable.length > 1) {
+      throw new BadRequestException(CHOOSE_ORGANISATION_MESSAGE);
+    }
+
+    // Say why now instead of "logged in" followed by a refusal.
+    if (active.length > 0) {
+      throw new ForbiddenException(ORGANISATION_SUSPENDED_MESSAGE);
+    }
+    throw new NotFoundException(PAIRING_NOT_FOUND_MESSAGE);
   }
 
   private async findPending(code: string): Promise<DevicePairingRequest> {

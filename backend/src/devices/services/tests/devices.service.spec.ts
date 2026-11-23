@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
 import { Device } from '../../../database/entities/device.entity';
 import { DevicePlatform } from '../../../database/entities/device-platform.enum';
@@ -350,19 +350,53 @@ describe('DevicesService', () => {
   });
 
   describe('signOutAllForUser', () => {
-    it('revokes every device assigned to the user and audits each one', async () => {
+    it("revokes the person's sessions in this organisation, even on a device since re-paired elsewhere", async () => {
       const { manager, find, update } = makeDataSource();
+      // device-2 was re-paired into another organisation: its Device row no
+      // longer says org-1, but the session issued here still does.
       find.mockResolvedValue([
-        { id: 'device-1', organisationId: 'org-1' },
-        { id: 'device-2', organisationId: 'org-1' },
+        { id: 'session-1', deviceId: 'device-1', organisationId: 'org-1' },
+        { id: 'session-2', deviceId: 'device-1', organisationId: 'org-1' },
+        { id: 'session-3', deviceId: 'device-2', organisationId: 'org-1' },
       ]);
       const { auditLogService, record } = makeAuditLogService();
       const service = makeService({ auditLogService });
 
       await service.signOutAllForUser(manager, 'org-1', 'user-1', 'admin-1');
 
-      expect(update).toHaveBeenCalledTimes(2);
+      expect(find).toHaveBeenCalledWith(DeviceSession, {
+        where: {
+          organisationId: 'org-1',
+          userId: 'user-1',
+          revokedAt: IsNull(),
+        },
+      });
+      expect(update).toHaveBeenCalledWith(
+        DeviceSession,
+        { organisationId: 'org-1', userId: 'user-1', revokedAt: IsNull() },
+        { revokedAt: expect.any(Date) as unknown },
+      );
+      // One audit row per device signed out, not per session.
       expect(record).toHaveBeenCalledTimes(2);
+      expect(record).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({
+          action: 'device.signed_out',
+          organisationId: 'org-1',
+          metadata: { deviceId: 'device-2' },
+        }),
+      );
+    });
+
+    it('does nothing when the person has no live session in this organisation', async () => {
+      const { manager, update } = makeDataSource();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({ auditLogService });
+
+      await service.signOutAllForUser(manager, 'org-1', 'user-1', 'admin-1');
+
+      expect(update).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
     });
   });
 });

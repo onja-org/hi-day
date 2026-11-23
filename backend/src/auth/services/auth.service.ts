@@ -54,6 +54,8 @@ const FORGOT_PASSWORD_RESPONSE_MESSAGE =
 const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
 const DEACTIVATED_MESSAGE =
   'Your account has been deactivated. Contact an admin of your organisation if you believe this is a mistake.';
+const CHOOSE_ORGANISATION_VIA_WEB_MESSAGE =
+  'You belong to more than one organisation. Log in to the desktop app through the web app to choose which one this device is for.';
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
 const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
 const POSTGRES_UNIQUE_VIOLATION = '23505';
@@ -279,15 +281,23 @@ export class AuthService {
     }
 
     if (dto.deviceFingerprint) {
-      const activeMembership = await this.memberships.findOne({
+      const activeMemberships = await this.memberships.find({
         where: { userId: user.id, status: MembershipStatus.ACTIVE },
+        take: 2,
       });
+
+      // A password login has no way to say which organisation the device
+      // belongs to; pairing through the web app does.
+      if (activeMemberships.length > 1) {
+        throw new ForbiddenException(CHOOSE_ORGANISATION_VIA_WEB_MESSAGE);
+      }
+      const activeMembership = activeMemberships[0];
 
       const { deviceId, token: deviceToken } =
         await this.dataSource.transaction((manager) =>
           this.deviceSessionService.upsertOnLogin(manager, {
             userId: user.id,
-            organisationId: activeMembership!.organisationId,
+            organisationId: activeMembership.organisationId,
             deviceFingerprint: dto.deviceFingerprint!,
             platform: dto.platform!,
             osVersion: dto.osVersion,
