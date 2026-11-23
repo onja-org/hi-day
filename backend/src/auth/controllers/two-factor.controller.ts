@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Post,
@@ -18,7 +19,10 @@ import type {
   TwoFactorSetup,
   TwoFactorStatus,
 } from '../services/two-factor.service';
-import { TwoFactorService } from '../services/two-factor.service';
+import {
+  TRUSTED_BROWSER_COOKIE,
+  TwoFactorService,
+} from '../services/two-factor.service';
 
 const THROTTLE_TTL_MS = 15 * 60 * 1000;
 // Wrong codes are limited per account by LoginAttemptTracker; this only
@@ -102,6 +106,24 @@ export class TwoFactorController {
     return {
       recoveryCodes,
       message: 'New recovery codes created. The old ones no longer work.',
+    };
+  }
+
+  /**
+   * The account page's "Forget trusted browsers": every browser that was
+   * told "don't ask again", this one included, asks for a code on its next
+   * log in. No code needed, since it only makes logging in stricter.
+   */
+  @Delete('trusted-browsers')
+  @HttpCode(200)
+  async forgetTrustedBrowsers(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ message: string }> {
+    await this.twoFactorService.forgetTrustedBrowsersByRequest(request.userId);
+    response.clearCookie(TRUSTED_BROWSER_COOKIE, { path: '/' });
+    return {
+      message: 'Every browser will ask for a code the next time you log in.',
     };
   }
 }

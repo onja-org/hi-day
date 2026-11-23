@@ -5,6 +5,8 @@ export type TwoFactorStatus = {
   enabled: boolean;
   /** Unused recovery codes left; 0 while it is off. */
   recoveryCodesRemaining: number;
+  /** Browsers told "don't ask again", which skip the code; 0 while it is off. */
+  trustedBrowsers: number;
 };
 
 /** A secret to scan; it only takes effect once a code from it is confirmed. */

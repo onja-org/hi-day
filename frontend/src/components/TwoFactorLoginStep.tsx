@@ -7,6 +7,7 @@ import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { verifyTwoFactorLogin } from "@/lib/verifyTwoFactorLogin";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { Spinner } from "@/components/Spinner";
+import { CheckboxField } from "@/components/ui/form/CheckboxField";
 import { TextField } from "@/components/ui/form/TextField";
 
 type TwoFactorLoginStepProps = {
@@ -34,8 +35,11 @@ export function TwoFactorLoginStep({ next, onRestart }: TwoFactorLoginStepProps)
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const code = String(new FormData(event.currentTarget).get("code") ?? "");
-    mutation.mutate(code);
+    const form = new FormData(event.currentTarget);
+    mutation.mutate({
+      code: String(form.get("code") ?? ""),
+      rememberBrowser: form.get("rememberBrowser") === "on",
+    });
   }
 
   const done = mutation.isPending || mutation.data?.ok;
@@ -76,6 +80,14 @@ export function TwoFactorLoginStep({ next, onRestart }: TwoFactorLoginStepProps)
       >
         {useRecoveryCode ? "Use a code from my app instead" : "Lost your phone? Use a recovery code"}
       </button>
+
+      <CheckboxField
+        name="rememberBrowser"
+        defaultChecked
+        disabled={mutation.data?.ok}
+        label="Don't ask again on this browser"
+        className="text-sm"
+      />
 
       <button
         type="submit"

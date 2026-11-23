@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { hashToken } from '../../../common/hash-token.util';
 import { generateTotp, totpStepAt } from '../../../common/totp.util';
+import { TwoFactorTrustedBrowser } from '../../../database/entities/two-factor-trusted-browser.entity';
 import { TwoFactorRecoveryCode } from '../../../database/entities/two-factor-recovery-code.entity';
 import { User } from '../../../database/entities/user.entity';
 import { LoginAttemptTracker } from '../login-attempt-tracker.service';
@@ -57,6 +58,14 @@ describe('TwoFactorService', () => {
       update: recoveryCodeUpdate,
     } as unknown as Repository<TwoFactorRecoveryCode>;
 
+    const trustedBrowsers = {
+      count: jest.fn().mockResolvedValue(2),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+      save: jest.fn(),
+      create: jest.fn((data: unknown) => data),
+      exists: jest.fn().mockResolvedValue(false),
+    };
+
     const manager = {
       update: jest.fn(),
       delete: jest.fn(),
@@ -79,6 +88,7 @@ describe('TwoFactorService', () => {
     const service = new TwoFactorService(
       users,
       recoveryCodes,
+      trustedBrowsers as unknown as Repository<TwoFactorTrustedBrowser>,
       dataSource,
       cipher,
       { generateToken: () => 'raw-challenge' },
@@ -96,6 +106,7 @@ describe('TwoFactorService', () => {
       record,
       execute,
       recoveryCodeUpdate,
+      trustedBrowsers,
     };
   }
 
@@ -268,6 +279,9 @@ describe('TwoFactorService', () => {
       expect(manager.delete).toHaveBeenCalledWith(TwoFactorRecoveryCode, {
         userId: 'user-1',
       });
+      expect(manager.delete).toHaveBeenCalledWith(TwoFactorTrustedBrowser, {
+        userId: 'user-1',
+      });
       expect(record).toHaveBeenCalledWith(
         manager,
         expect.objectContaining({ action: 'two_factor_disabled' }),
@@ -306,11 +320,70 @@ describe('TwoFactorService', () => {
     });
   });
 
-  it('reports how many recovery codes are left', async () => {
+  it('reports how many recovery codes are left and how many browsers skip the code', async () => {
     const { service } = setup({ twoFactorEnabledAt: new Date() });
     await expect(service.getStatus('user-1')).resolves.toEqual({
       enabled: true,
       recoveryCodesRemaining: 7,
+      trustedBrowsers: 2,
+    });
+  });
+
+  describe('trusted browsers', () => {
+    it('stores only the hash of the token it hands the browser, for 30 days', async () => {
+      const { service, trustedBrowsers } = setup();
+
+      const token = await service.trustBrowser('user-1');
+
+      expect(token).toBe('raw-challenge');
+      const [[saved]] = trustedBrowsers.save.mock.calls as [
+        [{ userId: string; tokenHash: string; expiresAt: Date }],
+      ];
+      expect(saved.userId).toBe('user-1');
+      expect(saved.tokenHash).toBe(hashToken('raw-challenge'));
+      const days = (saved.expiresAt.getTime() - Date.now()) / 86_400_000;
+      expect(days).toBeGreaterThan(29.9);
+      expect(days).toBeLessThanOrEqual(30);
+    });
+
+    it('only trusts a live token belonging to the person logging in', async () => {
+      const { service, trustedBrowsers } = setup();
+      trustedBrowsers.exists.mockResolvedValue(true);
+
+      await expect(
+        service.isTrustedBrowser('user-1', 'the-token'),
+      ).resolves.toBe(true);
+      expect(trustedBrowsers.exists).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          userId: 'user-1',
+          tokenHash: hashToken('the-token'),
+        }) as unknown,
+      });
+    });
+
+    it('trusts nothing without a cookie', async () => {
+      const { service, trustedBrowsers } = setup();
+
+      await expect(service.isTrustedBrowser('user-1', undefined)).resolves.toBe(
+        false,
+      );
+      expect(trustedBrowsers.exists).not.toHaveBeenCalled();
+    });
+
+    it('forgets every browser on request and records it', async () => {
+      const { service, manager, record } = setup();
+
+      await service.forgetTrustedBrowsersByRequest('user-1');
+
+      expect(manager.delete).toHaveBeenCalledWith(TwoFactorTrustedBrowser, {
+        userId: 'user-1',
+      });
+      expect(record).toHaveBeenCalledWith(
+        manager,
+        expect.objectContaining({
+          action: 'two_factor_trusted_browsers_forgotten',
+        }),
+      );
     });
   });
 });

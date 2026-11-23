@@ -34,7 +34,7 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
-import { TwoFactorCodeDto } from '../dto/two-factor-code.dto';
+import { TwoFactorLoginDto } from '../dto/two-factor-login.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
@@ -49,7 +49,11 @@ import {
   REFRESH_TOKEN_COOKIE,
   TokenService,
 } from './token.service';
-import { TwoFactorService } from './two-factor.service';
+import {
+  TRUSTED_BROWSER_COOKIE,
+  TRUSTED_BROWSER_TTL_MS,
+  TwoFactorService,
+} from './two-factor.service';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -257,6 +261,7 @@ export class AuthService {
 
   async login(
     dto: LoginDto,
+    request: Request,
     response: Response,
   ): Promise<{
     message: string;
@@ -294,13 +299,23 @@ export class AuthService {
     }
 
     const twoFactorEnabled = this.twoFactorService.isEnabled(user);
+    // A browser that already passed the code step and was told "don't ask
+    // again" stands in for the code.
+    // Not for the desktop app's password form, which is refused below.
+    const trustedBrowser =
+      twoFactorEnabled &&
+      !dto.deviceFingerprint &&
+      (await this.twoFactorService.isTrustedBrowser(
+        user.id,
+        readCookie(request, TRUSTED_BROWSER_COOKIE),
+      ));
 
     // With two-step login on, the password alone proves nothing yet: the
     // count of wrong attempts carries on into the code step and is only
     // cleared once a code is right, so guessing codes costs the same
     // captchas guessing passwords does. Behind a solved captcha the code
     // step gets one try; a wrong one asks for the captcha again.
-    if (!twoFactorEnabled) {
+    if (!twoFactorEnabled || trustedBrowser) {
       this.loginAttemptTracker.reset(dto.email);
     } else if (captchaSolved) {
       this.loginAttemptTracker.allowOneMoreAttempt(dto.email);
@@ -342,7 +357,7 @@ export class AuthService {
       return { message: 'Logged in.', deviceId, deviceToken };
     }
 
-    if (twoFactorEnabled) {
+    if (twoFactorEnabled && !trustedBrowser) {
       const challenge = await this.twoFactorService.startChallenge(user.id);
       response.cookie(
         TWO_FACTOR_CHALLENGE_COOKIE,
@@ -355,7 +370,11 @@ export class AuthService {
       return { message: TWO_FACTOR_REQUIRED_MESSAGE, twoFactorRequired: true };
     }
 
-    await this.startWebSession(user.id, response, {});
+    await this.startWebSession(
+      user.id,
+      response,
+      trustedBrowser ? { twoFactor: true, trustedBrowser: true } : {},
+    );
 
     return { message: 'Logged in.' };
   }
@@ -366,9 +385,10 @@ export class AuthService {
    * a recovery code. Wrong codes count against the same per-email tracker
    * as wrong passwords; once that wants a captcha the challenge is thrown
    * away and the person starts again from the password, captcha and all.
+   * With `rememberBrowser`, this browser skips the code step from then on.
    */
   async verifyTwoFactorLogin(
-    dto: TwoFactorCodeDto,
+    dto: TwoFactorLoginDto,
     request: Request,
     response: Response,
   ): Promise<{ message: string }> {
@@ -413,7 +433,23 @@ export class AuthService {
       usedRecoveryCode: check.usedRecoveryCode,
     });
 
+    if (dto.rememberBrowser) {
+      await this.trustThisBrowser(user.id, response);
+    }
+
     return { message: 'Logged in.' };
+  }
+
+  private async trustThisBrowser(
+    userId: string,
+    response: Response,
+  ): Promise<void> {
+    const trustToken = await this.twoFactorService.trustBrowser(userId);
+    response.cookie(
+      TRUSTED_BROWSER_COOKIE,
+      trustToken,
+      buildSessionCookieOptions(TRUSTED_BROWSER_TTL_MS, this.configService),
+    );
   }
 
   /**
@@ -568,6 +604,9 @@ export class AuthService {
       // carries the bumped version and this browser stays signed in.
       await this.refreshTokenService.revokeAll(manager, user.id);
       await this.accessTokenService.endAllSessions(manager, user.id);
+      // Someone else may have known the old password, and a browser they
+      // had trusted would skip the code with the new one.
+      await this.twoFactorService.forgetTrustedBrowsers(manager, user.id);
       if (!twoFactorEnabled) {
         refreshToken = await this.refreshTokenService.issue(manager, user.id);
       }
@@ -671,7 +710,10 @@ export class AuthService {
    * when their access token expires — plus every paired device (desktop
    * app, etc.), stopping whatever timer each revoked device had running.
    * Use when the account may be compromised or a device needs to be cut
-   * off — ordinary `logout` no longer implies this (see ADR-0017).
+   * off — ordinary `logout` no longer implies this (see ADR-0017). Every
+   * browser trusted to skip the two-step login code asks for one again.
+   * Ordinary `logout` keeps that trust: signing out and back in on your
+   * own computer shouldn't need your phone.
    */
   async logoutEverywhere(
     request: Request,
@@ -681,10 +723,14 @@ export class AuthService {
 
     if (userId) {
       await this.endAllWebSessions(userId);
+      await this.dataSource.transaction((manager) =>
+        this.twoFactorService.forgetTrustedBrowsers(manager, userId),
+      );
       await this.signOutAllDevices(userId);
     }
 
     clearSessionCookies(response);
+    response.clearCookie(TRUSTED_BROWSER_COOKIE, { path: '/' });
 
     return { message: 'Logged out everywhere.' };
   }

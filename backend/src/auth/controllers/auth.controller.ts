@@ -20,7 +20,7 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
-import { TwoFactorCodeDto } from '../dto/two-factor-code.dto';
+import { TwoFactorLoginDto } from '../dto/two-factor-login.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 
 const THROTTLE_TTL_MS = 15 * 60 * 1000;
@@ -68,6 +68,7 @@ export class AuthController {
   @HttpCode(200)
   login(
     @Body() dto: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{
     message: string;
@@ -75,7 +76,7 @@ export class AuthController {
     deviceToken?: string;
     twoFactorRequired?: boolean;
   }> {
-    return this.authService.login(dto, response);
+    return this.authService.login(dto, request, response);
   }
 
   @Post('login/two-factor')
@@ -88,7 +89,7 @@ export class AuthController {
   @SkipThrottle({ email: true, session: true, token: true })
   @HttpCode(200)
   verifyTwoFactorLogin(
-    @Body() dto: TwoFactorCodeDto,
+    @Body() dto: TwoFactorLoginDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ message: string }> {

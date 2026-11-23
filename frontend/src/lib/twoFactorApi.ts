@@ -60,6 +60,12 @@ export async function disableTwoFactor(code: string): Promise<TwoFactorChangeRes
   return result.ok ? { ok: true, message: result.data.message } : result;
 }
 
+/** Every browser told "don't ask again", this one included, asks for a code next time. */
+export async function forgetTrustedBrowsers(): Promise<TwoFactorChangeResult> {
+  const result = await call<{ message: string }>("/trusted-browsers", { method: "DELETE" });
+  return result.ok ? { ok: true, message: result.data.message } : result;
+}
+
 export async function renewRecoveryCodes(code: string): Promise<RecoveryCodesResult> {
   const result = await postCode<{ recoveryCodes: string[]; message: string }>(
     "/recovery-codes",

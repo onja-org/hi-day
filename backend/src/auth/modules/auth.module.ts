@@ -6,6 +6,7 @@ import { DevicesModule } from '../../devices/modules/devices.module';
 import { Membership } from '../../database/entities/membership.entity';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { TwoFactorRecoveryCode } from '../../database/entities/two-factor-recovery-code.entity';
+import { TwoFactorTrustedBrowser } from '../../database/entities/two-factor-trusted-browser.entity';
 import { User } from '../../database/entities/user.entity';
 import { EmailModule } from '../../email/modules/email.module';
 import { OrganisationsModule } from '../../organisations/modules/organisations.module';
@@ -34,6 +35,7 @@ import { JwtAuthModule } from './jwt-auth.module';
       RefreshToken,
       Membership,
       TwoFactorRecoveryCode,
+      TwoFactorTrustedBrowser,
     ]),
     EmailModule,
     OrganisationsModule,

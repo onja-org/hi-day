@@ -13,13 +13,13 @@ describe("verifyTwoFactorLogin", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await verifyTwoFactorLogin("123456")).toEqual({ ok: true, message: "Logged in." });
+    expect(await verifyTwoFactorLogin({ code: "123456", rememberBrowser: true })).toEqual({ ok: true, message: "Logged in." });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/backend/auth/login/two-factor",
       expect.objectContaining({
         method: "POST",
         credentials: "include",
-        body: JSON.stringify({ code: "123456" }),
+        body: JSON.stringify({ code: "123456", rememberBrowser: true }),
       }),
     );
   });
@@ -33,7 +33,7 @@ describe("verifyTwoFactorLogin", () => {
       }),
     );
 
-    expect(await verifyTwoFactorLogin("000000")).toEqual({
+    expect(await verifyTwoFactorLogin({ code: "000000", rememberBrowser: false })).toEqual({
       ok: false,
       message: "That code didn't work.",
       captchaRequired: false,
@@ -51,7 +51,7 @@ describe("verifyTwoFactorLogin", () => {
       }),
     );
 
-    expect(await verifyTwoFactorLogin("000000")).toMatchObject({
+    expect(await verifyTwoFactorLogin({ code: "000000", rememberBrowser: false })).toMatchObject({
       ok: false,
       captchaRequired: true,
       restart: true,
@@ -60,6 +60,6 @@ describe("verifyTwoFactorLogin", () => {
 
   it("returns a generic error when the request can't be made", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
-    expect((await verifyTwoFactorLogin("123456")).ok).toBe(false);
+    expect((await verifyTwoFactorLogin({ code: "123456", rememberBrowser: true })).ok).toBe(false);
   });
 });

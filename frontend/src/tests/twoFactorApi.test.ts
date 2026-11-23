@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   disableTwoFactor,
   enableTwoFactor,
+  forgetTrustedBrowsers,
   getTwoFactorStatus,
   renewRecoveryCodes,
   startTwoFactorSetup,
@@ -19,11 +20,11 @@ describe("twoFactorApi", () => {
   });
 
   it("reads the status", async () => {
-    respond(true, { enabled: true, recoveryCodesRemaining: 8 });
+    respond(true, { enabled: true, recoveryCodesRemaining: 8, trustedBrowsers: 1 });
     expect(await getTwoFactorStatus()).toEqual({
       ok: true,
       message: "",
-      status: { enabled: true, recoveryCodesRemaining: 8 },
+      status: { enabled: true, recoveryCodesRemaining: 8, trustedBrowsers: 1 },
     });
   });
 
@@ -64,6 +65,13 @@ describe("twoFactorApi", () => {
       message: "New.",
     });
     expect(fetchMock.mock.calls[0][0]).toBe("/api/backend/auth/two-factor/recovery-codes");
+  });
+
+  it("forgets every trusted browser", async () => {
+    const fetchMock = respond(true, { message: "Every browser will ask." });
+    expect(await forgetTrustedBrowsers()).toEqual({ ok: true, message: "Every browser will ask." });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/backend/auth/two-factor/trusted-browsers");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
   });
 
   it("surfaces the backend's message for a wrong code", async () => {

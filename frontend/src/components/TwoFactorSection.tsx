@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { TWO_FACTOR_STATUS_QUERY_KEY, useTwoFactorStatus } from "@/hooks/useTwoFactorStatus";
 import { useMyProfile } from "@/hooks/useMyProfile";
+import { forgetTrustedBrowsers } from "@/lib/twoFactorApi";
 import { ErrorMessage } from "./ErrorMessage";
 import { Spinner } from "./Spinner";
 import { TwoFactorCodeModal } from "./TwoFactorCodeModal";
@@ -18,6 +19,14 @@ export function TwoFactorSection() {
   const queryClient = useQueryClient();
   const [openModal, setOpenModal] = useState<OpenModal>(null);
   const email = profile.data?.email ?? "";
+  const forget = useMutation({
+    mutationFn: forgetTrustedBrowsers,
+    meta: { inlineErrors: true },
+    onSuccess: (result) => {
+      if (result.ok) queryClient.invalidateQueries({ queryKey: TWO_FACTOR_STATUS_QUERY_KEY });
+    },
+  });
+  const forgetFailure = forget.data && !forget.data.ok ? forget.data.message : null;
 
   const close = useCallback(
     (changed: boolean) => {
@@ -54,6 +63,12 @@ export function TwoFactorSection() {
             <strong>On.</strong> You have {status.data.recoveryCodesRemaining} unused recovery{" "}
             {status.data.recoveryCodesRemaining === 1 ? "code" : "codes"} left.
           </p>
+          <p className="text-sm text-slate-900">
+            {status.data.trustedBrowsers === 0
+              ? "Every browser asks for a code when you log in."
+              : `${status.data.trustedBrowsers} ${status.data.trustedBrowsers === 1 ? "browser doesn't" : "browsers don't"} ask for a code, because you chose "Don't ask again" there. Forget them if you lost a device or used a shared computer.`}
+          </p>
+          {forgetFailure && <ErrorMessage message={forgetFailure} />}
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
@@ -69,6 +84,17 @@ export function TwoFactorSection() {
             >
               Turn off
             </button>
+            {status.data.trustedBrowsers > 0 && (
+              <button
+                type="button"
+                onClick={() => forget.mutate()}
+                disabled={forget.isPending}
+                className="flex h-11 cursor-pointer items-center gap-2 rounded-brand-sm border-2 border-ink px-4 text-sm font-semibold text-slate-900 hover:bg-cream disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {forget.isPending && <Spinner />}
+                Forget trusted browsers
+              </button>
+            )}
           </div>
         </>
       )}

@@ -129,12 +129,18 @@ describe('AuthService', () => {
     const findChallengeOwner = jest.fn().mockResolvedValue(null);
     const endChallenge = jest.fn().mockResolvedValue(undefined);
     const checkCode = jest.fn().mockResolvedValue({ ok: false });
+    const isTrustedBrowser = jest.fn().mockResolvedValue(false);
+    const trustBrowser = jest.fn().mockResolvedValue('the-trust-token');
+    const forgetTrustedBrowsers = jest.fn().mockResolvedValue(undefined);
     const twoFactorService = {
       isEnabled,
       startChallenge,
       findChallengeOwner,
       endChallenge,
       checkCode,
+      isTrustedBrowser,
+      trustBrowser,
+      forgetTrustedBrowsers,
       ...overrides,
     } as unknown as TwoFactorService;
     return {
@@ -144,6 +150,9 @@ describe('AuthService', () => {
       findChallengeOwner,
       endChallenge,
       checkCode,
+      isTrustedBrowser,
+      trustBrowser,
+      forgetTrustedBrowsers,
     };
   }
 
@@ -597,6 +606,7 @@ describe('AuthService', () => {
 
       const result = await service.login(
         { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
         response,
       );
 
@@ -647,6 +657,7 @@ describe('AuthService', () => {
           platform: DevicePlatform.MACOS,
           hostname: 'janes-macbook',
         },
+        makeRequest(),
         response,
       );
 
@@ -690,6 +701,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'deactivated@acme.test', password: 'correct-horse' },
+          makeRequest(),
           response,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -708,6 +720,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'unknown@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -731,6 +744,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'wrong-password' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -753,6 +767,7 @@ describe('AuthService', () => {
 
       await service.login(
         { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
         makeResponse().response,
       );
 
@@ -768,6 +783,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toMatchObject({
@@ -793,6 +809,7 @@ describe('AuthService', () => {
             password: 'whatever',
             captchaToken: 'bad-token',
           },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toMatchObject({
@@ -826,6 +843,7 @@ describe('AuthService', () => {
           password: 'correct-horse',
           captchaToken: 'good-token',
         },
+        makeRequest(),
         makeResponse().response,
       );
 
@@ -849,6 +867,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -1554,6 +1573,7 @@ describe('AuthService', () => {
 
       const result = await service.login(
         { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
         response,
       );
 
@@ -1598,6 +1618,7 @@ describe('AuthService', () => {
           password: 'correct-horse',
           captchaToken: 'solved',
         },
+        makeRequest(),
         makeResponse().response,
       );
 
@@ -1627,6 +1648,7 @@ describe('AuthService', () => {
             deviceFingerprint: 'fp',
             platform: DevicePlatform.MACOS,
           },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -1756,6 +1778,180 @@ describe('AuthService', () => {
       expect(issue).not.toHaveBeenCalled();
       expect(cookie).not.toHaveBeenCalled();
       expect(result.twoFactorRequired).toBe(true);
+    });
+
+    describe('trusted browsers', () => {
+      it('skips the code on a browser this person told not to ask again', async () => {
+        const { twoFactorService, isTrustedBrowser, startChallenge } =
+          makeTwoFactorService();
+        isTrustedBrowser.mockResolvedValue(true);
+        const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+        const { auditLogService, record } = makeAuditLogService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue(twoFactorUser),
+          }),
+          passwordService: makePasswordService({
+            verify: jest.fn().mockResolvedValue(true),
+          }),
+          twoFactorService,
+          loginAttemptTracker,
+          auditLogService,
+        });
+        const { response, cookie } = makeResponse();
+
+        const result = await service.login(
+          { email: 'jane@acme.test', password: 'correct-horse' },
+          makeRequest('two_factor_trusted_browser=the-trust-token'),
+          response,
+        );
+
+        expect(result.twoFactorRequired).toBeUndefined();
+        expect(isTrustedBrowser).toHaveBeenCalledWith(
+          'user-1',
+          'the-trust-token',
+        );
+        expect(startChallenge).not.toHaveBeenCalled();
+        expect(cookie).toHaveBeenCalledWith(
+          'access_token',
+          'signed.jwt.token',
+          expect.anything(),
+        );
+        expect(reset).toHaveBeenCalledWith('jane@acme.test');
+        expect(record).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            action: 'login',
+            metadata: { twoFactor: true, trustedBrowser: true },
+          }),
+        );
+      });
+
+      it('still asks for a code on a browser that is not trusted', async () => {
+        const { twoFactorService, isTrustedBrowser, startChallenge } =
+          makeTwoFactorService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue(twoFactorUser),
+          }),
+          passwordService: makePasswordService({
+            verify: jest.fn().mockResolvedValue(true),
+          }),
+          twoFactorService,
+        });
+
+        const result = await service.login(
+          { email: 'jane@acme.test', password: 'correct-horse' },
+          makeRequest(),
+          makeResponse().response,
+        );
+
+        expect(isTrustedBrowser).toHaveBeenCalledWith('user-1', undefined);
+        expect(startChallenge).toHaveBeenCalledWith('user-1');
+        expect(result.twoFactorRequired).toBe(true);
+      });
+
+      it('remembers the browser after a right code when asked to', async () => {
+        const { twoFactorService, trustBrowser } = makeTwoFactorService({
+          findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+          checkCode: jest
+            .fn()
+            .mockResolvedValue({ ok: true, usedRecoveryCode: false }),
+        });
+        const service = makeService({ twoFactorService });
+        const { response, cookie } = makeResponse();
+
+        await service.verifyTwoFactorLogin(
+          { code: '123456', rememberBrowser: true },
+          makeRequest('two_factor_challenge=the-challenge'),
+          response,
+        );
+
+        expect(trustBrowser).toHaveBeenCalledWith('user-1');
+        expect(cookie).toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          'the-trust-token',
+          expect.objectContaining({
+            httpOnly: true,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+          }),
+        );
+      });
+
+      it('does not remember the browser unless asked to', async () => {
+        const { twoFactorService, trustBrowser } = makeTwoFactorService({
+          findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+          checkCode: jest
+            .fn()
+            .mockResolvedValue({ ok: true, usedRecoveryCode: false }),
+        });
+        const service = makeService({ twoFactorService });
+        const { response, cookie } = makeResponse();
+
+        await service.verifyTwoFactorLogin(
+          { code: '123456' },
+          makeRequest('two_factor_challenge=the-challenge'),
+          response,
+        );
+
+        expect(trustBrowser).not.toHaveBeenCalled();
+        expect(cookie).not.toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('forgets every trusted browser on a password reset', async () => {
+        const { twoFactorService, forgetTrustedBrowsers } =
+          makeTwoFactorService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue({
+              ...twoFactorUser,
+              passwordResetToken: 'valid-token',
+              passwordResetExpiresAt: new Date(Date.now() + 60_000),
+            }),
+          }),
+          twoFactorService,
+        });
+
+        await service.resetPassword(
+          { token: 'valid-token', password: 'correct-horse' },
+          makeResponse().response,
+        );
+
+        expect(forgetTrustedBrowsers).toHaveBeenCalledWith(
+          expect.anything(),
+          'user-1',
+        );
+      });
+
+      it('forgets every trusted browser when signing out everywhere, but not on an ordinary log out', async () => {
+        const { twoFactorService, forgetTrustedBrowsers } =
+          makeTwoFactorService();
+        const service = makeService({ twoFactorService });
+        const everywhere = makeResponse();
+
+        await service.logout(
+          makeRequest('refresh_token=the-refresh-token'),
+          makeResponse().response,
+        );
+        expect(forgetTrustedBrowsers).not.toHaveBeenCalled();
+
+        await service.logoutEverywhere(
+          makeRequest('refresh_token=the-refresh-token'),
+          everywhere.response,
+        );
+        expect(forgetTrustedBrowsers).toHaveBeenCalledWith(
+          expect.anything(),
+          'user-1',
+        );
+        expect(everywhere.clearCookie).toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          expect.anything(),
+        );
+      });
     });
 
     it('restarting the web session signs out every other browser and keeps this one', async () => {

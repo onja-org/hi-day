@@ -10,6 +10,7 @@ import {
   DataSource,
   EntityManager,
   IsNull,
+  LessThan,
   MoreThan,
   Repository,
 } from 'typeorm';
@@ -26,6 +27,7 @@ import {
   matchTotp,
 } from '../../common/totp.util';
 import { TwoFactorRecoveryCode } from '../../database/entities/two-factor-recovery-code.entity';
+import { TwoFactorTrustedBrowser } from '../../database/entities/two-factor-trusted-browser.entity';
 import { User } from '../../database/entities/user.entity';
 import { LoginAttemptTracker } from './login-attempt-tracker.service';
 import { TokenService } from './token.service';
@@ -33,6 +35,9 @@ import { TwoFactorSecretCipher } from './two-factor-secret-cipher.service';
 
 const ISSUER = 'Hi Day';
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+/** The httpOnly cookie a browser keeps once told "don't ask again". */
+export const TRUSTED_BROWSER_COOKIE = 'two_factor_trusted_browser';
+export const TRUSTED_BROWSER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const WRONG_CODE_MESSAGE =
   "That code didn't work. Check your app and try again.";
 const TOO_MANY_WRONG_CODES_MESSAGE =
@@ -42,6 +47,8 @@ export interface TwoFactorStatus {
   enabled: boolean;
   /** Unused recovery codes left; 0 while two-step login is off. */
   recoveryCodesRemaining: number;
+  /** Browsers that skip the code step ("don't ask again"); 0 while off. */
+  trustedBrowsers: number;
 }
 
 export interface TwoFactorSetup {
@@ -69,6 +76,8 @@ export class TwoFactorService {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(TwoFactorRecoveryCode)
     private readonly recoveryCodes: Repository<TwoFactorRecoveryCode>,
+    @InjectRepository(TwoFactorTrustedBrowser)
+    private readonly trustedBrowsers: Repository<TwoFactorTrustedBrowser>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly cipher: TwoFactorSecretCipher,
     private readonly tokenService: TokenService,
@@ -83,12 +92,15 @@ export class TwoFactorService {
   async getStatus(userId: string): Promise<TwoFactorStatus> {
     const user = await this.users.findOneOrFail({ where: { id: userId } });
     if (!this.isEnabled(user)) {
-      return { enabled: false, recoveryCodesRemaining: 0 };
+      return { enabled: false, recoveryCodesRemaining: 0, trustedBrowsers: 0 };
     }
     const recoveryCodesRemaining = await this.recoveryCodes.count({
       where: { userId, usedAt: IsNull() },
     });
-    return { enabled: true, recoveryCodesRemaining };
+    const trustedBrowsers = await this.trustedBrowsers.count({
+      where: { userId, expiresAt: MoreThan(new Date()) },
+    });
+    return { enabled: true, recoveryCodesRemaining, trustedBrowsers };
   }
 
   /**
@@ -207,6 +219,71 @@ export class TwoFactorService {
       twoFactorChallengeExpiresAt: null,
     });
     await manager.delete(TwoFactorRecoveryCode, { userId });
+    await this.forgetTrustedBrowsers(manager, userId);
+  }
+
+  /**
+   * Remembers this browser after a right code ("Don't ask again on this
+   * browser"): logging in here again within
+   * `TRUSTED_BROWSER_TTL_MS` takes only the password. Returns the raw
+   * token for the browser's cookie; only its hash is stored. Clears the
+   * person's expired rows while it's here, so they don't pile up.
+   */
+  async trustBrowser(userId: string): Promise<string> {
+    const token = this.tokenService.generateToken();
+    await this.trustedBrowsers.delete({
+      userId,
+      expiresAt: LessThan(new Date()),
+    });
+    await this.trustedBrowsers.save(
+      this.trustedBrowsers.create({
+        userId,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + TRUSTED_BROWSER_TTL_MS),
+      }),
+    );
+    return token;
+  }
+
+  /**
+   * Whether the browser's cookie says it was trusted by *this* person and
+   * hasn't expired. A cookie left by someone else on a shared computer
+   * proves nothing about this account.
+   */
+  async isTrustedBrowser(
+    userId: string,
+    token: string | undefined,
+  ): Promise<boolean> {
+    if (!token) return false;
+    return this.trustedBrowsers.exists({
+      where: {
+        userId,
+        tokenHash: hashToken(token),
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+  }
+
+  /**
+   * Every browser asks for a code again on its next log in. For anything
+   * that says the account's login may be in the wrong hands, or changed.
+   */
+  async forgetTrustedBrowsers(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<void> {
+    await manager.delete(TwoFactorTrustedBrowser, { userId });
+  }
+
+  /** The account page's "Forget trusted browsers". */
+  async forgetTrustedBrowsersByRequest(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.forgetTrustedBrowsers(manager, userId);
+      await this.auditLogService.record(manager, {
+        action: 'two_factor_trusted_browsers_forgotten',
+        actorUserId: userId,
+      });
+    });
   }
 
   /**
