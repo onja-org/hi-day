@@ -43,6 +43,7 @@ import { ProjectMembershipRole } from '../../database/entities/project-membershi
 import { Team } from '../../database/entities/team.entity';
 import { TeamMembership } from '../../database/entities/team-membership.entity';
 import { User } from '../../database/entities/user.entity';
+import { normalizeEmail } from '../../common/email.util';
 import { EmailService } from '../../email/services/email.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { CreateInvitationEntryDto } from '../dto/create-invitation-entry.dto';
@@ -702,7 +703,7 @@ export class InvitationsService {
       .andWhere('membership.status = :status', {
         status: MembershipStatus.ACTIVE,
       })
-      .andWhere('user.email = :email', { email })
+      .andWhere('user.email = :email', { email: normalizeEmail(email) })
       .getOne();
   }
 

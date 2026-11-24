@@ -2,18 +2,27 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { emailColumnTransformer } from '../../common/email.util';
 import { Membership } from './membership.entity';
 
 @Entity({ name: 'users' })
+// Case-insensitive uniqueness on top of the plain UNIQUE constraint, so a
+// writer that bypasses the column transformer (raw SQL, a script) still
+// can't create a second account for `Jane@corp.com`. Expression indexes
+// can't be described to TypeORM, so it's created in
+// 1791180000000-NormalizeEmailCase and left alone by schema sync.
+@Index('UQ_users_email_lower', { synchronize: false })
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  /** Always stored trimmed and lowercased — see `normalizeEmail`. */
+  @Column({ unique: true, transformer: emailColumnTransformer })
   email: string;
 
   @Column({ type: 'varchar', nullable: true })
@@ -73,6 +82,41 @@ export class User {
    */
   @Column({ type: 'integer', default: 0 })
   sessionVersion: number;
+
+  /**
+   * Two-step login. Set only once the person has confirmed a code from
+   * their authenticator app; null means it is off. See ADR 0038.
+   */
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  twoFactorEnabledAt: Date | null;
+
+  /** The authenticator secret, encrypted by `TwoFactorSecretCipher`. */
+  @Column({ type: 'text', nullable: true })
+  twoFactorSecret: string | null;
+
+  /**
+   * A secret shown as a QR code but not yet confirmed with a code. Kept
+   * apart from `twoFactorSecret` so starting setup again, or abandoning it,
+   * never touches a secret that is already in use. Encrypted the same way.
+   */
+  @Column({ type: 'text', nullable: true })
+  twoFactorPendingSecret: string | null;
+
+  /** The last 30-second step a code was accepted for, so it can't be replayed. */
+  @Column({ type: 'integer', nullable: true })
+  twoFactorLastUsedStep: number | null;
+
+  /**
+   * Hash of the short-lived token that says "this browser got the password
+   * right and still owes a code". The raw token lives only in the browser's
+   * cookie, the same way refresh tokens are stored.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  @Index({ unique: true })
+  twoFactorChallengeHash: string | null;
+
+  @Column({ type: 'timestamp', precision: 3, nullable: true })
+  twoFactorChallengeExpiresAt: Date | null;
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;

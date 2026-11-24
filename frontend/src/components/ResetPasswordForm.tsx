@@ -24,8 +24,11 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   useEffect(() => {
     if (!mutation.data?.ok) return;
 
+    // With two-step login on, the reset signs nobody in: log in next,
+    // code and all.
+    const target = mutation.data.twoFactorRequired ? "/login" : "/dashboard";
     const timeout = setTimeout(
-      () => navigateAfterSessionChange("/dashboard"),
+      () => navigateAfterSessionChange(target),
       REDIRECT_DELAY_MS,
     );
     return () => clearTimeout(timeout);

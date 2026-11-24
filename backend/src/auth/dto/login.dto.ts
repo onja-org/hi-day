@@ -7,9 +7,11 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { NormalizeEmail } from '../../common/decorators/normalize-email.decorator';
 import { DevicePlatform } from '../../database/entities/device-platform.enum';
 
 export class LoginDto {
+  @NormalizeEmail()
   @IsEmail()
   email: string;
 

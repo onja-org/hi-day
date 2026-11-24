@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -33,11 +34,13 @@ import { ScreenshotsService } from '../../screenshots/services/screenshots.servi
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import type { TimeEntryListItem } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
+import { ResetTwoFactorsDto } from '../dto/reset-two-factors.dto';
 import { SendPasswordResetsDto } from '../dto/send-password-resets.dto';
 import type {
   ActiveMemberListItem,
   ActiveMemberSummary,
   PasswordResetResult,
+  TwoFactorResetResult,
 } from '../services/memberships.service';
 import { MembershipsService } from '../services/memberships.service';
 
@@ -112,6 +115,54 @@ export class MembershipsController {
       `Password reset email sent to ${sent} ${sent === 1 ? 'member' : 'members'}` +
       (skipped > 0 ? `; ${skipped} skipped` : '');
     return { results, message };
+  }
+
+  /**
+   * Resets two-step login for every listed member at once (e.g. "everyone").
+   * Admins only, like the single reset below. Ineligible members come back
+   * "skipped" rather than failing the batch.
+   */
+  @Post('two-factor-resets')
+  @RequireRole(MembershipRole.ADMIN)
+  @HttpCode(200)
+  async resetTwoFactorMany(
+    @Body() dto: ResetTwoFactorsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ results: TwoFactorResetResult[]; message: string }> {
+    const results = await this.membershipsService.resetTwoFactorMany(
+      request.organisationId!,
+      request.userId,
+      dto.membershipIds,
+    );
+    const reset = results.filter((result) => result.outcome === 'reset').length;
+    const skipped = results.length - reset;
+    const message =
+      `Two-step login reset for ${reset} ${reset === 1 ? 'member' : 'members'}` +
+      (skipped > 0 ? `; ${skipped} skipped` : '');
+    return { results, message };
+  }
+
+  /**
+   * For a member who lost both their phone and their recovery codes.
+   * Admins only: it takes a protection off someone else's account.
+   */
+  @Post(':membershipId/two-factor-reset')
+  @RequireRole(MembershipRole.ADMIN)
+  @HttpCode(200)
+  async resetTwoFactor(
+    @Param('membershipId', ParseUUIDPipe) membershipId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ member: ActiveMemberSummary; message: string }> {
+    const member = await this.membershipsService.resetTwoFactor(
+      request.organisationId!,
+      request.userId,
+      membershipId,
+    );
+    return {
+      member,
+      message:
+        'Two-step login reset. They can log in with just their password.',
+    };
   }
 
   @Patch(':membershipId')
