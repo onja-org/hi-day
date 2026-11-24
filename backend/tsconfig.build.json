@@ -6,6 +6,8 @@
     "dist",
     "**/*spec.ts",
     "src/scripts/seed-test-accounts.ts",
-    "src/scripts/trial-dev.ts"
+    "src/scripts/trial-dev.ts",
+    "src/scripts/seed-onboarding-guide.ts",
+    "src/scripts/onboarding-guide/**"
   ]
 }
