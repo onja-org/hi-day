@@ -4,7 +4,7 @@
 //        node phaseB.mjs 04a 07g    (only these)
 import { BASE, OUT, login, newPage, openBrowser, shot, sql } from './lib.mjs';
 
-const ORG = sql(`select id from organisations where name = 'Brightline Studio'`);
+const ORG = sql(`select id from organisations where name = 'HiD''Art'`);
 const PUBLIC = sql(`select "publicId" from organisations where id = '${ORG}'`);
 const membership = (email) =>
   sql(`select m.id from memberships m join users u on u.id = m."userId"
@@ -15,12 +15,12 @@ const team = (name) =>
   sql(`select id from teams where "organisationId" = '${ORG}' and name = '${name}'`);
 
 const O = `${BASE}/organisations/${PUBLIC}`;
-const HARBOUR = project('Harbour Café: Website redesign');
-const LUMO = project('Lumo Health: Patient app UI');
+const TAMARIND = project('Tamarind Steps Café: Website redesign');
+const BRIGHTMORROW = project('Brightmorrow Health: Patient app UI');
 const DESIGN = team('Design');
-const LUCAS = membership('lucas@brightline.example');
-const SOFIA = membership('sofia@brightline.example');
-const HERY = membership('hery@brightline.example');
+const LUCAS = membership('lucas@hid.example');
+const SOFIA = membership('sofia@hid.example');
+const HERY = membership('hery@hid.example');
 
 const SHOTS = [
   // Step 2: tracking settings (admin)
@@ -37,14 +37,14 @@ const SHOTS = [
   { id: '02d-timesheet-settings', who: 'nadia', go: `${O}/settings/tracking/timesheets`, full: true },
   // Step 3: teams, projects, tasks
   { id: '03a-teams', who: 'nadia', go: `${O}/teams` },
-  { id: '03b-project-page', who: 'nadia', go: `${O}/projects/${HARBOUR}`, full: true },
-  { id: '03c-tasks-board', who: 'nadia', go: `${O}/tasks?view=kanban&project=${HARBOUR}` },
+  { id: '03b-project-page', who: 'nadia', go: `${O}/projects/${TAMARIND}`, full: true },
+  { id: '03c-tasks-board', who: 'nadia', go: `${O}/tasks?view=kanban&project=${TAMARIND}` },
   // Step 4: invites and roles
   {
     id: '04a-invite-people', who: 'nadia', go: `${O}/members`,
     act: async (page) => {
       await page.getByRole('button', { name: 'Add members' }).click();
-      await page.getByLabel('Emails').fill('maya@brightline.example, tom@brightline.example');
+      await page.getByLabel('Emails').fill('maya@hid.example, tom@hid.example');
     },
   },
   {
@@ -61,7 +61,7 @@ const SHOTS = [
     },
   },
   { id: '04c-members', who: 'nadia', go: `${O}/members` },
-  { id: '04d-project-viewer', who: 'nadia', go: `${O}/projects/${LUMO}`, full: true },
+  { id: '04d-project-viewer', who: 'nadia', go: `${O}/projects/${BRIGHTMORROW}`, full: true },
   { id: '04e-team-manager', who: 'nadia', go: `${O}/teams/${DESIGN}` },
   // Step 6: tracking time
   {
@@ -69,7 +69,7 @@ const SHOTS = [
     act: async (page) => {
       await page.getByRole('button', { name: /Open (running )?timer/ }).click();
       // A native list: it can't be shown open in a screenshot, so pick one.
-      await page.locator('select:visible').first().selectOption({ label: 'Brightline: Brand refresh' });
+      await page.locator('select:visible').first().selectOption({ label: "HiD'Art: Brand refresh" });
     },
   },
   {
@@ -85,8 +85,8 @@ const SHOTS = [
       const dialog = page.getByRole('dialog');
       await dialog.getByLabel('From', { exact: true }).fill('08:00');
       await dialog.getByLabel('To', { exact: true }).fill('09:15');
-      await dialog.locator('select').filter({ hasText: 'Harbour Café' }).first()
-        .selectOption({ label: 'Harbour Café: Website redesign' });
+      await dialog.locator('select').filter({ hasText: 'Tamarind Steps Café' }).first()
+        .selectOption({ label: 'Tamarind Steps Café: Website redesign' });
       const reason = dialog.locator('select').filter({ hasText: 'Forgot to start timer' });
       if (await reason.count()) await reason.first().selectOption({ label: 'Forgot to start timer' });
       await dialog.getByText('Add time', { exact: true }).first().click();
@@ -117,7 +117,7 @@ const SHOTS = [
   { id: '08e-unusual-activity', who: 'nadia', go: `${O}/insights/unusual-activity?member=${LUCAS}`, full: true },
   { id: '08f-highlights', who: 'nadia', go: `${O}/insights/highlights?member=${HERY}`, full: true },
   // Step 9: what a project viewer sees (Clara, the client contact).
-  { id: '09a-viewer-project', who: 'clara', go: `${O}/projects/${LUMO}`, full: true },
+  { id: '09a-viewer-project', who: 'clara', go: `${O}/projects/${BRIGHTMORROW}`, full: true },
 ];
 
 const only = process.argv.slice(2);

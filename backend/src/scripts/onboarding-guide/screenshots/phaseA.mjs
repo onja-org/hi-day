@@ -8,17 +8,17 @@ const page = await newPage(browser, { keepDesktopCard: true });
 await page.goto(`${BASE}/signup`);
 await page.getByLabel('First name').fill('Nadia');
 await page.getByLabel('Last name').fill('Rakoto');
-await page.getByLabel('Email address').fill('nadia@brightline.example');
-await page.getByLabel('Company name').fill('Brightline Studio');
+await page.getByLabel('Email address').fill('nadia@hid.example');
+await page.getByLabel('Company name').fill("HiD'Art");
 await page.getByLabel('Address', { exact: true }).fill('12 Rue des Jacarandas, Antananarivo 101, Madagascar');
-await page.getByLabel('Website (optional)').fill('https://brightline.example');
+await page.getByLabel('Website (optional)').fill('https://hid.example');
 await page.getByLabel('I agree to the Terms of Service and Privacy Policy').check();
 await page.getByRole('button', { name: 'Create account' }).click();
 await page.getByText('Verify your email').first().waitFor({ timeout: 20000 });
 await shot(page, '01a-verify-your-email');
 
 const token = sql(
-  `select "emailVerificationToken" from users where email = 'nadia@brightline.example'`,
+  `select "emailVerificationToken" from users where email = 'nadia@hid.example'`,
 );
 if (!token) throw new Error('No verification token found.');
 await page.goto(`${BASE}/set-password?token=${encodeURIComponent(token)}`);

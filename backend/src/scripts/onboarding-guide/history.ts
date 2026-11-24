@@ -110,7 +110,7 @@ const DESKTOP_PLATFORMS: Record<string, DevicePlatform> = {
 };
 
 const OTHER_TITLES: Record<string, string> = {
-  Terminal: 'zsh — harbour-cafe-site',
+  Terminal: 'zsh — tamarind-steps-site',
   Spotify: 'Spotify',
 };
 
@@ -338,7 +338,7 @@ export async function seedHistory(
           {
             start: 510,
             end: 1185,
-            project: 'Harbour Café: Website redesign',
+            project: 'Tamarind Steps Café: Website redesign',
             source: 'agent',
             idleMinutes: 0,
             activity: [60, 80],
@@ -350,7 +350,7 @@ export async function seedHistory(
           {
             start: 600,
             end: 780,
-            project: 'Harbour Café: Website redesign',
+            project: 'Tamarind Steps Café: Website redesign',
             source: 'agent',
             idleMinutes: 0,
             activity: schedule.activity,
@@ -363,7 +363,7 @@ export async function seedHistory(
           spans.push({
             start: 600,
             end: 780,
-            project: 'Harbour Café: Website redesign',
+            project: 'Tamarind Steps Café: Website redesign',
             source: 'agent',
             idleMinutes: 0,
             activity: [50, 50],
@@ -374,7 +374,7 @@ export async function seedHistory(
           spans.push({
             start: 1170,
             end: 1390,
-            project: 'Harbour Café: Website redesign',
+            project: 'Tamarind Steps Café: Website redesign',
             source: 'agent',
             idleMinutes: 0,
             activity: [35, 60],
@@ -516,7 +516,7 @@ export async function seedHistory(
           } else {
             const titles = seed.windowTitles[app];
             title = span.flat
-              ? 'ContactForm.tsx — harbour-cafe-site'
+              ? 'ContactForm.tsx — tamarind-steps-site'
               : Array.isArray(titles)
                 ? oneOf(titles)
                 : (OTHER_TITLES[app] ?? app);

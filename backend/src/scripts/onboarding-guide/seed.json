@@ -2,9 +2,9 @@
   "_about": "Example company for the Getting Started guide screenshots. All people, emails, clients and content are made up. Emails use the reserved .example domain. Dates are relative: dayOffset 0 = the day screenshots are taken, -1 = the day before, and so on. Generated with Claude from PROMPTS.md.",
   "_version": 1,
   "organisation": {
-    "name": "Brightline Studio",
+    "name": "HiD'Art",
     "address": "12 Rue des Jacarandas, Antananarivo 101, Madagascar",
-    "website": "https://brightline.example",
+    "website": "https://hid.example",
     "timezone": "Indian/Antananarivo",
     "about": "A small design and web studio. Five people make brands, websites and app screens for local clients.",
     "defaultTeam": "General (created automatically with the organisation; leave it as is)"
@@ -47,7 +47,7 @@
       "key": "nadia",
       "firstName": "Nadia",
       "lastName": "Rakoto",
-      "email": "nadia@brightline.example",
+      "email": "nadia@hid.example",
       "orgRole": "admin",
       "jobTitle": "Studio lead (founder)",
       "teams": [],
@@ -58,7 +58,7 @@
       "key": "tiana",
       "firstName": "Tiana",
       "lastName": "Andria",
-      "email": "tiana@brightline.example",
+      "email": "tiana@hid.example",
       "orgRole": "manager",
       "jobTitle": "Design lead",
       "teams": [
@@ -74,7 +74,7 @@
       "key": "lucas",
       "firstName": "Lucas",
       "lastName": "Moreau",
-      "email": "lucas@brightline.example",
+      "email": "lucas@hid.example",
       "orgRole": "member",
       "jobTitle": "Designer",
       "teams": [
@@ -91,7 +91,7 @@
       "key": "hery",
       "firstName": "Hery",
       "lastName": "Rabe",
-      "email": "hery@brightline.example",
+      "email": "hery@hid.example",
       "orgRole": "member",
       "jobTitle": "Front-end developer",
       "teams": [
@@ -107,7 +107,7 @@
       "key": "sofia",
       "firstName": "Sofia",
       "lastName": "Mendes",
-      "email": "sofia@brightline.example",
+      "email": "sofia@hid.example",
       "orgRole": "member",
       "jobTitle": "Developer",
       "teams": [
@@ -123,13 +123,13 @@
       "key": "clara",
       "firstName": "Clara",
       "lastName": "Bennett",
-      "email": "clara@lumohealth.example",
+      "email": "clara@brightmorrow.example",
       "orgRole": "member",
-      "jobTitle": "Product owner at Lumo Health (the client)",
+      "jobTitle": "Product owner at Brightmorrow Health (the client)",
       "teams": [],
       "projectRoles": [
         {
-          "project": "Lumo Health: Patient app UI",
+          "project": "Brightmorrow Health: Patient app UI",
           "role": "Viewer"
         }
       ],
@@ -157,7 +157,7 @@
   ],
   "projects": [
     {
-      "name": "Harbour Café: Website redesign",
+      "name": "Tamarind Steps Café: Website redesign",
       "description": "New website for a local café",
       "colour": "pink",
       "teams": [
@@ -205,7 +205,7 @@
       ]
     },
     {
-      "name": "Lumo Health: Patient app UI",
+      "name": "Brightmorrow Health: Patient app UI",
       "description": "Screens for a patient booking app",
       "colour": "amber",
       "teams": [
@@ -252,7 +252,7 @@
       ]
     },
     {
-      "name": "Brightline: Brand refresh",
+      "name": "HiD'Art: Brand refresh",
       "description": "Internal: new logo and colours",
       "colour": "blue",
       "teams": [
@@ -422,22 +422,22 @@
   "windowTitles": {
     "_note": "Fake document names so screenshots and the Apps tab look real. Never real files.",
     "Figma": [
-      "Harbour Café – Menu page",
-      "Lumo – Booking flow v3",
-      "Brightline logo sketches"
+      "Tamarind Steps Café – Menu page",
+      "Brightmorrow – Booking flow v3",
+      "HiD'Art logo sketches"
     ],
     "Visual Studio Code": [
-      "HomePage.tsx — harbour-cafe-site",
-      "ContactForm.tsx — harbour-cafe-site",
-      "README.md — lumo-prototype"
+      "HomePage.tsx — tamarind-steps-site",
+      "ContactForm.tsx — tamarind-steps-site",
+      "README.md — brightmorrow-prototype"
     ],
     "Adobe Illustrator": [
-      "brightline-logo-v4.ai"
+      "hidart-logo-v4.ai"
     ],
     "Slack": [
-      "#harbour-cafe | Brightline Studio",
-      "#lumo-health | Brightline Studio",
-      "#general | Brightline Studio"
+      "#tamarind-steps | HiD'Art",
+      "#brightmorrow-health | HiD'Art",
+      "#general | HiD'Art"
     ]
   },
   "history": {
@@ -454,28 +454,28 @@
       "screenshots": "1 per 10 minutes for desktop-app time, showing the window titles above",
       "projectMix": {
         "tiana": {
-          "Lumo Health: Patient app UI": 0.5,
-          "Harbour Café: Website redesign": 0.3,
-          "Brightline: Brand refresh": 0.2
+          "Brightmorrow Health: Patient app UI": 0.5,
+          "Tamarind Steps Café: Website redesign": 0.3,
+          "HiD'Art: Brand refresh": 0.2
         },
         "lucas": {
-          "Harbour Café: Website redesign": 0.5,
-          "Lumo Health: Patient app UI": 0.35,
-          "Brightline: Brand refresh": 0.15
+          "Tamarind Steps Café: Website redesign": 0.5,
+          "Brightmorrow Health: Patient app UI": 0.35,
+          "HiD'Art: Brand refresh": 0.15
         },
         "hery": {
-          "Harbour Café: Website redesign": 0.6,
-          "Lumo Health: Patient app UI": 0.3,
-          "Brightline: Brand refresh": 0.1
+          "Tamarind Steps Café: Website redesign": 0.6,
+          "Brightmorrow Health: Patient app UI": 0.3,
+          "HiD'Art: Brand refresh": 0.1
         },
         "sofia": {
-          "Harbour Café: Website redesign": 0.4,
-          "Lumo Health: Patient app UI": 0.6
+          "Tamarind Steps Café: Website redesign": 0.4,
+          "Brightmorrow Health: Patient app UI": 0.6
         },
         "nadia": {
-          "Brightline: Brand refresh": 0.5,
-          "Lumo Health: Patient app UI": 0.25,
-          "Harbour Café: Website redesign": 0.25
+          "HiD'Art: Brand refresh": 0.5,
+          "Brightmorrow Health: Patient app UI": 0.25,
+          "Tamarind Steps Café: Website redesign": 0.25
         }
       }
     },
@@ -486,7 +486,7 @@
         "action": "add",
         "from": "09:00",
         "to": "11:30",
-        "project": "Harbour Café: Website redesign",
+        "project": "Tamarind Steps Café: Website redesign",
         "reason": "Worked offline"
       },
       {
@@ -495,7 +495,7 @@
         "action": "add",
         "from": "14:00",
         "to": "15:00",
-        "project": "Lumo Health: Patient app UI",
+        "project": "Brightmorrow Health: Patient app UI",
         "reason": "Client meeting"
       },
       {
@@ -511,7 +511,7 @@
         "action": "add",
         "from": "08:00",
         "to": "09:15",
-        "project": "Harbour Café: Website redesign",
+        "project": "Tamarind Steps Café: Website redesign",
         "reason": "Forgot to start timer"
       }
     ],
@@ -543,7 +543,7 @@
           "person": "lucas",
           "dayOffset": -27,
           "kind": "weekend work",
-          "detail": "Saturday, 3 h on Harbour Café: Website redesign",
+          "detail": "Saturday, 3 h on Tamarind Steps Café: Website redesign",
           "flags": "Nothing: shows on Timeline and timesheets only."
         }
       ]
@@ -673,8 +673,8 @@
     },
     "siteTitles": {
       "figma.com": [
-        "Harbour Café – Menu page – Figma",
-        "Lumo – Booking flow v3 – Figma"
+        "Tamarind Steps Café – Menu page – Figma",
+        "Brightmorrow – Booking flow v3 – Figma"
       ],
       "fonts.google.com": [
         "Browse Fonts - Google Fonts"
@@ -683,11 +683,11 @@
         "Coffee shop photos | Unsplash"
       ],
       "mail.google.com": [
-        "Inbox - studio@brightline.example"
+        "Inbox - studio@hid.example"
       ],
       "github.com": [
-        "brightline/harbour-cafe-site: Pull requests",
-        "brightline/lumo-prototype"
+        "hidart/tamarind-steps-site: Pull requests",
+        "hidart/brightmorrow-prototype"
       ],
       "developer.mozilla.org": [
         "<form>: The Form element - HTML | MDN",
@@ -706,38 +706,38 @@
     {
       "person": "lucas",
       "dayOffset": -1,
-      "project": "Harbour Café: Website redesign",
+      "project": "Tamarind Steps Café: Website redesign",
       "content": "Menu page: second version with bigger photos, sent to Tiana for review."
     },
     {
       "person": "hery",
       "dayOffset": -1,
-      "project": "Harbour Café: Website redesign",
+      "project": "Tamarind Steps Café: Website redesign",
       "content": "Homepage hero and menu section built. Contact form next."
     },
     {
       "person": "sofia",
       "dayOffset": -2,
-      "project": "Lumo Health: Patient app UI",
+      "project": "Brightmorrow Health: Patient app UI",
       "content": "Read through the booking screens; listed contrast issues for the accessibility review."
     },
     {
       "person": "tiana",
       "dayOffset": -2,
-      "project": "Lumo Health: Patient app UI",
+      "project": "Brightmorrow Health: Patient app UI",
       "content": "Call with Clara: reminders should be opt-in. Updated the booking flow."
     },
     {
       "person": "lucas",
       "dayOffset": -4,
-      "project": "Brightline: Brand refresh",
+      "project": "HiD'Art: Brand refresh",
       "content": "Three logo directions ready for Friday."
     }
   ],
   "screenshotDay": {
     "_note": "What's happening on dayOffset 0 when screenshots are taken.",
-    "lucas": "desktop timer running on Harbour Café: Website redesign → Menu page design, Figma open on 'Harbour Café – Menu page'",
-    "hery": "web timer running on Harbour Café: Website redesign → Build homepage",
+    "lucas": "desktop timer running on Tamarind Steps Café: Website redesign → Menu page design, Figma open on 'Tamarind Steps Café – Menu page'",
+    "hery": "web timer running on Tamarind Steps Café: Website redesign → Build homepage",
     "others": "a normal morning already tracked"
   }
 }

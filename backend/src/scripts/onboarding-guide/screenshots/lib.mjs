@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 export const BASE = process.env.GUIDE_APP_URL ?? 'http://localhost:3000';
-export const PASSWORD = 'Brightline2026!';
+export const PASSWORD = 'HiDArt2026!';
 /** Creates `dir` if needed and returns it with a trailing slash. */
 function ensureDir(dir) {
   mkdirSync(dir, { recursive: true });
@@ -28,12 +28,12 @@ export const FAKE_SCREENS = ensureDir(join(OUT, 'fake-screens'));
 const BACKEND_ENV = join(BACKEND, '.env');
 
 export const PEOPLE = {
-  nadia: 'nadia@brightline.example',
-  tiana: 'tiana@brightline.example',
-  lucas: 'lucas@brightline.example',
-  hery: 'hery@brightline.example',
-  sofia: 'sofia@brightline.example',
-  clara: 'clara@lumohealth.example',
+  nadia: 'nadia@hid.example',
+  tiana: 'tiana@hid.example',
+  lucas: 'lucas@hid.example',
+  hery: 'hery@hid.example',
+  sofia: 'sofia@hid.example',
+  clara: 'clara@brightmorrow.example',
 };
 
 /** Runs one SQL query against the local database and returns the first value. */

@@ -50,7 +50,7 @@ import {
  * shares one password written in this file.
  */
 
-const PASSWORD = 'Brightline2026!';
+const PASSWORD = 'HiDArt2026!';
 const SEED_PATH = join(__dirname, 'onboarding-guide', 'seed.json');
 
 type SeedPerson = {

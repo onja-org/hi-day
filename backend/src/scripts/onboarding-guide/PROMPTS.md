@@ -20,7 +20,7 @@ Rules for every prompt:
 >   two or three members, and one person who is a Viewer on a single project (a client contact).
 >   First name, last name, `.example` email, organisation role, job title, team and team role.
 > - Two teams.
-> - Three projects named "Client: Project" (for example "Harbour Café: Website redesign"), each
+> - Three projects named "Client: Project" (for example "Tamarind Steps Café: Website redesign"), each
 >   with a short description, a colour from blue, green, amber, red, purple, teal, pink, gray,
 >   the teams on it, and 3–6 tasks with an assignee, a stage (To do, In progress, Done) and an
 >   estimate in hours.
@@ -35,8 +35,8 @@ Rules for every prompt:
 > Use relative dates (days before the screenshot day), not calendar dates.
 
 Changes made by hand after generating:
-- Kept the cast used during the feature audit (Brightline Studio, Nadia, Tiana, Lucas, Hery,
-  Sofia, Clara) so the notes and screenshots match.
+- Kept the cast used during the feature audit (Nadia, Tiana, Lucas, Hery, Sofia, Clara), but gave
+  the company the name HiD'Art, so it isn't mistaken for a real business.
 - Development has no team manager on purpose: it shows that a manager oversees only the teams
   they manage.
 - Odd days tuned to the app's unusual-activity rules (`backend/src/insights/unusual-activity.util.ts`)
@@ -72,14 +72,25 @@ Needs the frontend and backend running locally and `psql` on the PATH. From
    empty database).
 2. `pnpm --filter backend seed:onboarding-guide --clean`, then `pnpm --filter backend seed:onboarding-guide`.
 3. `node phaseB.mjs` (web shots; pass ids like `04a 07g` to retake only those).
+   Seed and run this after about 10:30 local time: 06b needs Hery's web timer running, and in the
+   last two weeks of the story he starts around 10:00 (the "changes in behaviour" Highlight). The
+   seed only creates time up to the moment it runs, so an earlier seed has no running timer.
 4. Pair a desktop app as Lucas, then `node phaseC-05c.mjs`, `node phaseC.mjs`,
    `node fake-screens.mjs` and `node phaseC-07e.mjs`.
 5. `node phaseD.mjs` last: it pays with the Stripe test card, which ends the trial
    (`phaseD-10d.mjs` retakes only 10d on an org that has already paid).
+   It needs `BILLING_ENABLED=true` in `backend/.env` (with Stripe test keys)
+   when the backend runs **and when the seed runs**: the seed only creates the
+   14-day trial with billing on, so a seed made with billing off shows "no
+   subscription" in 10a. Switch it on, restart the backend, re-seed, then run it.
 
 Desktop-app shots (05b, 05c2, 05d, 06c, 06e) are taken by hand with Alt + Print Screen.
 
+05e shows Lucas's paired app as a made-up MacBook: `phaseC.mjs` rewrites the device list in the
+browser, so the real machine's system details and tracking status never show. Nothing in the
+database changes.
+
 07e uses made-up screens: local screenshot uploads to storage failed, so `fake-screens.mjs` renders
-three design-tool screens (Harbour Café menu page and homepage, Lumo booking flow) and
+three design-tool screens (Tamarind Steps Café menu page and homepage, Brightmorrow booking flow) and
 `phaseC-07e.mjs` adds local screenshot rows for Lucas and serves those images to the browser in
 place of storage. Nothing is uploaded.

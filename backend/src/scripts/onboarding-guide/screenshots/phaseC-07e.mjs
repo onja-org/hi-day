@@ -8,10 +8,10 @@
 import { readFileSync } from 'node:fs';
 import { BASE, FAKE_SCREENS as SCREENS, login, newPage, openBrowser, shot, sql } from './lib.mjs';
 
-const ORG = sql(`select id from organisations where name = 'Brightline Studio'`);
+const ORG = sql(`select id from organisations where name = 'HiD''Art'`);
 const PUBLIC = sql(`select "publicId" from organisations where id = '${ORG}'`);
 const LUCAS = sql(`select m.id from memberships m join users u on u.id = m."userId"
-                   where u.email = 'lucas@brightline.example' and m."organisationId" = '${ORG}'`);
+                   where u.email = 'lucas@hid.example' and m."organisationId" = '${ORG}'`);
 
 sql(`delete from screenshots where "organisationId" = '${ORG}' and "storageKey" like '%-guide-%'`);
 // The day shown: yesterday, a full seeded day (today has a real desktop run
@@ -34,8 +34,8 @@ const inserted = sql(`
   insert into screenshots ("organisationId", "membershipId", "deviceId", "storageKey", "capturedAt", "keptUntil")
   select distinct on (slot) '${ORG}', '${LUCAS}', "deviceId",
          'screenshots/${ORG}/' || "deviceId" || '/' || floor(extract(epoch from slot) * 1000)::bigint || '-guide-' ||
-           case when project like 'Lumo%' then 'lumo-booking'
-                when extract(minute from slot)::int % 20 = 0 then 'harbour-menu' else 'harbour-home' end || '.jpg',
+           case when project like 'Brightmorrow%' then 'brightmorrow-booking'
+                when extract(minute from slot)::int % 20 = 0 then 'tamarind-menu' else 'tamarind-home' end || '.jpg',
          least(greatest(slot + interval '3 min' + (extract(minute from slot)::int % 7) * interval '1 min',
                         "startedAt" + interval '1 min'), "endedAt" - interval '1 min'),
          now() + interval '90 days'

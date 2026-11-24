@@ -2,7 +2,7 @@
 // the org off its trial. Re-run the seed to get the trial back.
 import { BASE, login, newPage, openBrowser, shot, sql } from './lib.mjs';
 
-const PUBLIC = sql(`select "publicId" from organisations where name = 'Brightline Studio'`);
+const PUBLIC = sql(`select "publicId" from organisations where name = 'HiD''Art'`);
 const O = `${BASE}/organisations/${PUBLIC}`;
 const browser = await openBrowser();
 const page = await newPage(browser);
@@ -32,7 +32,7 @@ await shot(page, '10c-subscription-paid', { full: true });
 
 await page.goto(`${O}/members`);
 await page.getByRole('button', { name: 'Add members' }).click();
-await page.getByLabel('Emails').fill('maya@brightline.example');
+await page.getByLabel('Emails').fill('maya@hid.example');
 await page.getByText('I understand my bill will change').waitFor({ timeout: 15000 });
 await shot(page, '10d-seats-full-notice');
 
