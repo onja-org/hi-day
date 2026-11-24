@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { isEmail } from 'class-validator';
 import type { Request, Response } from 'express';
-import { DataSource, In, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import {
   ENTITLEMENTS,
   type Entitlements,
@@ -52,6 +52,7 @@ import { computeInviteLinkStatus } from '../invite-link-status.util';
 const DEFAULT_INVITATION_TTL_HOURS = 72;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
+const INCORRECT_PASSWORD_MESSAGE = 'Incorrect password.';
 const INVITE_LINK_INACTIVE_MESSAGE =
   'The invite link this invitation came from is no longer active. Ask an admin for a new invite.';
 // A repeat join request through the same link resends at most this often.
@@ -359,15 +360,29 @@ export class InvitationsService {
     if (existingUser?.passwordHash) {
       const authenticatedUserId = await this.readAuthenticatedUserId(request);
 
-      if (authenticatedUserId !== existingUser.id) {
+      if (authenticatedUserId === existingUser.id) {
+        userId = existingUser.id;
+      } else if (dto.currentPassword) {
+        // The account's own password, typed on the accept page. Needed by a
+        // deactivated former member, whom login refuses: without it a
+        // re-invite could never be accepted. The token alone isn't enough —
+        // an admin can see it on an install with no email provider.
+        const passwordMatches = await this.passwordService.verify(
+          existingUser.passwordHash,
+          dto.currentPassword,
+        );
+        if (!passwordMatches) {
+          throw new UnprocessableEntityException(INCORRECT_PASSWORD_MESSAGE);
+        }
+        userId = existingUser.id;
+        issueNewSession = true;
+      } else {
         throw new ConflictException({
           code: 'ACCOUNT_EXISTS',
           message:
             'An account already exists for this email. Log in to accept this invitation.',
         });
       }
-
-      userId = existingUser.id;
     } else {
       if (!dto.password) {
         throw new UnprocessableEntityException(
@@ -428,14 +443,22 @@ export class InvitationsService {
         }
       }
 
-      const newMembership = await manager.save(
-        manager.create(Membership, {
-          userId,
-          organisationId: invitation.organisationId,
-          role: invitation.role,
-          status: MembershipStatus.ACTIVE,
-        }),
-      );
+      const { membership: newMembership, reactivated } =
+        await this.joinOrReactivate(manager, invitation, userId);
+      const existingTeamIds = new Set<string>();
+      const existingProjectIds = new Set<string>();
+      if (reactivated) {
+        for (const row of await manager.find(TeamMembership, {
+          where: { membershipId: newMembership.id },
+        })) {
+          existingTeamIds.add(row.teamId);
+        }
+        for (const row of await manager.find(ProjectMembership, {
+          where: { membershipId: newMembership.id },
+        })) {
+          existingProjectIds.add(row.projectId);
+        }
+      }
 
       // Same rule as projects below: only teams still in this organisation.
       const teamIds = invitation.teamIds ?? [];
@@ -447,7 +470,7 @@ export class InvitationsService {
             },
           })
         : [];
-      for (const team of teams) {
+      for (const team of teams.filter(({ id }) => !existingTeamIds.has(id))) {
         await manager.save(
           manager.create(TeamMembership, {
             membershipId: newMembership.id,
@@ -469,7 +492,9 @@ export class InvitationsService {
             },
           })
         : [];
-      for (const project of projects) {
+      for (const project of projects.filter(
+        ({ id }) => !existingProjectIds.has(id),
+      )) {
         await manager.save(
           manager.create(ProjectMembership, {
             projectId: project.id,
@@ -485,7 +510,7 @@ export class InvitationsService {
       });
 
       await this.auditLogService.record(manager, {
-        action: 'membership.joined',
+        action: reactivated ? 'membership.reactivated' : 'membership.joined',
         organisationId: invitation.organisationId,
         actorUserId: userId,
         metadata: { email: invitation.email, role: invitation.role },
@@ -792,6 +817,50 @@ export class InvitationsService {
         ? {}
         : { acceptUrl: this.emailService.invitationAcceptUrl(token) }),
     };
+  }
+
+  /**
+   * The invitee's Membership in the inviting Organisation: a new one, or —
+   * for someone deactivated earlier — their old one set back to active.
+   * A Membership is unique per user and Organisation, so a rehire has to
+   * reuse the old row; it keeps their history and earlier team and project
+   * places, and takes the invitation's role. Locked, so two accepts at once
+   * can't both see no row and both insert.
+   */
+  private async joinOrReactivate(
+    manager: EntityManager,
+    invitation: Invitation,
+    userId: string,
+  ): Promise<{ membership: Membership; reactivated: boolean }> {
+    const existing = await manager.findOne(Membership, {
+      where: { userId, organisationId: invitation.organisationId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!existing) {
+      const membership = await manager.save(
+        manager.create(Membership, {
+          userId,
+          organisationId: invitation.organisationId,
+          role: invitation.role,
+          status: MembershipStatus.ACTIVE,
+        }),
+      );
+      return { membership, reactivated: false };
+    }
+
+    if (existing.status === MembershipStatus.ACTIVE) {
+      throw new ConflictException(
+        'You are already a member of this organisation.',
+      );
+    }
+
+    await manager.update(Membership, existing.id, {
+      status: MembershipStatus.ACTIVE,
+      deactivatedAt: null,
+      role: invitation.role,
+    });
+    return { membership: existing, reactivated: true };
   }
 
   private async readAuthenticatedUserId(
