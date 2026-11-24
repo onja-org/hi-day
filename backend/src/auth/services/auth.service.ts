@@ -19,6 +19,7 @@ import {
 } from '../../common/cookies.util';
 import {
   clearSessionCookies,
+  setAccessTokenCookie,
   setSessionCookies,
 } from '../../common/session-cookies.util';
 import { DeviceSessionService } from '../../devices/services/device-session.service';
@@ -690,10 +691,22 @@ export class AuthService {
       throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
     }
 
-    const { userId, token: refreshToken } = rotation;
+    const accessToken = await this.accessTokenService.sign(rotation.userId);
 
-    const accessToken = await this.accessTokenService.sign(userId);
-    setSessionCookies(response, accessToken, refreshToken, this.configService);
+    if (rotation.outcome === 'raced') {
+      // A concurrent refresh already rotated this token, and its response
+      // carries the new refresh cookie. Setting one here too would let
+      // whichever response lands last decide which token the browser keeps.
+      setAccessTokenCookie(response, accessToken, this.configService);
+      return { message: 'Session refreshed.' };
+    }
+
+    setSessionCookies(
+      response,
+      accessToken,
+      rotation.token,
+      this.configService,
+    );
 
     return { message: 'Session refreshed.' };
   }
