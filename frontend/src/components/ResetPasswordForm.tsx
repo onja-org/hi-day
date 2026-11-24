@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { resetPassword } from "@/lib/resetPassword";
 import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT } from "@/lib/passwordRules";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { Spinner } from "@/components/Spinner";
@@ -59,13 +60,11 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
 
       <PasswordField
         label="New password"
-        hint="At least 6 characters, including a letter and a number."
+        hint={PASSWORD_RULES_HINT}
         name="password"
         autoComplete="new-password"
         required
-        minLength={6}
-        pattern="(?=.*[A-Za-z])(?=.*\d).{6,}"
-        title="At least 6 characters, including a letter and a number"
+        minLength={PASSWORD_MIN_LENGTH}
         disabled={mutation.data?.ok}
       />
 
@@ -74,7 +73,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         name="confirmPassword"
         autoComplete="new-password"
         required
-        minLength={6}
+        minLength={PASSWORD_MIN_LENGTH}
         disabled={mutation.data?.ok}
       />
 

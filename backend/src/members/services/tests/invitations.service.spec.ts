@@ -8,6 +8,7 @@ import { AccessTokenService } from '../../../auth/services/access-token.service'
 import { RefreshTokenService } from '../../../auth/services/refresh-token.service';
 import { TokenService } from '../../../auth/services/token.service';
 import { hashToken } from '../../../common/hash-token.util';
+import { PASSWORD_CONTAINS_EMAIL_MESSAGE } from '../../../auth/dto/password-policy';
 import { InviteLink } from '../../../database/entities/invite-link.entity';
 import { Invitation } from '../../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../../database/entities/invitation-status.enum';
@@ -841,6 +842,40 @@ describe('InvitationsService', () => {
           }),
         ],
       ]);
+    });
+
+    it('refuses a password that contains the invited email address', async () => {
+      const invitationsRepo = makeInvitationsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'invitation-1',
+          email: 'invitee@acme.test',
+          role: MembershipRole.MEMBER,
+          teamIds: [],
+          organisationId: 'org-1',
+          status: InvitationStatus.PENDING,
+          expiresAt: new Date(Date.now() + 60_000),
+          organisation: { id: 'org-1', name: 'Acme Inc' },
+        }),
+      });
+      const hash = jest.fn();
+      const service = makeService({
+        invitationsRepo,
+        passwordService: { hash } as unknown as PasswordService,
+      });
+
+      await expect(
+        service.accept(
+          'the-token',
+          {
+            password: 'Invitee@Acme.test2026',
+            firstName: 'Jane',
+            lastName: 'Doe',
+          },
+          makeRequest(),
+          makeResponse().response,
+        ),
+      ).rejects.toThrow(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+      expect(hash).not.toHaveBeenCalled();
     });
 
     function pendingInvitation(overrides: Record<string, unknown> = {}) {

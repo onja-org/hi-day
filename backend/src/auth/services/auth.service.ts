@@ -35,6 +35,10 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import {
+  PASSWORD_CONTAINS_EMAIL_MESSAGE,
+  passwordContainsEmail,
+} from '../dto/password-policy';
 import { TwoFactorLoginDto } from '../dto/two-factor-login.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 import { AccessTokenService } from './access-token.service';
@@ -228,6 +232,10 @@ export class AuthService {
       user.emailVerificationExpiresAt < new Date()
     ) {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+    }
+
+    if (passwordContainsEmail(dto.password, user.email)) {
+      throw new UnprocessableEntityException(PASSWORD_CONTAINS_EMAIL_MESSAGE);
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);
@@ -606,6 +614,10 @@ export class AuthService {
       user.passwordResetExpiresAt < new Date()
     ) {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+    }
+
+    if (passwordContainsEmail(dto.password, user.email)) {
+      throw new UnprocessableEntityException(PASSWORD_CONTAINS_EMAIL_MESSAGE);
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);

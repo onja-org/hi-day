@@ -20,6 +20,10 @@ import { hashToken } from '../../common/hash-token.util';
 import { readCookie } from '../../common/cookies.util';
 import { setSessionCookies } from '../../common/session-cookies.util';
 import { PasswordService } from '../../auth/services/password.service';
+import {
+  PASSWORD_CONTAINS_EMAIL_MESSAGE,
+  passwordContainsEmail,
+} from '../../auth/dto/password-policy';
 import { RefreshTokenService } from '../../auth/services/refresh-token.service';
 import {
   ACCESS_TOKEN_COOKIE,
@@ -394,6 +398,10 @@ export class InvitationsService {
         throw new UnprocessableEntityException(
           'Your first and last name are required to accept this invitation.',
         );
+      }
+
+      if (passwordContainsEmail(dto.password, invitation.email)) {
+        throw new UnprocessableEntityException(PASSWORD_CONTAINS_EMAIL_MESSAGE);
       }
 
       const passwordHash = await this.passwordService.hash(dto.password);

@@ -55,7 +55,7 @@ describe("setPassword", () => {
         ok: false,
         json: () =>
           Promise.resolve({
-            message: ["password must be longer than 6 characters"],
+            message: ["Your password must be at least 10 characters."],
           }),
       }),
     );
@@ -67,7 +67,7 @@ describe("setPassword", () => {
 
     expect(result).toEqual({
       ok: false,
-      message: "password must be longer than 6 characters",
+      message: "Your password must be at least 10 characters.",
     });
   });
 

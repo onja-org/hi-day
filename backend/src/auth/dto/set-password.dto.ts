@@ -2,15 +2,15 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  Matches,
   MinLength,
   Validate,
 } from 'class-validator';
 import { IsIanaTimezone } from './is-iana-timezone.validator';
 import {
-  PASSWORD_COMPLEXITY_MESSAGE,
-  PASSWORD_COMPLEXITY_PATTERN,
-} from './password-complexity';
+  IsNotCommonPassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_TOO_SHORT_MESSAGE,
+} from './password-policy';
 
 export class SetPasswordDto {
   @IsString()
@@ -18,10 +18,8 @@ export class SetPasswordDto {
   token: string;
 
   @IsString()
-  @MinLength(6)
-  @Matches(PASSWORD_COMPLEXITY_PATTERN, {
-    message: PASSWORD_COMPLEXITY_MESSAGE,
-  })
+  @MinLength(PASSWORD_MIN_LENGTH, { message: PASSWORD_TOO_SHORT_MESSAGE })
+  @Validate(IsNotCommonPassword)
   password: string;
 
   /**
