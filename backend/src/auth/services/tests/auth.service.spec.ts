@@ -22,6 +22,7 @@ import { LoginAttemptTracker } from '../login-attempt-tracker.service';
 import { PasswordService } from '../password.service';
 import { RefreshTokenService } from '../refresh-token.service';
 import { TokenService } from '../token.service';
+import { TwoFactorService } from '../two-factor.service';
 
 describe('AuthService', () => {
   function makeUsersRepo(overrides: Partial<Repository<User>> = {}) {
@@ -119,6 +120,42 @@ describe('AuthService', () => {
     };
   }
 
+  function makeTwoFactorService(overrides: Partial<TwoFactorService> = {}) {
+    const isEnabled = jest.fn(
+      (user: Pick<User, 'twoFactorEnabledAt'>) =>
+        user.twoFactorEnabledAt != null,
+    );
+    const startChallenge = jest.fn().mockResolvedValue('the-challenge');
+    const findChallengeOwner = jest.fn().mockResolvedValue(null);
+    const endChallenge = jest.fn().mockResolvedValue(undefined);
+    const checkCode = jest.fn().mockResolvedValue({ ok: false });
+    const isTrustedBrowser = jest.fn().mockResolvedValue(false);
+    const trustBrowser = jest.fn().mockResolvedValue('the-trust-token');
+    const forgetTrustedBrowsers = jest.fn().mockResolvedValue(undefined);
+    const twoFactorService = {
+      isEnabled,
+      startChallenge,
+      findChallengeOwner,
+      endChallenge,
+      checkCode,
+      isTrustedBrowser,
+      trustBrowser,
+      forgetTrustedBrowsers,
+      ...overrides,
+    } as unknown as TwoFactorService;
+    return {
+      twoFactorService,
+      isEnabled,
+      startChallenge,
+      findChallengeOwner,
+      endChallenge,
+      checkCode,
+      isTrustedBrowser,
+      trustBrowser,
+      forgetTrustedBrowsers,
+    };
+  }
+
   function makeAuditLogService() {
     const record = jest.fn().mockResolvedValue(undefined);
     return {
@@ -150,15 +187,18 @@ describe('AuthService', () => {
     const requiresCaptcha = jest.fn().mockReturnValue(false);
     const recordFailure = jest.fn();
     const reset = jest.fn();
+    const allowOneMoreAttempt = jest.fn();
     return {
       loginAttemptTracker: {
         requiresCaptcha,
         recordFailure,
         reset,
+        allowOneMoreAttempt,
       } as unknown as LoginAttemptTracker,
       requiresCaptcha,
       recordFailure,
       reset,
+      allowOneMoreAttempt,
     };
   }
 
@@ -236,6 +276,7 @@ describe('AuthService', () => {
       captchaService?: CaptchaService;
       deviceSessionService?: DeviceSessionService;
       timeEntriesService?: TimeEntriesService;
+      twoFactorService?: TwoFactorService;
     } = {},
   ) {
     return new AuthService(
@@ -260,6 +301,7 @@ describe('AuthService', () => {
         makeDeviceSessionService().deviceSessionService,
       overrides.timeEntriesService ??
         makeTimeEntriesService().timeEntriesService,
+      overrides.twoFactorService ?? makeTwoFactorService().twoFactorService,
     );
   }
 
@@ -564,6 +606,7 @@ describe('AuthService', () => {
 
       const result = await service.login(
         { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
         response,
       );
 
@@ -614,6 +657,7 @@ describe('AuthService', () => {
           platform: DevicePlatform.MACOS,
           hostname: 'janes-macbook',
         },
+        makeRequest(),
         response,
       );
 
@@ -657,6 +701,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'deactivated@acme.test', password: 'correct-horse' },
+          makeRequest(),
           response,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -675,6 +720,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'unknown@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -698,6 +744,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'wrong-password' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -720,6 +767,7 @@ describe('AuthService', () => {
 
       await service.login(
         { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
         makeResponse().response,
       );
 
@@ -735,6 +783,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toMatchObject({
@@ -760,6 +809,7 @@ describe('AuthService', () => {
             password: 'whatever',
             captchaToken: 'bad-token',
           },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toMatchObject({
@@ -793,6 +843,7 @@ describe('AuthService', () => {
           password: 'correct-horse',
           captchaToken: 'good-token',
         },
+        makeRequest(),
         makeResponse().response,
       );
 
@@ -816,6 +867,7 @@ describe('AuthService', () => {
       await expect(
         service.login(
           { email: 'jane@acme.test', password: 'whatever' },
+          makeRequest(),
           makeResponse().response,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -1491,6 +1543,438 @@ describe('AuthService', () => {
         name: 'Jane Doe',
         avatarUrl: 'data:image/png;base64,xyz',
       });
+    });
+  });
+
+  describe('two-step login', () => {
+    const twoFactorUser = {
+      id: 'user-1',
+      email: 'jane@acme.test',
+      passwordHash: 'stored-hash',
+      twoFactorEnabledAt: new Date('2026-01-01'),
+    } as User;
+
+    it('asks for a code instead of signing in when the password is right', async () => {
+      const { refreshTokenService, issue } = makeRefreshTokenService();
+      const { twoFactorService, startChallenge } = makeTwoFactorService();
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      const service = makeService({
+        usersRepo: makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue(twoFactorUser),
+        }),
+        passwordService: makePasswordService({
+          verify: jest.fn().mockResolvedValue(true),
+        }),
+        refreshTokenService,
+        twoFactorService,
+        loginAttemptTracker,
+      });
+      const { response, cookie } = makeResponse();
+
+      const result = await service.login(
+        { email: 'jane@acme.test', password: 'correct-horse' },
+        makeRequest(),
+        response,
+      );
+
+      expect(result.twoFactorRequired).toBe(true);
+      expect(startChallenge).toHaveBeenCalledWith('user-1');
+      expect(cookie).toHaveBeenCalledWith(
+        'two_factor_challenge',
+        'the-challenge',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(cookie).not.toHaveBeenCalledWith(
+        'access_token',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(issue).not.toHaveBeenCalled();
+      // Wrong attempts keep counting until a code is right.
+      expect(reset).not.toHaveBeenCalled();
+    });
+
+    it('gives the code step one try after a solved captcha and a right password', async () => {
+      const {
+        loginAttemptTracker,
+        requiresCaptcha,
+        reset,
+        allowOneMoreAttempt,
+      } = makeLoginAttemptTracker();
+      requiresCaptcha.mockReturnValue(true);
+      const service = makeService({
+        usersRepo: makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue(twoFactorUser),
+        }),
+        passwordService: makePasswordService({
+          verify: jest.fn().mockResolvedValue(true),
+        }),
+        loginAttemptTracker,
+      });
+
+      const result = await service.login(
+        {
+          email: 'jane@acme.test',
+          password: 'correct-horse',
+          captchaToken: 'solved',
+        },
+        makeRequest(),
+        makeResponse().response,
+      );
+
+      expect(result.twoFactorRequired).toBe(true);
+      expect(allowOneMoreAttempt).toHaveBeenCalledWith('jane@acme.test');
+      expect(reset).not.toHaveBeenCalled();
+    });
+
+    it("refuses the desktop app's old password form, which has no code step", async () => {
+      const { deviceSessionService, upsertOnLogin } =
+        makeDeviceSessionService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue(twoFactorUser),
+        }),
+        passwordService: makePasswordService({
+          verify: jest.fn().mockResolvedValue(true),
+        }),
+        deviceSessionService,
+      });
+
+      await expect(
+        service.login(
+          {
+            email: 'jane@acme.test',
+            password: 'correct-horse',
+            deviceFingerprint: 'fp',
+            platform: DevicePlatform.MACOS,
+          },
+          makeRequest(),
+          makeResponse().response,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(upsertOnLogin).not.toHaveBeenCalled();
+    });
+
+    it('signs in once the code is right, and ends the challenge', async () => {
+      const { twoFactorService, endChallenge } = makeTwoFactorService({
+        findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+        checkCode: jest
+          .fn()
+          .mockResolvedValue({ ok: true, usedRecoveryCode: false }),
+      });
+      const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+      const { auditLogService, record } = makeAuditLogService();
+      const service = makeService({
+        twoFactorService,
+        loginAttemptTracker,
+        auditLogService,
+      });
+      const { response, cookie, clearCookie } = makeResponse();
+
+      await service.verifyTwoFactorLogin(
+        { code: '123456' },
+        makeRequest('two_factor_challenge=the-challenge'),
+        response,
+      );
+
+      expect(endChallenge).toHaveBeenCalledWith('user-1');
+      expect(clearCookie).toHaveBeenCalledWith(
+        'two_factor_challenge',
+        expect.anything(),
+      );
+      expect(reset).toHaveBeenCalledWith('jane@acme.test');
+      expect(cookie).toHaveBeenCalledWith(
+        'access_token',
+        'signed.jwt.token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(record).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: 'login',
+          metadata: { twoFactor: true, usedRecoveryCode: false },
+        }),
+      );
+    });
+
+    it('refuses a wrong code and counts it like a wrong password', async () => {
+      const { twoFactorService } = makeTwoFactorService({
+        findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+      });
+      const { loginAttemptTracker, recordFailure } = makeLoginAttemptTracker();
+      const service = makeService({ twoFactorService, loginAttemptTracker });
+      const { response, cookie } = makeResponse();
+
+      await expect(
+        service.verifyTwoFactorLogin(
+          { code: '000000' },
+          makeRequest('two_factor_challenge=the-challenge'),
+          response,
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(recordFailure).toHaveBeenCalledWith('jane@acme.test');
+      expect(cookie).not.toHaveBeenCalled();
+    });
+
+    it('throws the challenge away once wrong codes call for a captcha', async () => {
+      const { twoFactorService, endChallenge } = makeTwoFactorService({
+        findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+      });
+      const { loginAttemptTracker, requiresCaptcha } =
+        makeLoginAttemptTracker();
+      requiresCaptcha.mockReturnValueOnce(false).mockReturnValue(true);
+      const service = makeService({ twoFactorService, loginAttemptTracker });
+
+      const error: unknown = await service
+        .verifyTwoFactorLogin(
+          { code: '000000' },
+          makeRequest('two_factor_challenge=the-challenge'),
+          makeResponse().response,
+        )
+        .catch((caught: unknown) => caught);
+
+      expect(endChallenge).toHaveBeenCalledWith('user-1');
+      expect((error as { getResponse(): unknown }).getResponse()).toMatchObject(
+        { captchaRequired: true, restart: true },
+      );
+    });
+
+    it('sends the person back to the password when the challenge has expired', async () => {
+      const { twoFactorService, checkCode } = makeTwoFactorService();
+      const service = makeService({ twoFactorService });
+
+      await expect(
+        service.verifyTwoFactorLogin(
+          { code: '123456' },
+          makeRequest('two_factor_challenge=stale'),
+          makeResponse().response,
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(checkCode).not.toHaveBeenCalled();
+    });
+
+    it('does not sign in after a password reset, so the inbox alone is not enough', async () => {
+      const user = {
+        ...twoFactorUser,
+        passwordResetToken: 'valid-token',
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      } as User;
+      const { refreshTokenService, issue, revokeAll } =
+        makeRefreshTokenService();
+      const service = makeService({
+        usersRepo: makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue(user),
+        }),
+        refreshTokenService,
+      });
+      const { response, cookie } = makeResponse();
+
+      const result = await service.resetPassword(
+        { token: 'valid-token', password: 'correct-horse' },
+        response,
+      );
+
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(issue).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
+      expect(result.twoFactorRequired).toBe(true);
+    });
+
+    describe('trusted browsers', () => {
+      it('skips the code on a browser this person told not to ask again', async () => {
+        const { twoFactorService, isTrustedBrowser, startChallenge } =
+          makeTwoFactorService();
+        isTrustedBrowser.mockResolvedValue(true);
+        const { loginAttemptTracker, reset } = makeLoginAttemptTracker();
+        const { auditLogService, record } = makeAuditLogService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue(twoFactorUser),
+          }),
+          passwordService: makePasswordService({
+            verify: jest.fn().mockResolvedValue(true),
+          }),
+          twoFactorService,
+          loginAttemptTracker,
+          auditLogService,
+        });
+        const { response, cookie } = makeResponse();
+
+        const result = await service.login(
+          { email: 'jane@acme.test', password: 'correct-horse' },
+          makeRequest('two_factor_trusted_browser=the-trust-token'),
+          response,
+        );
+
+        expect(result.twoFactorRequired).toBeUndefined();
+        expect(isTrustedBrowser).toHaveBeenCalledWith(
+          'user-1',
+          'the-trust-token',
+        );
+        expect(startChallenge).not.toHaveBeenCalled();
+        expect(cookie).toHaveBeenCalledWith(
+          'access_token',
+          'signed.jwt.token',
+          expect.anything(),
+        );
+        expect(reset).toHaveBeenCalledWith('jane@acme.test');
+        expect(record).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            action: 'login',
+            metadata: { twoFactor: true, trustedBrowser: true },
+          }),
+        );
+      });
+
+      it('still asks for a code on a browser that is not trusted', async () => {
+        const { twoFactorService, isTrustedBrowser, startChallenge } =
+          makeTwoFactorService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue(twoFactorUser),
+          }),
+          passwordService: makePasswordService({
+            verify: jest.fn().mockResolvedValue(true),
+          }),
+          twoFactorService,
+        });
+
+        const result = await service.login(
+          { email: 'jane@acme.test', password: 'correct-horse' },
+          makeRequest(),
+          makeResponse().response,
+        );
+
+        expect(isTrustedBrowser).toHaveBeenCalledWith('user-1', undefined);
+        expect(startChallenge).toHaveBeenCalledWith('user-1');
+        expect(result.twoFactorRequired).toBe(true);
+      });
+
+      it('remembers the browser after a right code when asked to', async () => {
+        const { twoFactorService, trustBrowser } = makeTwoFactorService({
+          findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+          checkCode: jest
+            .fn()
+            .mockResolvedValue({ ok: true, usedRecoveryCode: false }),
+        });
+        const service = makeService({ twoFactorService });
+        const { response, cookie } = makeResponse();
+
+        await service.verifyTwoFactorLogin(
+          { code: '123456', rememberBrowser: true },
+          makeRequest('two_factor_challenge=the-challenge'),
+          response,
+        );
+
+        expect(trustBrowser).toHaveBeenCalledWith('user-1');
+        expect(cookie).toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          'the-trust-token',
+          expect.objectContaining({
+            httpOnly: true,
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+          }),
+        );
+      });
+
+      it('does not remember the browser unless asked to', async () => {
+        const { twoFactorService, trustBrowser } = makeTwoFactorService({
+          findChallengeOwner: jest.fn().mockResolvedValue(twoFactorUser),
+          checkCode: jest
+            .fn()
+            .mockResolvedValue({ ok: true, usedRecoveryCode: false }),
+        });
+        const service = makeService({ twoFactorService });
+        const { response, cookie } = makeResponse();
+
+        await service.verifyTwoFactorLogin(
+          { code: '123456' },
+          makeRequest('two_factor_challenge=the-challenge'),
+          response,
+        );
+
+        expect(trustBrowser).not.toHaveBeenCalled();
+        expect(cookie).not.toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('forgets every trusted browser on a password reset', async () => {
+        const { twoFactorService, forgetTrustedBrowsers } =
+          makeTwoFactorService();
+        const service = makeService({
+          usersRepo: makeUsersRepo({
+            findOne: jest.fn().mockResolvedValue({
+              ...twoFactorUser,
+              passwordResetToken: 'valid-token',
+              passwordResetExpiresAt: new Date(Date.now() + 60_000),
+            }),
+          }),
+          twoFactorService,
+        });
+
+        await service.resetPassword(
+          { token: 'valid-token', password: 'correct-horse' },
+          makeResponse().response,
+        );
+
+        expect(forgetTrustedBrowsers).toHaveBeenCalledWith(
+          expect.anything(),
+          'user-1',
+        );
+      });
+
+      it('forgets every trusted browser when signing out everywhere, but not on an ordinary log out', async () => {
+        const { twoFactorService, forgetTrustedBrowsers } =
+          makeTwoFactorService();
+        const service = makeService({ twoFactorService });
+        const everywhere = makeResponse();
+
+        await service.logout(
+          makeRequest('refresh_token=the-refresh-token'),
+          makeResponse().response,
+        );
+        expect(forgetTrustedBrowsers).not.toHaveBeenCalled();
+
+        await service.logoutEverywhere(
+          makeRequest('refresh_token=the-refresh-token'),
+          everywhere.response,
+        );
+        expect(forgetTrustedBrowsers).toHaveBeenCalledWith(
+          expect.anything(),
+          'user-1',
+        );
+        expect(everywhere.clearCookie).toHaveBeenCalledWith(
+          'two_factor_trusted_browser',
+          expect.anything(),
+        );
+      });
+    });
+
+    it('restarting the web session signs out every other browser and keeps this one', async () => {
+      const { refreshTokenService, revokeAll, issue } =
+        makeRefreshTokenService();
+      const { accessTokenService, endAllSessions, sign } =
+        makeAccessTokenService();
+      const service = makeService({ refreshTokenService, accessTokenService });
+      const { response, cookie } = makeResponse();
+
+      await service.restartWebSession('user-1', response);
+
+      expect(revokeAll).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(endAllSessions).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(issue).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      expect(sign.mock.invocationCallOrder[0]).toBeGreaterThan(
+        endAllSessions.mock.invocationCallOrder[0],
+      );
+      expect(cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'the-refresh-token',
+        expect.anything(),
+      );
     });
   });
 });

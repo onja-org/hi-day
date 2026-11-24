@@ -23,6 +23,28 @@ describe("login", () => {
     expect(result).toEqual({ ok: true, message: "Logged in." });
   });
 
+  it("passes on that the code step comes next", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ message: "Enter the code.", twoFactorRequired: true }),
+      }),
+    );
+
+    const result = await login({
+      email: "jane@acme.test",
+      password: "correct-horse",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      message: "Enter the code.",
+      twoFactorRequired: true,
+    });
+  });
+
   it("returns the generic invalid-login message on failure without revealing why", async () => {
     vi.stubGlobal(
       "fetch",

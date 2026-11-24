@@ -13,6 +13,7 @@ import { EditMemberActivityVisibilityModal } from "./EditMemberActivityVisibilit
 import { EditMemberAssignmentsModal } from "./EditMemberAssignmentsModal";
 import { EditMemberNameModal } from "./EditMemberNameModal";
 import { EditMemberRoleModal } from "./EditMemberRoleModal";
+import { ResetTwoFactorDialog } from "./ResetTwoFactorDialog";
 import { SendPasswordResetDialog } from "./SendPasswordResetDialog";
 
 type MemberRowActionsProps = {
@@ -28,6 +29,7 @@ type OpenModal =
   | "assignments"
   | "activity-visibility"
   | "reset"
+  | "two-factor"
   | "remove"
   | null;
 
@@ -52,6 +54,14 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
   const lockedTitle = isSelf
     ? "You can't change this for your own membership"
     : "Only an admin can change an admin's membership";
+  // Admins only, never for themselves (they'd use a recovery code), and
+  // only when there is something to reset.
+  const canResetTwoFactor = isAdmin && !isSelf && member.twoFactorEnabled;
+  const twoFactorLockedTitle = !isAdmin
+    ? "Only an admin can reset two-step login"
+    : isSelf
+      ? "Use a recovery code to log in, then turn it off from your account"
+      : "Two-step login is off for this member";
   const locked = (allowed: boolean) => ({
     disabled: !allowed,
     title: allowed ? undefined : lockedTitle,
@@ -78,6 +88,12 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
           { label: projectsEnabled ? "Edit teams & projects" : "Edit teams", onSelect: () => setOpenModal("assignments"), ...locked(canModify || isAdmin) },
           { label: "Activity visibility", onSelect: () => setOpenModal("activity-visibility"), ...locked(canModify) },
           { label: "Send password reset", onSelect: () => setOpenModal("reset"), ...locked(canModify) },
+          {
+            label: "Reset two-step login",
+            onSelect: () => setOpenModal("two-factor"),
+            disabled: !canResetTwoFactor,
+            title: canResetTwoFactor ? undefined : twoFactorLockedTitle,
+          },
           { label: "Remove member", onSelect: () => setOpenModal("remove"), tone: "danger" as const, ...locked(canModify) },
         ]}
       />
@@ -121,6 +137,14 @@ export function MemberRowActions({ organisationId, member, callerRole, isSelf }:
           organisationId={organisationId}
           membershipIds={[member.id]}
           recipientLabel={label}
+          onClose={close}
+        />
+      )}
+      {openModal === "two-factor" && (
+        <ResetTwoFactorDialog
+          organisationId={organisationId}
+          membershipId={member.id}
+          memberLabel={label}
           onClose={close}
         />
       )}

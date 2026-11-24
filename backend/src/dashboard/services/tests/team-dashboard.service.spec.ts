@@ -32,6 +32,7 @@ describe('TeamDashboardService', () => {
       teamIds: [],
       status: MembershipStatus.ACTIVE,
       joinedAt: new Date(2025, 0, 1),
+      twoFactorEnabled: false,
       disclosureRegion: null,
       ...overrides,
     };

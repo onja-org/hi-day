@@ -48,3 +48,4 @@ To add one, take the next free number (0037) and a short kebab-case file name th
 | 0035 | [Running entries can be edited](0035-running-entries-can-be-edited.md) | Accepted |
 | 0036 | [Overlapping time can be merged, and a typed range can be cut out of an entry](0036-overlapping-time-can-be-merged-and-ranges-cut-out.md) | Accepted |
 | 0037 | [Managing is judged per team, not per person](0037-managing-is-judged-per-team-not-per-person.md) | Accepted |
+| 0038 | [Two-step login with an authenticator app](0038-two-step-login-with-an-authenticator-app.md) | Accepted |
