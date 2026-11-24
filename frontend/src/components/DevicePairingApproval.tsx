@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { approveDevicePairing } from "@/lib/approveDevicePairing";
@@ -8,6 +9,7 @@ import { getDevicePairing } from "@/lib/getDevicePairing";
 import { ErrorMessage } from "./ErrorMessage";
 import { OpenDesktopAppButton } from "./OpenDesktopAppButton";
 import { Spinner } from "./Spinner";
+import { SelectField } from "./ui/form/SelectField";
 import { SuccessMessage } from "./SuccessMessage";
 
 type DevicePairingApprovalProps = {
@@ -26,8 +28,12 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
     },
   });
 
+  // Someone in more than one organisation must say which one the device is
+  // for — the backend refuses to guess.
+  const [organisationId, setOrganisationId] = useState("");
+
   const approveMutation = useMutation({
-    mutationFn: () => approveDevicePairing(code),
+    mutationFn: () => approveDevicePairing(code, organisationId || undefined),
   });
 
   if (pairingQuery.isLoading) {
@@ -73,6 +79,7 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
   }
 
   const summary = pairingQuery.data;
+  const mustChooseOrganisation = summary.organisations.length > 1;
 
   // A refusal (e.g. the organisation was deleted) replaces the login prompt
   // so the person isn't invited to retry something that can't work.
@@ -87,11 +94,32 @@ export function DevicePairingApproval({ code }: DevicePairingApprovalProps) {
         {summary.hostname ? ` (${summary.hostname})` : ""}?
       </p>
 
+      {mustChooseOrganisation && (
+        <SelectField
+          label="Organisation"
+          hint="Time, screenshots and activity from this device go to this organisation."
+          value={organisationId}
+          onChange={(event) => setOrganisationId(event.target.value)}
+        >
+          <option value="" disabled>
+            Choose an organisation
+          </option>
+          {summary.organisations.map((organisation) => (
+            <option key={organisation.id} value={organisation.id}>
+              {organisation.name}
+            </option>
+          ))}
+        </SelectField>
+      )}
+
       <button
         type="button"
         onClick={() => approveMutation.mutate()}
-        disabled={approveMutation.isPending}
-        className="flex items-center justify-center gap-2 cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:hover:scale-100 font-bold"
+        disabled={
+          approveMutation.isPending ||
+          (mustChooseOrganisation && !organisationId)
+        }
+        className="flex items-center justify-center gap-2 cursor-pointer rounded-brand-sm border-2 border-ink px-4 h-11 text-white transition-all duration-150 bg-primary/90 hover:scale-105 hover:bg-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 font-bold"
       >
         {approveMutation.isPending && <Spinner />}
         {approveMutation.isPending ? "Logging in…" : "Log in"}

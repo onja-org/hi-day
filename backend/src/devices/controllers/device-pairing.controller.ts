@@ -10,6 +10,7 @@ import {
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { AuthenticatedRequest } from '../../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { ApproveDevicePairingDto } from '../dto/approve-device-pairing.dto';
 import { StartDevicePairingDto } from '../dto/start-device-pairing.dto';
 import type {
   DevicePairingPollResult,
@@ -43,8 +44,11 @@ export class DevicePairingController {
   /** Web app only — shown before the person approves. */
   @Get(':code')
   @UseGuards(JwtAuthGuard)
-  get(@Param('code') code: string): Promise<DevicePairingSummary> {
-    return this.devicePairingService.getPendingByCode(code);
+  get(
+    @Param('code') code: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<DevicePairingSummary> {
+    return this.devicePairingService.getPendingByCode(code, request.userId);
   }
 
   /** Web app only — the actual "log this device in" action. */
@@ -52,9 +56,14 @@ export class DevicePairingController {
   @UseGuards(JwtAuthGuard)
   async approve(
     @Param('code') code: string,
+    @Body() dto: ApproveDevicePairingDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<{ message: string }> {
-    await this.devicePairingService.approve(code, request.userId);
+    await this.devicePairingService.approve(
+      code,
+      request.userId,
+      dto.organisationId,
+    );
     return { message: 'Device approved' };
   }
 }

@@ -154,7 +154,9 @@ export class DevicesService {
   /**
    * Called when a Membership deactivates — a Device's sessions can't
    * outlive the person they're assigned to (see CONTEXT.md's Remote
-   * sign-out entry).
+   * sign-out entry). Found by the sessions issued *for this organisation*,
+   * not by the Device row: re-pairing a machine into another organisation
+   * moves the Device, but the session issued here still works here.
    */
   async signOutAllForUser(
     manager: EntityManager,
@@ -162,27 +164,26 @@ export class DevicesService {
     userId: string,
     actorUserId: string,
   ): Promise<void> {
-    const devices = await manager.find(Device, {
-      where: { organisationId, userId },
-    });
+    const where = { organisationId, userId, revokedAt: IsNull() };
+    const liveSessions = await manager.find(DeviceSession, { where });
 
-    for (const device of devices) {
-      await manager.update(
-        DeviceSession,
-        { deviceId: device.id, revokedAt: IsNull() },
-        { revokedAt: new Date() },
-      );
+    if (liveSessions.length === 0) {
+      return;
+    }
 
+    await manager.update(DeviceSession, where, { revokedAt: new Date() });
+
+    const deviceIds = [
+      ...new Set(liveSessions.map((session) => session.deviceId)),
+    ];
+    for (const deviceId of deviceIds) {
       await this.auditLogService.record(manager, {
         action: 'device.signed_out',
         organisationId,
         actorUserId,
-        metadata: { deviceId: device.id },
+        metadata: { deviceId },
       });
-      recordAnalyticsEvent('device_signed_out', {
-        deviceId: device.id,
-        organisationId,
-      });
+      recordAnalyticsEvent('device_signed_out', { deviceId, organisationId });
     }
   }
 

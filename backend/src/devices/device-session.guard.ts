@@ -9,6 +9,8 @@ import type { Request } from 'express';
 import { IsNull, Repository } from 'typeorm';
 import { hashToken } from '../common/hash-token.util';
 import { DeviceSession } from '../database/entities/device-session.entity';
+import { Membership } from '../database/entities/membership.entity';
+import { MembershipStatus } from '../database/entities/membership-status.enum';
 
 export interface DeviceAuthenticatedRequest extends Request {
   deviceId: string;
@@ -32,6 +34,8 @@ export class DeviceSessionGuard implements CanActivate {
   constructor(
     @InjectRepository(DeviceSession)
     private readonly deviceSessions: Repository<DeviceSession>,
+    @InjectRepository(Membership)
+    private readonly memberships: Repository<Membership>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -52,6 +56,21 @@ export class DeviceSessionGuard implements CanActivate {
     // A suspended organisation's sessions are revoked at suspension; this
     // also covers a session issued in the instant around it.
     if (!session || session.organisation.suspendedAt) {
+      throw new UnauthorizedException(SIGNED_OUT_MESSAGE);
+    }
+
+    // Deactivation revokes sessions by the Device's organisation, which a
+    // re-pair into another organisation moves — so a session can outlive
+    // its Membership. Checked against the session's own user and org.
+    const stillMember = await this.memberships.exists({
+      where: {
+        userId: session.userId,
+        organisationId: session.organisationId,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (!stillMember) {
       throw new UnauthorizedException(SIGNED_OUT_MESSAGE);
     }
 
