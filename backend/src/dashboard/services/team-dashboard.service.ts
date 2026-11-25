@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, IsNull, Repository } from 'typeorm';
 import { SAMPLE_INTERVAL_SECONDS } from '../../app-events/services/app-events.service';
+import {
+  appEventSampleAtSql,
+  appEventSamplesJoinSql,
+  runLookbackStart,
+} from '../../common/app-event-samples.util';
 import { calendarWeekAt, dateKeyInZone } from '../../common/calendar-week.util';
 import { getManagerScopeTeamIds } from '../../common/manager-scope.util';
 import { attributeProjectSeconds } from '../../common/project-attribution.util';
@@ -387,6 +392,10 @@ export class TeamDashboardService {
    * raw sample/session row into memory — AppEvent alone is one row per ~5s
    * per person, which would be hundreds of thousands of rows a week for a
    * mid-sized org. Same reasoning as ProjectsService.getTaskCounts.
+   *
+   * App events are counted per *sample*, not per row: a row can stand for a
+   * run of samples (see common/app-event-samples.util.ts), expanded in SQL
+   * so a run straddling `from`/`to` counts only its samples inside.
    */
   private async getAppsAndSites(
     membershipIds: string[],
@@ -394,16 +403,21 @@ export class TeamDashboardService {
     to: Date,
   ): Promise<TeamAppOrSiteUsage[]> {
     const [appEventCounts, urlSessionTotals] = await Promise.all([
-      this.appEvents
-        .createQueryBuilder('appEvent')
-        .select('appEvent.appName', 'appName')
-        .addSelect('COUNT(*)', 'count')
-        .where('appEvent.membershipId IN (:...membershipIds)', {
-          membershipIds,
-        })
-        .andWhere('appEvent.sampledAt BETWEEN :from AND :to', { from, to })
-        .groupBy('appEvent.appName')
-        .getRawMany<{ appName: string; count: string }>(),
+      // Raw SQL rather than the query builder: TypeORM quotes a joined
+      // set-returning function as if it were a table name. $2 only lets the
+      // (membershipId, sampledAt) index narrow the scan, looking back far
+      // enough to catch a run reaching into the window; the per-sample
+      // bound ($3..$4) is what actually decides.
+      this.appEvents.query<{ appName: string; count: string }[]>(
+        `SELECT a."appName" AS "appName", COUNT(*)::text AS "count"
+         FROM "app_events" a
+         ${appEventSamplesJoinSql('a')}
+         WHERE a."membershipId" = ANY($1)
+           AND a."sampledAt" BETWEEN $2 AND $4
+           AND ${appEventSampleAtSql('a')} BETWEEN $3 AND $4
+         GROUP BY a."appName"`,
+        [membershipIds, runLookbackStart(from), from, to],
+      ),
       this.urlSessions
         .createQueryBuilder('urlSession')
         .select('urlSession.host', 'host')

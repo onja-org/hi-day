@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, DataSource, Not, Repository } from 'typeorm';
+import {
+  appEventSampleAtSql,
+  appEventSamplesJoinSql,
+  expandAppEventSamples,
+  runLookbackStart,
+} from '../../common/app-event-samples.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { UrlSession } from '../../database/entities/url-session.entity';
 import {
@@ -56,20 +62,25 @@ export class WorkClassificationService {
 
     const [apps, sites, labels] = await Promise.all([
       // A reading only counts while a Time entry covers it, as on the
-      // Apps tab — the agent samples off the timer too.
+      // Apps tab — the agent samples off the timer too. Each row is expanded
+      // into the samples it stands for first (see app-event-samples.util),
+      // so coverage is judged per sample, never per run. $4 only lets the
+      // index narrow the scan; the per-sample bound is $2.
       this.dataSource.query<{ name: string; seconds: string }[]>(
         `SELECT a."appName" AS "name", COUNT(*) * $3 AS "seconds"
          FROM "app_events" a
-         WHERE a."organisationId" = $1 AND a."sampledAt" >= $2
+         ${appEventSamplesJoinSql('a')}
+         WHERE a."organisationId" = $1 AND a."sampledAt" >= $4
+           AND ${appEventSampleAtSql('a')} >= $2
            AND EXISTS (
              SELECT 1 FROM "time_entries" e
              WHERE e."organisationId" = $1
                AND e."membershipId" = a."membershipId"
-               AND e."startedAt" <= a."sampledAt"
-               AND (e."endedAt" IS NULL OR e."endedAt" > a."sampledAt")
+               AND e."startedAt" <= ${appEventSampleAtSql('a')}
+               AND (e."endedAt" IS NULL OR e."endedAt" > ${appEventSampleAtSql('a')})
            )
          GROUP BY a."appName"`,
-        [organisationId, since, APP_SAMPLE_SECONDS],
+        [organisationId, since, APP_SAMPLE_SECONDS, runLookbackStart(since)],
       ),
       // A visit's active time only grows while the timer runs.
       this.dataSource.query<{ name: string; seconds: string }[]>(
@@ -135,10 +146,15 @@ export class WorkClassificationService {
     start: Date,
     end: Date,
   ): Promise<WorkTimeSplit> {
-    const [readings, visits, entries, labels] = await Promise.all([
+    const [runs, visits, entries, labels] = await Promise.all([
       this.appEvents.find({
-        select: { appName: true, sampledAt: true },
-        where: { organisationId, membershipId, sampledAt: Between(start, end) },
+        select: { appName: true, sampledAt: true, sampleCount: true },
+        where: {
+          organisationId,
+          membershipId,
+          // Far enough back to catch a run reaching into the window.
+          sampledAt: Between(runLookbackStart(start), end),
+        },
         order: { sampledAt: 'ASC' },
       }),
       this.urlSessions.find({
@@ -159,6 +175,9 @@ export class WorkClassificationService {
       ),
       this.labelsFor(organisationId),
     ]);
+    // One reading per sample: a merged run splits exactly as its samples
+    // sent one by one would.
+    const readings = expandAppEventSamples(runs, { start, end });
     return splitWorkTime(readings, visits, entries, labels);
   }
 

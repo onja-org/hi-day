@@ -27,6 +27,7 @@ describe('CaptureCleanupService', () => {
     screenshots?: Partial<Screenshot>[];
   }) {
     const deletes: { entity: unknown; ids: string[] }[] = [];
+    const inserts: { entity: unknown; rows: Partial<AppEvent>[] }[] = [];
     const find = jest.fn((entity: unknown) => {
       if (entity === TimeEntry) return Promise.resolve(rows.entries ?? []);
       if (entity === AppEvent) return Promise.resolve(rows.appEvents ?? []);
@@ -36,6 +37,11 @@ describe('CaptureCleanupService', () => {
     });
     const manager = {
       find,
+      create: jest.fn((_entity: unknown, data: Partial<AppEvent>) => data),
+      save: jest.fn((entity: unknown, data: Partial<AppEvent>[]) => {
+        inserts.push({ entity, rows: data });
+        return Promise.resolve(data);
+      }),
       delete: jest.fn(
         (entity: unknown, criteria: { id: { _value: string[] } }) => {
           deletes.push({ entity, ids: criteria.id._value });
@@ -43,7 +49,7 @@ describe('CaptureCleanupService', () => {
         },
       ),
     } as unknown as EntityManager;
-    return { manager, deletes, find };
+    return { manager, deletes, inserts, find };
   }
 
   function makeService() {
@@ -83,6 +89,126 @@ describe('CaptureCleanupService', () => {
 
     expect(pruned.appEvents).toBe(1);
     expect(deletes).toEqual([{ entity: AppEvent, ids: ['outside'] }]);
+  });
+
+  describe('merged app event runs (sampleCount > 1)', () => {
+    const run = {
+      organisationId: 'org-1',
+      membershipId: 'm-1',
+      deviceId: 'device-1',
+      appName: 'Figma',
+      title: 'Design',
+      titleUnavailableReason: null,
+    };
+
+    it('keeps a run whole when every sample is still covered', async () => {
+      const { manager, deletes, inserts } = makeManager({
+        entries: [{ startedAt: at('09:00'), endedAt: at('10:00') }],
+        appEvents: [
+          { ...run, id: 'ae-1', sampledAt: at('09:30'), sampleCount: 60 },
+        ],
+      });
+      const { service } = makeService();
+
+      const pruned = await service.pruneUncovered(manager, 'm-1', WINDOW);
+
+      expect(pruned.appEvents).toBe(0);
+      expect(deletes).toEqual([]);
+      expect(inserts).toEqual([]);
+    });
+
+    it('deletes a run none of whose samples is covered, counting every sample', async () => {
+      const { manager, deletes, inserts } = makeManager({
+        entries: [],
+        appEvents: [
+          { ...run, id: 'ae-1', sampledAt: at('09:30'), sampleCount: 12 },
+        ],
+      });
+      const { service } = makeService();
+
+      const pruned = await service.pruneUncovered(manager, 'm-1', WINDOW);
+
+      expect(pruned.appEvents).toBe(12);
+      expect(deletes).toEqual([{ entity: AppEvent, ids: ['ae-1'] }]);
+      expect(inserts).toEqual([]);
+    });
+
+    // The case that matters: an entry shortened so it ends inside a run.
+    // The covered head of the run must survive.
+    it('keeps the covered part of a run an entry now ends inside', async () => {
+      const { manager, deletes, inserts } = makeManager({
+        // Ends one minute into the run: 12 covered samples, 48 not.
+        entries: [{ startedAt: at('09:00'), endedAt: at('09:31') }],
+        appEvents: [
+          { ...run, id: 'ae-1', sampledAt: at('09:30'), sampleCount: 60 },
+        ],
+      });
+      const { service } = makeService();
+
+      const pruned = await service.pruneUncovered(manager, 'm-1', WINDOW);
+
+      expect(pruned.appEvents).toBe(48);
+      expect(deletes).toEqual([{ entity: AppEvent, ids: ['ae-1'] }]);
+      expect(inserts).toEqual([
+        {
+          entity: AppEvent,
+          rows: [
+            {
+              ...run,
+              sampledAt: at('09:30'),
+              sampleCount: 12,
+            },
+          ],
+        },
+      ]);
+    });
+
+    it('keeps both covered ends of a run with an uncovered gap in the middle', async () => {
+      const { manager, inserts } = makeManager({
+        entries: [
+          { startedAt: at('09:00'), endedAt: at('09:31') },
+          { startedAt: at('09:33'), endedAt: at('10:00') },
+        ],
+        // 09:30:00 → 09:34:55: 12 covered, 24 not, 24 covered.
+        appEvents: [
+          { ...run, id: 'ae-1', sampledAt: at('09:30'), sampleCount: 60 },
+        ],
+      });
+      const { service } = makeService();
+
+      const pruned = await service.pruneUncovered(manager, 'm-1', WINDOW);
+
+      expect(pruned.appEvents).toBe(24);
+      expect(inserts[0].rows).toEqual([
+        expect.objectContaining({ sampledAt: at('09:30'), sampleCount: 12 }),
+        expect.objectContaining({ sampledAt: at('09:33'), sampleCount: 24 }),
+      ]);
+    });
+
+    it('leaves the samples of a run that fall before the window alone', async () => {
+      const { manager, find, inserts } = makeManager({
+        entries: [],
+        // Starts one minute before the window: 12 samples outside it.
+        appEvents: [
+          { ...run, id: 'ae-1', sampledAt: at('08:59'), sampleCount: 24 },
+        ],
+      });
+      const { service } = makeService();
+
+      const pruned = await service.pruneUncovered(manager, 'm-1', WINDOW);
+
+      expect(pruned.appEvents).toBe(12);
+      expect(inserts[0].rows).toEqual([
+        expect.objectContaining({ sampledAt: at('08:59'), sampleCount: 12 }),
+      ]);
+      // ...and looks back far enough to find such a run at all.
+      const appEventQuery = find.mock.calls.find(
+        ([entity]) => entity === AppEvent,
+      ) as [unknown, { where: { sampledAt: { value: Date[] } } }];
+      expect(appEventQuery[1].where.sampledAt.value[0]).toEqual(
+        new Date(WINDOW.from.getTime() - 59 * 5000),
+      );
+    });
   });
 
   it('treats a running entry as covering the rest of the window', async () => {

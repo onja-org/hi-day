@@ -167,6 +167,46 @@ describe('WorkClassificationService', () => {
       });
     });
 
+    it('splits a merged run exactly as the same readings sent one by one', async () => {
+      const labels = [
+        { kind: 'app', name: 'Google Chrome', label: 'core' },
+      ] as Partial<WorkClassification>[];
+      const oneByOne = makeService({ readings: pastMinute, labels });
+      const merged = makeService({
+        readings: [
+          {
+            appName: 'Google Chrome',
+            sampledAt: new Date('2026-11-04T09:00:00.000Z'),
+            sampleCount: 12,
+          },
+        ],
+        labels,
+      });
+
+      const expected = await oneByOne.service.splitForMember(
+        'org-1',
+        'membership-1',
+        ...nov4,
+      );
+      await expect(
+        merged.service.splitForMember('org-1', 'membership-1', ...nov4),
+      ).resolves.toEqual(expected);
+      expect(expected.coreSeconds).toBe(60);
+    });
+
+    it('expands runs per sample in the organisation-wide usage query too', async () => {
+      const { service, query } = makeService();
+
+      await service.listUsage('org-1');
+
+      const [sql] = query.mock.calls[0] as [string];
+      expect(sql).toContain('generate_series');
+      // Coverage is judged against each sample's own time, not the run's start.
+      expect(sql).toMatch(
+        /e\."startedAt" <= \(a\."sampledAt" \+ "a_sample"\."index"/,
+      );
+    });
+
     it('goes back to unclassified when the label is removed', async () => {
       const { service, classifications } = makeService({
         readings: pastMinute,
