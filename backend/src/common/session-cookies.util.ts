@@ -25,22 +25,37 @@ export function setSessionCookies(
   refreshToken: string,
   configService: ConfigService,
 ): void {
-  const accessTokenTtlDays = Number(
-    configService.get('ACCESS_TOKEN_TTL_DAYS', DEFAULT_ACCESS_TOKEN_TTL_DAYS),
-  );
+  setAccessTokenCookie(response, accessToken, configService);
+
   const refreshTokenTtlDays = Number(
     configService.get('REFRESH_TOKEN_TTL_DAYS', DEFAULT_REFRESH_TOKEN_TTL_DAYS),
+  );
+
+  response.cookie(
+    REFRESH_TOKEN_COOKIE,
+    refreshToken,
+    buildSessionCookieOptions(refreshTokenTtlDays * MS_PER_DAY, configService),
+  );
+}
+
+/**
+ * Renews only the access-token cookie, leaving the refresh-token cookie as
+ * the browser has it. For a refresh that lost a race to a concurrent one:
+ * that request's response sets the one live refresh token.
+ */
+export function setAccessTokenCookie(
+  response: Response,
+  accessToken: string,
+  configService: ConfigService,
+): void {
+  const accessTokenTtlDays = Number(
+    configService.get('ACCESS_TOKEN_TTL_DAYS', DEFAULT_ACCESS_TOKEN_TTL_DAYS),
   );
 
   response.cookie(
     ACCESS_TOKEN_COOKIE,
     accessToken,
     buildSessionCookieOptions(accessTokenTtlDays * MS_PER_DAY, configService),
-  );
-  response.cookie(
-    REFRESH_TOKEN_COOKIE,
-    refreshToken,
-    buildSessionCookieOptions(refreshTokenTtlDays * MS_PER_DAY, configService),
   );
 }
 

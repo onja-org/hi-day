@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { emailColumnTransformer } from '../../common/email.util';
 import { InviteLink } from './invite-link.entity';
 import { InvitationStatus } from './invitation-status.enum';
 import { MembershipRole } from './membership-role.enum';
@@ -17,7 +18,8 @@ export class Invitation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  /** Always stored trimmed and lowercased — see `normalizeEmail`. */
+  @Column({ transformer: emailColumnTransformer })
   email: string;
 
   @Column({ type: 'enum', enum: MembershipRole, enumName: 'MembershipRole' })

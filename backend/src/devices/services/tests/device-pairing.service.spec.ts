@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager, Repository } from 'typeorm';
 import { AuditLogService } from '../../../audit-log/services/audit-log.service';
@@ -173,21 +177,56 @@ describe('DevicePairingService', () => {
       });
       const service = makeService({ pairingRequestsRepo });
 
-      const summary = await service.getPendingByCode('raw-code');
+      const summary = await service.getPendingByCode('raw-code', 'user-1');
 
       expect(summary).toEqual({
         platform: DevicePlatform.LINUX,
         hostname: 'jane-laptop',
         requestedAt: pendingRequest.createdAt,
+        organisations: [],
       });
+    });
+
+    it('lists the organisations the approver can link the device to, leaving out suspended ones', async () => {
+      const pairingRequestsRepo = makePairingRequestsRepo({
+        findOne: jest.fn().mockResolvedValue(pendingRequest),
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            organisationId: 'org-a',
+            organisation: { id: 'org-a', name: 'Acme', suspendedAt: null },
+          },
+          {
+            organisationId: 'org-dead',
+            organisation: {
+              id: 'org-dead',
+              name: 'Gone Ltd',
+              suspendedAt: new Date(),
+            },
+          },
+          {
+            organisationId: 'org-b',
+            organisation: { id: 'org-b', name: 'Beta', suspendedAt: null },
+          },
+        ]),
+      });
+      const service = makeService({ pairingRequestsRepo, membershipsRepo });
+
+      const summary = await service.getPendingByCode('raw-code', 'user-1');
+
+      expect(summary.organisations).toEqual([
+        { id: 'org-a', name: 'Acme' },
+        { id: 'org-b', name: 'Beta' },
+      ]);
     });
 
     it('throws for an unknown code', async () => {
       const service = makeService({});
 
-      await expect(service.getPendingByCode('unknown')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getPendingByCode('unknown', 'user-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('throws for an expired code', async () => {
@@ -199,9 +238,9 @@ describe('DevicePairingService', () => {
       });
       const service = makeService({ pairingRequestsRepo });
 
-      await expect(service.getPendingByCode('raw-code')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getPendingByCode('raw-code', 'user-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('throws for an already-approved code', async () => {
@@ -212,9 +251,9 @@ describe('DevicePairingService', () => {
       });
       const service = makeService({ pairingRequestsRepo });
 
-      await expect(service.getPendingByCode('raw-code')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getPendingByCode('raw-code', 'user-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -328,6 +367,100 @@ describe('DevicePairingService', () => {
         'pairing-1',
         expect.objectContaining({ approvedOrganisationId: 'org-live' }),
       );
+    });
+
+    describe('when the person belongs to more than one organisation', () => {
+      const twoOrganisations = [
+        {
+          organisationId: 'org-a',
+          status: MembershipStatus.ACTIVE,
+          organisation: { id: 'org-a', name: 'Acme', suspendedAt: null },
+        },
+        {
+          organisationId: 'org-b',
+          status: MembershipStatus.ACTIVE,
+          organisation: { id: 'org-b', name: 'Beta', suspendedAt: null },
+        },
+      ];
+
+      function makeMultiOrgService() {
+        const update = jest.fn().mockResolvedValue(undefined);
+        const pairingRequestsRepo = makePairingRequestsRepo({
+          findOne: jest.fn().mockResolvedValue(pendingRequest),
+          update,
+        });
+        const membershipsRepo = makeMembershipsRepo({
+          find: jest.fn().mockResolvedValue(twoOrganisations),
+        });
+        const { auditLogService, record } = makeAuditLogService();
+        const service = makeService({
+          pairingRequestsRepo,
+          membershipsRepo,
+          auditLogService,
+        });
+        return { service, update, record };
+      }
+
+      it('pairs into the organisation they chose', async () => {
+        const { service, update, record } = makeMultiOrgService();
+
+        await service.approve('raw-code', 'user-1', 'org-b');
+
+        expect(update).toHaveBeenCalledWith(
+          'pairing-1',
+          expect.objectContaining({ approvedOrganisationId: 'org-b' }),
+        );
+        expect(record).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ organisationId: 'org-b' }),
+        );
+      });
+
+      it('refuses to guess when they chose none', async () => {
+        const { service, update } = makeMultiOrgService();
+
+        await expect(
+          service.approve('raw-code', 'user-1'),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(update).not.toHaveBeenCalled();
+      });
+
+      it('refuses an organisation they are not an active member of', async () => {
+        const { service, update } = makeMultiOrgService();
+
+        await expect(
+          service.approve('raw-code', 'user-1', 'org-someone-else'),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(update).not.toHaveBeenCalled();
+      });
+    });
+
+    it('refuses a suspended organisation even when it is the one chosen', async () => {
+      const update = jest.fn();
+      const pairingRequestsRepo = makePairingRequestsRepo({
+        findOne: jest.fn().mockResolvedValue(pendingRequest),
+        update,
+      });
+      const membershipsRepo = makeMembershipsRepo({
+        find: jest.fn().mockResolvedValue([
+          {
+            organisationId: 'org-dead',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: new Date() },
+          },
+          {
+            organisationId: 'org-live',
+            status: MembershipStatus.ACTIVE,
+            organisation: { suspendedAt: null },
+          },
+        ]),
+      });
+      const service = makeService({ pairingRequestsRepo, membershipsRepo });
+
+      await expect(
+        service.approve('raw-code', 'user-1', 'org-dead'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(update).not.toHaveBeenCalled();
     });
   });
 

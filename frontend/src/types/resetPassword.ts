@@ -5,4 +5,6 @@ export type ResetPasswordInput = {
 
 import type { ApiResult } from "./api";
 
-export type ResetPasswordResult = ApiResult;
+/** `twoFactorRequired`: the password changed, but nobody is signed in —
+ * the reset link alone doesn't get past two-step login. */
+export type ResetPasswordResult = ApiResult<{ twoFactorRequired?: boolean }>;

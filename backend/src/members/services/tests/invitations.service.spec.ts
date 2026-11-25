@@ -8,6 +8,7 @@ import { AccessTokenService } from '../../../auth/services/access-token.service'
 import { RefreshTokenService } from '../../../auth/services/refresh-token.service';
 import { TokenService } from '../../../auth/services/token.service';
 import { hashToken } from '../../../common/hash-token.util';
+import { PASSWORD_CONTAINS_EMAIL_MESSAGE } from '../../../auth/dto/password-policy';
 import { InviteLink } from '../../../database/entities/invite-link.entity';
 import { Invitation } from '../../../database/entities/invitation.entity';
 import { InvitationStatus } from '../../../database/entities/invitation-status.enum';
@@ -88,7 +89,15 @@ describe('InvitationsService', () => {
     const find = jest.fn((_entity: unknown, options: unknown) =>
       Promise.resolve(requestedIds(options).map((id) => ({ id }))),
     );
-    const manager = { create, save, update, find } as unknown as EntityManager;
+    // The invitee's existing Membership in the organisation: none by default.
+    const findOne = jest.fn().mockResolvedValue(null);
+    const manager = {
+      create,
+      save,
+      update,
+      find,
+      findOne,
+    } as unknown as EntityManager;
     const transaction = jest.fn((fn: TransactionFn) => fn(manager));
     return {
       dataSource: { transaction, manager } as unknown,
@@ -98,6 +107,7 @@ describe('InvitationsService', () => {
       save,
       update,
       find,
+      findOne,
     };
   }
 
@@ -155,6 +165,7 @@ describe('InvitationsService', () => {
   function makePasswordService() {
     return {
       hash: jest.fn().mockResolvedValue('hashed-password'),
+      verify: jest.fn().mockResolvedValue(true),
     } as unknown as PasswordService;
   }
 
@@ -833,6 +844,40 @@ describe('InvitationsService', () => {
       ]);
     });
 
+    it('refuses a password that contains the invited email address', async () => {
+      const invitationsRepo = makeInvitationsRepo({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'invitation-1',
+          email: 'invitee@acme.test',
+          role: MembershipRole.MEMBER,
+          teamIds: [],
+          organisationId: 'org-1',
+          status: InvitationStatus.PENDING,
+          expiresAt: new Date(Date.now() + 60_000),
+          organisation: { id: 'org-1', name: 'Acme Inc' },
+        }),
+      });
+      const hash = jest.fn();
+      const service = makeService({
+        invitationsRepo,
+        passwordService: { hash } as unknown as PasswordService,
+      });
+
+      await expect(
+        service.accept(
+          'the-token',
+          {
+            password: 'Invitee@Acme.test2026',
+            firstName: 'Jane',
+            lastName: 'Doe',
+          },
+          makeRequest(),
+          makeResponse().response,
+        ),
+      ).rejects.toThrow(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+      expect(hash).not.toHaveBeenCalled();
+    });
+
     function pendingInvitation(overrides: Record<string, unknown> = {}) {
       return {
         id: 'invitation-1',
@@ -1065,6 +1110,212 @@ describe('InvitationsService', () => {
       );
       expect(issue).not.toHaveBeenCalled();
       expect(cookie).not.toHaveBeenCalled();
+    });
+
+    describe('re-inviting a deactivated member', () => {
+      function existingAccount() {
+        return makeUsersRepo({
+          findOne: jest.fn().mockResolvedValue({
+            id: 'existing-user',
+            passwordHash: 'already-set',
+          }),
+        });
+      }
+
+      function deactivatedMembership() {
+        return {
+          id: 'old-membership',
+          userId: 'existing-user',
+          organisationId: 'org-1',
+          role: MembershipRole.MANAGER,
+          status: MembershipStatus.DEACTIVATED,
+          deactivatedAt: new Date('2026-01-01'),
+        };
+      }
+
+      it('lets them join with their password, since login refuses them, and logs them in', async () => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(pendingInvitation()),
+        });
+        const verify = jest.fn().mockResolvedValue(true);
+        const passwordService = { verify } as unknown as PasswordService;
+        const { dataSource } = makeDataSource();
+        const { refreshTokenService, issue } = makeRefreshTokenService();
+        const service = makeService({
+          invitationsRepo,
+          usersRepo: existingAccount(),
+          passwordService,
+          dataSource,
+          refreshTokenService,
+        });
+        const { response, cookie } = makeResponse();
+
+        await service.accept(
+          'the-token',
+          { currentPassword: 'old-password' },
+          makeRequest(),
+          response,
+        );
+
+        expect(verify).toHaveBeenCalledWith('already-set', 'old-password');
+        expect(issue).toHaveBeenCalledWith(expect.anything(), 'existing-user');
+        expect(cookie).toHaveBeenCalledWith(
+          'access_token',
+          'signed.jwt.token',
+          expect.anything(),
+        );
+      });
+
+      it('refuses a wrong password without touching any membership', async () => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(pendingInvitation()),
+        });
+        const passwordService = {
+          verify: jest.fn().mockResolvedValue(false),
+        } as unknown as PasswordService;
+        const { dataSource, transaction } = makeDataSource();
+        const service = makeService({
+          invitationsRepo,
+          usersRepo: existingAccount(),
+          passwordService,
+          dataSource,
+        });
+
+        await expect(
+          service.accept(
+            'the-token',
+            { currentPassword: 'wrong' },
+            makeRequest(),
+            makeResponse().response,
+          ),
+        ).rejects.toThrow('Incorrect password.');
+        expect(transaction).not.toHaveBeenCalled();
+      });
+
+      it("reactivates their old Membership with the invitation's role instead of inserting a second one", async () => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest
+            .fn()
+            .mockResolvedValue(pendingInvitation({ seatChargeConsent: true })),
+        });
+        const { dataSource, create, update, findOne } = makeDataSource();
+        findOne.mockResolvedValue(deactivatedMembership());
+        const { auditLogService, record } = makeAuditLogService();
+        const syncSeats = jest.fn().mockResolvedValue(undefined);
+        const service = makeService({
+          invitationsRepo,
+          usersRepo: existingAccount(),
+          dataSource,
+          auditLogService,
+          syncSeats,
+        });
+
+        await service.accept(
+          'the-token',
+          { currentPassword: 'old-password' },
+          makeRequest(),
+          makeResponse().response,
+        );
+
+        expect(findOne).toHaveBeenCalledWith(
+          Membership,
+          expect.objectContaining({
+            where: { userId: 'existing-user', organisationId: 'org-1' },
+            lock: { mode: 'pessimistic_write' },
+          }),
+        );
+        expect(update).toHaveBeenCalledWith(Membership, 'old-membership', {
+          status: MembershipStatus.ACTIVE,
+          deactivatedAt: null,
+          role: MembershipRole.MEMBER,
+        });
+        expect(create).not.toHaveBeenCalledWith(Membership, expect.anything());
+        expect(create).toHaveBeenCalledWith(
+          TeamMembership,
+          expect.objectContaining({
+            membershipId: 'old-membership',
+            teamId: 'team-1',
+          }),
+        );
+        expect(record).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ action: 'membership.reactivated' }),
+        );
+        // Back on the bill, under the same consent rule as a new joiner.
+        expect(syncSeats).toHaveBeenCalledWith('org-1', { chargeNow: true });
+      });
+
+      it('keeps the team and project places they still hold, adding only the new ones', async () => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(
+            pendingInvitation({
+              teamIds: ['team-1', 'team-2'],
+              projectIds: ['project-1'],
+            }),
+          ),
+        });
+        const { dataSource, create, find, findOne } = makeDataSource();
+        findOne.mockResolvedValue(deactivatedMembership());
+        find.mockImplementation((entity: unknown, options: unknown) => {
+          if (entity === TeamMembership) {
+            return Promise.resolve([{ id: 'tm-1', teamId: 'team-1' }]);
+          }
+          if (entity === ProjectMembership) {
+            return Promise.resolve([{ id: 'pm-1', projectId: 'project-1' }]);
+          }
+          return Promise.resolve(requestedIds(options).map((id) => ({ id })));
+        });
+        const service = makeService({
+          invitationsRepo,
+          usersRepo: existingAccount(),
+          dataSource,
+        });
+
+        await service.accept(
+          'the-token',
+          { currentPassword: 'old-password' },
+          makeRequest(),
+          makeResponse().response,
+        );
+
+        const added = create.mock.calls
+          .filter(
+            ([entity]) =>
+              entity === TeamMembership || entity === ProjectMembership,
+          )
+          .map(([, data]) => data);
+        expect(added).toEqual([expect.objectContaining({ teamId: 'team-2' })]);
+      });
+
+      it('refuses, rather than failing on the unique key, when they are somehow still active', async () => {
+        const invitationsRepo = makeInvitationsRepo({
+          findOne: jest.fn().mockResolvedValue(pendingInvitation()),
+        });
+        const { dataSource, findOne, save } = makeDataSource();
+        findOne.mockResolvedValue({
+          ...deactivatedMembership(),
+          status: MembershipStatus.ACTIVE,
+          deactivatedAt: null,
+        });
+        const service = makeService({
+          invitationsRepo,
+          usersRepo: existingAccount(),
+          accessTokenService: makeAccessTokenService({
+            verify: jest.fn().mockResolvedValue('existing-user'),
+          }),
+          dataSource,
+        });
+
+        await expect(
+          service.accept(
+            'the-token',
+            {},
+            makeRequest('access_token=valid.jwt.token'),
+            makeResponse().response,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(save).not.toHaveBeenCalled();
+      });
     });
 
     it('rejects with ACCOUNT_EXISTS when the email already has an account and the caller is not logged in as it', async () => {

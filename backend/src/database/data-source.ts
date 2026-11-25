@@ -19,6 +19,8 @@ import { Project } from './entities/project.entity';
 import { ProjectMembership } from './entities/project-membership.entity';
 import { ProjectTeam } from './entities/project-team.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { TwoFactorRecoveryCode } from './entities/two-factor-recovery-code.entity';
+import { TwoFactorTrustedBrowser } from './entities/two-factor-trusted-browser.entity';
 import { SavedReport } from './entities/saved-report.entity';
 import { Screenshot } from './entities/screenshot.entity';
 import { Subscription } from './entities/subscription.entity';
@@ -50,6 +52,8 @@ export default new DataSource({
     InviteLink,
     AuditLog,
     RefreshToken,
+    TwoFactorRecoveryCode,
+    TwoFactorTrustedBrowser,
     Device,
     DevicePairingRequest,
     DeviceSession,

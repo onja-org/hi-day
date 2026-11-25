@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -11,9 +13,13 @@ import type { Request, Response } from 'express';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { AuditLogService } from '../../audit-log/services/audit-log.service';
 import { recordAnalyticsEvent } from '../../common/analytics';
-import { readCookie } from '../../common/cookies.util';
+import {
+  buildSessionCookieOptions,
+  readCookie,
+} from '../../common/cookies.util';
 import {
   clearSessionCookies,
+  setAccessTokenCookie,
   setSessionCookies,
 } from '../../common/session-cookies.util';
 import { DeviceSessionService } from '../../devices/services/device-session.service';
@@ -29,6 +35,11 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import {
+  PASSWORD_CONTAINS_EMAIL_MESSAGE,
+  passwordContainsEmail,
+} from '../dto/password-policy';
+import { TwoFactorLoginDto } from '../dto/two-factor-login.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 import { AccessTokenService } from './access-token.service';
 import { CaptchaService } from './captcha.service';
@@ -43,6 +54,11 @@ import {
   REFRESH_TOKEN_COOKIE,
   TokenService,
 } from './token.service';
+import {
+  TRUSTED_BROWSER_COOKIE,
+  TRUSTED_BROWSER_TTL_MS,
+  TwoFactorService,
+} from './two-factor.service';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -54,8 +70,22 @@ const FORGOT_PASSWORD_RESPONSE_MESSAGE =
 const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
 const DEACTIVATED_MESSAGE =
   'Your account has been deactivated. Contact an admin of your organisation if you believe this is a mistake.';
+const CHOOSE_ORGANISATION_VIA_WEB_MESSAGE =
+  'You belong to more than one organisation. Log in to the desktop app through the web app to choose which one this device is for.';
 const INVALID_OR_EXPIRED_LINK_MESSAGE = 'This link is invalid or has expired.';
 const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
+const TWO_FACTOR_REQUIRED_MESSAGE =
+  'Enter the 6-digit code from your authenticator app.';
+const TWO_FACTOR_CHALLENGE_EXPIRED_MESSAGE =
+  'Your log in timed out. Enter your email and password again.';
+const TWO_FACTOR_WRONG_CODE_MESSAGE =
+  "That code didn't work. Check your app and try again.";
+const TWO_FACTOR_TOO_MANY_WRONG_CODES_MESSAGE =
+  'Too many wrong codes. Enter your email and password again.';
+const TWO_FACTOR_DESKTOP_PASSWORD_LOGIN_MESSAGE =
+  'Two-step login is on for this account. Update the Hi Day app and sign in through your browser.';
+export const TWO_FACTOR_CHALLENGE_COOKIE = 'two_factor_challenge';
+const TWO_FACTOR_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$EdLgXk5ViQoSXTFItKblvQ$/dRGHQlCkWNFJX/M1z2MfiETG+HUWqdGGuZBfni0RRk';
@@ -91,6 +121,7 @@ export class AuthService {
     private readonly captchaService: CaptchaService,
     private readonly deviceSessionService: DeviceSessionService,
     private readonly timeEntriesService: TimeEntriesService,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   async signUp(dto: CreateAccountDto): Promise<{ message: string }> {
@@ -203,21 +234,37 @@ export class AuthService {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
     }
 
+    if (passwordContainsEmail(dto.password, user.email)) {
+      throw new UnprocessableEntityException(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+    }
+
     const passwordHash = await this.passwordService.hash(dto.password);
     let refreshToken = '';
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(User, user.id, {
-        passwordHash,
-        emailVerifiedAt: new Date(),
-        emailVerificationToken: null,
-        emailVerificationExpiresAt: null,
-        pendingOrganisationName: null,
-        pendingOrganisationAddress: null,
-        pendingOrganisationWebsite: null,
-        // The same report serves this person and the organisation below.
-        ...(dto.timezone ? { timezone: dto.timezone } : {}),
-      });
+      // Consume the token in the same statement that checks it. A
+      // double-submit sends two requests that both pass the lookup above;
+      // the second one waits on this row, then finds the token gone and
+      // stops here instead of founding a second organisation.
+      const consumed = await manager.update(
+        User,
+        { id: user.id, emailVerificationToken: dto.token },
+        {
+          passwordHash,
+          emailVerifiedAt: new Date(),
+          emailVerificationToken: null,
+          emailVerificationExpiresAt: null,
+          pendingOrganisationName: null,
+          pendingOrganisationAddress: null,
+          pendingOrganisationWebsite: null,
+          // The same report serves this person and the organisation below.
+          ...(dto.timezone ? { timezone: dto.timezone } : {}),
+        },
+      );
+
+      if (consumed.affected !== 1) {
+        throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+      }
 
       await this.organisationsService.createForUser(manager, user.id, {
         name: user.pendingOrganisationName!,
@@ -237,9 +284,16 @@ export class AuthService {
 
   async login(
     dto: LoginDto,
+    request: Request,
     response: Response,
-  ): Promise<{ message: string; deviceId?: string; deviceToken?: string }> {
-    if (this.loginAttemptTracker.requiresCaptcha(dto.email)) {
+  ): Promise<{
+    message: string;
+    deviceId?: string;
+    deviceToken?: string;
+    twoFactorRequired?: boolean;
+  }> {
+    const captchaSolved = this.loginAttemptTracker.requiresCaptcha(dto.email);
+    if (captchaSolved) {
       const captchaValid = await this.captchaService.verify(dto.captchaToken);
 
       if (!captchaValid) {
@@ -267,27 +321,56 @@ export class AuthService {
       });
     }
 
-    this.loginAttemptTracker.reset(dto.email);
+    const twoFactorEnabled = this.twoFactorService.isEnabled(user);
+    // A browser that already passed the code step and was told "don't ask
+    // again" stands in for the code.
+    // Not for the desktop app's password form, which is refused below.
+    const trustedBrowser =
+      twoFactorEnabled &&
+      !dto.deviceFingerprint &&
+      (await this.twoFactorService.isTrustedBrowser(
+        user.id,
+        readCookie(request, TRUSTED_BROWSER_COOKIE),
+      ));
 
-    const hasActiveMembership = await this.memberships.exists({
-      where: { userId: user.id, status: MembershipStatus.ACTIVE },
-    });
+    // With two-step login on, the password alone proves nothing yet: the
+    // count of wrong attempts carries on into the code step and is only
+    // cleared once a code is right, so guessing codes costs the same
+    // captchas guessing passwords does. Behind a solved captcha the code
+    // step gets one try; a wrong one asks for the captcha again.
+    if (!twoFactorEnabled || trustedBrowser) {
+      this.loginAttemptTracker.reset(dto.email);
+    } else if (captchaSolved) {
+      this.loginAttemptTracker.allowOneMoreAttempt(dto.email);
+    }
 
-    if (!hasActiveMembership) {
-      recordAnalyticsEvent('login_blocked_deactivated', { userId: user.id });
-      throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    await this.assertHasActiveMembership(user.id);
+
+    // The desktop app's old password form, kept for builds that predate
+    // pairing (ADR-0009), has no code step. Pairing is approved from a
+    // browser that already passed two-step login, so it stays the way in.
+    if (dto.deviceFingerprint && twoFactorEnabled) {
+      throw new ForbiddenException(TWO_FACTOR_DESKTOP_PASSWORD_LOGIN_MESSAGE);
     }
 
     if (dto.deviceFingerprint) {
-      const activeMembership = await this.memberships.findOne({
+      const activeMemberships = await this.memberships.find({
         where: { userId: user.id, status: MembershipStatus.ACTIVE },
+        take: 2,
       });
+
+      // A password login has no way to say which organisation the device
+      // belongs to; pairing through the web app does.
+      if (activeMemberships.length > 1) {
+        throw new ForbiddenException(CHOOSE_ORGANISATION_VIA_WEB_MESSAGE);
+      }
+      const activeMembership = activeMemberships[0];
 
       const { deviceId, token: deviceToken } =
         await this.dataSource.transaction((manager) =>
           this.deviceSessionService.upsertOnLogin(manager, {
             userId: user.id,
-            organisationId: activeMembership!.organisationId,
+            organisationId: activeMembership.organisationId,
             deviceFingerprint: dto.deviceFingerprint!,
             platform: dto.platform!,
             osVersion: dto.osVersion,
@@ -305,20 +388,172 @@ export class AuthService {
       return { message: 'Logged in.', deviceId, deviceToken };
     }
 
-    const accessToken = await this.accessTokenService.sign(user.id);
+    if (twoFactorEnabled && !trustedBrowser) {
+      const challenge = await this.twoFactorService.startChallenge(user.id);
+      response.cookie(
+        TWO_FACTOR_CHALLENGE_COOKIE,
+        challenge,
+        buildSessionCookieOptions(
+          TWO_FACTOR_CHALLENGE_TTL_MS,
+          this.configService,
+        ),
+      );
+      return { message: TWO_FACTOR_REQUIRED_MESSAGE, twoFactorRequired: true };
+    }
+
+    await this.startWebSession(
+      user.id,
+      response,
+      trustedBrowser ? { twoFactor: true, trustedBrowser: true } : {},
+    );
+
+    return { message: 'Logged in.' };
+  }
+
+  /**
+   * The second half of a log in with two-step login on: the browser
+   * carries the challenge cookie `login` set, plus a code from the app or
+   * a recovery code. Wrong codes count against the same per-email tracker
+   * as wrong passwords; once that wants a captcha the challenge is thrown
+   * away and the person starts again from the password, captcha and all.
+   * With `rememberBrowser`, this browser skips the code step from then on.
+   */
+  async verifyTwoFactorLogin(
+    dto: TwoFactorLoginDto,
+    request: Request,
+    response: Response,
+  ): Promise<{ message: string }> {
+    const challenge = readCookie(request, TWO_FACTOR_CHALLENGE_COOKIE);
+    const user = challenge
+      ? await this.twoFactorService.findChallengeOwner(challenge)
+      : null;
+
+    if (!user) {
+      this.clearTwoFactorChallengeCookie(response);
+      throw new UnauthorizedException({
+        message: TWO_FACTOR_CHALLENGE_EXPIRED_MESSAGE,
+        restart: true,
+      });
+    }
+
+    if (this.loginAttemptTracker.requiresCaptcha(user.email)) {
+      await this.abandonTwoFactorChallenge(user.id, response);
+    }
+
+    const check = await this.twoFactorService.checkCode(user, dto.code);
+
+    if (!check.ok) {
+      this.loginAttemptTracker.recordFailure(user.email);
+      recordAnalyticsEvent('login_two_factor_failed', { userId: user.id });
+      if (this.loginAttemptTracker.requiresCaptcha(user.email)) {
+        await this.abandonTwoFactorChallenge(user.id, response);
+      }
+      throw new UnauthorizedException({
+        message: TWO_FACTOR_WRONG_CODE_MESSAGE,
+      });
+    }
+
+    this.loginAttemptTracker.reset(user.email);
+    await this.twoFactorService.endChallenge(user.id);
+    this.clearTwoFactorChallengeCookie(response);
+
+    // Five minutes is long enough for an admin to have deactivated them.
+    await this.assertHasActiveMembership(user.id);
+    await this.startWebSession(user.id, response, {
+      twoFactor: true,
+      usedRecoveryCode: check.usedRecoveryCode,
+    });
+
+    if (dto.rememberBrowser) {
+      await this.trustThisBrowser(user.id, response);
+    }
+
+    return { message: 'Logged in.' };
+  }
+
+  private async trustThisBrowser(
+    userId: string,
+    response: Response,
+  ): Promise<void> {
+    const trustToken = await this.twoFactorService.trustBrowser(userId);
+    response.cookie(
+      TRUSTED_BROWSER_COOKIE,
+      trustToken,
+      buildSessionCookieOptions(TRUSTED_BROWSER_TTL_MS, this.configService),
+    );
+  }
+
+  /**
+   * Signs every other browser out and keeps this one signed in, for a
+   * change to how the account logs in (turning two-step login on or
+   * off). Paired devices are left alone, as with ordinary logout
+   * (ADR-0017): they were approved from a signed-in browser, and nothing
+   * about them changed.
+   */
+  async restartWebSession(userId: string, response: Response): Promise<void> {
+    let refreshToken = '';
+    await this.dataSource.transaction(async (manager) => {
+      await this.refreshTokenService.revokeAll(manager, userId);
+      await this.accessTokenService.endAllSessions(manager, userId);
+      refreshToken = await this.refreshTokenService.issue(manager, userId);
+    });
+
+    // After the commit, so it carries the bumped session version.
+    const accessToken = await this.accessTokenService.sign(userId);
+    setSessionCookies(response, accessToken, refreshToken, this.configService);
+  }
+
+  private async startWebSession(
+    userId: string,
+    response: Response,
+    auditMetadata: Record<string, unknown>,
+  ): Promise<void> {
+    const accessToken = await this.accessTokenService.sign(userId);
     const refreshToken = await this.refreshTokenService.issue(
       this.dataSource.manager,
-      user.id,
+      userId,
     );
     setSessionCookies(response, accessToken, refreshToken, this.configService);
 
     await this.auditLogService.record(this.dataSource.manager, {
       action: 'login',
-      actorUserId: user.id,
+      actorUserId: userId,
+      ...(Object.keys(auditMetadata).length > 0
+        ? { metadata: auditMetadata }
+        : {}),
     });
-    recordAnalyticsEvent('login_succeeded', { userId: user.id });
+    recordAnalyticsEvent('login_succeeded', { userId });
+  }
 
-    return { message: 'Logged in.' };
+  private async assertHasActiveMembership(userId: string): Promise<void> {
+    const hasActiveMembership = await this.memberships.exists({
+      where: { userId, status: MembershipStatus.ACTIVE },
+    });
+
+    if (!hasActiveMembership) {
+      recordAnalyticsEvent('login_blocked_deactivated', { userId });
+      throw new ForbiddenException(DEACTIVATED_MESSAGE);
+    }
+  }
+
+  private async abandonTwoFactorChallenge(
+    userId: string,
+    response: Response,
+  ): Promise<never> {
+    await this.twoFactorService.endChallenge(userId);
+    this.clearTwoFactorChallengeCookie(response);
+    throw new HttpException(
+      {
+        message: TWO_FACTOR_TOO_MANY_WRONG_CODES_MESSAGE,
+        captchaRequired: true,
+        restart: true,
+      },
+      HttpStatus.UNAUTHORIZED,
+    );
+  }
+
+  private clearTwoFactorChallengeCookie(response: Response): void {
+    response.clearCookie(TWO_FACTOR_CHALLENGE_COOKIE, { path: '/' });
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
@@ -368,7 +603,7 @@ export class AuthService {
   async resetPassword(
     dto: ResetPasswordDto,
     response: Response,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; twoFactorRequired?: boolean }> {
     const user = await this.users.findOne({
       where: { passwordResetToken: dto.token },
     });
@@ -381,22 +616,45 @@ export class AuthService {
       throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
     }
 
+    if (passwordContainsEmail(dto.password, user.email)) {
+      throw new UnprocessableEntityException(PASSWORD_CONTAINS_EMAIL_MESSAGE);
+    }
+
     const passwordHash = await this.passwordService.hash(dto.password);
+    // The reset link proves only access to the inbox, which is exactly
+    // what two-step login is there to not be enough. Such a person sets
+    // their new password here and then logs in, code and all.
+    const twoFactorEnabled = this.twoFactorService.isEnabled(user);
     let refreshToken = '';
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.update(User, user.id, {
-        passwordHash,
-        passwordResetToken: null,
-        passwordResetExpiresAt: null,
-      });
+      // Same guard as setPassword: only the request that clears the token
+      // goes on to rotate sessions; a concurrent duplicate stops here.
+      const consumed = await manager.update(
+        User,
+        { id: user.id, passwordResetToken: dto.token },
+        {
+          passwordHash,
+          passwordResetToken: null,
+          passwordResetExpiresAt: null,
+        },
+      );
+
+      if (consumed.affected !== 1) {
+        throw new UnprocessableEntityException(INVALID_OR_EXPIRED_LINK_MESSAGE);
+      }
 
       // Ends every session, including access tokens that haven't expired.
       // The new access token below is signed after this commits, so it
       // carries the bumped version and this browser stays signed in.
       await this.refreshTokenService.revokeAll(manager, user.id);
       await this.accessTokenService.endAllSessions(manager, user.id);
-      refreshToken = await this.refreshTokenService.issue(manager, user.id);
+      // Someone else may have known the old password, and a browser they
+      // had trusted would skip the code with the new one.
+      await this.twoFactorService.forgetTrustedBrowsers(manager, user.id);
+      if (!twoFactorEnabled) {
+        refreshToken = await this.refreshTokenService.issue(manager, user.id);
+      }
 
       await this.auditLogService.record(manager, {
         action: 'password_reset',
@@ -405,10 +663,18 @@ export class AuthService {
     });
 
     await this.signOutAllDevices(user.id);
+    recordAnalyticsEvent('password_reset_completed', { userId: user.id });
+
+    if (twoFactorEnabled) {
+      clearSessionCookies(response);
+      return {
+        message: 'Password reset. Log in with your new password.',
+        twoFactorRequired: true,
+      };
+    }
 
     const accessToken = await this.accessTokenService.sign(user.id);
     setSessionCookies(response, accessToken, refreshToken, this.configService);
-    recordAnalyticsEvent('password_reset_completed', { userId: user.id });
 
     return { message: 'Password reset. You are now signed in.' };
   }
@@ -447,10 +713,22 @@ export class AuthService {
       throw new UnauthorizedException(SESSION_EXPIRED_MESSAGE);
     }
 
-    const { userId, token: refreshToken } = rotation;
+    const accessToken = await this.accessTokenService.sign(rotation.userId);
 
-    const accessToken = await this.accessTokenService.sign(userId);
-    setSessionCookies(response, accessToken, refreshToken, this.configService);
+    if (rotation.outcome === 'raced') {
+      // A concurrent refresh already rotated this token, and its response
+      // carries the new refresh cookie. Setting one here too would let
+      // whichever response lands last decide which token the browser keeps.
+      setAccessTokenCookie(response, accessToken, this.configService);
+      return { message: 'Session refreshed.' };
+    }
+
+    setSessionCookies(
+      response,
+      accessToken,
+      rotation.token,
+      this.configService,
+    );
 
     return { message: 'Session refreshed.' };
   }
@@ -489,7 +767,10 @@ export class AuthService {
    * when their access token expires — plus every paired device (desktop
    * app, etc.), stopping whatever timer each revoked device had running.
    * Use when the account may be compromised or a device needs to be cut
-   * off — ordinary `logout` no longer implies this (see ADR-0017).
+   * off — ordinary `logout` no longer implies this (see ADR-0017). Every
+   * browser trusted to skip the two-step login code asks for one again.
+   * Ordinary `logout` keeps that trust: signing out and back in on your
+   * own computer shouldn't need your phone.
    */
   async logoutEverywhere(
     request: Request,
@@ -499,10 +780,14 @@ export class AuthService {
 
     if (userId) {
       await this.endAllWebSessions(userId);
+      await this.dataSource.transaction((manager) =>
+        this.twoFactorService.forgetTrustedBrowsers(manager, userId),
+      );
       await this.signOutAllDevices(userId);
     }
 
     clearSessionCookies(response);
+    response.clearCookie(TRUSTED_BROWSER_COOKIE, { path: '/' });
 
     return { message: 'Logged out everywhere.' };
   }

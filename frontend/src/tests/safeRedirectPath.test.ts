@@ -33,6 +33,25 @@ describe("safeRedirectPath", () => {
     },
   );
 
+  // Resolving collapses dot segments, so each of these becomes the path
+  // "//evil.example" — same origin as the placeholder, but protocol-relative
+  // once handed to the browser.
+  it.each([
+    ["a dot segment", "/.//evil.example"],
+    ["a parent segment", "/a/..//evil.example"],
+    ["an encoded dot segment", "/%2e//evil.example"],
+    ["a dot segment and a backslash", "/./\\evil.example"],
+  ])(
+    "falls back to the dashboard for a protocol-relative URL hidden by %s",
+    (_label, next) => {
+      expect(safeRedirectPath(next)).toBe("/dashboard");
+    },
+  );
+
+  it("falls back to the dashboard for any path containing a backslash", () => {
+    expect(safeRedirectPath("/reports\\x")).toBe("/dashboard");
+  });
+
   it("keeps the query string and hash of an internal path", () => {
     expect(safeRedirectPath("/reports?range=this_week#chart")).toBe(
       "/reports?range=this_week#chart",

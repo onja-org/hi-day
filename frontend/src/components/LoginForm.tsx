@@ -2,7 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { LoginInput } from "@/types/login";
 import { login } from "@/lib/login";
@@ -10,9 +10,11 @@ import { consumeResetEmailSent } from "@/lib/resetEmailSentNotice";
 import { navigateAfterSessionChange } from "@/lib/navigateAfterSessionChange";
 import { PasswordField } from "@/components/ui/form/PasswordField";
 import { TextField } from "@/components/ui/form/TextField";
+import { ErrorMessage } from "@/components/ErrorMessage";
 import { RobotCheckScreen } from "@/components/RobotCheckScreen";
 import { Spinner } from "@/components/Spinner";
 import { SuccessMessage } from "@/components/SuccessMessage";
+import { TwoFactorLoginStep } from "@/components/TwoFactorLoginStep";
 
 const REDIRECT_DELAY_MS = 900;
 const RESET_EMAIL_SENT_MESSAGE = "Email sent with password reset instructions.";
@@ -28,13 +30,28 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
   const [lastEmail, setLastEmail] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  // Set when the code step sends the person back here: why, and whether
+  // too many wrong codes now call for the captcha first.
+  const [restartNotice, setRestartNotice] = useState<string | null>(null);
+  const [restartNeedsCaptcha, setRestartNeedsCaptcha] = useState(false);
   const mutation = useMutation({ mutationFn: login });
-  const captchaRequired = Boolean(
-    mutation.data && !mutation.data.ok && mutation.data.captchaRequired,
+  const captchaRequired =
+    restartNeedsCaptcha ||
+    Boolean(mutation.data && !mutation.data.ok && mutation.data.captchaRequired);
+  const twoFactorRequired = Boolean(mutation.data?.ok && mutation.data.twoFactorRequired);
+
+  const { reset: resetLogin } = mutation;
+  const handleRestart = useCallback(
+    (notice: string | null, needsCaptcha: boolean) => {
+      resetLogin();
+      setRestartNotice(notice);
+      setRestartNeedsCaptcha(needsCaptcha);
+    },
+    [resetLogin],
   );
 
   useEffect(() => {
-    if (!mutation.data?.ok) return;
+    if (!mutation.data?.ok || mutation.data.twoFactorRequired) return;
 
     const timeout = setTimeout(
       () => navigateAfterSessionChange(next),
@@ -46,6 +63,7 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setResetEmailSent(false);
+    setRestartNotice(null);
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "");
     setLastEmail(email);
@@ -74,11 +92,16 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
     );
   }
 
+  if (twoFactorRequired) {
+    return <TwoFactorLoginStep next={next} onRestart={handleRestart} />;
+  }
+
   if (captchaRequired && !captchaToken) {
     return (
       <RobotCheckScreen
         onVerified={(token) => {
           mutation.reset();
+          setRestartNeedsCaptcha(false);
           setCaptchaToken(token);
         }}
       />
@@ -93,6 +116,8 @@ export function LoginForm({ next = "/dashboard" }: LoginFormProps) {
       {!mutation.data && resetEmailSent && (
         <SuccessMessage message={RESET_EMAIL_SENT_MESSAGE} />
       )}
+
+      {!mutation.data && restartNotice && <ErrorMessage message={restartNotice} />}
 
       <TextField
         label="Email address"

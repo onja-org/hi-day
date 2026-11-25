@@ -18,6 +18,8 @@ export type ActiveMember = {
   teamIds: string[];
   status: MembershipStatus;
   joinedAt: string;
+  /** Whether they log in with a code from an authenticator app too. */
+  twoFactorEnabled: boolean;
   /** Which disclosure/consent text this person sees — see CONTEXT.md's Disclosure region entry. `null` means the org's region-less default. */
   disclosureRegion: string | null;
   /** Their own IANA zone; null until a client has reported one. */
@@ -63,6 +65,15 @@ export type PasswordResetResult = {
 };
 
 export type SendPasswordResetsResult = ApiResult<{ results: PasswordResetResult[] }>;
+
+export type TwoFactorResetResult = {
+  membershipId: string;
+  email: string | null;
+  outcome: "reset" | "skipped";
+  message?: string;
+};
+
+export type ResetMembersTwoFactorResult = ApiResult<{ results: TwoFactorResetResult[] }>;
 
 export type GetActiveMembersResult =
   | { ok: true; members: ActiveMemberListItem[] }

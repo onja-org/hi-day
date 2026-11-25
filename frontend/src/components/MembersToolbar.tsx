@@ -9,6 +9,7 @@ import { ActionsMenu } from "./ActionsMenu";
 import { ExportButtons } from "./ExportButtons";
 import { ImportMembersModal } from "./ImportMembersModal";
 import { InviteMemberModal } from "./InviteMemberModal";
+import { ResetMembersTwoFactorDialog } from "./ResetMembersTwoFactorDialog";
 import { SearchInput } from "./SearchInput";
 import { SendPasswordResetDialog } from "./SendPasswordResetDialog";
 
@@ -30,13 +31,15 @@ export function MembersToolbar({
   search,
   onSearchChange,
 }: MembersToolbarProps) {
-  const [openModal, setOpenModal] = useState<"invite" | "import" | "reset" | null>(null);
+  const [openModal, setOpenModal] = useState<"invite" | "import" | "reset" | "reset2fa" | null>(null);
   // Bringing someone into the organisation is admin-only; a manager works
   // with the people an admin already put on their team.
   const isAdmin = useIsAdmin();
   const close = () => setOpenModal(null);
   // Your own reset goes through "Forgot password", not this batch.
   const resettable = members.filter((member) => member.userId !== callerUserId);
+  // Only who has it on; your own goes through a recovery code instead.
+  const twoFactorResettable = resettable.filter((member) => member.twoFactorEnabled);
 
   return (
     <div className="flex flex-col gap-4">
@@ -82,6 +85,18 @@ export function MembersToolbar({
               onSelect: () => setOpenModal("reset"),
               disabled: resettable.length === 0,
             },
+            // Admin-only: it takes a protection off other people's accounts.
+            ...(isAdmin
+              ? [
+                  {
+                    label: search.trim()
+                      ? `Reset two-step login for ${twoFactorResettable.length} shown`
+                      : "Reset two-step login for everyone",
+                    onSelect: () => setOpenModal("reset2fa"),
+                    disabled: twoFactorResettable.length === 0,
+                  },
+                ]
+              : []),
           ]}
         />
       </div>
@@ -93,6 +108,14 @@ export function MembersToolbar({
           organisationId={organisationId}
           membershipIds={resettable.map((member) => member.id)}
           recipientLabel={`${resettable.length} ${resettable.length === 1 ? "member" : "members"}`}
+          onClose={close}
+        />
+      )}
+      {openModal === "reset2fa" && (
+        <ResetMembersTwoFactorDialog
+          organisationId={organisationId}
+          membershipIds={twoFactorResettable.map((member) => member.id)}
+          memberLabel={`${twoFactorResettable.length} ${twoFactorResettable.length === 1 ? "member" : "members"}`}
           onClose={close}
         />
       )}

@@ -20,6 +20,7 @@ import { LoginDto } from '../dto/login.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SetPasswordDto } from '../dto/set-password.dto';
+import { TwoFactorLoginDto } from '../dto/two-factor-login.dto';
 import { UpdateProfileDto } from '../dto/update-profile.dto';
 
 const THROTTLE_TTL_MS = 15 * 60 * 1000;
@@ -67,9 +68,32 @@ export class AuthController {
   @HttpCode(200)
   login(
     @Body() dto: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ message: string; deviceId?: string; deviceToken?: string }> {
-    return this.authService.login(dto, response);
+  ): Promise<{
+    message: string;
+    deviceId?: string;
+    deviceToken?: string;
+    twoFactorRequired?: boolean;
+  }> {
+    return this.authService.login(dto, request, response);
+  }
+
+  @Post('login/two-factor')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    default: { limit: GLOBAL_LOGIN_THROTTLE_LIMIT, ttl: THROTTLE_TTL_MS },
+  })
+  // Per-account limiting is LoginAttemptTracker, shared with the password
+  // step (see AuthService.verifyTwoFactorLogin).
+  @SkipThrottle({ email: true, session: true, token: true })
+  @HttpCode(200)
+  verifyTwoFactorLogin(
+    @Body() dto: TwoFactorLoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ message: string }> {
+    return this.authService.verifyTwoFactorLogin(dto, request, response);
   }
 
   @Post('resend-verification')
@@ -121,7 +145,7 @@ export class AuthController {
   resetPassword(
     @Body() dto: ResetPasswordDto,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; twoFactorRequired?: boolean }> {
     return this.authService.resetPassword(dto, response);
   }
 
