@@ -8,8 +8,8 @@
 # free, forever, for any team size.
 #
 # No payment provider is needed, and no email provider either — without
-# RESEND_API_KEY the backend prints invitation and password links to its
-# own log, and the app shows them to the admin who created them.
+# SMTP_HOST or PIGEON_KEY the backend prints invitation and password links
+# to its own log, and the app shows them to the admin who created them.
 
 name: hiday
 
@@ -86,7 +86,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-}
       SMTP_ALLOW_SELF_SIGNED: ${SMTP_ALLOW_SELF_SIGNED:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PIGEON_KEY: ${PIGEON_KEY:-}
+      PIGEON_URL: ${PIGEON_URL:-}
       EMAIL_SENDER: ${EMAIL_SENDER:-}
 
       # Optional. Screenshot capture needs S3-compatible storage; without

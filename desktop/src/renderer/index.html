@@ -192,6 +192,14 @@
               Stop the other timer and start this one
             </button>
             <p id="idle-notice" class="banner" role="status" hidden></p>
+            <div id="stopped-notice" class="banner" role="alert" hidden>
+              <p id="stopped-notice-message"></p>
+              <div class="banner-actions">
+                <button id="stopped-notice-dismiss" type="button" class="button button-secondary button-small">
+                  Dismiss
+                </button>
+              </div>
+            </div>
 
 
             <div class="timer-section">
@@ -499,6 +507,14 @@
         </h2>
         <p id="timer-blocked-message" class="close-prompt-message"></p>
         <div class="close-prompt-actions">
+          <button
+            id="timer-blocked-resume"
+            type="button"
+            class="button button-secondary"
+            hidden
+          >
+            Resume timer
+          </button>
           <button
             id="timer-blocked-dismiss"
             type="button"

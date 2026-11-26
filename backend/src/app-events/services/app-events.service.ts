@@ -9,6 +9,11 @@ import {
   activityDayIn,
   type ActivityDay,
 } from '../../common/activity-day.util';
+import {
+  APP_EVENT_SAMPLE_SECONDS,
+  expandAppEventSamples,
+  runLookbackStart,
+} from '../../common/app-event-samples.util';
 import { canViewMembership } from '../../common/membership-visibility.util';
 import { findEntryCovering } from '../../common/time-entry-coverage.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
@@ -28,8 +33,11 @@ const MS_PER_HOUR = 60 * 60 * 1000;
  * Good enough for a first cut per docs/adr/0010-...; a gap-based
  * calculation (time between consecutive samples) would be more precise if
  * the interval ever becomes configurable per-org.
+ *
+ * Kept as an alias of APP_EVENT_SAMPLE_SECONDS, which is what a row's
+ * `sampleCount` is measured in (see common/app-event-samples.util.ts).
  */
-export const SAMPLE_INTERVAL_SECONDS = 5;
+export const SAMPLE_INTERVAL_SECONDS = APP_EVENT_SAMPLE_SECONDS;
 
 export interface AppHourBucketItem {
   /** The project whose TimeEntry covered these samples — null means no
@@ -114,6 +122,8 @@ export class AppEventsService {
         title: keepTitles ? (event.title ?? null) : null,
         titleUnavailableReason: event.titleUnavailableReason ?? null,
         sampledAt: new Date(event.sampledAt),
+        // An older agent omits it: one event per sample, a run of one.
+        sampleCount: event.sampleCount ?? 1,
       }),
     );
 
@@ -201,12 +211,14 @@ export class AppEventsService {
     { date, start, end }: ActivityDay,
     filter: AppActivityFilter,
   ): Promise<AppActivityDay> {
-    const [rows, coveringEntries] = await Promise.all([
+    const [runs, coveringEntries] = await Promise.all([
       this.appEvents.find({
         where: {
           organisationId,
           membershipId,
-          sampledAt: Between(start, end),
+          // Looks back far enough to catch a run that began before the
+          // day and reaches into it; expansion below trims it to the day.
+          sampledAt: Between(runLookbackStart(start), end),
         },
         order: { sampledAt: 'ASC' },
       }),
@@ -217,6 +229,10 @@ export class AppEventsService {
         end,
       ),
     ]);
+
+    // One entry per sample, so a merged run is bucketed, attributed and
+    // session-counted exactly as the same samples sent one by one would be.
+    const rows = expandAppEventSamples(runs, { start, end });
 
     // Keyed by `${hourStart}|${projectId ?? 'untracked'}|${appName}` — one
     // row per (hour, project, app) combination, matching the response's

@@ -36,6 +36,7 @@ export const DEFAULT_TIMER_STATUS_POLL_INTERVAL_MS = 15_000;
 export class TimerStatusGate {
   private handle: ReturnType<typeof setInterval> | null = null;
   private lastRunning = false;
+  private hasPending: () => boolean = () => false;
 
   constructor(
     private readonly authStore: TimerStatusSession,
@@ -43,6 +44,17 @@ export class TimerStatusGate {
     private readonly onChange: (running: boolean) => void,
     private readonly pollIntervalMs = DEFAULT_TIMER_STATUS_POLL_INTERVAL_MS,
   ) {}
+
+  /**
+   * While timer actions made offline are still waiting to be sent, the
+   * server describes the past: a start it has not heard of reads as
+   * "nothing running", and turned capture off for the poll or so between
+   * reconnecting and the queue landing. The last state stands until they
+   * are sent — the same rule `tracking:status` follows (timer-status.ts).
+   */
+  holdWhile(hasPending: () => boolean): void {
+    this.hasPending = hasPending;
+  }
 
   start(): void {
     if (this.handle) return;
@@ -96,6 +108,7 @@ export class TimerStatusGate {
     // Before the `ok` check: an unauthorized result is also `ok: false`.
     if (result.unauthorized) return false;
     if (!result.ok || !result.data) return null;
+    if (this.hasPending()) return null;
     const entry = result.data.entry;
     // A manually paused entry still exists server-side (only stop() clears
     // it) — capture must not keep running through a pause, so treat it the

@@ -1,5 +1,23 @@
+import type { X11Display } from 'x11';
 import type { CaptureSourceState } from './app-capture-health';
 import type { GnomeWindowFocus } from './gnome-window-focus-tracker';
+
+type CreateX11Client = (cb: (err: Error | null, display?: X11Display) => void) => void;
+
+/**
+ * The `x11` library emits a request's error as `'error'` on the client
+ * unless the request's callback returns `true` (x11/lib/xcore.js). An
+ * `'error'` with no listener is thrown by Node from the socket's data
+ * handler, where no `try/catch` of ours can reach it — it lands in main's
+ * `uncaughtException` handler, which stops the timer and relaunches the
+ * app. So every callback answers `HANDLED`.
+ */
+const HANDLED = true;
+
+/** X protocol errors carry the server's error code; connection failures don't. */
+function isProtocolError(error: unknown): boolean {
+  return typeof (error as { error?: unknown } | null)?.error === 'number';
+}
 
 /** Predefined X11 atoms. */
 const ANY_PROPERTY_TYPE = 0;
@@ -37,15 +55,18 @@ export class X11WindowTracker {
     private readonly options: {
       pollIntervalMs?: number;
       logger?: (line: string) => void;
+      /** Injectable for tests; defaults to the `x11` package's `createClient`. */
+      createClient?: CreateX11Client;
     } = {},
   ) {}
 
   /** Resolves either way: no X display is ordinary, not an error — getLastFocus() just stays null. */
   async start(): Promise<void> {
     try {
-      const x11 = (await import('x11')).default;
+      const createClient =
+        this.options.createClient ?? (await import('x11')).default.createClient;
       await new Promise<void>((resolve) => {
-        x11.createClient((err, display) => {
+        createClient((err, display) => {
           if (err || !display) {
             this.log(`x11 unavailable: ${err?.message ?? 'no display'}`);
             this.sourceState = 'down';
@@ -55,6 +76,8 @@ export class X11WindowTracker {
           this.display = display;
           this.client = display.client;
           this.root = display.screen[0].root;
+          // Before any request goes out, so no error can arrive unheard.
+          display.client.on('error', this.handleClientError);
           resolve();
         });
       });
@@ -88,6 +111,24 @@ export class X11WindowTracker {
     this.display = null;
     this.client = null;
   }
+
+  /**
+   * Anything the library could not hand to a waiting callback. A protocol
+   * error (BadWindow for a window closed between two reads, say) is the
+   * same ordinary race `refresh()` already tolerates, so it is only logged.
+   * A connection failure means this X connection is finished: report the
+   * source down and stop polling it, rather than leave a dead client.
+   * Never rethrows — see `HANDLED`.
+   */
+  private readonly handleClientError = (error: unknown): void => {
+    if (isProtocolError(error)) {
+      this.log(`x11 error ignored: ${String(error)}`);
+      return;
+    }
+    this.log(`x11 connection failed, window tracking stopped: ${String(error)}`);
+    this.stop();
+    this.sourceState = 'down';
+  };
 
   /** Whether an X display answered — what app-capture health is judged on. */
   get state(): CaptureSourceState {
@@ -152,9 +193,10 @@ export class X11WindowTracker {
   private internAtom(name: string): Promise<number> {
     return this.withTimeout(
       new Promise<number>((resolve) => {
-        this.client?.InternAtom(false, name, (err, atom) =>
-          resolve(err ? 0 : atom),
-        );
+        this.client?.InternAtom(false, name, (err, atom) => {
+          resolve(err ? 0 : atom);
+          return HANDLED;
+        });
       }),
       0,
     );
@@ -175,7 +217,12 @@ export class X11WindowTracker {
           ANY_PROPERTY_TYPE,
           0,
           length,
-          (err, prop) => resolve(err ? null : (prop?.data ?? null)),
+          (err, prop) => {
+            // BadWindow here is the window closing mid-read — most reliably
+            // a screenshot tool's dialog on Ubuntu 20.04 / X11.
+            resolve(err ? null : (prop?.data ?? null));
+            return HANDLED;
+          },
         );
       }),
       null,

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -117,6 +117,7 @@ describe('PendingTimerOps', () => {
         projectId: 'p2',
         taskId: null,
         opId: expect.any(String) as string,
+        localEntryId: expect.stringMatching(/^offline-/) as string,
       },
     ]);
   });
@@ -174,6 +175,7 @@ describe('PendingTimerOps', () => {
         projectId: null,
         taskId: null,
         opId: expect.any(String) as string,
+        localEntryId: expect.stringMatching(/^offline-/) as string,
       },
     ]);
 
@@ -296,7 +298,7 @@ describe('PendingTimerOps', () => {
       await ops.pauseDurably('t', client({ stopTimer, pauseTimer }), '2026-10-23T09:00:00.000Z');
 
       expect(pauseTimer).not.toHaveBeenCalled();
-      expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-23T09:00:00.000Z', expect.any(String));
+      expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-23T09:00:00.000Z', expect.any(String), 'e1');
       expect(queuedWhenAsked).toEqual([
         {
           type: 'stop',
@@ -581,15 +583,18 @@ describe('PendingTimerOps', () => {
     });
 
     // There is no row to name: the server has never heard of this entry.
-    it('names no entry for a stop ending one this agent invented offline', async () => {
+    it('names no server entry for a stop ending one this agent invented offline, only its local one', async () => {
       const ops = new PendingTimerOps(dir);
       await ops.start('t', 'p2', null, client());
       await ops.pause('t', client());
 
-      expect(ops.load()).toEqual([
-        expect.objectContaining({ type: 'start' }),
-        { type: 'stop', at: expect.any(String) as string, opId: expect.any(String) as string },
-      ]);
+      const [start, stop] = ops.load() as { localEntryId?: string }[];
+      expect(stop).toEqual({
+        type: 'stop',
+        at: expect.any(String) as string,
+        opId: expect.any(String) as string,
+        localEntryId: start.localEntryId,
+      });
     });
 
     it('splits the running entry on the same project and task', async () => {
@@ -870,6 +875,51 @@ describe('PendingTimerOps', () => {
       expect((ops.load()[0] as { opId: string }).opId).toBe(sent);
     });
 
+    it('names the entry a backdated stop ends, so a server that already closed it still finds it', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const stopTimer = vi.fn(() => Promise.resolve(ok));
+
+      await ops.stopAt('t', client({ stopTimer }), '2026-10-09T09:30:00.000Z');
+
+      expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-09T09:30:00.000Z', expect.any(String), 'e1');
+    });
+
+    it('sends no time with a stop that was not backdated, which the server would read as a discard', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const stopTimer = vi.fn(() => Promise.resolve(ok));
+
+      await ops.stopAt('t', client({ stopTimer }));
+
+      expect(stopTimer).toHaveBeenCalledWith('t', undefined, expect.any(String), 'e1');
+    });
+
+    it('names no entry for one invented offline, which the server has never seen', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember({ ...entry, id: 'offline-1' });
+      const stopTimer = vi.fn(() => Promise.resolve(ok));
+
+      await ops.pauseDurably('t', client({ stopTimer }), '2026-10-09T09:30:00.000Z');
+
+      expect(stopTimer).toHaveBeenCalledWith('t', '2026-10-09T09:30:00.000Z', expect.any(String), undefined);
+    });
+
+    it('asks again without the entry when an older backend refuses the field', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      const stopTimer = vi
+        .fn()
+        .mockResolvedValueOnce({ ...offline, status: 400 })
+        .mockResolvedValueOnce(ok);
+
+      const result = await ops.pauseDurably('t', client({ stopTimer }), '2026-10-09T09:30:00.000Z');
+
+      expect(stopTimer).toHaveBeenLastCalledWith('t', '2026-10-09T09:30:00.000Z', expect.any(String), undefined);
+      expect(result.ok && !result.fromCache).toBe(true);
+      expect(ops.load()).toEqual([]);
+    });
+
     it('queues an idle stop under the id the first attempt already sent', async () => {
       const ops = new PendingTimerOps(dir, diskBackedStore());
       ops.remember(entry);
@@ -924,6 +974,222 @@ describe('PendingTimerOps', () => {
 
       expect((stopTimer.mock.calls[0] as unknown[])[2]).toBe(stop.opId);
       expect((startTimer.mock.calls[0] as unknown[])[4]).toBe(start.opId);
+    });
+  });
+
+  // Waking offline: the sync loop's flush is mid-send when the wake restart
+  // queues its start. Writing the flush's own copy back erased that start,
+  // the timer cleared, and everything after the sleep went untracked.
+  describe('flushes that overlap', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it('keeps a start queued while another flush is still sending', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      await ops.pause('t', client());
+      const slowStop = deferred<typeof offline>();
+
+      const flushing = ops.flush('t', client({ stopTimer: () => slowStop.promise }));
+      // The stop fails only after the click has had time to queue its start,
+      // as a request to an unreachable server does.
+      setTimeout(() => slowStop.resolve(offline), 20);
+      await ops.start('t', 'p1', null, client());
+      await flushing;
+
+      expect(ops.load().map((op) => op.type)).toEqual(['stop', 'start']);
+    });
+
+    it('sends each action once, in order, however many flushes are asked for', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.remember(entry);
+      await ops.pause('t', client());
+      await ops.start('t', 'p2', null, client());
+      const slowStop = deferred<typeof ok>();
+      const calls: string[] = [];
+      const server = client({
+        stopTimer: vi.fn(() => {
+          calls.push('stop');
+          return slowStop.promise;
+        }),
+        startTimer: vi.fn(() => {
+          calls.push('start');
+          return Promise.resolve(ok);
+        }),
+      });
+
+      const first = ops.flush('t', server);
+      const second = ops.flush('t', server);
+      slowStop.resolve({ ...ok, data: { ...entry, endedAt: '2026-10-09T09:00:00.000Z' } });
+      const results = await Promise.all([first, second]);
+
+      expect(calls).toEqual(['stop', 'start']);
+      expect(results.every((result) => result.settled)).toBe(true);
+      expect(ops.load()).toEqual([]);
+    });
+
+    it('reports a refusal met on the way to a click, exactly once', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+      const onRefused = vi.fn();
+      ops.onRefused(onRefused);
+      const refusal = { ...offline, status: 409, message: 'Work-time limit reached.' };
+      const startTimer = vi
+        .fn()
+        .mockResolvedValueOnce(refusal)
+        .mockResolvedValue(ok);
+
+      await ops.start('t', 'p3', null, client({ startTimer }));
+
+      expect(onRefused).toHaveBeenCalledTimes(1);
+      expect(onRefused).toHaveBeenCalledWith([
+        {
+          op: expect.objectContaining({ type: 'start', projectId: 'p2' }) as unknown,
+          message: 'Work-time limit reached.',
+        },
+      ]);
+    });
+  });
+
+  // A stop queued while the running entry existed only on this machine has
+  // no server id to name. Sent bare, the server ends whatever this device has
+  // running — or, with nothing running, refuses it: "No timer is currently
+  // running on this device", the popup after a sleep.
+  describe('the timer log', () => {
+    it('records what was queued, each attempt and its verdict, and a refusal with its reason', async () => {
+      const events: { event: string; fields: Record<string, unknown> }[] = [];
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.setLog((event, fields) => events.push({ event, fields }));
+      ops.remember(entry);
+
+      await ops.pause('t', client());
+      const queued = events.find((e) => e.event === 'queued');
+      expect(queued?.fields).toMatchObject({ type: 'stop', entryId: 'e1' });
+      const opId = queued?.fields.opId;
+
+      const refused = { ok: false as const, status: 404, message: 'No timer is currently running on this device.' };
+      await ops.flush('t', client({ stopTimer: () => Promise.resolve(refused) }));
+
+      expect(events.at(-1)).toEqual({
+        event: 'sent',
+        fields: {
+          type: 'stop',
+          opAt: expect.any(String) as string,
+          opId,
+          entryId: 'e1',
+          localEntryId: undefined,
+          verdict: 'rejected',
+          status: 404,
+          message: 'No timer is currently running on this device.',
+        },
+      });
+    });
+
+    it('records an offline entry getting its server id, and a stop dropped for want of one', async () => {
+      const events: { event: string; fields: Record<string, unknown> }[] = [];
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      ops.setLog((event, fields) => events.push({ event, fields }));
+      await ops.start('t', 'p1', null, client());
+      await ops.pause('t', client());
+
+      await ops.flush('t', client({
+        startTimer: () => Promise.resolve({ ok: true as const, data: { ...entry, id: 's1' } }),
+        stopTimer: () => Promise.resolve(ok),
+      }));
+
+      // The pause tries the queued start first, offline, so it is sent twice.
+      expect(events.map((e) => e.event)).toEqual(['queued', 'sent', 'queued', 'sent', 'named', 'sent']);
+      expect(events[1].fields).toMatchObject({ type: 'start', verdict: 'undecided' });
+      expect(events[4].fields).toMatchObject({ entryId: 's1' });
+
+      writeFileSync(
+        join(dir, 'pending-timer-ops.json'),
+        JSON.stringify([{ type: 'stop', at: entry.startedAt, opId: 'orphan', localEntryId: 'offline-x' }]),
+      );
+      await ops.flush('t', client());
+      expect(events.at(-1)).toEqual({
+        event: 'dropped',
+        fields: { opId: 'orphan', localEntryId: 'offline-x', reason: 'its start never reached the server' },
+      });
+    });
+  });
+
+  describe('stops for an entry started offline', () => {
+    const serverEntry = (id: string) => ({ ...ok, data: { ...entry, id } });
+    const ended = { ...ok, data: { ...entry, endedAt: '2026-10-09T09:00:00.000Z' } };
+
+    it('name the entry the server created for their start', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+      const stopTimer = vi.fn(() => Promise.resolve(ended));
+
+      await ops.flush(
+        't',
+        client({ startTimer: () => Promise.resolve(serverEntry('s1')), stopTimer }),
+      );
+
+      expect((stopTimer.mock.calls[0] as unknown[])[3]).toBe('s1');
+      expect(ops.load()).toEqual([]);
+    });
+
+    it('each name their own entry across several offline starts', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+      await ops.start('t', 'p3', null, client());
+      await ops.pause('t', client());
+      const stopTimer = vi.fn(() => Promise.resolve(ended));
+      const startTimer = vi
+        .fn()
+        .mockResolvedValueOnce(serverEntry('s1'))
+        .mockResolvedValueOnce(serverEntry('s2'));
+
+      await ops.flush('t', client({ startTimer, stopTimer }));
+
+      expect(stopTimer.mock.calls.map((call) => (call as unknown[])[3])).toEqual(['s1', 's2']);
+    });
+
+    it('go with their start when the server refuses it, and leave the next ones alone', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+      await ops.start('t', 'p3', null, client());
+      await ops.pause('t', client());
+      const refusal = { ...offline, status: 409, message: 'Work-time limit reached.' };
+      const stopTimer = vi.fn(() => Promise.resolve(ended));
+      const startTimer = vi
+        .fn()
+        .mockResolvedValueOnce(refusal)
+        .mockResolvedValueOnce(serverEntry('s2'));
+
+      const result = await ops.flush('t', client({ startTimer, stopTimer }));
+
+      expect(stopTimer).toHaveBeenCalledTimes(1);
+      expect((stopTimer.mock.calls[0] as unknown[])[3]).toBe('s2');
+      expect(result.settled).toBe(true);
+    });
+
+    it('are not sent once their start is gone', async () => {
+      const ops = new PendingTimerOps(dir, diskBackedStore());
+      await ops.start('t', 'p2', null, client());
+      await ops.pause('t', client());
+      // The start is lost — by the overlap fixed above, or by a version
+      // that had that bug still queueing.
+      const file = join(dir, 'pending-timer-ops.json');
+      const queued = JSON.parse(readFileSync(file, 'utf-8')) as { type: string }[];
+      writeFileSync(file, JSON.stringify(queued.filter((op) => op.type !== 'start')));
+      const stopTimer = vi.fn(() => Promise.resolve(ended));
+
+      const result = await ops.flush('t', client({ stopTimer }));
+
+      expect(stopTimer).not.toHaveBeenCalled();
+      expect(result.settled).toBe(true);
     });
   });
 });

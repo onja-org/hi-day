@@ -13,7 +13,7 @@ import { MembershipRole } from '../../../database/entities/membership-role.enum'
 import { TimeEntriesService } from '../../../time-entries/services/time-entries.service';
 import { AppEventsService } from '../app-events.service';
 
-type FakeAppEvent = { appName: string; sampledAt: Date };
+type FakeAppEvent = { appName: string; sampledAt: Date; sampleCount?: number };
 type FakeCoveringEntry = {
   id: string;
   projectId: string | null;
@@ -125,6 +125,32 @@ describe('AppEventsService', () => {
           title: null,
           titleUnavailableReason: AppEventTitleUnavailableReason.HIDDEN_BY_APP,
         }),
+      ]);
+    });
+
+    it('stores a run of one for an event without sampleCount (an older agent)', async () => {
+      const { repo: appEventsRepo, save } = makeAppEventsRepo();
+      const service = new AppEventsService(
+        appEventsRepo,
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        makeTimeEntriesService(),
+        makeOrganisationsService(),
+      );
+
+      await service.recordBatch('org-1', 'user-1', 'device-1', [
+        { appName: 'Terminal', sampledAt: '2026-09-08T12:00:00.000Z' },
+        {
+          appName: 'Figma',
+          sampledAt: '2026-09-08T12:00:05.000Z',
+          sampleCount: 12,
+        },
+      ]);
+
+      expect(save).toHaveBeenCalledWith([
+        expect.objectContaining({ appName: 'Terminal', sampleCount: 1 }),
+        expect.objectContaining({ appName: 'Figma', sampleCount: 12 }),
       ]);
     });
 
@@ -462,7 +488,10 @@ describe('AppEventsService', () => {
       const [{ where }] = find.mock.calls[0] as [
         { where: { sampledAt: { value: Date[] } } },
       ];
-      expect(where.sampledAt.value).toEqual([start, end]);
+      // Looks back 59 samples so a run that began just before midnight and
+      // reaches into the day is found (and then trimmed to the day).
+      const lookbackStart = new Date(start.getTime() - 59 * 5000);
+      expect(where.sampledAt.value).toEqual([lookbackStart, end]);
       expect(listCoveringWindow).toHaveBeenCalledWith(
         'org-1',
         'membership-1',
@@ -517,6 +546,124 @@ describe('AppEventsService', () => {
       await expect(
         service.getMyDay('org-1', 'user-1', 'not-a-date'),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('merged runs (sampleCount > 1)', () => {
+    const at = (time: string) => new Date(`2026-09-08T${time}.000Z`);
+
+    /** The samples a run stands for, sent one by one — what an agent
+     * without merging would have stored. */
+    function unmerged(runs: FakeAppEvent[]): FakeAppEvent[] {
+      return runs.flatMap((run) =>
+        Array.from({ length: run.sampleCount ?? 1 }, (_, index) => ({
+          appName: run.appName,
+          sampledAt: new Date(run.sampledAt.getTime() + index * 5000),
+        })),
+      );
+    }
+
+    async function dayFrom(
+      rows: FakeAppEvent[],
+      coveringEntries: FakeCoveringEntry[] = [ALL_DAY],
+      filter: { projectId?: string } = {},
+    ) {
+      const service = new AppEventsService(
+        makeAppEventsRepo(rows).repo,
+        makeMembershipsRepo({
+          findOne: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+        }),
+        makeTimeEntriesService(coveringEntries),
+        makeOrganisationsService(),
+      );
+      return service.getMyDay('org-1', 'user-1', '2026-09-08', filter);
+    }
+
+    it('reports a run exactly as the same samples sent one by one', async () => {
+      const runs: FakeAppEvent[] = [
+        { appName: 'Figma', sampledAt: at('09:00:00'), sampleCount: 60 },
+        { appName: 'Slack', sampledAt: at('09:05:00'), sampleCount: 3 },
+        { appName: 'Figma', sampledAt: at('09:05:15'), sampleCount: 10 },
+        // An older agent's one-sample row, mixed in.
+        { appName: 'Terminal', sampledAt: at('09:06:05') },
+      ];
+
+      const merged = await dayFrom(runs);
+      const oneByOne = await dayFrom(unmerged(runs));
+
+      expect(merged).toEqual(oneByOne);
+      expect(merged.totalSecondsSpent).toBe((60 + 3 + 10 + 1) * 5);
+    });
+
+    it('splits a run crossing the hour between both hours, as single samples would be', async () => {
+      // 24 samples from 09:59:00 — 12 in each hour.
+      const runs = [
+        { appName: 'Figma', sampledAt: at('09:59:00'), sampleCount: 24 },
+      ];
+
+      const merged = await dayFrom(runs);
+
+      expect(merged).toEqual(await dayFrom(unmerged(runs)));
+      expect(
+        merged.buckets.map((bucket) => bucket.items[0].secondsSpent),
+      ).toEqual([60, 60]);
+      // One session, counted once, in the hour it started.
+      expect(
+        merged.buckets.map((bucket) => bucket.items[0].sessionCount),
+      ).toEqual([1, 0]);
+    });
+
+    it('drops only the part of a run no Time entry covers, and splits it across projects', async () => {
+      const entries: FakeCoveringEntry[] = [
+        {
+          id: 'entry-a',
+          projectId: 'project-a',
+          startedAt: at('10:00:00'),
+          endedAt: at('10:01:00'),
+        },
+        {
+          id: 'entry-b',
+          projectId: 'project-b',
+          startedAt: at('10:02:00'),
+          endedAt: at('10:05:00'),
+        },
+      ];
+      // 10:00:00 → 10:04:55: 12 samples on A, 12 uncovered, 36 on B.
+      const runs = [
+        { appName: 'Figma', sampledAt: at('10:00:00'), sampleCount: 60 },
+      ];
+
+      const merged = await dayFrom(runs, entries);
+
+      expect(merged).toEqual(await dayFrom(unmerged(runs), entries));
+      expect(merged.totalSecondsSpent).toBe((12 + 36) * 5);
+      expect(await dayFrom(runs, entries, { projectId: 'project-b' })).toEqual(
+        await dayFrom(unmerged(runs), entries, { projectId: 'project-b' }),
+      );
+    });
+
+    it('counts only the samples inside the day for a run that started the day before', async () => {
+      const previousDay: FakeCoveringEntry = {
+        id: 'entry-overnight',
+        projectId: 'project-night',
+        startedAt: new Date('2026-09-07T23:00:00.000Z'),
+        endedAt: new Date('2026-09-08T01:00:00.000Z'),
+      };
+      // 23:59:00 → 00:00:55: 12 samples yesterday, 12 today.
+      const runs = [
+        {
+          appName: 'Terminal',
+          sampledAt: new Date('2026-09-07T23:59:00.000Z'),
+          sampleCount: 24,
+        },
+      ];
+
+      const merged = await dayFrom(runs, [previousDay]);
+
+      expect(merged.totalSecondsSpent).toBe(12 * 5);
+      expect(merged.buckets.map((bucket) => bucket.hourStart)).toEqual([
+        '2026-09-08T00:00:00.000Z',
+      ]);
     });
   });
 

@@ -75,3 +75,50 @@ export function recordRelaunch(
     // See doc comment above.
   }
 }
+
+export interface FatalErrorDeps {
+  /** A function, so it is read when a crash happens, after any `setPath`. */
+  userDataDir: () => string;
+  now: () => number;
+  log: (...args: unknown[]) => void;
+  relaunch: () => void;
+  exit: (code: number) => void;
+}
+
+/**
+ * What main runs on `uncaughtException` / `unhandledRejection`: relaunch
+ * into a fresh process rather than leave the person with a vanished app.
+ *
+ * It deliberately does **not** stop the running timer. The entry stays
+ * open on the server and in `offline-cache.json`, and the relaunched app's
+ * crash recovery decides what happens to it (ADR-0025, `recovered-timer.ts`):
+ * back within two minutes, it simply carries on. Pausing here used to clear
+ * the timer locally before the relaunch, so recovery found nothing, and
+ * one X11 race during a screenshot silently stopped somebody's tracking
+ * until they noticed and pressed Start again.
+ *
+ * Acts once per process. A single fault can raise several errors before
+ * the exit lands, and counting each as a relaunch used up the crash-loop
+ * allowance (`shouldRelaunch`) after only a couple of real crashes.
+ */
+export function createFatalErrorHandler(
+  deps: FatalErrorDeps,
+): (kind: string, error: unknown) => void {
+  let handling = false;
+  return (kind, error) => {
+    deps.log(`[fatal] unhandled ${kind}:`, error);
+    if (handling) return;
+    handling = true;
+
+    const userDataDir = deps.userDataDir();
+    const now = deps.now();
+    if (!shouldRelaunch(loadRelaunchHistory(userDataDir), now)) {
+      deps.log('[fatal] too many relaunches in the last minute — not retrying again.');
+      deps.exit(1);
+      return;
+    }
+    recordRelaunch(userDataDir, now);
+    deps.relaunch();
+    deps.exit(1);
+  };
+}

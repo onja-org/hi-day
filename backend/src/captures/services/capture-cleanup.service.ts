@@ -7,6 +7,11 @@ import {
   LessThan,
   MoreThan,
 } from 'typeorm';
+import {
+  APP_EVENT_SAMPLE_MS,
+  runLookbackStart,
+  sampleCountOf,
+} from '../../common/app-event-samples.util';
 import { AppEvent } from '../../database/entities/app-event.entity';
 import { Screenshot } from '../../database/entities/screenshot.entity';
 import { TimeEntry } from '../../database/entities/time-entry.entity';
@@ -19,6 +24,8 @@ export interface CaptureWindow {
 }
 
 export interface PrunedCaptures {
+  /** App *samples* removed — a merged run counts once per sample it lost,
+   * so the figure means the same whether the agent merged runs or not. */
   appEvents: number;
   urlSessions: number;
   screenshots: number;
@@ -173,6 +180,14 @@ export class CaptureCleanupService {
     return ids.length;
   }
 
+  /**
+   * App events are judged per *sample*: a row can stand for a run of samples
+   * (see common/app-event-samples.util.ts), and an edited entry can end in
+   * the middle of one. A sample is removed when it is inside `window` and
+   * uncovered — the same rule a one-sample row always had. A run losing
+   * only some samples is replaced by the stretches of it that remain, so
+   * covered time is never thrown away with the uncovered.
+   */
   private async pruneAppEvents(
     manager: EntityManager,
     membershipId: string,
@@ -180,12 +195,62 @@ export class CaptureCleanupService {
     covered: Interval[],
   ): Promise<number> {
     const rows = await manager.find(AppEvent, {
-      where: { membershipId, sampledAt: Between(window.from, window.to) },
+      where: {
+        membershipId,
+        // Far enough back to find a run that began before the window and
+        // reaches into it.
+        sampledAt: Between(runLookbackStart(window.from), window.to),
+      },
     });
-    const ids = rows
-      .filter((row) => !this.isCovered(covered, row.sampledAt))
-      .map((row) => row.id);
-    return await this.deleteByIds(manager, AppEvent, ids);
+
+    const from = window.from.getTime();
+    const to = window.to.getTime();
+    const doomed: string[] = [];
+    const remnants: AppEvent[] = [];
+    let removedSamples = 0;
+
+    for (const row of rows) {
+      const first = row.sampledAt.getTime();
+      const count = sampleCountOf(row);
+      // Consecutive kept samples, as [start index, length] pairs.
+      const keptRuns: [number, number][] = [];
+      let removedHere = 0;
+      for (let index = 0; index < count; index += 1) {
+        const at = first + index * APP_EVENT_SAMPLE_MS;
+        const inWindow = at >= from && at <= to;
+        if (inWindow && !this.isCovered(covered, new Date(at))) {
+          removedHere += 1;
+          continue;
+        }
+        const last = keptRuns[keptRuns.length - 1];
+        if (last && last[0] + last[1] === index) last[1] += 1;
+        else keptRuns.push([index, 1]);
+      }
+      if (removedHere === 0) continue;
+
+      removedSamples += removedHere;
+      doomed.push(row.id);
+      for (const [startIndex, length] of keptRuns) {
+        remnants.push(
+          manager.create(AppEvent, {
+            organisationId: row.organisationId,
+            membershipId: row.membershipId,
+            deviceId: row.deviceId,
+            appName: row.appName,
+            title: row.title,
+            titleUnavailableReason: row.titleUnavailableReason,
+            sampledAt: new Date(first + startIndex * APP_EVENT_SAMPLE_MS),
+            sampleCount: length,
+          }),
+        );
+      }
+    }
+
+    await this.deleteByIds(manager, AppEvent, doomed);
+    if (remnants.length > 0) {
+      await manager.save(AppEvent, remnants);
+    }
+    return removedSamples;
   }
 
   private async pruneUrlSessions(
