@@ -5,6 +5,7 @@ import {
   keepStartedAt,
 } from "./idle-hold.js";
 import { reminderMessage } from "./reminder-message.js";
+import { refusedTimeNotice } from "./refused-time-notice.js";
 
 export {};
 
@@ -644,6 +645,11 @@ const idleAssignList = document.getElementById(
   "idle-assign-list",
 ) as HTMLUListElement;
 const idleNotice = document.getElementById("idle-notice")!;
+const stoppedNotice = document.getElementById("stopped-notice")!;
+const stoppedNoticeMessage = document.getElementById("stopped-notice-message")!;
+document.getElementById("stopped-notice-dismiss")!.addEventListener("click", () => {
+  stoppedNotice.hidden = true;
+});
 const todayTotalEl = document.getElementById("today-total")!;
 const todayStat = document.getElementById("today-stat")!;
 const timerStats = document.getElementById("timer-stats")!;
@@ -917,17 +923,31 @@ const timerBlockedDismiss = document.getElementById(
  * a rule the organisation set, not a fault, and the inline text was easy
  * to miss while looking at the Play button.
  */
-function showTimerBlocked(message: string): void {
+const timerBlockedResume = document.getElementById(
+  "timer-blocked-resume",
+) as HTMLButtonElement;
+
+function showTimerBlocked(message: string, offerResume = false): void {
   setMode("full", true);
   // Resizing alone leaves a hidden window hidden — see `showTrackingError`.
   void window.api.windowControls.show();
   timerBlockedMessage.textContent = message;
+  timerBlockedResume.hidden = !offerResume;
   timerBlocked.hidden = false;
-  timerBlockedDismiss.focus();
+  (offerResume ? timerBlockedResume : timerBlockedDismiss).focus();
 }
 
 timerBlockedDismiss.addEventListener("click", () => {
   timerBlocked.hidden = true;
+});
+
+// Starts now, through the play button's own path: the refused stretch is
+// gone from the server, and a start backdated over it could be refused
+// again for reaching too far back.
+timerBlockedResume.addEventListener("click", () => {
+  timerBlocked.hidden = true;
+  if (runningEntry || timerToggle.disabled) return;
+  void startTracking();
 });
 
 const timerBlockedTitle = document.getElementById("timer-blocked-title")!;
@@ -1074,6 +1094,8 @@ let runningStateVersion = 0;
 
 function setRunning(entry: TimeEntry | null): void {
   runningStateVersion++;
+  // Running again, whoever started it: the stop it explained is over.
+  if (entry && !entry.endedAt && !entry.pausedAt) stoppedNotice.hidden = true;
   const previous = runningEntry;
   if ((entry?.id ?? null) !== (previous?.id ?? null)) {
     // The ended entry's time stays as this device counted it, so stopping
@@ -1246,6 +1268,20 @@ function hideIdleBanner(): void {
   idleHold = null;
 }
 
+/**
+ * Auto-subtract stopped the timer while nobody was watching — after a long
+ * sleep the person is often still at the lock screen when this runs. So it
+ * stays until dismissed or the timer runs again, and brings the window
+ * forward in full: the passing eight-second line, in a window that may be
+ * in the tray, left a stopped timer with no explanation.
+ */
+function showTimerStoppedNotice(message: string): void {
+  stoppedNoticeMessage.textContent = message;
+  stoppedNotice.hidden = false;
+  setCompact(false);
+  void window.api.windowControls.show();
+}
+
 function showIdleNotice(message: string): void {
   idleNotice.textContent = message;
   idleNotice.hidden = false;
@@ -1299,8 +1335,8 @@ async function checkIdle(): Promise<void> {
     );
     if (result.ok) {
       setRunning(null);
-      showIdleNotice(
-        `Timer stopped automatically after ${Math.floor(idleSeconds / 60)} min idle.`,
+      showTimerStoppedNotice(
+        `Timer stopped automatically after ${Math.floor(idleSeconds / 60)} min idle; the idle time was not counted.`,
       );
     }
     return;
@@ -1319,6 +1355,9 @@ async function checkIdle(): Promise<void> {
  */
 async function holdAtTimeout(idleStartedAt: string): Promise<void> {
   if (!runningEntry) return;
+  // A hold is already stored — a sleep main is settling, or one waiting
+  // for its prompt — and two would stop the same entry twice.
+  if (await window.api.idle.hold()) return;
   const hold: IdleHold = {
     projectId: runningEntry.projectId,
     taskId: runningEntry.taskId,
@@ -1363,13 +1402,22 @@ async function watchHeldIdle(hold: IdleHold): Promise<void> {
  * Whoever is at the machine when this runs is back, so a hold with no
  * return recorded gets one now.
  */
-async function settleIdleHold(): Promise<void> {
+let settlingIdleHold: Promise<void> | null = null;
+/** One at a time: a wake and a launch can ask together, and two would answer twice. */
+function settleIdleHold(): Promise<void> {
+  settlingIdleHold ??= settleIdleHoldOnce().finally(() => {
+    settlingIdleHold = null;
+  });
+  return settlingIdleHold;
+}
+
+async function settleIdleHoldOnce(): Promise<void> {
   const stored = await window.api.idle.hold();
   if (!stored) return;
   // Tracking again already — started on the web, say — so nothing is held.
   // Asked for rather than assumed: `runningEntry` is this window's last
-  // belief, and after a sleep it is stale — main ended that entry while the
-  // machine was off. No answer at all means ask, which loses nothing.
+  // belief, and after a long sleep it is stale — main ended that entry
+  // on waking. No answer at all means ask, which loses nothing.
   const live = await window.api.tracking.status().catch(() => null);
   const liveEntry = live?.ok ? live.data.entry : null;
   if (liveEntry) {
@@ -1402,7 +1450,7 @@ async function settleIdleHold(): Promise<void> {
     return;
   }
   await window.api.idle.clearHold();
-  showIdleNotice(
+  showTimerStoppedNotice(
     `Timer stopped after ${Math.floor(awaySeconds(hold, Date.now()) / 60)} min away; the idle time was not counted.`,
   );
 }
@@ -2730,8 +2778,9 @@ function showCapturePaused(paused: boolean): void {
 }
 
 window.api.windowControls.onCapturePaused(showCapturePaused);
-// Main stopped the timer as the machine slept, which this window, asleep
-// too, never saw — so the status is read before the hold is judged.
+// Main may have stopped the timer on waking, after a sleep that reached
+// the timeout, which this window never saw — so the status is read before
+// the hold is judged.
 window.api.idle.onWake(() => {
   void (async () => {
     // Refreshed first, so the hold is judged against what is really
@@ -2804,18 +2853,16 @@ recoveredTimerDiscard.addEventListener("click", () => {
  */
 window.api.windowControls.onRefusedTime((refused) => {
   if (refused.length === 0) return;
-  const when = (at: string): string =>
-    new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const lines = refused.map((item) => `${when(item.op.at)} — ${item.message}`);
-  timerBlockedTitle.textContent =
-    refused.length === 1
-      ? "Some time could not be saved"
-      : "Some time could not be saved";
-  showTimerBlocked(
-    `Hi Day reconnected, but time you tracked while offline could not be ` +
-      `saved:\n\n${lines.join("\n")}\n\nYou can add it by hand from your ` +
-      `timesheet in the web app.`,
-  );
+  void (async () => {
+    // Read first: the refusal is often what ended the timer, and whether
+    // to offer a restart depends on what is running now, not before.
+    await refreshStatus(true);
+    const notice = refusedTimeNotice(refused, {
+      timerStopped: !runningEntry || Boolean(runningEntry.pausedAt),
+    });
+    timerBlockedTitle.textContent = notice.title;
+    showTimerBlocked(notice.body, notice.offerResume);
+  })();
 });
 /**
  * The tray's Start/Stop item, taking the same click the play button does

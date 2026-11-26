@@ -4,6 +4,8 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpException,
+  Logger,
   Param,
   Post,
   Query,
@@ -59,6 +61,8 @@ import { ScreenshotsService } from '../../screenshots/services/screenshots.servi
 @Controller('device')
 @UseGuards(DeviceSessionGuard)
 export class DeviceTrackingController {
+  private readonly logger = new Logger(DeviceTrackingController.name);
+
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly tasksService: TasksService,
@@ -71,6 +75,39 @@ export class DeviceTrackingController {
     private readonly disclosureService: DisclosureService,
     private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Logs a timer action the server refused, then refuses it as before. The
+   * agent tells the person the time could not be saved; without this the
+   * server kept no trace of which device, entry and operation it was, or
+   * why. Server faults (5xx) are not refusals, and are logged elsewhere.
+   */
+  private async refusalLogged<T>(
+    action: string,
+    request: DeviceAuthenticatedRequest,
+    details: Record<string, string | null | undefined>,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        const fields = Object.entries({
+          org: request.organisationId,
+          device: request.deviceId,
+          ...details,
+          status: String(error.getStatus()),
+        })
+          .filter(([, value]) => value !== undefined && value !== null)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(' ');
+        this.logger.warn(
+          `[device-timer] ${action} refused ${fields}: ${error.message}`,
+        );
+      }
+      throw error;
+    }
+  }
 
   @Get('idle-policy')
   idlePolicy(@Req() request: DeviceAuthenticatedRequest): Promise<IdlePolicy> {
@@ -284,15 +321,21 @@ export class DeviceTrackingController {
     @Body() dto: StartTimeEntryDto,
     @Req() request: DeviceAuthenticatedRequest,
   ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.start(
-      request.organisationId,
-      request.userId,
-      projectId,
-      dto.taskId,
-      TimeEntrySource.AGENT,
-      request.deviceId,
-      dto.startedAt ? new Date(dto.startedAt) : undefined,
-      { operationId: dto.opId, idleSeconds: dto.idleSeconds },
+    return this.refusalLogged(
+      'start',
+      request,
+      { project: projectId, task: dto.taskId, op: dto.opId, at: dto.startedAt },
+      () =>
+        this.timeEntriesService.start(
+          request.organisationId,
+          request.userId,
+          projectId,
+          dto.taskId,
+          TimeEntrySource.AGENT,
+          request.deviceId,
+          dto.startedAt ? new Date(dto.startedAt) : undefined,
+          { operationId: dto.opId, idleSeconds: dto.idleSeconds },
+        ),
     );
   }
 
@@ -301,15 +344,21 @@ export class DeviceTrackingController {
     @Body() dto: StartTimeEntryDto,
     @Req() request: DeviceAuthenticatedRequest,
   ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.start(
-      request.organisationId,
-      request.userId,
-      null,
-      dto.taskId,
-      TimeEntrySource.AGENT,
-      request.deviceId,
-      dto.startedAt ? new Date(dto.startedAt) : undefined,
-      { operationId: dto.opId, idleSeconds: dto.idleSeconds },
+    return this.refusalLogged(
+      'start',
+      request,
+      { task: dto.taskId, op: dto.opId, at: dto.startedAt },
+      () =>
+        this.timeEntriesService.start(
+          request.organisationId,
+          request.userId,
+          null,
+          dto.taskId,
+          TimeEntrySource.AGENT,
+          request.deviceId,
+          dto.startedAt ? new Date(dto.startedAt) : undefined,
+          { operationId: dto.opId, idleSeconds: dto.idleSeconds },
+        ),
     );
   }
 
@@ -318,12 +367,18 @@ export class DeviceTrackingController {
     @Body() dto: StopTimeEntryDto,
     @Req() request: DeviceAuthenticatedRequest,
   ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.stop(
-      request.organisationId,
-      request.userId,
-      request.deviceId,
-      dto.endedAt ? new Date(dto.endedAt) : undefined,
-      { operationId: dto.opId, entryId: dto.entryId },
+    return this.refusalLogged(
+      'stop',
+      request,
+      { entry: dto.entryId, op: dto.opId, at: dto.endedAt },
+      () =>
+        this.timeEntriesService.stop(
+          request.organisationId,
+          request.userId,
+          request.deviceId,
+          dto.endedAt ? new Date(dto.endedAt) : undefined,
+          { operationId: dto.opId, entryId: dto.entryId },
+        ),
     );
   }
 
@@ -332,14 +387,25 @@ export class DeviceTrackingController {
     @Body() dto: SwitchTimeEntryDto,
     @Req() request: DeviceAuthenticatedRequest,
   ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.switchTo(
-      request.organisationId,
-      request.userId,
-      dto.projectId ?? null,
-      dto.taskId,
-      TimeEntrySource.AGENT,
-      request.deviceId,
-      { stopOperationId: dto.stopOpId, startOperationId: dto.startOpId },
+    return this.refusalLogged(
+      'switch',
+      request,
+      {
+        project: dto.projectId,
+        task: dto.taskId,
+        stopOp: dto.stopOpId,
+        startOp: dto.startOpId,
+      },
+      () =>
+        this.timeEntriesService.switchTo(
+          request.organisationId,
+          request.userId,
+          dto.projectId ?? null,
+          dto.taskId,
+          TimeEntrySource.AGENT,
+          request.deviceId,
+          { stopOperationId: dto.stopOpId, startOperationId: dto.startOpId },
+        ),
     );
   }
 
@@ -359,11 +425,13 @@ export class DeviceTrackingController {
     @Body() dto: PauseTimeEntryDto,
     @Req() request: DeviceAuthenticatedRequest,
   ): Promise<TimeEntrySummary> {
-    return this.timeEntriesService.pause(
-      request.organisationId,
-      request.userId,
-      request.deviceId,
-      { operationId: dto.opId },
+    return this.refusalLogged('pause', request, { op: dto.opId }, () =>
+      this.timeEntriesService.pause(
+        request.organisationId,
+        request.userId,
+        request.deviceId,
+        { operationId: dto.opId },
+      ),
     );
   }
 

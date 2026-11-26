@@ -671,7 +671,9 @@ output — not just assumed from source-mode success):
 
 **Idle handling** (`docs/adr/0028-...`): nothing happens before the
 organisation's idle timeout. Coming back inside it carries on as if nobody
-had left, and that includes the laptop having slept meanwhile. At the
+had left, and that includes the laptop having slept meanwhile: sleep leaves
+the timer running, and waking past the timeout ends the entry where input
+stopped and asks (`src/main/sleep-hold.ts`). At the
 timeout, tracking stops where input stopped, and the Keep/Discard prompt
 waits for an answer: Keep counts the idle stretch, and Discard drops only
 it, restarting from when the person came back. The waiting prompt is kept on

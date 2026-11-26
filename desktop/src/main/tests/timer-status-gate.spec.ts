@@ -292,4 +292,56 @@ describe('TimerStatusGate', () => {
     await expect(gate.pollOnce()).resolves.toBeUndefined();
     expect(onChange).not.toHaveBeenCalled();
   });
+  describe('while timer actions are still waiting to be sent', () => {
+    it('keeps capture on when the server has not yet heard of a start made offline', async () => {
+      const onChange = vi.fn();
+      let pending = true;
+      const gate = new TimerStatusGate(
+        makeSession('t'),
+        makeClient({ ok: true, data: { entry: null } }),
+        onChange,
+      );
+      gate.holdWhile(() => pending);
+      gate.prime(true);
+      onChange.mockClear();
+
+      await gate.pollOnce();
+      expect(onChange).not.toHaveBeenCalled();
+
+      // Sent, and the server still says nothing runs: now it is believed.
+      pending = false;
+      await gate.pollOnce();
+      expect(onChange).toHaveBeenCalledWith(false);
+    });
+
+    it('keeps capture off when the server has not yet heard of a stop made offline', async () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('t'),
+        makeClient({ ok: true, data: { entry: {} } }),
+        onChange,
+      );
+      gate.holdWhile(() => true);
+
+      await gate.pollOnce();
+
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('still turns capture off on a sign-out', async () => {
+      const onChange = vi.fn();
+      const gate = new TimerStatusGate(
+        makeSession('t'),
+        makeClient({ ok: false, unauthorized: true }),
+        onChange,
+      );
+      gate.holdWhile(() => true);
+      gate.prime(true);
+      onChange.mockClear();
+
+      await gate.pollOnce();
+
+      expect(onChange).toHaveBeenCalledWith(false);
+    });
+  });
 });

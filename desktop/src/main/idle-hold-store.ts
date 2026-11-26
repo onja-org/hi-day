@@ -14,6 +14,12 @@ export interface IdleHold {
   idleStartedAt: string;
   returnedAt: string | null;
   reason: 'timeout' | 'sleep';
+  /**
+   * The machine slept with the timer running and left it running: sleep
+   * only stops tracking once the timeout is reached. Settled by main on
+   * wake (src/main/sleep-hold.ts) before the renderer ever sees it.
+   */
+  timerRunning?: boolean;
 }
 
 export class IdleHoldStore {

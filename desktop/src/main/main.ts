@@ -34,6 +34,7 @@ import { ActivitySampleUploader } from "./activity-sample-uploader";
 import { AppEventUploader } from "./app-event-uploader";
 import { AuthStore, recentProjectIds } from "./auth-store";
 import { PendingTimerOps } from "./pending-timer-ops";
+import { readTimerStatus } from "./timer-status";
 import { sessionOwner } from "./session-owner";
 import { OfflineCache } from "./offline-cache";
 import { keepActionFor, recoveryActionFor } from "./recovered-timer";
@@ -62,6 +63,8 @@ import { displayName } from "./resolvers/linux/blind-browsers";
 import { readSessionEnvironment } from "./resolvers/linux/support-gate";
 import { GnomeIdleMonitor } from "./gnome-idle-monitor";
 import { IdleHoldStore, whenInputStopped, type IdleHold } from "./idle-hold-store";
+import { isRepeatSignal, sleepHoldOnWake } from "./sleep-hold";
+import { TimerLog } from "./timer-log";
 import { GnomeWindowFocusTracker } from "./gnome-window-focus-tracker";
 import { OfflineQueue } from "./offline-queue";
 import { OfflineQueueStore } from "./offline-queue-store";
@@ -1139,6 +1142,15 @@ async function registerIpcHandlers(): Promise<void> {
   };
   offlineQueue.setOwnerSource(currentOwner);
   pendingOps.setOwnerSource(currentOwner);
+  // Hours the server would not take. They used to be dropped in silence,
+  // which left somebody to find the hole in their own timesheet weeks
+  // later; now they are told while they can still remember what they were
+  // doing — once, whichever flush met the refusal, a click's included.
+  const timerLog = new TimerLog(app.getPath("userData"));
+  pendingOps.setLog((event, fields) => timerLog.write(event, fields));
+  pendingOps.onRefused((refused) => {
+    mainWindow?.webContents.send("tracking:refused", refused);
+  });
   // Rows queued by a version that did not record owners. If somebody is
   // still logged in from then, they were that person's; if nobody is,
   // they stay unowned and are deleted at the next login.
@@ -1952,6 +1964,7 @@ async function registerIpcHandlers(): Promise<void> {
   primeGatesFromCache();
 
   captureSettingsGate.start();
+  timerStatusGate.holdWhile(() => pendingOps.hasPending());
   timerStatusGate.start();
   setInterval(() => void reminderTick(), REMINDER_TICK_MS);
 
@@ -2239,46 +2252,117 @@ async function registerIpcHandlers(): Promise<void> {
     rememberWorkFinishedOffline(result);
   };
 
-  // Sleep is idle time too. Rather than ending the entry at the moment of
-  // sleep and leaving it ended — which stopped tracking for someone back
-  // well inside the timeout, since a laptop on battery suspends after 15
-  // minutes and the timeout may be 20 — it is ended where input stopped and
-  // held. On wake the renderer picks it up again from there, or asks, by
-  // how long the person was away (src/renderer/idle-hold.ts). With idle
-  // handling off there is no timeout to measure against, so sleep still
-  // just pauses.
+  // Sleep is idle time too, and idle time only stops the timer once it
+  // reaches the timeout — so sleep stops nothing. It notes where input
+  // stopped and leaves the entry running; waking decides, by how long the
+  // person was away (src/main/sleep-hold.ts). Ending the entry here and
+  // starting it again on wake lost the restart whenever the machine woke
+  // offline. Should it never wake, the server ends the entry at the
+  // device's last heartbeat, and the stop sent on the next wake corrects
+  // that to where input stopped. With idle handling off there is no
+  // timeout to measure against, so sleep still just pauses.
+  let lastSleepMs: number | null = null;
   holdRunningTimerForSleep = (): void => {
+    const nowMs = Date.now();
+    if (isRepeatSignal(lastSleepMs, nowMs)) {
+      timerLog.write("sleep-repeat-ignored");
+      return;
+    }
+    lastSleepMs = nowMs;
     const session = authStore.load();
     const running = pendingOps.current();
     const policy = offlineCache.read().idlePolicy;
-    // Only when there is a running timer for the sleep to end: marking a
-    // sleep that stopped nothing would silence the next morning's nudge.
-    if (running && !running.pausedAt) timerStoppedByAgent = true;
+    timerLog.write("sleep", {
+      running: Boolean(running && !running.pausedAt),
+      entryId: running?.id,
+      idleHandling: policy?.handling ?? null,
+    });
     if (!session || !running || running.pausedAt || !policy || policy.handling === "off") {
+      // Only when there is a running timer for the sleep to end: marking a
+      // sleep that stopped nothing would silence the next morning's nudge.
+      if (running && !running.pausedAt) timerStoppedByAgent = true;
       void pauseRunningTimer?.().catch((error: unknown) =>
         console.error("[timer] pause on suspend failed:", error),
       );
       return;
     }
-    const idleStartedAt = new Date(
-      whenInputStopped(lastIdleReading, Date.now()),
-    ).toISOString();
-    // Written before the stop, so a machine that never wakes still has it.
+    // Synchronous, so it is on disk before the machine is.
     idleHoldStore.save({
       projectId: running.projectId,
       taskId: running.taskId,
-      idleStartedAt,
+      idleStartedAt: new Date(
+        whenInputStopped(lastIdleReading, Date.now()),
+      ).toISOString(),
       returnedAt: null,
       reason: "sleep",
+      timerRunning: true,
     });
-    void pendingOps
-      .pauseDurably(session.deviceToken, apiClient, idleStartedAt)
-      .then(rememberWorkFinishedOffline)
-      .catch((error: unknown) => console.error("[timer] hold on suspend failed:", error));
   };
+
+  // Once at a time: a wake, the renderer reading the hold and a relaunch
+  // can all arrive together, and two would send two stops.
+  let settlingSleptTimer: Promise<void> | null = null;
+  /**
+   * Settles a timer left running across a sleep — on wake, and on the
+   * first read of the hold after a relaunch, which is a wake too. Back
+   * before the timeout the hold is simply dropped; past it the entry is
+   * ended where input stopped, and the hold left for the renderer's prompt.
+   * The stop goes first and the hold changes after, so a crash in between
+   * repeats the stop (a no-op) rather than losing the question.
+   */
+  const settleSleptTimer = (returnedAt: string): Promise<void> => {
+    settlingSleptTimer ??= (async () => {
+      const stored = idleHoldStore.load();
+      if (!stored?.timerRunning) return;
+      const hold = idleHoldStore.markReturned(returnedAt) ?? stored;
+      const action = sleepHoldOnWake(hold, offlineCache.read().idlePolicy, Date.now());
+      timerLog.write("wake", {
+        action,
+        idleStartedAt: hold.idleStartedAt,
+        returnedAt: hold.returnedAt,
+      });
+      if (action === "carry-on") {
+        idleHoldStore.clear();
+        return;
+      }
+      if (action !== "stop") return;
+      const session = authStore.load();
+      if (session) {
+        const result = await pendingOps.pauseDurably(
+          session.deviceToken,
+          apiClient,
+          hold.idleStartedAt,
+        );
+        if (result.ok) timerStoppedByAgent = true;
+        timerLog.write("stopped-after-sleep", {
+          entryId: result.ok ? result.data.id : undefined,
+          endedAt: hold.idleStartedAt,
+          queued: result.ok ? Boolean(result.fromCache) : undefined,
+          message: result.ok ? undefined : result.message,
+        });
+        rememberWorkFinishedOffline(result);
+      }
+      idleHoldStore.save({ ...hold, timerRunning: false });
+    })()
+      .catch((error: unknown) => console.error("[timer] settling sleep failed:", error))
+      .finally(() => {
+        settlingSleptTimer = null;
+      });
+    return settlingSleptTimer;
+  };
+  let lastWakeMs: number | null = null;
   markIdleReturnedOnWake = (): void => {
-    const hold = idleHoldStore.markReturned(new Date().toISOString());
-    if (hold) mainWindow?.webContents.send("idle:wake");
+    const nowMs = Date.now();
+    if (isRepeatSignal(lastWakeMs, nowMs)) {
+      timerLog.write("wake-repeat-ignored");
+      return;
+    }
+    lastWakeMs = nowMs;
+    const wokeAt = new Date(nowMs).toISOString();
+    void settleSleptTimer(wokeAt).then(() => {
+      const hold = idleHoldStore.markReturned(wokeAt);
+      if (hold) mainWindow?.webContents.send("idle:wake");
+    });
   };
 
   // Offline pauses/starts are only real to the server once this lands, so
@@ -2424,17 +2508,11 @@ async function registerIpcHandlers(): Promise<void> {
   const flushPendingOps = async (): Promise<void> => {
     const session = authStore.load();
     if (!session) return;
-    const { settled, refused, signedOut } = await pendingOps.flush(
+    // Refusals reach the person through `pendingOps.onRefused`.
+    const { settled, signedOut } = await pendingOps.flush(
       session.deviceToken,
       apiClient,
     );
-    // Hours the server would not take. They used to be dropped in
-    // silence, which left somebody to find the hole in their own
-    // timesheet weeks later; now they are told while they can still
-    // remember what they were doing.
-    if (refused.length > 0) {
-      mainWindow?.webContents.send("tracking:refused", refused);
-    }
     // This loop is the one caller that does not go through
     // `callDeviceApi`, so without this a remotely revoked session is
     // retried here every fifteen seconds and nothing ever says so.
@@ -2619,23 +2697,31 @@ async function registerIpcHandlers(): Promise<void> {
    * a figure nobody can confirm, rather than a zero that is simply wrong.
    */
   ipcMain.handle("tracking:status", async () => {
-    await flushPendingOps();
-    const result = await cachedDeviceRead(
-      (token) => apiClient.getCurrentTimer(token),
-      (current) =>
-        offlineCache.remember({
-          workedSeconds: current.workedSeconds ?? null,
-          workedSecondsAt: new Date().toISOString(),
-        }),
-      (): CurrentTimer | null => {
-        const entry = offlineCache.read().runningEntry;
-        return {
-          entry,
-          now: new Date().toISOString(),
-          workedSeconds: offlineCache.projectedWorkedSeconds(entry),
-        };
-      },
-    );
+    const fromLocal = (): CurrentTimer => {
+      const entry = offlineCache.read().runningEntry;
+      return {
+        entry,
+        now: new Date().toISOString(),
+        workedSeconds: offlineCache.projectedWorkedSeconds(entry),
+      };
+    };
+    // Not the server's word while this device's own actions are still
+    // waiting to reach it — see `readTimerStatus`.
+    const result = await readTimerStatus({
+      settleQueue: flushPendingOps,
+      hasPending: () => pendingOps.hasPending(),
+      fromLocal,
+      fromServer: () =>
+        cachedDeviceRead(
+          (token) => apiClient.getCurrentTimer(token),
+          (current) =>
+            offlineCache.remember({
+              workedSeconds: current.workedSeconds ?? null,
+              workedSecondsAt: new Date().toISOString(),
+            }),
+          fromLocal,
+        ),
+    });
     return result.ok
       ? {
           ...result,
@@ -2875,7 +2961,12 @@ async function registerIpcHandlers(): Promise<void> {
     return seconds;
   });
 
-  ipcMain.handle("idle:hold", (): IdleHold | null => idleHoldStore.load());
+  // Settled first: a hold still marking a running timer is main's to
+  // decide, and after a relaunch this read is the first sign of a wake.
+  ipcMain.handle("idle:hold", async (): Promise<IdleHold | null> => {
+    await settleSleptTimer(new Date().toISOString());
+    return idleHoldStore.load();
+  });
   ipcMain.handle("idle:setHold", (_event, hold: IdleHold): void => idleHoldStore.save(hold));
   ipcMain.handle("idle:markReturned", (_event, at: string): IdleHold | null =>
     idleHoldStore.markReturned(at),

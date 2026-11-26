@@ -25,13 +25,14 @@ const FAST_POLL_MS = 50;
 function rendererScript(pollMs: number, idlePollMs: number): string {
   // The renderer is a module in the app but is eval'd as a plain script
   // here, so its local imports are inlined rather than resolved.
-  const imported = ['reminder-message.ts', 'idle-hold.ts']
+  const imported = ['reminder-message.ts', 'refused-time-notice.ts', 'idle-hold.ts']
     .map((file) => readFileSync(join(RENDERER_DIR, file), 'utf8').replace(/^export /gm, ''))
     .join('\n');
   const source =
     imported +
     readFileSync(join(RENDERER_DIR, 'renderer.ts'), 'utf8')
       .replace(/^import .*from "\.\/reminder-message\.js";$/m, '')
+      .replace(/^import .*from "\.\/refused-time-notice\.js";$/m, '')
       .replace(/^import \{[^}]*\} from "\.\/idle-hold\.js";$/m, '');
   const fastSource = source
     .replace(
@@ -514,6 +515,12 @@ function launch(scenario: Scenario) {
       const el = document.getElementById('idle-notice')!;
       return el.hidden ? null : el.textContent;
     },
+    /** The "timer stopped" notice — what it says, or null while hidden. */
+    stoppedNotice: () => {
+      const el = document.getElementById('stopped-notice')!;
+      return el.hidden ? null : document.getElementById('stopped-notice-message')!.textContent;
+    },
+    clickDismissStoppedNotice: () => document.getElementById('stopped-notice-dismiss')!.click(),
     /** A timer appearing from somewhere else, started at a time of its own. */
     startElsewhereAt: (startedAt: string) => {
       running = { ...entry, id: `e${++entrySeq}`, startedAt };
@@ -1762,3 +1769,66 @@ describe('renderer after the machine sleeps', () => {
   });
 });
 
+/**
+ * Auto-subtract stops the timer with nobody watching — after a long sleep
+ * the person is often still on the lock screen. A notice that vanished
+ * after eight seconds, in a window that might be in the tray, was a
+ * stopped timer with no explanation.
+ */
+describe('the notice that auto-subtract stopped the timer', () => {
+  const autoSubtract20 = { handling: 'auto_subtract' as const, thresholdMinutes: 20 };
+  const sleptAt = (minutesAgo: number) => new Date(Date.now() - minutesAgo * MINUTE_MS).toISOString();
+
+  it('stays up after a long sleep, and brings the window forward', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: autoSubtract20 });
+    await startTimer(app);
+    app.holdForSleep({ projectId: PROJECT.id, taskId: null, idleStartedAt: sleptAt(45), returnedAt: null, reason: 'sleep' });
+    const raisedBefore = app.calls.shows;
+
+    app.wake();
+    await waitFor(() => app.stoppedNotice() !== null);
+
+    expect(app.stoppedNotice()).toMatch(/Timer stopped after 4[56] min away; the idle time was not counted\./);
+    expect(app.calls.shows).toBeGreaterThan(raisedBefore);
+    expect(app.idleNotice()).toBeNull();
+    app.close();
+  });
+
+  it('stays up after auto-subtract while awake too', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: autoSubtract20 });
+    await startTimer(app);
+
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.stoppedNotice() !== null);
+
+    expect(app.stoppedNotice()).toContain('Timer stopped automatically after 25 min idle');
+    expect(app.isRunning()).toBe(false);
+    app.close();
+  });
+
+  it('goes when dismissed', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: autoSubtract20 });
+    await startTimer(app);
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.stoppedNotice() !== null);
+
+    app.clickDismissStoppedNotice();
+
+    expect(app.stoppedNotice()).toBeNull();
+    app.close();
+  });
+
+  it('goes once the timer is running again', async () => {
+    const app = launch({ failingProjectLoads: 0, idlePolicy: autoSubtract20 });
+    await startTimer(app);
+    app.setIdleSeconds(25 * 60);
+    await waitFor(() => app.stoppedNotice() !== null);
+    app.setIdleSeconds(1);
+
+    app.clickPlay();
+    await waitFor(() => app.isRunning());
+
+    expect(app.stoppedNotice()).toBeNull();
+    app.close();
+  });
+});

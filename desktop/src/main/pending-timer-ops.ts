@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { serverVerdict } from './api-client';
 import type { TimeEntry, TrackingResult } from './api-client';
 import { computeRetryDelayMs } from './offline-queue';
+import type { TimerLogFields } from './timer-log';
 
 const FILE_NAME = 'pending-timer-ops.json';
 
@@ -25,6 +26,18 @@ function serverEntryId(entry: TimeEntry): string | undefined {
   return entry.id.startsWith('offline-') ? undefined : entry.id;
 }
 
+/**
+ * A stop ending `current`: by its server id, or — for an entry invented
+ * offline, which has none yet — by the local id its queued start carries,
+ * swapped for the server's once that start lands (see `flushOnce`).
+ */
+function stopOf(current: TimeEntry, at: string, opId: string): PendingOp {
+  const entryId = serverEntryId(current);
+  return entryId
+    ? { type: 'stop', at, opId, entryId }
+    : { type: 'stop', at, opId, localEntryId: current.id };
+}
+
 export type PendingOp =
   | {
       type: 'stop';
@@ -33,6 +46,11 @@ export type PendingOp =
       owner?: string;
       /** The entry this stop ends — see `StopTimeEntryDto.entryId`. */
       entryId?: string;
+      /**
+       * The entry this stop ends, when it was started offline and the server
+       * has not named it yet: the `localEntryId` of the queued start.
+       */
+      localEntryId?: string;
     }
   | {
       type: 'start';
@@ -43,6 +61,8 @@ export type PendingOp =
       owner?: string;
       /** So an offline idle Keep still reports its kept stretch on replay. */
       idleSeconds?: number;
+      /** The `offline-…` id of the entry this start stands for until it lands. */
+      localEntryId?: string;
     };
 
 /**
@@ -150,6 +170,11 @@ export class PendingTimerOps {
   /** Who is logged in now, or null for nobody. Unset, every op is one owner's. */
   private ownerSource: (() => string | null) | null = null;
 
+  /** The flush under way, which any other caller waits on — see `flush`. */
+  private inFlight: Promise<FlushResult> | null = null;
+  private refusedListener: ((refused: RefusedOp[]) => void) | null = null;
+  private log: (event: string, fields: TimerLogFields) => void = () => undefined;
+
   private readonly now: () => number;
   private readonly random: () => number;
 
@@ -180,6 +205,11 @@ export class PendingTimerOps {
     this.ownerSource = source;
   }
 
+  /** Where each queued action, attempt and verdict is recorded — see `TimerLog`. */
+  setLog(log: (event: string, fields: TimerLogFields) => void): void {
+    this.log = log;
+  }
+
   /** `undefined` when nobody is logged in; null when no source is set. */
   private currentOwner(): string | null | undefined {
     if (!this.ownerSource) return null;
@@ -187,6 +217,13 @@ export class PendingTimerOps {
   }
 
   private stamp<T extends PendingOp>(op: T): T {
+    this.log('queued', {
+      type: op.type,
+      opAt: op.at,
+      opId: op.opId,
+      entryId: op.type === 'stop' ? op.entryId : undefined,
+      localEntryId: op.localEntryId,
+    });
     const owner = this.currentOwner();
     return owner ? { ...op, owner } : op;
   }
@@ -304,6 +341,16 @@ export class PendingTimerOps {
   }
 
   /**
+   * Who is told about operations the server refused. Set once by main, so
+   * a refusal is reported exactly once whichever caller's flush met it —
+   * one met on the way to a click used to be dropped in silence, since only
+   * the sync loop passed `refused` on.
+   */
+  onRefused(listener: (refused: RefusedOp[]) => void): void {
+    this.refusedListener = listener;
+  }
+
+  /**
    * Settles waiting actions in order. Must run before anything that starts a
    * timer, or the server still sees the old entry. Reports anything the
    * server refused, so the person can be told about hours that did not land
@@ -314,65 +361,161 @@ export class PendingTimerOps {
    * this used to drop anything carrying an HTTP status at all, so a deploy
    * or an overloaded minute during a reconnect deleted hours somebody had
    * really worked, and a revoked session deleted them without a word.
+   *
+   * One at a time: a caller arriving while a flush is under way waits for
+   * that one rather than sending the same operations alongside it. Waking
+   * offline, the sync loop's flush and the wake restart's own overlapped,
+   * and the restart's start was lost — see `flushOnce`.
    */
   async flush(
     deviceToken: string,
     client: PendingTimerClient,
   ): Promise<FlushResult> {
-    const ops = this.load();
+    this.inFlight ??= this.flushOnce(deviceToken, client).finally(() => {
+      this.inFlight = null;
+    });
+    return await this.inFlight;
+  }
+
+  /**
+   * The queue is read from disk before every step and an operation leaves
+   * it by `opId`, never by writing back the copy this started with: an
+   * action queued while a send was in flight — the start a wake restart
+   * queues while the server is still unreachable — was otherwise erased by
+   * that write, and the timer cleared with nobody told.
+   */
+  private async flushOnce(
+    deviceToken: string,
+    client: PendingTimerClient,
+  ): Promise<FlushResult> {
     const refused: RefusedOp[] = [];
-    if (ops.length === 0) return { settled: true, refused, signedOut: false };
+    this.giveEveryOpAnId();
+    if (this.load().length === 0) return { settled: true, refused, signedOut: false };
     if (!this.isDue()) return { settled: false, refused, signedOut: false };
 
-    while (ops.length > 0) {
-      const op = ops[0];
-      const result =
-        op.type === 'stop'
-          ? await this.sendStop(client, deviceToken, op.at, op.opId, op.entryId)
-          : await this.sendStart(
-              client,
-              deviceToken,
-              op.projectId,
-              op.taskId,
-              op.at,
-              op.opId ?? randomUUID(),
-              op.idleSeconds,
-            );
-      const verdict = serverVerdict(result);
+    try {
+      for (let ops = this.load(); ops.length > 0; ops = this.load()) {
+        const op = ops[0];
+        const opId = op.opId as string;
+        // Its start is no longer queued, so it never reached the server:
+        // there is no entry for this to end, and sent bare it would end
+        // whatever else this device has running, or be refused.
+        if (op.type === 'stop' && op.localEntryId && !op.entryId) {
+          this.log('dropped', {
+            opId,
+            localEntryId: op.localEntryId,
+            reason: 'its start never reached the server',
+          });
+          this.remove([opId]);
+          continue;
+        }
+        const result =
+          op.type === 'stop'
+            ? await this.sendStop(client, deviceToken, op.at, opId, op.entryId)
+            : await this.sendStart(
+                client,
+                deviceToken,
+                op.projectId,
+                op.taskId,
+                op.at,
+                opId,
+                op.idleSeconds,
+              );
+        const verdict = serverVerdict(result);
+        this.log('sent', {
+          type: op.type,
+          opAt: op.at,
+          opId,
+          entryId: op.type === 'stop' ? op.entryId : undefined,
+          localEntryId: op.localEntryId,
+          verdict,
+          status: result.ok ? undefined : result.status,
+          message: result.ok ? undefined : result.message,
+        });
 
-      // Not this session's to send any more — but still this person's, and
-      // a login brings the token back. `owner` is what stops them reaching
-      // the next person to use the machine.
-      if (verdict === 'signedOut') {
-        this.save(ops);
-        return { settled: false, refused, signedOut: true };
-      }
+        // Not this session's to send any more — but still this person's, and
+        // a login brings the token back. `owner` is what stops them reaching
+        // the next person to use the machine.
+        if (verdict === 'signedOut') {
+          return { settled: false, refused, signedOut: true };
+        }
 
-      if (verdict === 'undecided') {
-        // A server that answered — 503, 502, 429 — is asking to be left
-        // alone, and every device that failed with it is about to try
-        // again at the same moment. One that never answered is an outage,
-        // where the fifteen-second tick is the only reconnect detector.
-        if (!result.ok && result.status !== undefined) this.backOff();
-        break;
-      }
+        if (verdict === 'undecided') {
+          // A server that answered — 503, 502, 429 — is asking to be left
+          // alone, and every device that failed with it is about to try
+          // again at the same moment. One that never answered is an outage,
+          // where the fifteen-second tick is the only reconnect detector.
+          if (!result.ok && result.status !== undefined) this.backOff();
+          break;
+        }
 
-      this.progressed();
-      if (result.ok && result.data && !result.data.endedAt) {
-        this.running.write(result.data);
+        this.progressed();
+        if (result.ok && result.data && !result.data.endedAt) {
+          this.running.write(result.data);
+        }
+        // A rejection the server will give again however many times it is
+        // asked. The time is lost; saying so is the least that is owed.
+        if (!result.ok) refused.push({ op, message: result.message });
+        const settled = [opId];
+        if (op.type === 'start' && op.localEntryId) {
+          // Its stops can name the entry now. A refused start never made
+          // one, so they are settled with it rather than sent to end some
+          // other entry — "retrying can't help" holds for them too.
+          if (result.ok) {
+            this.log('named', { localEntryId: op.localEntryId, entryId: result.data.id });
+            this.nameEntry(op.localEntryId, result.data.id);
+          } else {
+            const stops = this.stopsOf(op.localEntryId);
+            for (const stopId of stops) {
+              this.log('dropped', { opId: stopId, reason: 'its start was refused' });
+            }
+            settled.push(...stops);
+          }
+        } else if (!result.ok && op.type === 'start') {
+          // Queued before starts carried a local id: its stop is the next op.
+          const next = this.load().find((queued) => queued.opId !== opId);
+          if (next?.type === 'stop' && next.opId) settled.push(next.opId);
+        }
+        this.remove(settled);
       }
-      // A rejection the server will give again however many times it is
-      // asked. The time is lost; saying so is the least that is owed.
-      if (!result.ok) refused.push({ op, message: result.message });
-      ops.shift();
-      // The server answered with a rejection, so retrying can't help. A
-      // start that never happened must not leave its matching stop to end
-      // some other entry.
-      if (!result.ok && op.type === 'start' && ops[0]?.type === 'stop') ops.shift();
-      this.save(ops);
+    } finally {
+      if (refused.length > 0) this.refusedListener?.(refused);
     }
-    this.save(ops);
-    return { settled: ops.length === 0, refused, signedOut: false };
+    return { settled: this.load().length === 0, refused, signedOut: false };
+  }
+
+  /**
+   * Names any operation queued before every one carried an id, so each can
+   * leave the queue by its own id. Written once, before anything is sent,
+   * so a replay reuses the name rather than minting a fresh one each time.
+   */
+  private giveEveryOpAnId(): void {
+    const all = this.loadAll();
+    if (all.every((op) => op.opId)) return;
+    this.save(all.map((op) => (op.opId ? op : { ...op, opId: randomUUID() })));
+  }
+
+  /** Points every queued stop of an offline-started entry at the server's id for it. */
+  private nameEntry(localEntryId: string, entryId: string): void {
+    this.save(
+      this.load().map((op) =>
+        op.type === 'stop' && op.localEntryId === localEntryId
+          ? { ...op, entryId, localEntryId: undefined }
+          : op,
+      ),
+    );
+  }
+
+  /** The ids of the queued stops ending this offline-started entry. */
+  private stopsOf(localEntryId: string): string[] {
+    return this.load()
+      .filter((op) => op.type === 'stop' && op.localEntryId === localEntryId && op.opId)
+      .map((op) => op.opId as string);
+  }
+
+  /** Takes these operations out of the queue as it stands on disk now. */
+  private remove(opIds: string[]): void {
+    this.save(this.load().filter((op) => !op.opId || !opIds.includes(op.opId)));
   }
 
   /**
@@ -421,7 +564,7 @@ export class PendingTimerOps {
   private async sendStop(
     client: PendingTimerClient,
     deviceToken: string,
-    at: string,
+    at: string | undefined,
     opId: string | undefined,
     entryId: string | undefined,
   ): Promise<TrackingResult<TimeEntry>> {
@@ -478,7 +621,12 @@ export class PendingTimerOps {
     const opId = randomUUID();
     const answer = await this.settleFirst(deviceToken, client, () => this.queueStop(at, opId));
     if (answer) return answer;
-    const result = await client.stopTimer(deviceToken, endedAt, opId);
+    // Named, as a queued stop is: the server may have closed it already —
+    // after the device went quiet, say — and "whatever is running" would
+    // then miss it and report the hours as lost.
+    const current = this.running.read();
+    const entryId = current ? serverEntryId(current) : undefined;
+    const result = await this.sendStop(client, deviceToken, endedAt, opId, entryId);
     if (result.ok) this.running.write(null);
     return serverVerdict(result) === 'undecided' ? this.queueStop(at, opId) : result;
   }
@@ -516,7 +664,7 @@ export class PendingTimerOps {
     const waiting = this.load();
     this.save([
       ...waiting,
-      this.stamp({ type: 'stop', at, opId, entryId: serverEntryId(current) }),
+      this.stamp(stopOf(current, at, opId)),
     ]);
     this.running.write(null);
     const ended: TimeEntry = { ...current, endedAt: at };
@@ -528,8 +676,10 @@ export class PendingTimerOps {
       return settled ? { ok: true, data: ended } : { ok: true, data: ended, fromCache: true };
     }
 
+    // Named for the same reason as a queued stop: a machine waking from a
+    // long sleep finds its entry already closed by the server.
     const result = endedAt
-      ? await client.stopTimer(deviceToken, endedAt, opId)
+      ? await this.sendStop(client, deviceToken, endedAt, opId, serverEntryId(current))
       : await client.pauseTimer(deviceToken, opId);
     if (!result.ok) return { ok: true, data: ended, fromCache: true };
     // It landed, so the record written ahead of it has nothing left to do.
@@ -548,7 +698,7 @@ export class PendingTimerOps {
     if (!current) return { ok: false, message: 'No timer is currently running.' };
     this.save([
       ...this.load(),
-      this.stamp({ type: 'stop', at, opId, entryId: serverEntryId(current) }),
+      this.stamp(stopOf(current, at, opId)),
     ]);
     const entry = { ...current, endedAt: at };
     this.running.write(null);
@@ -591,11 +741,19 @@ export class PendingTimerOps {
     opId = randomUUID(),
     idleSeconds?: number,
   ): TrackingResult<TimeEntry> {
+    const entry = this.localEntry(projectId, taskId, at);
     this.save([
       ...this.load(),
-      this.stamp({ type: 'start', at, projectId, taskId, opId, idleSeconds }),
+      this.stamp({
+        type: 'start',
+        at,
+        projectId,
+        taskId,
+        opId,
+        idleSeconds,
+        localEntryId: entry.id,
+      }),
     ]);
-    const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
     return { ok: true, data: entry, fromCache: true };
   }
@@ -666,17 +824,19 @@ export class PendingTimerOps {
   ): TrackingResult<TimeEntry> {
     const current = this.running.read();
     if (!current) return this.queueStart(projectId, taskId, at, startOpId);
+    const entry = this.localEntry(projectId, taskId, at);
     this.save([
       ...this.load(),
+      this.stamp(stopOf(current, at, stopOpId)),
       this.stamp({
-        type: 'stop',
+        type: 'start',
         at,
-        opId: stopOpId,
-        entryId: serverEntryId(current),
+        projectId,
+        taskId,
+        opId: startOpId,
+        localEntryId: entry.id,
       }),
-      this.stamp({ type: 'start', at, projectId, taskId, opId: startOpId }),
     ]);
-    const entry = this.localEntry(projectId, taskId, at);
     this.running.write(entry);
     return { ok: true, data: entry, fromCache: true };
   }
