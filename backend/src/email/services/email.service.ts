@@ -8,15 +8,9 @@ import {
   type MailResult,
   type MailTransport,
 } from './transports';
+import { escapeHtml } from '../../common/escape-html.util';
 
 const APP_NAME = 'Hi Day';
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 export interface ReportEmail {
   to: string[];
@@ -30,6 +24,11 @@ export interface ReportEmail {
 
 const BUTTON_STYLE =
   'display:inline-block;padding:10px 20px;background-color:#259cd9;color:#ffffff;text-decoration:none;border-radius:6px;';
+
+/** A link styled as a button — the one call to action in an email. */
+export function emailButton(url: string, label: string): string {
+  return `<p><a href="${url}" style="${BUTTON_STYLE}">${label}</a></p>`;
+}
 
 /** Only ever reached by the console transport, which sends nothing. */
 const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
@@ -126,7 +125,7 @@ export class EmailService implements OnModuleInit {
   }
 
   private button(url: string, label: string): string {
-    return `<p><a href="${url}" style="${BUTTON_STYLE}">${label}</a></p>`;
+    return emailButton(url, label);
   }
 
   async sendSetPasswordEmail(
@@ -432,6 +431,29 @@ export class EmailService implements OnModuleInit {
         `Failed to send seat charge failure to ${Array.isArray(to) ? to.join(', ') : to}: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * A daily or weekly summary email, already built by the caller. Reports
+   * whether it went, so the sender can record a failure instead of
+   * believing it delivered.
+   */
+  async sendSummaryEmail(message: {
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<{ sent: boolean; error: string | null }> {
+    const { error } = await this.deliver({
+      from: this.emailSender,
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+    });
+    if (error) {
+      this.logger.error(`Failed to send summary email: ${error.message}`);
+      return { sent: false, error: error.message };
+    }
+    return { sent: true, error: null };
   }
 
   /**

@@ -23,6 +23,7 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { TwoFactorRecoveryCode } from './entities/two-factor-recovery-code.entity';
 import { TwoFactorTrustedBrowser } from './entities/two-factor-trusted-browser.entity';
 import { SavedReport } from './entities/saved-report.entity';
+import { SummaryEmailSend } from './entities/summary-email-send.entity';
 import { Screenshot } from './entities/screenshot.entity';
 import { Subscription } from './entities/subscription.entity';
 import { Task } from './entities/task.entity';
@@ -76,6 +77,7 @@ import { User } from './entities/user.entity';
           ConsentRecord,
           Note,
           SavedReport,
+          SummaryEmailSend,
           Subscription,
         ],
         synchronize: false,

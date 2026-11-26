@@ -1,5 +1,6 @@
 import type { ApiResult } from "./api";
 import type { MembershipRole } from "./membership";
+import type { SummaryFrequency } from "./summaryEmails";
 
 export type IdleHandling = "off" | "flag" | "auto_subtract";
 
@@ -112,6 +113,10 @@ export type OrganisationProfile = {
   timezone: string;
   /** 'monday' until an admin changes it. */
   weekStartsOn: WeekStart;
+  /** The organisation's summary email defaults — what Settings ›
+   * Notifications shows, not anyone's own override. */
+  personalSummaryEmails: SummaryFrequency;
+  teamSummaryEmails: SummaryFrequency;
   /** Whether *you* track time against Projects: your own override, else the
    * organisation default. Off unless an admin turns it on. */
   projectsEnabled: boolean;
@@ -191,6 +196,8 @@ export type UpdateOrganisationInput = {
   screenshotFrequencySeconds?: number;
   screenshotRetentionDays?: number;
   workingHoursPerDay?: number;
+  personalSummaryEmails?: SummaryFrequency;
+  teamSummaryEmails?: SummaryFrequency;
 };
 
 export type UpdateOrganisationResult = ApiResult<{

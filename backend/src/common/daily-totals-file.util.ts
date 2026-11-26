@@ -8,7 +8,7 @@ import {
 } from './time-entry-union.util';
 import { addDaysToKey, zonedParts } from './zoned-time.util';
 
-type DailyTotalsEntry = Pick<
+export type DailyTotalsEntry = Pick<
   TimeEntryListItem,
   | 'id'
   | 'membershipId'
@@ -21,7 +21,7 @@ type DailyTotalsEntry = Pick<
 >;
 
 /** The row key for entries with no Project. */
-const NO_PROJECT = '';
+export const NO_PROJECT = '';
 
 export interface DailyTotalsTable {
   header: string[];
@@ -63,7 +63,9 @@ function coveredMs(intervals: Interval[]): number {
  * one Project by `attributeProjectSeconds`, and "No project" gets only the
  * time no Project covers, so the rows still add up to the day.
  */
-function memberDaySeconds(entries: DailyTotalsEntry[]): Map<string, number> {
+export function memberDaySeconds(
+  entries: DailyTotalsEntry[],
+): Map<string, number> {
   // Only stopped entries reach here, so `endedAt` is always set and the
   // `now` the interval helpers fall back to is never read.
   const intervalsOf = (some: DailyTotalsEntry[]): Interval[] =>

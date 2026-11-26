@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AccountEditForm } from "@/components/AccountEditForm";
 import { SignOutEverywhereButton } from "@/components/SignOutEverywhereButton";
+import { SummaryEmailsSection } from "@/components/SummaryEmailsSection";
 import { TwoFactorSection } from "@/components/TwoFactorSection";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function AccountEditPage() {
       <div className="animate-fade-in-up-delay flex flex-col gap-8">
         <AccountEditForm />
         <TwoFactorSection />
+        <SummaryEmailsSection />
         <SignOutEverywhereButton />
       </div>
     </main>

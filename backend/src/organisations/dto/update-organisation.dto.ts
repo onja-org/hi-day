@@ -17,6 +17,8 @@ import {
 import { IsIanaTimezone } from '../../auth/dto/is-iana-timezone.validator';
 
 import { ALLOWED_APPS_VALUES } from '../allowed-apps';
+import { SUMMARY_FREQUENCIES } from '../summary-emails';
+import type { SummaryFrequency } from '../summary-emails';
 import type { AllowedApps } from '../allowed-apps';
 import { APP_URL_TRACKING_VALUES } from '../app-url-tracking';
 import { MIN_REMINDER_INTERVAL_MINUTES } from '../tracking-reminders';
@@ -151,6 +153,14 @@ export class UpdateOrganisationDto {
   @IsOptional()
   @IsIn(['notification', 'alert'])
   reminderDelivery?: TrackingReminderDelivery;
+
+  @IsOptional()
+  @IsIn(SUMMARY_FREQUENCIES)
+  personalSummaryEmails?: SummaryFrequency;
+
+  @IsOptional()
+  @IsIn(SUMMARY_FREQUENCIES)
+  teamSummaryEmails?: SummaryFrequency;
 
   /** `null` is "no limit". A number is a real ceiling, and zero would mean
    * "may never track" — never what an admin meant to type. */
