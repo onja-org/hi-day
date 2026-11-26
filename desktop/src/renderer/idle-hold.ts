@@ -6,8 +6,13 @@
  * watched, or by the machine going to sleep — and what happens next depends
  * on how long the person was away:
  *
- * - Back before the timeout (only possible across a sleep): tracking picks
- *   up from `idleStartedAt` as if it had never stopped.
+ * A sleep stops nothing until it reaches the timeout: main leaves the
+ * timer running and, on waking past it, ends the entry here and leaves the
+ * hold for this prompt (src/main/sleep-hold.ts).
+ *
+ * - Back before the timeout (only when something else ended the entry
+ *   across a sleep — the server, say, after a long silence): tracking
+ *   picks up from `idleStartedAt` as if it had never stopped.
  * - Past it: the person is asked. Keep starts again from `idleStartedAt`, so
  *   the idle stretch counts; Discard starts from when they came back, so it
  *   does not — and nor is the work they did between coming back and
@@ -29,6 +34,12 @@ export interface IdleHold {
   /** When the person came back: input resumed, or the machine woke. Null while still away. */
   returnedAt: string | null;
   reason: "timeout" | "sleep";
+  /**
+   * The machine slept with the timer running and left it running: sleep
+   * only stops tracking once the timeout is reached. Settled by main on
+   * wake (src/main/sleep-hold.ts) before the renderer ever sees it.
+   */
+  timerRunning?: boolean;
 }
 
 export interface IdleHoldPolicy {
