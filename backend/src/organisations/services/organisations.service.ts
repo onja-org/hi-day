@@ -51,6 +51,8 @@ import {
   TimesheetModifyTime,
 } from '../timesheet-settings';
 import { generateSlug } from '../slug.util';
+import { resolveSummaryFrequency } from '../summary-emails';
+import type { SummaryFrequency } from '../summary-emails';
 import {
   DEFAULT_WORKING_HOURS_POLICY,
   WorkingHoursPolicy,
@@ -129,6 +131,10 @@ export interface OrganisationProfile {
   /** Falls back to UTC, the value every Organisation was created with. */
   timezone: string;
   weekStartsOn: WeekStart;
+  /** The Organisation's summary email defaults — what Settings ›
+   * Notifications shows, not anyone's own override. */
+  personalSummaryEmails: SummaryFrequency;
+  teamSummaryEmails: SummaryFrequency;
   /** Whether *this person* tracks time against Projects: their own override,
    * else the organisation default. Off unless an admin enabled it. */
   projectsEnabled: boolean;
@@ -179,6 +185,8 @@ interface OrganisationSettings {
   screenshotRetentionDays?: number;
   workingHoursPerDay?: number;
   timezone?: string;
+  personalSummaryEmails?: SummaryFrequency;
+  teamSummaryEmails?: SummaryFrequency;
 }
 
 export interface TeamOverviewMember {
@@ -516,6 +524,12 @@ export class OrganisationsService {
         : {}),
       ...(dto.screenshotRetentionDays !== undefined
         ? { screenshotRetentionDays: dto.screenshotRetentionDays }
+        : {}),
+      ...(dto.personalSummaryEmails !== undefined
+        ? { personalSummaryEmails: dto.personalSummaryEmails }
+        : {}),
+      ...(dto.teamSummaryEmails !== undefined
+        ? { teamSummaryEmails: dto.teamSummaryEmails }
         : {}),
       ...(dto.workingHoursPerDay !== undefined
         ? { workingHoursPerDay: dto.workingHoursPerDay }
@@ -957,6 +971,14 @@ export class OrganisationsService {
         settings.workingHoursPerDay ?? DEFAULT_WORKING_HOURS_POLICY.hoursPerDay,
       timezone: settings.timezone ?? DEFAULT_TIMEZONE,
       weekStartsOn: settings.weekStartsOn ?? DEFAULT_WEEK_START,
+      personalSummaryEmails: resolveSummaryFrequency(
+        settings.personalSummaryEmails,
+        null,
+      ),
+      teamSummaryEmails: resolveSummaryFrequency(
+        settings.teamSummaryEmails,
+        null,
+      ),
       projectsEnabled: resolveProjectsEnabled(
         settings.projectsEnabled,
         projects.override,

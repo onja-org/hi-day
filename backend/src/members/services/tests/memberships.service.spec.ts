@@ -186,6 +186,8 @@ describe('MembershipsService', () => {
           weeklyLimitHours: null,
           dailyLimitHours: null,
           canDeleteScreenshots: null,
+          personalSummaryEmails: null,
+          teamSummaryEmails: null,
           screenshotFrequencySeconds: null,
           projectsEnabled: null,
           activityTrackingEnabled: null,
@@ -945,6 +947,8 @@ describe('MembershipsService', () => {
       { dailyLimitHours: 12 },
       { screenshotFrequencySeconds: 0 },
       { canDeleteScreenshots: true },
+      { personalSummaryEmails: 'off' },
+      { teamSummaryEmails: 'daily' },
     ] as const)(
       "rejects a manager changing a team member's setting override %p",
       async (dto) => {

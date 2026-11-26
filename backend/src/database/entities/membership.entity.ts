@@ -10,6 +10,10 @@ import {
 } from 'typeorm';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import type {
+  SummaryEmailKind,
+  SummaryFrequency,
+} from '../../organisations/summary-emails';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { MembershipRole } from './membership-role.enum';
 import { MembershipStatus } from './membership-status.enum';
@@ -135,6 +139,21 @@ export class Membership {
    */
   @Column({ type: 'boolean', nullable: true })
   timesheetRequireApproval: boolean | null;
+
+  /** Per-member override of the personal summary email frequency. `null`
+   * inherits (see `Organisation.settings.personalSummaryEmails`). */
+  @Column({ type: 'character varying', nullable: true })
+  personalSummaryEmails: SummaryFrequency | null;
+
+  /** Per-member override of the team summary email frequency. `null`
+   * inherits (see `Organisation.settings.teamSummaryEmails`). */
+  @Column({ type: 'character varying', nullable: true })
+  teamSummaryEmails: SummaryFrequency | null;
+
+  /** Summary emails this person switched off for themselves — set by the
+   * member, never by an admin, and it only ever removes emails. */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  summaryEmailOptOuts: SummaryEmailKind[];
 
   @CreateDateColumn({ precision: 3 })
   createdAt: Date;
