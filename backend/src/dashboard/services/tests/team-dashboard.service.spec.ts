@@ -100,10 +100,15 @@ describe('TeamDashboardService', () => {
     } as unknown as Repository<T> & { __queryBuilder: typeof queryBuilder };
   }
 
+  // App events are aggregated with raw SQL (a lateral generate_series
+  // expands each run into its samples — see app-event-samples.util), so
+  // the mock is `query`, not a query builder.
   function makeAppEventsRepo(
     rawRows: { appName: string; count: string }[] = [],
   ) {
-    return makeGroupedQueryBuilderRepo<AppEvent>(rawRows);
+    return {
+      query: jest.fn().mockResolvedValue(rawRows),
+    } as unknown as Repository<AppEvent> & { query: jest.Mock };
   }
 
   function makeUrlSessionsRepo(
@@ -619,14 +624,44 @@ describe('TeamDashboardService', () => {
 
     await service.getSummary('org-1', 'user-1');
 
-    const repo = appEventsRepo as unknown as {
-      createQueryBuilder: jest.Mock;
-      __queryBuilder: Record<string, jest.Mock>;
-    };
-    expect(repo.createQueryBuilder).toHaveBeenCalled();
-    expect(repo.__queryBuilder.groupBy).toHaveBeenCalledWith(
-      'appEvent.appName',
+    const [sql, params] = appEventsRepo.query.mock.calls[0] as [
+      string,
+      unknown[],
+    ];
+    expect(sql).toContain('GROUP BY a."appName"');
+    expect(params[0]).toEqual(['m-1']);
+  });
+
+  it('counts app time per sample, so a merged run straddling the window counts only its samples inside', async () => {
+    const members = [member({ id: 'm-1' })];
+    const appEventsRepo = makeAppEventsRepo([]);
+    const service = new TeamDashboardService(
+      makeTimeEntriesRepo([], [], []),
+      makePausesRepo(),
+      appEventsRepo,
+      makeUrlSessionsRepo([]),
+      makeMembershipsService(members),
+      makeOrganisationsService(),
+      makeScreenshotsService(),
+      makeTeamsRepo(),
+      makeCallerRepo(),
     );
+
+    await service.getSummary('org-1', 'user-1');
+
+    const [sql, params] = appEventsRepo.query.mock.calls[0] as [
+      string,
+      unknown[],
+    ];
+    // Expanded into samples, and bounded per sample...
+    expect(sql).toContain('generate_series');
+    expect(sql).toMatch(
+      /"a_sample"\."index" \* interval '5 seconds'\) BETWEEN \$3 AND \$4/,
+    );
+    // ...while the indexed bound looks back far enough to find a run that
+    // began up to 59 samples before the window.
+    const [, lookbackFrom, from] = params as [unknown, Date, Date];
+    expect(from.getTime() - lookbackFrom.getTime()).toBe(59 * 5000);
   });
 
   describe('teamsThisWeek', () => {

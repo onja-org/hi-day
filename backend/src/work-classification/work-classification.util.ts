@@ -1,3 +1,4 @@
+import { APP_EVENT_SAMPLE_SECONDS } from '../common/app-event-samples.util';
 import {
   findEntryCovering,
   TimeEntryCoverageWindow,
@@ -8,7 +9,7 @@ import type {
 } from '../database/entities/work-classification.entity';
 
 /** Each app reading stands for this much foreground time — see AppEventsService. */
-export const APP_SAMPLE_SECONDS = 5;
+export const APP_SAMPLE_SECONDS = APP_EVENT_SAMPLE_SECONDS;
 
 export interface WorkTimeSplit {
   coreSeconds: number;
