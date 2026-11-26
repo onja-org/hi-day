@@ -16,6 +16,7 @@ import { InsightsModule } from './insights/modules/insights.module';
 import { WorkClassificationModule } from './work-classification/modules/work-classification.module';
 import { ReportsModule } from './reports/modules/reports.module';
 import { SavedReportsModule } from './saved-reports/modules/saved-reports.module';
+import { SummaryEmailsModule } from './summary-emails/modules/summary-emails.module';
 import { DatabaseModule } from './database/database.module';
 import { DeviceTrackingModule } from './device-tracking/modules/device-tracking.module';
 import { DevicesModule } from './devices/modules/devices.module';
@@ -63,6 +64,7 @@ import { UrlSessionsModule } from './url-sessions/modules/url-sessions.module';
     InsightsModule,
     WorkClassificationModule,
     SavedReportsModule,
+    SummaryEmailsModule,
     ContactModule,
   ],
   controllers: [AppController],
