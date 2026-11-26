@@ -104,6 +104,7 @@ function setup(options: {
   };
   const manualTimeEditsService = { list: jest.fn().mockResolvedValue([]) };
   const emailService = {
+    isDelivering: false,
     sendSummaryEmail: jest
       .fn<
         Promise<{ sent: boolean; error: string | null }>,
@@ -150,6 +151,33 @@ describe('SummaryEmailsService.runOrganisation', () => {
       'admin@acme.test: Team week at Acme',
       'admin@acme.test: Your week at Acme',
       'member@acme.test: Your week at Acme',
+    ]);
+  });
+
+  it('leaves the reader out of their own team summary', async () => {
+    const { service, emailService } = setup({
+      memberships: [
+        membership('admin', MembershipRole.ADMIN),
+        membership('member', MembershipRole.MEMBER),
+      ],
+      entries: [trackedEntry],
+    });
+    await service.runOrganisation(organisation(), NOW);
+    const team = emailService.sendSummaryEmail.mock.calls
+      .map(([message]) => message as { subject: string; html: string })
+      .find((message) => message.subject.startsWith('Team week'));
+    expect(team?.html).toContain('>member<');
+    expect(team?.html).not.toContain('>admin<');
+  });
+
+  it('sends no team summary to an admin with nobody else to oversee', async () => {
+    const { service, emailService } = setup({
+      memberships: [membership('admin', MembershipRole.ADMIN)],
+      entries: [trackedEntry],
+    });
+    await service.runOrganisation(organisation(), NOW);
+    expect(sentTo(emailService)).toEqual([
+      'admin@acme.test: Your week at Acme',
     ]);
   });
 

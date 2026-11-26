@@ -43,6 +43,8 @@ import {
 import { createUnsubscribeToken } from '../unsubscribe-token.util';
 
 const DEFAULT_TIMEZONE = 'UTC';
+/** At most two summary emails a second from one instance. */
+const SEND_INTERVAL_MS = 500;
 
 /** What `Organisation.settings` holds that this reads. */
 interface SummarySettings {
@@ -83,6 +85,7 @@ class RunCache {
 export class SummaryEmailsService {
   private readonly logger = new Logger(SummaryEmailsService.name);
   private running = false;
+  private lastDeliveryAt = 0;
   private readonly frontendUrl: string;
   private readonly secret: string;
 
@@ -186,6 +189,7 @@ export class SummaryEmailsService {
     // says so without trying to claim each again.
     const done = await this.sends.find({
       where: {
+        organisationId: organisation.id,
         membershipId: In([...new Set(wanted.map((w) => w.membership.id))]),
         periodStart: In([...new Set(wanted.map((w) => w.due.range.fromKey))]),
       },
@@ -263,6 +267,7 @@ export class SummaryEmailsService {
         return 'skipped';
       }
 
+      await this.paceDelivery();
       const result = await this.emailService.sendSummaryEmail({
         to: membership.user.email,
         subject: content.subject,
@@ -283,6 +288,19 @@ export class SummaryEmailsService {
       await this.sends.update({ id: claimedId }, { error: message });
       return 'failed';
     }
+  }
+
+  /**
+   * A week-start morning sends to everyone at once; back to back, that
+   * outruns the mail provider's rate limit (Resend's default is a few
+   * requests a second), and a refused send is not retried. Only real
+   * deliveries wait — the console transport sends nothing.
+   */
+  private async paceDelivery(): Promise<void> {
+    if (!this.emailService.isDelivering) return;
+    const wait = this.lastDeliveryAt + SEND_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    this.lastDeliveryAt = Date.now();
   }
 
   private async buildPersonal(
@@ -350,9 +368,15 @@ export class SummaryEmailsService {
         organisation.id,
         recipient.userId,
       )
-    ).filter((member) => member.role !== MembershipRole.FINANCE);
+    ).filter(
+      // Not the reader themself: their own time is in their personal
+      // summary, and an admin who doesn't track would otherwise be flagged
+      // "no time tracked" in their own email every week.
+      (member) =>
+        member.role !== MembershipRole.FINANCE && member.id !== recipient.id,
+    );
     // A manager whose teams hold nobody else has no team to summarise.
-    if (listed.every((member) => member.id === recipient.id)) return null;
+    if (listed.length === 0) return null;
 
     const byId = new Map(
       (
