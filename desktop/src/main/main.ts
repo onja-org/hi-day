@@ -218,11 +218,7 @@ import {
 import { manualUpdateOutcome, updateDialogFor } from "./update-check-dialog";
 import { recentProjectsFor, trayMenuTemplate } from "./tray-menu";
 import type { TrayMenuState, TraySession } from "./tray-menu";
-import {
-  loadRelaunchHistory,
-  recordRelaunch,
-  shouldRelaunch,
-} from "./crash-recovery";
+import { createFatalErrorHandler } from "./crash-recovery";
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -414,32 +410,17 @@ let quitPauseComplete = false;
  * vanished app and no idea why. Safe by construction: everything this app
  * cares about surviving a crash (the session, the running timer, the
  * offline queue) already lives on disk or on the server, not in memory —
- * see AuthStore, OfflineQueueStore, and the pause-before-quit flow below —
- * so a relaunch picks all of it back up the same way a normal restart
- * does. `shouldRelaunch` guards against looping forever if the crash
- * itself happens on every single startup (a bad build, a corrupt local
- * file) rather than being a one-off.
+ * see AuthStore, OfflineQueueStore and OfflineCache — so a relaunch picks
+ * all of it back up, and crash recovery (ADR-0025) carries a running timer
+ * on. It does not stop the timer; see `createFatalErrorHandler`.
  */
-function handleFatalError(kind: string, error: unknown): void {
-  console.error(`[fatal] unhandled ${kind}:`, error);
-
-  const userDataDir = app.getPath("userData");
-  const now = Date.now();
-  if (!shouldRelaunch(loadRelaunchHistory(userDataDir), now)) {
-    console.error(
-      "[fatal] too many relaunches in the last minute — not retrying again.",
-    );
-    app.exit(1);
-    return;
-  }
-  recordRelaunch(userDataDir, now);
-
-  // Best-effort — there's no time left to await a network round-trip on the
-  // way down, same reasoning as the suspend/shutdown handlers further down.
-  void pauseRunningTimer?.().catch(() => {});
-  app.relaunch();
-  app.exit(1);
-}
+const handleFatalError = createFatalErrorHandler({
+  userDataDir: () => app.getPath("userData"),
+  now: Date.now,
+  log: (...args) => console.error(...args),
+  relaunch: () => app.relaunch(),
+  exit: (code) => app.exit(code),
+});
 
 process.on("uncaughtException", (error) =>
   handleFatalError("exception", error),
