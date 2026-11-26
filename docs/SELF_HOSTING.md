@@ -51,7 +51,7 @@ Optional. Everything works without these:
 
 | Variable | What happens without it |
 |---|---|
-| `SMTP_*` or `RESEND_API_KEY` | No email is sent. Links go to the backend log instead. See [Email](#email). |
+| `SMTP_*` or `PIGEON_KEY` | No email is sent. Links go to the backend log instead. See [Email](#email). |
 | `WASABI_*` | No screenshots. Time tracking, projects, activity, reports and the desktop agent still work. |
 
 ## Email
@@ -92,11 +92,11 @@ Restart. The log should say `Email goes out over SMTP (smtp.gmail.com)`. Use "Fo
 
 If sending fails, the error names the setting that's wrong: `SMTP_USER` for a rejected login, `SMTP_HOST` for an unreachable server, `SMTP_SECURE` for a failed handshake.
 
-### Resend
+### Pigeon
 
-Sign up at [Resend](https://resend.com), verify a sending domain, then set `RESEND_API_KEY` and `EMAIL_SENDER`. You need a domain you can add DNS records to, and your staff's email addresses will pass through a third party.
+[Pigeon](https://pigeon.onja.dev/docs) is Onja's email service, and what hiday Cloud uses. It needs a project and API key from Pigeon's admin, so most self-hosters should use SMTP. With a key, set `PIGEON_KEY`, and set `EMAIL_SENDER` to an address on the project's verified domain. `PIGEON_URL` defaults to `https://pigeon.onja.dev`.
 
-If both SMTP and Resend are set, SMTP is used.
+If both SMTP and Pigeon are set, SMTP is used.
 
 ## Migrations
 

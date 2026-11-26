@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import {
   ConsoleTransport,
+  PigeonTransport,
   SmtpTransport,
   type MailMessage,
 } from '../transports';
@@ -164,5 +165,169 @@ describe('the console transport', () => {
     expect(String((warn.mock.calls[0] as unknown[])[0])).toContain(
       'a@acme.test, b@acme.test',
     );
+  });
+});
+
+describe('Pigeon sending', () => {
+  const SETTINGS = {
+    baseUrl: 'https://pigeon.acme.test/',
+    apiKey: 'es_live_k',
+  };
+
+  function reply(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  function pigeonWith(...replies: (Response | Error)[]) {
+    const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
+    for (const r of replies) {
+      if (r instanceof Error) fetchMock.mockRejectedValueOnce(r);
+      else fetchMock.mockResolvedValueOnce(r);
+    }
+    const pause = jest.fn().mockResolvedValue(undefined);
+    const transport = new PigeonTransport(SETTINGS, fetchMock, pause);
+    const sentBodies = () =>
+      fetchMock.mock.calls.map(
+        ([, init]) =>
+          JSON.parse(init.body as string) as Record<string, unknown>,
+      );
+    return { transport, fetchMock, pause, sentBodies };
+  }
+
+  const QUEUED = { id: 'e1', status: 'queued', suppressed_recipients: [] };
+
+  it('posts the message as Pigeon expects it, with the key', async () => {
+    const { transport, fetchMock, sentBodies } = pigeonWith(reply(202, QUEUED));
+
+    const result = await transport.send({
+      ...MESSAGE,
+      replyTo: 'grace@acme.test',
+      attachments: [{ filename: 'r.pdf', content: Buffer.from('pdf') }],
+    });
+
+    expect(result).toEqual({ error: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://pigeon.acme.test/v1/emails');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual(
+      expect.objectContaining({ authorization: 'Bearer es_live_k' }),
+    );
+    expect(sentBodies()[0]).toEqual({
+      from: MESSAGE.from,
+      to: ['ada@acme.test'],
+      reply_to: ['grace@acme.test'],
+      subject: MESSAGE.subject,
+      html: MESSAGE.html,
+      attachments: [
+        { filename: 'r.pdf', content: Buffer.from('pdf').toString('base64') },
+      ],
+      idempotency_key: expect.any(String) as string,
+    });
+    expect(transport.delivers).toBe(true);
+  });
+
+  it('leaves out what the message does not have', async () => {
+    const { transport, sentBodies } = pigeonWith(reply(202, QUEUED));
+
+    await transport.send({ ...MESSAGE, to: ['a@acme.test', 'b@acme.test'] });
+
+    const body = sentBodies()[0];
+    expect(body.to).toEqual(['a@acme.test', 'b@acme.test']);
+    expect(body).not.toHaveProperty('reply_to');
+    expect(body).not.toHaveProperty('attachments');
+  });
+
+  it('accepts a replay of an earlier request as success', async () => {
+    const { transport } = pigeonWith(
+      reply(200, { ...QUEUED, idempotent_replay: true }),
+    );
+
+    expect(await transport.send(MESSAGE)).toEqual({ error: null });
+  });
+
+  /** Pigeon answers success, but nothing went out. */
+  it('reports a suppressed recipient as not sent', async () => {
+    const { transport } = pigeonWith(
+      reply(202, {
+        ...QUEUED,
+        status: 'suppressed',
+        suppressed_recipients: ['ada@acme.test'],
+      }),
+    );
+
+    const { error } = await transport.send(MESSAGE);
+
+    expect(error?.message).toContain('Not sent');
+    expect(error?.message).toContain('ada@acme.test');
+  });
+
+  it('retries a server error with the same idempotency key', async () => {
+    const { transport, fetchMock, pause, sentBodies } = pigeonWith(
+      reply(503, { error: { code: 'internal_error', message: 'busy' } }),
+      new TypeError('fetch failed'),
+      reply(202, QUEUED),
+    );
+
+    expect(await transport.send(MESSAGE)).toEqual({ error: null });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(pause).toHaveBeenCalledTimes(2);
+    const keys = new Set(sentBodies().map((b) => b.idempotency_key));
+    expect(keys.size).toBe(1);
+  });
+
+  it('gives up after three attempts, answering instead of throwing', async () => {
+    const { transport, fetchMock } = pigeonWith(
+      new TypeError('fetch failed'),
+      new TypeError('fetch failed'),
+      new TypeError('fetch failed'),
+    );
+
+    const { error } = await transport.send(MESSAGE);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(error?.message).toContain('PIGEON_URL');
+  });
+
+  it('never retries a refusal, which would fail the same way', async () => {
+    const { transport, fetchMock } = pigeonWith(
+      reply(400, {
+        error: { code: 'invalid_recipient', message: 'Bad address' },
+      }),
+    );
+
+    const { error } = await transport.send(MESSAGE);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(error?.message).toContain('invalid_recipient');
+    expect(error?.message).toContain('Bad address');
+  });
+
+  it('names the setting at fault', async () => {
+    const badKey = pigeonWith(
+      reply(401, { error: { code: 'unauthorized', message: 'Missing' } }),
+    );
+    const badSender = pigeonWith(
+      reply(403, {
+        error: { code: 'sender_domain_not_allowed', message: 'gmail.com' },
+      }),
+    );
+
+    expect((await badKey.transport.send(MESSAGE)).error?.message).toContain(
+      'PIGEON_KEY',
+    );
+    expect((await badSender.transport.send(MESSAGE)).error?.message).toContain(
+      'EMAIL_SENDER',
+    );
+  });
+
+  it('copes with an answer that is not JSON', async () => {
+    const { transport } = pigeonWith(
+      new Response('<html>Bad gateway</html>', { status: 400 }),
+    );
+
+    expect((await transport.send(MESSAGE)).error?.message).toContain('400');
   });
 });

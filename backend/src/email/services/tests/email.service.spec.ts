@@ -2,23 +2,19 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmailService } from '../email.service';
+import { PigeonTransport } from '../transports';
 
+/** What reaches Pigeon; the HTTP call itself is covered in transports.spec. */
 const sendMock = jest
-  .fn()
-  .mockResolvedValue({ data: { id: 'email-id' }, error: null });
-
-jest.mock('resend', () => ({
-  Resend: jest.fn().mockImplementation(() => ({
-    emails: { send: sendMock },
-  })),
-}));
+  .spyOn(PigeonTransport.prototype, 'send')
+  .mockResolvedValue({ error: null });
 
 const smtpSendMail = jest.fn().mockResolvedValue({});
 jest.mock('nodemailer', () => ({
   createTransport: jest.fn(() => ({ sendMail: smtpSendMail })),
 }));
 
-/** `RESEND_API_KEY` is read with `get` since it is optional; `FRONTEND_URL`
+/** `PIGEON_KEY` is read with `get` since it is optional; `FRONTEND_URL`
  * still uses `getOrThrow`. */
 function configWith(values: Record<string, string | undefined>) {
   return {
@@ -28,7 +24,7 @@ function configWith(values: Record<string, string | undefined>) {
 }
 
 const CONFIGURED = {
-  RESEND_API_KEY: 're_test_key',
+  PIGEON_KEY: 'es_live_test_key',
   EMAIL_SENDER: 'noreply@example.com',
   FRONTEND_URL: 'http://localhost:3000',
 };
@@ -125,10 +121,9 @@ describe('EmailService', () => {
     );
   });
 
-  it('logs, but does not throw, when Resend returns an error', async () => {
+  it('logs, but does not throw, when Pigeon returns an error', async () => {
     sendMock.mockResolvedValueOnce({
-      data: null,
-      error: { name: 'invalid_api_key', message: 'Invalid API key' },
+      error: { message: 'Pigeon rejected the API key. Check PIGEON_KEY.' },
     });
     const errorSpy = jest
       .spyOn(Logger.prototype, 'error')
@@ -139,7 +134,7 @@ describe('EmailService', () => {
     ).resolves.toBeUndefined();
 
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Invalid API key') as string,
+      expect.stringContaining('Check PIGEON_KEY') as string,
     );
     errorSpy.mockRestore();
   });
@@ -175,7 +170,7 @@ describe('EmailService', () => {
     it('escapes the sender-supplied text so it cannot inject markup', async () => {
       await service.sendReportEmail(report);
 
-      const [[sent]] = sendMock.mock.calls as [[{ html: string }]];
+      const [[sent]] = sendMock.mock.calls;
       const { html } = sent;
       expect(html).toContain('See &lt;b&gt;attached&lt;/b&gt; &amp; enjoy');
       expect(html).toContain('Ada &lt;script&gt;');
@@ -184,10 +179,7 @@ describe('EmailService', () => {
     });
 
     it('reports a provider failure instead of swallowing it', async () => {
-      sendMock.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'boom' },
-      });
+      sendMock.mockResolvedValueOnce({ error: { message: 'boom' } });
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
       expect(await service.sendReportEmail(report)).toBe(false);
@@ -195,9 +187,6 @@ describe('EmailService', () => {
   });
 });
 
-/** The Resend SDK throws on an empty key, which is what copying
- * .env.example gives you — so this is the difference between booting and
- * not. */
 /** Everything the logger was handed, as one searchable string. */
 function loggedLines(warn: jest.SpyInstance): string {
   return (warn.mock.calls as unknown[][])
@@ -222,7 +211,7 @@ describe('EmailService with no provider configured', () => {
   ] as const) {
     it(`starts with a ${label} key`, async () => {
       await expect(
-        serviceWith({ ...CONFIGURED, RESEND_API_KEY: key }),
+        serviceWith({ ...CONFIGURED, PIGEON_KEY: key }),
       ).resolves.toBeDefined();
     });
   }
@@ -230,7 +219,7 @@ describe('EmailService with no provider configured', () => {
   it('knows it is not delivering', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     expect(offline.isDelivering).toBe(false);
@@ -245,7 +234,7 @@ describe('EmailService with no provider configured', () => {
   it('sends nothing to the provider', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     await offline.sendSetPasswordEmail('owner@acme.test', 'tok', 'Acme');
@@ -258,7 +247,7 @@ describe('EmailService with no provider configured', () => {
   it('logs the link so the flow can still be completed', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     await offline.sendSetPasswordEmail('owner@acme.test', 'the-token', 'Acme');
@@ -273,7 +262,7 @@ describe('EmailService with no provider configured', () => {
   it('logs invitation links too', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     await offline.sendInvitationEmail('new@acme.test', 'invite-token', 'Acme');
@@ -286,7 +275,7 @@ describe('EmailService with no provider configured', () => {
   it('reports no error for a message it only logged', async () => {
     const offline = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     await expect(
@@ -313,7 +302,7 @@ describe('choosing how mail goes out', () => {
   it('uses SMTP when a mail server is configured', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
       SMTP_HOST: 'smtp.acme.test',
     });
 
@@ -321,16 +310,16 @@ describe('choosing how mail goes out', () => {
     expect(service.isDelivering).toBe(true);
   });
 
-  it('uses Resend when only an API key is configured', async () => {
+  it('uses Pigeon when only an API key is configured', async () => {
     const service = await serviceWith(CONFIGURED);
 
-    expect(service.transportName).toBe('resend');
+    expect(service.transportName).toBe('pigeon');
     expect(service.isDelivering).toBe(true);
   });
 
   /** A leftover key must not silently route staff email through a third
    * party. */
-  it('prefers SMTP over a leftover Resend key', async () => {
+  it('prefers SMTP over a leftover Pigeon key', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
       SMTP_HOST: 'smtp.acme.test',
@@ -340,10 +329,46 @@ describe('choosing how mail goes out', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
+  it("sends to Onja's Pigeon unless PIGEON_URL points elsewhere", async () => {
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    (await serviceWith(CONFIGURED)).onModuleInit();
+    (
+      await serviceWith({ ...CONFIGURED, PIGEON_URL: 'https://mail.acme.test' })
+    ).onModuleInit();
+
+    expect(loggedLines(log)).toContain('Pigeon (https://pigeon.onja.dev)');
+    expect(loggedLines(log)).toContain('Pigeon (https://mail.acme.test)');
+    log.mockRestore();
+  });
+
+  /** A server still set up for Resend would otherwise stop sending
+   * invitations and password resets without a word. */
+  it('says so loudly when only the retired RESEND_API_KEY is set', async () => {
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const service = await serviceWith({
+      ...CONFIGURED,
+      PIGEON_KEY: undefined,
+      RESEND_API_KEY: 're_old_key',
+    });
+    service.onModuleInit();
+
+    expect(service.transportName).toBe('console');
+    expect(loggedLines(error)).toContain('Set PIGEON_KEY');
+    error.mockRestore();
+    warn.mockRestore();
+  });
+
   it('falls back to the log when neither is configured', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
     });
 
     expect(service.transportName).toBe('console');
@@ -354,7 +379,7 @@ describe('choosing how mail goes out', () => {
   it('treats blank settings as unconfigured', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: '  ',
+      PIGEON_KEY: '  ',
       SMTP_HOST: '  ',
     });
 
@@ -364,11 +389,11 @@ describe('choosing how mail goes out', () => {
   it('starts whichever way is configured, and never throws', async () => {
     for (const env of [
       { SMTP_HOST: 'smtp.acme.test' },
-      { RESEND_API_KEY: 're_test_key' },
+      { PIGEON_KEY: 'es_live_test_key' },
       {},
     ]) {
       await expect(
-        serviceWith({ ...CONFIGURED, RESEND_API_KEY: undefined, ...env }),
+        serviceWith({ ...CONFIGURED, PIGEON_KEY: undefined, ...env }),
       ).resolves.toBeDefined();
     }
   });
@@ -383,7 +408,7 @@ describe('SMTP messages actually go out', () => {
   it('sends a set-password link over SMTP, not to the log', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
       SMTP_HOST: 'smtp.acme.test',
     });
 
@@ -406,7 +431,7 @@ describe('SMTP messages actually go out', () => {
   it('uses the configured sender address', async () => {
     const service = await serviceWith({
       ...CONFIGURED,
-      RESEND_API_KEY: undefined,
+      PIGEON_KEY: undefined,
       SMTP_HOST: 'smtp.acme.test',
       EMAIL_SENDER: 'Hi Day <noreply@acme.test>',
     });

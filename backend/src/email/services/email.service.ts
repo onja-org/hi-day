@@ -2,7 +2,7 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ConsoleTransport,
-  ResendTransport,
+  PigeonTransport,
   SmtpTransport,
   type MailMessage,
   type MailResult,
@@ -36,6 +36,9 @@ const DEFAULT_SENDER = `${APP_NAME} <noreply@localhost>`;
 
 const DEFAULT_SMTP_PORT = 587;
 
+/** Onja's own instance; PIGEON_URL only needs setting to point elsewhere. */
+const DEFAULT_PIGEON_URL = 'https://pigeon.onja.dev';
+
 /** Three states: `undefined` must stay distinct from false, because
  * `SMTP_SECURE` left blank means "infer from the port". */
 function readFlag(value: string | undefined): boolean | undefined {
@@ -60,7 +63,7 @@ export class EmailService implements OnModuleInit {
   }
 
   /**
-   * SMTP wins over Resend: somebody who filled in their own mail server
+   * SMTP wins over Pigeon: somebody who filled in their own mail server
    * means to use it, and a leftover key must not override that. Both
    * optional, so the app starts with no mail account anywhere.
    */
@@ -81,11 +84,15 @@ export class EmailService implements OnModuleInit {
       });
     }
 
-    // The SDK throws on an empty key, which is what copying .env.example
-    // gives you — so this is checked, not passed.
-    const apiKey = this.configService.get<string>('RESEND_API_KEY')?.trim();
+    // Copying .env.example gives a blank key, which means "not configured".
+    const apiKey = this.configService.get<string>('PIGEON_KEY')?.trim();
     if (apiKey) {
-      return new ResendTransport(apiKey);
+      return new PigeonTransport({
+        apiKey,
+        baseUrl:
+          this.configService.get<string>('PIGEON_URL')?.trim() ||
+          DEFAULT_PIGEON_URL,
+      });
     }
 
     return new ConsoleTransport(this.logger);
@@ -98,16 +105,31 @@ export class EmailService implements OnModuleInit {
           `Email goes out over SMTP (${this.configService.get<string>('SMTP_HOST')}).`,
         );
         break;
-      case 'resend':
-        this.logger.log('Email goes out through Resend.');
+      case 'pigeon':
+        this.logger.log(
+          `Email goes out through Pigeon (${this.configService.get<string>('PIGEON_URL')?.trim() || DEFAULT_PIGEON_URL}).`,
+        );
         break;
       case 'console':
         this.logger.warn(
-          'No email provider configured (set SMTP_HOST or RESEND_API_KEY). ' +
+          'No email provider configured (set SMTP_HOST or PIGEON_KEY). ' +
             'Invitation and password links will be written to this log ' +
             'instead of sent. Everything else works.',
         );
         break;
+    }
+
+    // Resend was replaced by Pigeon: a server still configured the old way
+    // would otherwise quietly stop sending invitations and password resets.
+    if (
+      this.transport.name === 'console' &&
+      this.configService.get<string>('RESEND_API_KEY')?.trim()
+    ) {
+      this.logger.error(
+        'RESEND_API_KEY is set, but Resend is no longer supported, so no ' +
+          'email is being sent. Set PIGEON_KEY (and EMAIL_SENDER on a ' +
+          'domain verified for your Pigeon project) instead.',
+      );
     }
   }
 
@@ -350,13 +372,13 @@ export class EmailService implements OnModuleInit {
       // Thrown, not swallowed: the form promises the person it was sent, and
       // the controller answers 500 so they can try again rather than being
       // told it worked.
-      throw new Error(`Resend refused the contact message: ${error.message}`);
+      throw new Error(`The contact message was not sent: ${error.message}`);
     }
   }
 
   async sendTrialReminderEmail(
     /** The owner, plus the billing address when one is set — see
-     * `billingRecipients`. Resend takes an array for several. */
+     * `billingRecipients`. The transport takes an array for several. */
     to: string | string[],
     organisationName: string,
     daysLeft: number,
