@@ -19,6 +19,8 @@ import { ALLOWED_APPS_VALUES } from '../../organisations/allowed-apps';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import { APP_URL_TRACKING_VALUES } from '../../organisations/app-url-tracking';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
+import { SUMMARY_FREQUENCIES } from '../../organisations/summary-emails';
+import type { SummaryFrequency } from '../../organisations/summary-emails';
 import { TIMESHEET_MODIFY_TIME_VALUES } from '../../organisations/timesheet-settings';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 
@@ -185,4 +187,18 @@ export class UpdateMembershipDto {
   @ValidateIf((_, value: boolean | null) => value !== null)
   @IsBoolean()
   timesheetRequireApproval?: boolean | null;
+
+  /** Per-member override of the personal summary email frequency. `null`
+   * clears the override. */
+  @IsOptional()
+  @ValidateIf((_, value: SummaryFrequency | null) => value !== null)
+  @IsIn(SUMMARY_FREQUENCIES)
+  personalSummaryEmails?: SummaryFrequency | null;
+
+  /** Per-member override of the team summary email frequency. `null`
+   * clears the override. */
+  @IsOptional()
+  @ValidateIf((_, value: SummaryFrequency | null) => value !== null)
+  @IsIn(SUMMARY_FREQUENCIES)
+  teamSummaryEmails?: SummaryFrequency | null;
 }

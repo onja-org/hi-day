@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -22,6 +23,7 @@ import { AllowTeamManagers } from '../../common/decorators/allow-team-managers.d
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { MembershipRole } from '../../database/entities/membership-role.enum';
+import type { SummaryAudience } from '../../organisations/summary-emails';
 import type { NoteEntry } from '../../notes/services/notes.service';
 import { NotesService } from '../../notes/services/notes.service';
 import { ListScreenshotSlotsDto } from '../../screenshots/dto/list-screenshot-slots.dto';
@@ -312,6 +314,32 @@ export class MembershipsController {
       await this.membershipsService.resetAllTimesheetOverrides(
         request.organisationId!,
         request.userId,
+      );
+    return {
+      cleared,
+      message: `Cleared ${cleared} per-member override${cleared === 1 ? '' : 's'}`,
+    };
+  }
+
+  /**
+   * Clears every Membership's override of one summary email setting
+   * (`personal` or `team`). Backs that setting's "Apply to all" button.
+   */
+  @Post('summary-emails/:audience/reset-overrides')
+  @RequireRole(MembershipRole.ADMIN)
+  async resetSummaryEmailOverrides(
+    @Param(
+      'audience',
+      new ParseEnumPipe({ personal: 'personal', team: 'team' }),
+    )
+    audience: SummaryAudience,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ cleared: number; message: string }> {
+    const { cleared } =
+      await this.membershipsService.resetAllSummaryEmailOverrides(
+        request.organisationId!,
+        request.userId,
+        audience,
       );
     return {
       cleared,

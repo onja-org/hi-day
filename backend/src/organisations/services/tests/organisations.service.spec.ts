@@ -360,6 +360,8 @@ describe('OrganisationsService', () => {
         workingHoursPerDay: 8,
         timezone: 'UTC',
         weekStartsOn: 'monday',
+        personalSummaryEmails: 'weekly',
+        teamSummaryEmails: 'weekly',
         membersCanDeleteScreenshots: false,
         canDeleteOwnScreenshots: false,
         membersCanViewOwnActivity: null,

@@ -4,6 +4,7 @@ import type {
   AppUrlTracking,
   TimesheetModifyTime,
 } from "./organisation";
+import type { SummaryFrequency } from "./summaryEmails";
 
 export type MembershipRole = "admin" | "manager" | "member" | "finance";
 
@@ -49,6 +50,12 @@ export type ActiveMember = {
   timesheetModifyTime: TimesheetModifyTime | null;
   /** Per-member override of the org's Timesheets "Require approval" default; `null` inherits. */
   timesheetRequireApproval: boolean | null;
+  /** Whether they manage at least one team — who team summary emails can
+   * go to, besides admins. */
+  managesTeam: boolean;
+  /** Per-member overrides of the summary email defaults; `null` inherits. */
+  personalSummaryEmails: SummaryFrequency | null;
+  teamSummaryEmails: SummaryFrequency | null;
 };
 
 /** A Members-page row — see the backend's ActiveMemberListItem. */
@@ -104,6 +111,8 @@ export type UpdateMembershipInput = {
   timesheetModifyTime?: TimesheetModifyTime | null;
   /** `null` clears the override; omit to leave the override as-is. */
   timesheetRequireApproval?: boolean | null;
+  personalSummaryEmails?: SummaryFrequency | null;
+  teamSummaryEmails?: SummaryFrequency | null;
 };
 
 export type UpdateMembershipResult = ApiResult<{ member: ActiveMember }>;

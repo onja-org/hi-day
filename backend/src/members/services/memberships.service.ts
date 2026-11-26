@@ -24,6 +24,10 @@ import { User } from '../../database/entities/user.entity';
 import type { AllowedApps } from '../../organisations/allowed-apps';
 import type { AppUrlTracking } from '../../organisations/app-url-tracking';
 import { resolveActivityTrackingEnabled } from '../../organisations/capture-settings';
+import type {
+  SummaryAudience,
+  SummaryFrequency,
+} from '../../organisations/summary-emails';
 import type { TimesheetModifyTime } from '../../organisations/timesheet-settings';
 import { TimeEntriesService } from '../../time-entries/services/time-entries.service';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
@@ -101,6 +105,12 @@ export interface ActiveMemberSummary {
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
   timesheetRequireApproval: boolean | null;
+  /** Whether they manage at least one team — who team summary emails
+   * can go to, besides admins. */
+  managesTeam: boolean;
+  /** `null` inherits the Organisation's summary email defaults. */
+  personalSummaryEmails: SummaryFrequency | null;
+  teamSummaryEmails: SummaryFrequency | null;
 }
 
 /** A Members-page row — list-only, since `update()` doesn't load the
@@ -374,6 +384,13 @@ export class MembershipsService {
 
     if (dto.timesheetRequireApproval !== undefined) {
       membership.timesheetRequireApproval = dto.timesheetRequireApproval;
+    }
+
+    if (dto.personalSummaryEmails !== undefined) {
+      membership.personalSummaryEmails = dto.personalSummaryEmails;
+    }
+    if (dto.teamSummaryEmails !== undefined) {
+      membership.teamSummaryEmails = dto.teamSummaryEmails;
     }
 
     const overrides = overridesIn(dto);
@@ -751,6 +768,11 @@ export class MembershipsService {
       canDeleteScreenshots: membership.canDeleteScreenshots ?? null,
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
+      managesTeam: (membership.teamMemberships ?? []).some(
+        (teamMembership) => teamMembership.isManager,
+      ),
+      personalSummaryEmails: membership.personalSummaryEmails ?? null,
+      teamSummaryEmails: membership.teamSummaryEmails ?? null,
     };
   }
 
@@ -1005,6 +1027,37 @@ export class MembershipsService {
           organisationId,
           actorUserId,
           metadata: { cleared },
+        }),
+      );
+    }
+
+    return { cleared };
+  }
+
+  /** "Apply to all" for one of the summary email settings. */
+  async resetAllSummaryEmailOverrides(
+    organisationId: string,
+    actorUserId: string,
+    audience: SummaryAudience,
+  ): Promise<{ cleared: number }> {
+    const column =
+      audience === 'personal' ? 'personalSummaryEmails' : 'teamSummaryEmails';
+    const result = await this.memberships
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ [column]: null })
+      .where('organisationId = :organisationId', { organisationId })
+      .andWhere(`"${column}" IS NOT NULL`)
+      .execute();
+
+    const cleared = result.affected ?? 0;
+    if (cleared > 0) {
+      await this.dataSource.transaction((manager) =>
+        this.auditLogService.record(manager, {
+          action: 'membership.summary_email_overrides_reset',
+          organisationId,
+          actorUserId,
+          metadata: { audience, cleared },
         }),
       );
     }

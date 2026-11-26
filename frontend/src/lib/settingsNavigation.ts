@@ -20,6 +20,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     sections: [
       { key: "company-information", label: "Company information" },
       { key: "security", label: "Security & log in" },
+      { key: "notifications", label: "Notifications" },
     ],
   },
   {
