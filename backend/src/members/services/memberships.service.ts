@@ -105,6 +105,9 @@ export interface ActiveMemberSummary {
   timesheetModifyTime: TimesheetModifyTime | null;
   /** `null` means inherit the Organisation's Timesheets "Require approval" default. */
   timesheetRequireApproval: boolean | null;
+  /** Whether they manage at least one team — who team summary emails
+   * can go to, besides admins. */
+  managesTeam: boolean;
   /** `null` inherits the Organisation's summary email defaults. */
   personalSummaryEmails: SummaryFrequency | null;
   teamSummaryEmails: SummaryFrequency | null;
@@ -765,6 +768,9 @@ export class MembershipsService {
       canDeleteScreenshots: membership.canDeleteScreenshots ?? null,
       timesheetModifyTime: membership.timesheetModifyTime,
       timesheetRequireApproval: membership.timesheetRequireApproval,
+      managesTeam: (membership.teamMemberships ?? []).some(
+        (teamMembership) => teamMembership.isManager,
+      ),
       personalSummaryEmails: membership.personalSummaryEmails ?? null,
       teamSummaryEmails: membership.teamSummaryEmails ?? null,
     };

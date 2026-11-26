@@ -186,6 +186,7 @@ describe('MembershipsService', () => {
           weeklyLimitHours: null,
           dailyLimitHours: null,
           canDeleteScreenshots: null,
+          managesTeam: false,
           personalSummaryEmails: null,
           teamSummaryEmails: null,
           screenshotFrequencySeconds: null,

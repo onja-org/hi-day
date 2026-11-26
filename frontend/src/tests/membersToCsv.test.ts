@@ -29,6 +29,9 @@ function member(overrides: Partial<ActiveMemberListItem> = {}): ActiveMemberList
   allowedApps: null,
     timesheetModifyTime: null,
     timesheetRequireApproval: null,
+    managesTeam: false,
+    personalSummaryEmails: null,
+    teamSummaryEmails: null,
     projectIds: ["p-1", "p-2"],
     ...overrides,
   };
