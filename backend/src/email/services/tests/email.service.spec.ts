@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { EmailService } from '../email.service';
+import { EmailService, senderAddress } from '../email.service';
 import { PigeonTransport } from '../transports';
 
 /** What reaches Pigeon; the HTTP call itself is covered in transports.spec. */
@@ -441,5 +441,57 @@ describe('SMTP messages actually go out', () => {
     expect(smtpSendMail).toHaveBeenCalledWith(
       expect.objectContaining({ from: 'Hi Day <noreply@acme.test>' }),
     );
+  });
+});
+
+describe('summary emails', () => {
+  beforeEach(() => sendMock.mockClear());
+
+  it.each([
+    ['daily', 'Hiday Daily <noreply@example.com>'],
+    ['weekly', 'Hiday Weekly <noreply@example.com>'],
+  ] as const)(
+    'sends a %s summary under its own name, from the configured address',
+    async (period, from) => {
+      const service = await serviceWith(CONFIGURED);
+
+      await service.sendSummaryEmail({
+        period,
+        to: 'ada@acme.test',
+        subject: 'Your day at Acme',
+        html: '<p>hi</p>',
+      });
+
+      expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ from }));
+    },
+  );
+
+  it('replaces a configured sender name rather than nesting it', async () => {
+    const named = await serviceWith({
+      ...CONFIGURED,
+      EMAIL_SENDER: 'Hi Day <noreply@acme.test>',
+    });
+
+    await named.sendSummaryEmail({
+      period: 'weekly',
+      to: 'ada@acme.test',
+      subject: 'Your week at Acme',
+      html: '<p>hi</p>',
+    });
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'Hiday Weekly <noreply@acme.test>' }),
+    );
+  });
+});
+
+describe('senderAddress', () => {
+  it.each([
+    ['noreply@acme.test', 'noreply@acme.test'],
+    ['  noreply@acme.test ', 'noreply@acme.test'],
+    ['Hi Day <noreply@acme.test>', 'noreply@acme.test'],
+    ['"Hi Day" < noreply@acme.test >', 'noreply@acme.test'],
+  ])('reads %j as %j', (sender, address) => {
+    expect(senderAddress(sender)).toBe(address);
   });
 });
