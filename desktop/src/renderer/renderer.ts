@@ -2778,6 +2778,11 @@ function showCapturePaused(paused: boolean): void {
 }
 
 window.api.windowControls.onCapturePaused(showCapturePaused);
+// The screen-capture grant is per screen setup, so the banner offering it
+// follows the screens rather than waiting for the next poll.
+window.api.windowControls.onScreensChanged(() => {
+  void refreshCapturePermissionBanner();
+});
 // Main may have stopped the timer on waking, after a sleep that reached
 // the timeout, which this window never saw — so the status is read before
 // the hold is judged.

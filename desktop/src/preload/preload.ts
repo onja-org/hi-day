@@ -426,6 +426,10 @@ const api = {
         listener(message),
       );
     },
+    /** A screen connected or disconnected, or the lid closed on a monitor. */
+    onScreensChanged: (listener: () => void): void => {
+      ipcRenderer.on("screens:changed", () => listener());
+    },
     onCapturePaused: (listener: (paused: boolean) => void): void => {
       ipcRenderer.on("capture:paused", (_event, paused: boolean) =>
         listener(paused),

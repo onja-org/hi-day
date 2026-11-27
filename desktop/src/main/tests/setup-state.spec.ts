@@ -47,19 +47,44 @@ describe('setup state', () => {
 
   it('has granted nothing on a fresh install', () => {
     expect(hasWaylandScreenshotGrant(userDataDir)).toBe(false);
-    expect(waylandScreenCastToken(userDataDir)).toBeNull();
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBeNull();
   });
 
   it('replaces and forgets the ScreenCast token without touching the Screenshot grant', () => {
     markWaylandScreenshotGranted(userDataDir);
 
-    rememberWaylandScreenCastToken(userDataDir, 'first');
-    rememberWaylandScreenCastToken(userDataDir, 'second');
-    expect(waylandScreenCastToken(userDataDir)).toBe('second');
+    rememberWaylandScreenCastToken(userDataDir, 'laptop', 'first');
+    rememberWaylandScreenCastToken(userDataDir, 'laptop', 'second');
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBe('second');
 
-    rememberWaylandScreenCastToken(userDataDir, null);
-    expect(waylandScreenCastToken(userDataDir)).toBeNull();
+    rememberWaylandScreenCastToken(userDataDir, 'laptop', null);
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBeNull();
     expect(hasWaylandScreenshotGrant(userDataDir)).toBe(true);
+  });
+
+  it('keeps one ScreenCast token per screen setup', () => {
+    rememberWaylandScreenCastToken(userDataDir, 'laptop', 'laptop-token');
+    rememberWaylandScreenCastToken(userDataDir, 'monitor-only', 'monitor-token');
+
+    rememberWaylandScreenCastToken(userDataDir, 'monitor-only', null);
+
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBe('laptop-token');
+    expect(waylandScreenCastToken(userDataDir, 'monitor-only')).toBeNull();
+  });
+
+  it('keeps the single token an earlier version saved, for whichever setup asks first', () => {
+    // It was made for some setup nobody recorded; the one in use when the
+    // update lands is the likeliest. Saving moves it under that setup.
+    writeFileSync(
+      join(userDataDir, 'setup-state.json'),
+      JSON.stringify({ waylandScreenCastToken: 'legacy' }),
+    );
+
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBe('legacy');
+    rememberWaylandScreenCastToken(userDataDir, 'laptop', 'rotated');
+
+    expect(waylandScreenCastToken(userDataDir, 'laptop')).toBe('rotated');
+    expect(waylandScreenCastToken(userDataDir, 'monitor-only')).toBeNull();
   });
 
   it('creates the directory when it does not exist yet', () => {

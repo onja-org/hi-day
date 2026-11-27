@@ -341,7 +341,19 @@ dev` — since that's older than the latest `desktop-v*` release on
     the OS's own "share your screen" picker on every call and has been
     observed to crash the app if that picker is canceled). Approve that
     one dialog once and every later tick captures silently — verified live
-    against a real GNOME/Wayland session — with no repeat prompt.
+    against a real GNOME/Wayland session — with no repeat prompt. The
+    choice survives closing the lid and locking: no screenshot is taken
+    while the screen is locked (`screen-lock.ts`; GNOME answers a
+    remembered choice with the picker then), and a remembered choice is
+    only given up after three rejected ticks in a row. GNOME remembers a
+    choice as one particular screen, so one is kept per screen setup
+    (`screen-setup.ts`: the laptop alone, with a monitor, the lid closed on
+    a monitor). On GNOME a setup is its physical monitors by maker, model
+    and serial (`org.gnome.Mutter.DisplayConfig`), so hot desks with
+    identical monitors each get their own; elsewhere Electron's screen
+    names and sizes stand in. A setup never granted shows the banner once and is never
+    tried silently, since GNOME forgets a choice tried while its screen is
+    missing.
 
 13. **Test the passive disclosure notice** (see `docs/adr/0015-...`): in
     the web console's **Settings → Consent & disclosure** page, write some

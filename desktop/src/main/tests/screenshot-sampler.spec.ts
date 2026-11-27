@@ -291,6 +291,76 @@ describe('ScreenshotSampler', () => {
   });
 });
 
+describe('ScreenshotSampler while the screen is locked', () => {
+  it('takes nothing on Wayland while locked: GNOME answers a remembered grant with a picker then', async () => {
+    const sink = vi.fn();
+    const captureWaylandSilently = vi.fn(() => Promise.resolve(Buffer.from('silent')));
+    const capturePortal = vi.fn(() => Promise.resolve(Buffer.from('portal')));
+    const sampler = new ScreenshotSampler({
+      sink,
+      captureWaylandSilently,
+      capturePortal,
+      isWaylandScreenshotGranted: () => true,
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isScreenLocked: () => Promise.resolve(true),
+    });
+
+    await sampler.tick();
+
+    expect(captureWaylandSilently).not.toHaveBeenCalled();
+    expect(capturePortal).not.toHaveBeenCalled();
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it('captures as usual on Wayland once unlocked', async () => {
+    const sink = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      captureWaylandSilently: () => Promise.resolve(Buffer.from('silent')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isScreenLocked: () => Promise.resolve(false),
+    });
+
+    await sampler.tick();
+
+    expect(sink).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask on X11, macOS or Windows, whose capture never needed a grant to keep', async () => {
+    const isScreenLocked = vi.fn(() => Promise.resolve(true));
+    const sink = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      capture: () => Promise.resolve(Buffer.from('x11')),
+      getPlatform: () => 'linux',
+      isWayland: () => false,
+      isScreenLocked,
+    });
+
+    await sampler.tick();
+
+    expect(isScreenLocked).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledTimes(1);
+  });
+
+  it('captures when the lock check itself fails, as before', async () => {
+    const sink = vi.fn();
+    const sampler = new ScreenshotSampler({
+      sink,
+      captureWaylandSilently: () => Promise.resolve(Buffer.from('silent')),
+      getPlatform: () => 'linux',
+      isWayland: () => true,
+      isScreenLocked: () => Promise.reject(new Error('no bus')),
+    });
+
+    await sampler.tick();
+
+    expect(sink).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ScreenshotSampler start/stop', () => {
   beforeEach(() => {
     vi.useFakeTimers();

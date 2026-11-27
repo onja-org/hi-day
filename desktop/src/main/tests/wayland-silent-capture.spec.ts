@@ -6,17 +6,30 @@ function make(
   outcome: ScreenCastOutcome,
   options: { token?: string | null; available?: boolean } = {},
 ) {
-  let token = options.token === undefined ? 'old-token' : options.token;
+  const setup = { current: 'laptop' };
+  const tokens = new Map<string, string>();
+  const initial = options.token === undefined ? 'old-token' : options.token;
+  if (initial) tokens.set('laptop', initial);
   const screenCast = vi.fn().mockResolvedValue(outcome);
   const subject = new WaylandSilentCapture({
-    loadToken: () => token,
-    saveToken: (t) => {
-      token = t;
+    loadToken: (key) => tokens.get(key) ?? null,
+    saveToken: (key, t) => {
+      if (t) tokens.set(key, t);
+      else tokens.delete(key);
     },
+    currentSetup: () => Promise.resolve(setup.current),
     screenCast,
     isAvailable: () => Promise.resolve(options.available ?? true),
   });
-  return { subject, screenCast, token: () => token };
+  return {
+    subject,
+    screenCast,
+    token: () => tokens.get(setup.current) ?? null,
+    tokenFor: (key: string) => tokens.get(key) ?? null,
+    switchSetup: (key: string) => {
+      setup.current = key;
+    },
+  };
 }
 
 const frame = Buffer.from('jpeg');
@@ -69,12 +82,74 @@ describe('WaylandSilentCapture', () => {
       expect(token()).toBe('new');
     });
 
-    it('drops a rejected token so the picker never shows on a tick again', async () => {
+    it('keeps the token after one rejection, which a portal just woken or crashed gives', async () => {
+      // After the lid opens, GNOME shows the picker instead of restoring the
+      // choice — and has been seen to crash doing it. The choice itself is
+      // still good; dropping it sent the person back to "Grant Access".
       const { subject, token } = make({ kind: 'token-rejected' });
 
       expect(await subject.capture()).toBeNull();
+      expect(token()).toBe('old-token');
+      expect(await subject.hasGrant()).toBe(true);
+    });
+
+    it('drops the token after three rejections in a row, so the picker stops showing on ticks', async () => {
+      const { subject, token } = make({ kind: 'token-rejected' });
+
+      await subject.capture();
+      await subject.capture();
+      expect(token()).toBe('old-token');
+      await subject.capture();
+
       expect(token()).toBeNull();
-      expect(subject.hasGrant()).toBe(false);
+      expect(await subject.hasGrant()).toBe(false);
+    });
+
+    it('starts counting again after a capture that works', async () => {
+      const screenCast = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'token-rejected' })
+        .mockResolvedValueOnce({ kind: 'token-rejected' })
+        .mockResolvedValueOnce({ kind: 'captured', buffer: frame, restoreToken: 'old-token' })
+        .mockResolvedValue({ kind: 'token-rejected' });
+      let token: string | null = 'old-token';
+      const subject = new WaylandSilentCapture({
+        loadToken: () => token,
+        saveToken: (_setup, t) => {
+          token = t;
+        },
+        screenCast,
+        isAvailable: () => Promise.resolve(true),
+      });
+
+      for (let i = 0; i < 5; i += 1) await subject.capture();
+
+      expect(token).toBe('old-token');
+    });
+
+    it('starts counting again after a new grant', async () => {
+      const screenCast = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: 'token-rejected' })
+        .mockResolvedValueOnce({ kind: 'token-rejected' })
+        .mockResolvedValueOnce({ kind: 'captured', buffer: frame, restoreToken: 'granted' })
+        .mockResolvedValue({ kind: 'token-rejected' });
+      let token: string | null = 'old-token';
+      const subject = new WaylandSilentCapture({
+        loadToken: () => token,
+        saveToken: (_setup, t) => {
+          token = t;
+        },
+        screenCast,
+        isAvailable: () => Promise.resolve(true),
+      });
+
+      await subject.capture();
+      await subject.capture();
+      await subject.grant();
+      await subject.capture();
+
+      expect(token).toBe('granted');
     });
 
     it('keeps the old token when the session never started', async () => {
@@ -91,6 +166,80 @@ describe('WaylandSilentCapture', () => {
       await subject.capture();
 
       expect(token()).toBe('rotated');
+    });
+  });
+
+  describe('one remembered choice per screen setup', () => {
+    // GNOME remembers a choice as one particular screen. Tried while that
+    // screen is gone — the lid closed on a monitor — it shows the picker
+    // and then forgets the choice for good, even once the lid opens again.
+    it('does not try the choice made for another setup, so no picker shows and GNOME keeps it', async () => {
+      const { subject, screenCast, tokenFor, switchSetup } = make({
+        kind: 'captured',
+        buffer: frame,
+        restoreToken: 'old-token',
+      });
+      switchSetup('monitor-only');
+
+      expect(await subject.capture()).toBeNull();
+
+      expect(screenCast).not.toHaveBeenCalled();
+      expect(tokenFor('laptop')).toBe('old-token');
+    });
+
+    it('has no grant for a setup never granted, so "Grant Access" is offered for it', async () => {
+      const { subject, switchSetup } = make({ kind: 'unavailable' });
+      expect(await subject.hasGrant()).toBe(true);
+
+      switchSetup('monitor-only');
+
+      expect(await subject.hasGrant()).toBe(false);
+    });
+
+    it('remembers a grant for the setup it was given in, leaving the others alone', async () => {
+      const { subject, tokenFor, switchSetup } = make({
+        kind: 'captured',
+        buffer: frame,
+        restoreToken: 'monitor-token',
+      });
+      switchSetup('monitor-only');
+
+      await subject.grant();
+
+      expect(tokenFor('monitor-only')).toBe('monitor-token');
+      expect(tokenFor('laptop')).toBe('old-token');
+    });
+
+    it('uses the choice of each setup when back in it', async () => {
+      const { subject, screenCast, switchSetup } = make({
+        kind: 'captured',
+        buffer: frame,
+        restoreToken: 'monitor-token',
+      });
+      switchSetup('monitor-only');
+      await subject.grant();
+
+      switchSetup('laptop');
+      screenCast.mockResolvedValue({ kind: 'captured', buffer: frame, restoreToken: 'old-token' });
+      await subject.capture();
+
+      expect(screenCast).toHaveBeenLastCalledWith('old-token');
+    });
+
+    it('counts rejections per setup', async () => {
+      const { subject, tokenFor, switchSetup, screenCast } = make({ kind: 'token-rejected' });
+      await subject.capture();
+      await subject.capture();
+
+      switchSetup('monitor-only');
+      screenCast.mockResolvedValueOnce({ kind: 'captured', buffer: frame, restoreToken: 'm' });
+      await subject.grant();
+      await subject.capture();
+
+      switchSetup('laptop');
+      expect(tokenFor('laptop')).toBe('old-token');
+      await subject.capture();
+      expect(tokenFor('laptop')).toBeNull();
     });
   });
 
