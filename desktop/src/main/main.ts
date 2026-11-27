@@ -87,6 +87,8 @@ import {
   DEFAULT_SCREENSHOT_INTERVAL_MS,
   ScreenshotSampler,
 } from "./screenshot-sampler";
+import { isScreenLocked } from "./screen-lock";
+import { currentScreenSetupKey } from "./screen-setup";
 import { ScreenshotUploader } from "./screenshot-uploader";
 import { TimerStatusGate } from "./timer-status-gate";
 import { loadActiveWindowModule, WindowSampler } from "./window-sampler";
@@ -219,6 +221,9 @@ import { manualUpdateOutcome, updateDialogFor } from "./update-check-dialog";
 import { recentProjectsFor, trayMenuTemplate } from "./tray-menu";
 import type { TrayMenuState, TraySession } from "./tray-menu";
 import { createFatalErrorHandler } from "./crash-recovery";
+
+/** How long the screens must stay put before the banner is re-checked — see `announceScreensChanged`. */
+const SCREENS_SETTLE_MS = 1_500;
 
 const NOT_LOGGED_IN: TrackingResult<never> = {
   ok: false,
@@ -1077,9 +1082,10 @@ async function registerIpcHandlers(): Promise<void> {
   // The silent Wayland path — GNOME's Screenshot portal plays a shutter
   // sound and flashes the screen on every capture; ScreenCast does neither.
   const waylandSilentCapture = new WaylandSilentCapture({
-    loadToken: () => waylandScreenCastToken(app.getPath("userData")),
-    saveToken: (token) =>
-      rememberWaylandScreenCastToken(app.getPath("userData"), token),
+    loadToken: (setup) => waylandScreenCastToken(app.getPath("userData"), setup),
+    saveToken: (setup, token) =>
+      rememberWaylandScreenCastToken(app.getPath("userData"), setup, token),
+    currentSetup: currentScreenSetupKey,
     screenCast: captureScreenViaScreenCast,
     isAvailable: isSilentScreenCastAvailable,
   });
@@ -1394,6 +1400,7 @@ async function registerIpcHandlers(): Promise<void> {
     sink: screenshotUploader.upload,
     isWaylandScreenshotGranted,
     captureWaylandSilently: () => waylandSilentCapture.capture(),
+    isScreenLocked,
   });
 
   offlineQueue.start();
@@ -1453,6 +1460,24 @@ async function registerIpcHandlers(): Promise<void> {
   // it: `captureAllowed` only speaks on a change, so a fresh window needs
   // to be able to ask where things stand.
   ipcMain.handle("capture:pausedState", (): boolean => capturePaused());
+
+  // The silent screen-capture choice is kept per screen setup
+  // (screen-setup.ts), so whether to offer "Grant Access" changes when the
+  // lid closes on a monitor or a monitor is plugged in. The renderer only
+  // re-asks every 15 s otherwise, which left the banner up after the lid
+  // opened again. Settled first: closing a lid passes through a screen or
+  // two on its way, and the banner must follow where it lands.
+  let screensChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  const announceScreensChanged = (): void => {
+    if (screensChangedTimer) clearTimeout(screensChangedTimer);
+    screensChangedTimer = setTimeout(() => {
+      screensChangedTimer = null;
+      mainWindow?.webContents.send("screens:changed");
+    }, SCREENS_SETTLE_MS);
+  };
+  screen.on("display-added", announceScreensChanged);
+  screen.on("display-removed", announceScreensChanged);
+  screen.on("display-metrics-changed", announceScreensChanged);
 
   function recomputeSampling(): void {
     const mayCapture = captureAllowed();

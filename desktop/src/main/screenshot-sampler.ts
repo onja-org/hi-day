@@ -82,6 +82,12 @@ export interface ScreenshotSamplerDeps {
    * Resolves null when it has no grant or fails; never shows UI.
    */
   captureWaylandSilently?: () => Promise<Buffer | null>;
+  /**
+   * Whether the screen is locked — see screen-lock.ts. Asked on Wayland
+   * only: there, a remembered grant used while locked makes GNOME show the
+   * picker (and has crashed its portal), which used to cost the grant.
+   */
+  isScreenLocked?: () => Promise<boolean>;
 }
 
 /**
@@ -107,6 +113,7 @@ export class ScreenshotSampler {
   private readonly capturePortal: (interactive: boolean) => Promise<Buffer | null>;
   private readonly isWaylandScreenshotGranted: () => boolean;
   private readonly captureWaylandSilently: () => Promise<Buffer | null>;
+  private readonly isScreenLocked: () => Promise<boolean>;
   private intervalMs: number;
   private handle: ReturnType<typeof setInterval> | null = null;
   private readonly now: () => number;
@@ -126,6 +133,7 @@ export class ScreenshotSampler {
     this.isWaylandScreenshotGranted = deps.isWaylandScreenshotGranted ?? (() => false);
     this.captureWaylandSilently =
       deps.captureWaylandSilently ?? (() => Promise.resolve(null));
+    this.isScreenLocked = deps.isScreenLocked ?? (() => Promise.resolve(false));
   }
 
   start(): void {
@@ -229,6 +237,10 @@ export class ScreenshotSampler {
    */
   private async captureBuffer(): Promise<Buffer | null> {
     if (this.getPlatform() === 'linux' && this.isWayland()) {
+      // Nothing worth capturing behind a lock screen, and asking the portal
+      // then is what lost the grant — see `isScreenLocked`. A check that
+      // fails counts as unlocked, which is how capture worked before it.
+      if (await this.isScreenLocked().catch(() => false)) return null;
       const silent = await this.captureWaylandSilently().catch(() => null);
       if (silent) return silent;
       if (!this.isWaylandScreenshotGranted()) return null;

@@ -270,6 +270,7 @@ declare global {
         closeSyncDraining: () => void;
         onSyncBacklog: (listener: (message: string | null) => void) => void;
         onCapturePaused: (listener: (paused: boolean) => void) => void;
+        onScreensChanged: (listener: () => void) => void;
         onTrayToggleTimer: (listener: () => void) => void;
         onTrayTrackProject: (listener: (projectId: string) => void) => void;
         onTraySignOut: (listener: () => void) => void;

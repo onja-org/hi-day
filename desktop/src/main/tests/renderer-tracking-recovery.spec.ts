@@ -102,6 +102,8 @@ interface Scenario {
   limitReached?: { kind: 'daily' | 'weekly'; limitHours: number };
   /** What main answers when asked whether this launch should start the timer itself. */
   autoStartDue?: boolean;
+  /** Screenshots on, on Wayland, where the grant behind them is per screen setup. */
+  waylandScreenshots?: boolean;
 }
 
 function launch(scenario: Scenario) {
@@ -158,6 +160,12 @@ function launch(scenario: Scenario) {
   };
   /** Seconds since the last keyboard or mouse input, as main would report it. */
   const idle = { seconds: 0 };
+  /** What main reports about screen access — Wayland, screenshots on, unless a test says otherwise. */
+  const permission = {
+    screenshotsEnabled: scenario.waylandScreenshots ?? false,
+    granted: true,
+  };
+  const screensChangedListeners: (() => void)[] = [];
   let heldIdle = scenario.storedHold ?? null;
   const wakeListeners: (() => void)[] = [];
   const entry = {
@@ -381,13 +389,13 @@ function launch(scenario: Scenario) {
       permissionStatus: () =>
         ok({
           windowTrackingEnabled: false,
-          screenshotsEnabled: false,
+          screenshotsEnabled: permission.screenshotsEnabled,
           platform: 'linux',
-          screenRecordingGranted: true,
+          screenRecordingGranted: permission.granted,
           accessibilityGranted: true,
           inputCountsNeedAccess: false,
           accessibilityGuidance: '',
-          waylandUnsupported: false,
+          waylandUnsupported: permission.screenshotsEnabled,
         }),
       requestScreenRecordingAccess: () => Promise.resolve(),
       openPrivacySettings: () => Promise.resolve(),
@@ -427,6 +435,9 @@ function launch(scenario: Scenario) {
       onTrackingNotice: () => {},
       onRefusedTime: () => {},
       onCapturePaused: () => {},
+      onScreensChanged: (listener: () => void) => {
+        screensChangedListeners.push(listener);
+      },
       onSyncBacklog: () => {},
       // The quit drain has its own tests; nothing is uploading here.
       onSyncDraining: () => {},
@@ -510,6 +521,13 @@ function launch(scenario: Scenario) {
       document.getElementById('auto-start-message')!.textContent,
     clickAutoStartStop: () => document.getElementById('auto-start-stop')!.click(),
     clickAutoStartOk: () => document.getElementById('auto-start-ok')!.click(),
+    /** Main's answer to "is screen access granted" for the screens connected now. */
+    setScreenAccessGranted: (granted: boolean) => {
+      permission.granted = granted;
+    },
+    /** Main saying the screens changed — the lid closed on a monitor, say. */
+    screensChanged: () => screensChangedListeners.forEach((listener) => listener()),
+    screenAccessBannerVisible: () => !document.getElementById('screen-recording-banner')!.hidden,
     /** The passing line above the timer — what it says, or null while hidden. */
     idleNotice: () => {
       const el = document.getElementById('idle-notice')!;
@@ -1829,6 +1847,38 @@ describe('the notice that auto-subtract stopped the timer', () => {
     await waitFor(() => app.isRunning());
 
     expect(app.stoppedNotice()).toBeNull();
+    app.close();
+  });
+});
+
+/**
+ * The silent Wayland screenshot grant is kept per screen setup, so closing
+ * the lid on a monitor can leave the new setup without one. The banner
+ * offering it used to wait for the next status poll — up to 15 s — and
+ * stayed up after the lid opened again.
+ */
+describe('the screen access banner when the screens change', () => {
+  it('follows the screens at once, not at the next poll', async () => {
+    const app = launch({ failingProjectLoads: 0, waylandScreenshots: true, pollMs: 60_000 });
+    await waitForSetup(app);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(app.screenAccessBannerVisible()).toBe(false);
+
+    // Lid closed on a monitor never granted. Nothing else asks again before
+    // the next poll, a minute away here.
+    app.setScreenAccessGranted(false);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(app.screenAccessBannerVisible()).toBe(false);
+
+    app.screensChanged();
+    await waitFor(() => app.screenAccessBannerVisible(), 500);
+    expect(app.screenAccessBannerVisible()).toBe(true);
+
+    // Lid open again: that setup was granted long ago.
+    app.setScreenAccessGranted(true);
+    app.screensChanged();
+    await waitFor(() => !app.screenAccessBannerVisible(), 500);
+    expect(app.screenAccessBannerVisible()).toBe(false);
     app.close();
   });
 });

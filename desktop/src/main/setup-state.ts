@@ -11,7 +11,10 @@ export type CloseAction = 'minimize' | 'quit';
 interface SetupState {
   closeAction?: CloseAction;
   waylandScreenshotGranted?: boolean;
+  /** From before tokens were kept per screen setup — see `waylandScreenCastToken`. */
   waylandScreenCastToken?: string;
+  /** ScreenCast restore tokens, one per screen setup (screen-setup.ts). */
+  waylandScreenCastTokens?: Record<string, string>;
   reminderSettings?: ReminderSettings;
   compactAlwaysOnTop?: boolean;
   autoStartTimer?: boolean;
@@ -63,21 +66,38 @@ export function markWaylandScreenshotGranted(userDataDir: string): void {
 
 /**
  * The ScreenCast portal's restore token for the silent Wayland capture path
- * (see screencast-portal.ts). Separate from `waylandScreenshotGranted`: that
- * one records the Screenshot portal's grant, which stays the fallback.
- * Single-use — every capture hands back a new one to store in its place.
+ * (see screencast-portal.ts), for one screen setup (screen-setup.ts): GNOME
+ * remembers a choice as one particular screen, so each setup keeps its own.
+ * Separate from `waylandScreenshotGranted`: that one records the Screenshot
+ * portal's grant, which stays the fallback. Single-use — every capture
+ * hands back a new one to store in its place.
+ *
+ * An earlier version kept a single token for no recorded setup. Until a
+ * token is saved under a setup it answers for any — the setup in use when
+ * the update lands is the likeliest to be the one it was made in.
  */
-export function waylandScreenCastToken(userDataDir: string): string | null {
-  return read(userDataDir).waylandScreenCastToken ?? null;
+export function waylandScreenCastToken(
+  userDataDir: string,
+  setupKey: string,
+): string | null {
+  const state = read(userDataDir);
+  if (state.waylandScreenCastTokens) {
+    return state.waylandScreenCastTokens[setupKey] ?? null;
+  }
+  return state.waylandScreenCastToken ?? null;
 }
 
 export function rememberWaylandScreenCastToken(
   userDataDir: string,
+  setupKey: string,
   token: string | null,
 ): void {
   const state = read(userDataDir);
-  if (token) state.waylandScreenCastToken = token;
-  else delete state.waylandScreenCastToken;
+  const tokens = { ...(state.waylandScreenCastTokens ?? {}) };
+  if (token) tokens[setupKey] = token;
+  else delete tokens[setupKey];
+  state.waylandScreenCastTokens = tokens;
+  delete state.waylandScreenCastToken;
   write(userDataDir, state);
 }
 
