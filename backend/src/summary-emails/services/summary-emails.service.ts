@@ -269,6 +269,7 @@ export class SummaryEmailsService {
 
       await this.paceDelivery();
       const result = await this.emailService.sendSummaryEmail({
+        period: due.period,
         to: membership.user.email,
         subject: content.subject,
         html: content.html,
