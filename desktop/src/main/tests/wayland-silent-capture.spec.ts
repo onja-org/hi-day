@@ -17,7 +17,7 @@ function make(
       if (t) tokens.set(key, t);
       else tokens.delete(key);
     },
-    currentSetup: () => setup.current,
+    currentSetup: () => Promise.resolve(setup.current),
     screenCast,
     isAvailable: () => Promise.resolve(options.available ?? true),
   });
@@ -90,7 +90,7 @@ describe('WaylandSilentCapture', () => {
 
       expect(await subject.capture()).toBeNull();
       expect(token()).toBe('old-token');
-      expect(subject.hasGrant()).toBe(true);
+      expect(await subject.hasGrant()).toBe(true);
     });
 
     it('drops the token after three rejections in a row, so the picker stops showing on ticks', async () => {
@@ -102,7 +102,7 @@ describe('WaylandSilentCapture', () => {
       await subject.capture();
 
       expect(token()).toBeNull();
-      expect(subject.hasGrant()).toBe(false);
+      expect(await subject.hasGrant()).toBe(false);
     });
 
     it('starts counting again after a capture that works', async () => {
@@ -187,13 +187,13 @@ describe('WaylandSilentCapture', () => {
       expect(tokenFor('laptop')).toBe('old-token');
     });
 
-    it('has no grant for a setup never granted, so "Grant Access" is offered for it', () => {
+    it('has no grant for a setup never granted, so "Grant Access" is offered for it', async () => {
       const { subject, switchSetup } = make({ kind: 'unavailable' });
-      expect(subject.hasGrant()).toBe(true);
+      expect(await subject.hasGrant()).toBe(true);
 
       switchSetup('monitor-only');
 
-      expect(subject.hasGrant()).toBe(false);
+      expect(await subject.hasGrant()).toBe(false);
     });
 
     it('remembers a grant for the setup it was given in, leaving the others alone', async () => {

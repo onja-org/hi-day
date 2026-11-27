@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { screenSetupKey } from '../screen-setup';
+import { currentScreenSetupKey, monitorSetupKey, screenSetupKey } from '../screen-setup';
 
 const builtIn = { internal: true, label: 'Built-in display', size: { width: 1920, height: 1080 } };
 const monitor = { internal: false, label: '', size: { width: 1920, height: 1080 } };
@@ -40,5 +40,71 @@ describe('screenSetupKey', () => {
 
   it('still names a setup when no screen is reported', () => {
     expect(screenSetupKey([])).toBe('no-screens');
+  });
+});
+
+describe('monitorSetupKey (GNOME, one key per physical monitor)', () => {
+  const laptop = { connector: 'eDP-1', vendor: 'LEN', product: '0x40ba', serial: '0x00000000' };
+  const hpDeskA = { connector: 'DP-3', vendor: 'HWP', product: 'HP E240', serial: '6CM6510R4J' };
+  const hpDeskB = { ...hpDeskA, serial: '6CM6510XYZ' };
+
+  it('tells two monitors of the same model apart by serial, as at two hot desks', () => {
+    expect(monitorSetupKey([laptop, hpDeskA])).not.toBe(monitorSetupKey([laptop, hpDeskB]));
+  });
+
+  it('is the same monitor whichever port it is plugged into', () => {
+    expect(monitorSetupKey([{ ...hpDeskA, connector: 'HDMI-1' }])).toBe(monitorSetupKey([hpDeskA]));
+  });
+
+  it('tells twin monitors with no serial apart by port', () => {
+    const twin = { connector: 'DP-1', vendor: 'GSM', product: 'LG 24', serial: '' };
+
+    expect(monitorSetupKey([{ ...twin, connector: 'DP-2' }])).not.toBe(monitorSetupKey([twin]));
+  });
+
+  it('tells the laptop alone from the monitor alone, and from both', () => {
+    const keys = new Set([
+      monitorSetupKey([laptop]),
+      monitorSetupKey([hpDeskA]),
+      monitorSetupKey([laptop, hpDeskA]),
+    ]);
+    expect(keys.size).toBe(3);
+  });
+
+  it('is the same whatever order the monitors are listed in', () => {
+    expect(monitorSetupKey([hpDeskA, laptop])).toBe(monitorSetupKey([laptop, hpDeskA]));
+  });
+});
+
+describe('currentScreenSetupKey', () => {
+  const electron = [{ internal: true, label: 'Built-in display', size: { width: 1920, height: 1080 } }];
+  const laptop = { connector: 'eDP-1', vendor: 'LEN', product: '0x40ba', serial: '0x00000000' };
+
+  it("uses GNOME's monitors where it can list them", async () => {
+    const key = await currentScreenSetupKey({
+      listMonitors: () => Promise.resolve([laptop]),
+      listDisplays: () => electron,
+    });
+
+    expect(key).toBe(monitorSetupKey([laptop]));
+  });
+
+  it("falls back to Electron's screens on other desktops, under a key of its own", async () => {
+    const key = await currentScreenSetupKey({
+      listMonitors: () => Promise.reject(new Error('no Mutter here')),
+      listDisplays: () => electron,
+    });
+
+    expect(key).toBe(screenSetupKey(electron));
+    expect(key).not.toBe(monitorSetupKey([laptop]));
+  });
+
+  it('falls back when GNOME lists nothing shown', async () => {
+    const key = await currentScreenSetupKey({
+      listMonitors: () => Promise.resolve([]),
+      listDisplays: () => electron,
+    });
+
+    expect(key).toBe(screenSetupKey(electron));
   });
 });

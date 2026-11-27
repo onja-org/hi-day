@@ -1,3 +1,4 @@
+import dbus from 'dbus-next';
 import { screen } from 'electron';
 
 export interface ScreenDescription {
@@ -37,7 +38,100 @@ export function screenSetupKey(displays: ScreenDescription[]): string {
     .join('+');
 }
 
-/** The key for the screens Electron reports now. */
-export function currentScreenSetupKey(): string {
-  return screenSetupKey(screen.getAllDisplays());
+/** A monitor as GNOME describes it: the port, and the identity its EDID gives. */
+export interface PhysicalMonitor {
+  connector: string;
+  vendor: string;
+  product: string;
+  serial: string;
+}
+
+/** Laptop panels and cheap monitors report no serial, or zeros. */
+function hasSerial(serial: string): boolean {
+  return !/^(0x)?0*$/i.test(serial.trim());
+}
+
+/**
+ * The setup as the physical monitors in it, from GNOME — which, unlike
+ * Electron under XWayland, can tell two monitors of the same size apart.
+ * Without that, hot-desking from one 1920×1080 monitor to another read as
+ * the same setup: the choice made for the first was tried on the second,
+ * GNOME showed the picker and forgot it, and every desk change cost a grant.
+ *
+ * By maker, model and serial, so a monitor is the same one whichever port
+ * it is plugged into. Where there is no serial (a laptop's own panel, twin
+ * monitors that report none) the port stands in for it.
+ */
+export function monitorSetupKey(monitors: PhysicalMonitor[]): string {
+  return `monitors:${monitors
+    .map(
+      (monitor) =>
+        `${monitor.vendor} ${monitor.product} ${
+          hasSerial(monitor.serial) ? monitor.serial : `port ${monitor.connector}`
+        }`,
+    )
+    .sort()
+    .join('+')}`;
+}
+
+/** A desktop that answers at all answers in a few milliseconds. */
+const LIST_TIMEOUT_MS = 1_000;
+
+/**
+ * The monitors GNOME is showing now — its logical monitors, not every one
+ * connected: a closed lid leaves the laptop's panel connected but off.
+ * Rejects off GNOME (no `org.gnome.Mutter.DisplayConfig`).
+ */
+export async function listGnomeMonitors(): Promise<PhysicalMonitor[]> {
+  const bus = dbus.sessionBus();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const reply = await Promise.race([
+      bus.call(
+        new dbus.Message({
+          destination: 'org.gnome.Mutter.DisplayConfig',
+          path: '/org/gnome/Mutter/DisplayConfig',
+          interface: 'org.gnome.Mutter.DisplayConfig',
+          member: 'GetCurrentState',
+        }),
+      ),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('DisplayConfig did not answer')), LIST_TIMEOUT_MS);
+      }),
+    ]);
+    const logical = ((reply?.body ?? [])[2] ?? []) as unknown[][];
+    return logical.flatMap((entry) =>
+      ((entry[5] ?? []) as string[][]).map(([connector, vendor, product, serial]) => ({
+        connector,
+        vendor,
+        product,
+        serial,
+      })),
+    );
+  } finally {
+    clearTimeout(timer);
+    bus.disconnect();
+  }
+}
+
+export interface ScreenSetupSources {
+  listMonitors: () => Promise<PhysicalMonitor[]>;
+  listDisplays: () => ScreenDescription[];
+}
+
+/**
+ * The key for the screens connected now: GNOME's physical monitors where it
+ * can list them, Electron's screens elsewhere (KDE, other desktops). The two
+ * never share a key, so a setup granted under one is simply asked for again
+ * under the other — the banner, never a picker.
+ */
+export async function currentScreenSetupKey(
+  sources: ScreenSetupSources = {
+    listMonitors: listGnomeMonitors,
+    listDisplays: () => screen.getAllDisplays(),
+  },
+): Promise<string> {
+  const monitors = await sources.listMonitors().catch(() => []);
+  if (monitors.length > 0) return monitorSetupKey(monitors);
+  return screenSetupKey(sources.listDisplays());
 }

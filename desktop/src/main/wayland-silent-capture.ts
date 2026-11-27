@@ -5,7 +5,7 @@ export interface WaylandSilentCaptureDeps {
   loadToken: (setup: string) => string | null;
   saveToken: (setup: string, token: string | null) => void;
   /** Which screens are connected now; one setup when omitted. */
-  currentSetup?: () => string;
+  currentSetup?: () => Promise<string>;
   /** `captureScreenViaScreenCast` — null token means "show the picker". */
   screenCast: (restoreToken: string | null) => Promise<ScreenCastOutcome>;
   /** `isSilentScreenCastAvailable` — GStreamer present and the portal new enough. */
@@ -42,8 +42,8 @@ export class WaylandSilentCapture {
 
   constructor(private readonly deps: WaylandSilentCaptureDeps) {}
 
-  private currentSetup(): string {
-    return this.deps.currentSetup?.() ?? 'default';
+  private async currentSetup(): Promise<string> {
+    return (await this.deps.currentSetup?.()) ?? 'default';
   }
 
   /**
@@ -51,8 +51,8 @@ export class WaylandSilentCapture {
    * on a monitor, say — has none, so "Grant Access" is offered for it while
    * the other setups keep theirs.
    */
-  hasGrant(): boolean {
-    return this.deps.loadToken(this.currentSetup()) !== null;
+  async hasGrant(): Promise<boolean> {
+    return this.deps.loadToken(await this.currentSetup()) !== null;
   }
 
   /**
@@ -61,7 +61,7 @@ export class WaylandSilentCapture {
    * not connected would show the picker, and GNOME would then forget it.
    */
   async capture(): Promise<Buffer | null> {
-    const setup = this.currentSetup();
+    const setup = await this.currentSetup();
     const token = this.deps.loadToken(setup);
     if (!token) return null;
     if (!(await this.deps.isAvailable())) return null;
@@ -103,7 +103,7 @@ export class WaylandSilentCapture {
   async grant(): Promise<WaylandGrantResult> {
     if (!(await this.deps.isAvailable())) return { kind: 'unavailable' };
 
-    const setup = this.currentSetup();
+    const setup = await this.currentSetup();
     const outcome = await this.deps.screenCast(null);
     if (outcome.kind === 'cancelled') return { kind: 'cancelled' };
     if (outcome.kind === 'captured' && outcome.restoreToken) {

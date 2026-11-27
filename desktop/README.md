@@ -348,7 +348,10 @@ dev` — since that's older than the latest `desktop-v*` release on
     only given up after three rejected ticks in a row. GNOME remembers a
     choice as one particular screen, so one is kept per screen setup
     (`screen-setup.ts`: the laptop alone, with a monitor, the lid closed on
-    a monitor). A setup never granted shows the banner once and is never
+    a monitor). On GNOME a setup is its physical monitors by maker, model
+    and serial (`org.gnome.Mutter.DisplayConfig`), so hot desks with
+    identical monitors each get their own; elsewhere Electron's screen
+    names and sizes stand in. A setup never granted shows the banner once and is never
     tried silently, since GNOME forgets a choice tried while its screen is
     missing.
 

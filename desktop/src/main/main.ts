@@ -2847,6 +2847,11 @@ async function registerIpcHandlers(): Promise<void> {
         platform === "macos" &&
         activityTrackingEnabled &&
         !systemPreferences.isTrustedAccessibilityClient(false);
+      // For the screens connected now — the silent grant is per screen setup.
+      const silentGrant =
+        platform === "linux" && isWaylandSession()
+          ? await waylandSilentCapture.hasGrant()
+          : false;
 
       return {
         ok: true,
@@ -2868,8 +2873,7 @@ async function registerIpcHandlers(): Promise<void> {
             platform === "macos"
               ? systemPreferences.getMediaAccessStatus("screen") === "granted"
               : platform === "linux" && isWaylandSession()
-                ? waylandSilentCapture.hasGrant() ||
-                  isWaylandScreenshotGranted()
+                ? silentGrant || isWaylandScreenshotGranted()
                 : true,
           // Granted, but through the loud path — `screenRecordingGranted`
           // alone cannot say so. Only reported where the silent grant can
@@ -2877,7 +2881,7 @@ async function registerIpcHandlers(): Promise<void> {
           waylandCaptureIsNoisy:
             platform === "linux" &&
             isWaylandSession() &&
-            !waylandSilentCapture.hasGrant() &&
+            !silentGrant &&
             isWaylandScreenshotGranted() &&
             (await waylandSilentCapture.canBeGranted()),
           waylandUnsupported: isWaylandSession(),
