@@ -9,8 +9,23 @@ import {
   type MailTransport,
 } from './transports';
 import { escapeHtml } from '../../common/escape-html.util';
+import type { SummaryPeriod } from '../../organisations/summary-emails';
 
 const APP_NAME = 'Hi Day';
+
+/** The name summary emails show in the inbox in place of `EMAIL_SENDER`'s
+ * own, so a recipient can tell which summary it is before opening it. Kept
+ * short: Gmail's list view cuts a sender name off at about 20 characters. */
+const SUMMARY_SENDER_NAMES: Record<SummaryPeriod, string> = {
+  daily: 'Hiday Daily',
+  weekly: 'Hiday Weekly',
+};
+
+/** The bare address in `EMAIL_SENDER`, which may be given either as
+ * `noreply@x` or as `Name <noreply@x>`. */
+export function senderAddress(sender: string): string {
+  return sender.match(/<([^<>]+)>\s*$/)?.[1].trim() ?? sender.trim();
+}
 
 export interface ReportEmail {
   to: string[];
@@ -461,12 +476,15 @@ export class EmailService implements OnModuleInit {
    * believing it delivered.
    */
   async sendSummaryEmail(message: {
+    period: SummaryPeriod;
     to: string;
     subject: string;
     html: string;
   }): Promise<{ sent: boolean; error: string | null }> {
     const { error } = await this.deliver({
-      from: this.emailSender,
+      // Same address as every other email, so the mail provider still
+      // accepts it; only the display name changes.
+      from: `${SUMMARY_SENDER_NAMES[message.period]} <${senderAddress(this.emailSender)}>`,
       to: message.to,
       subject: message.subject,
       html: message.html,
